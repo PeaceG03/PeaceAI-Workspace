@@ -23,8 +23,8 @@
 // Each safety guard is a single line tagged "guard:<id>". The m146 mutation test deletes each tagged line in turn and
 // requires a behavior case to fail.
 import { execFileSync, spawnSync } from "node:child_process";
-import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, posix, resolve, sep } from "node:path";
 import ts from "typescript";
 import { openRepo, type CodeRepo } from "./codesearch.ts";
@@ -40,8 +40,8 @@ import { plannerSha256V4 } from "./plan4run.ts";
 import { selectPlanner, type PlannerName } from "./plandefault.ts";
 import { plannerSha256 } from "./planrun.ts";
 import { committedLog, isLocked, taskKey } from "./plangrade.ts";
-import { ATTEMPT_CODES, LOOP_LOG, LOOP_MODEL_PROPOSERS, LOOP_SCHEMA_V4, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
-import { detectRunner, installDeps, installShim, openDepsCache, shimArgs, type DepsCache, type DepsFail, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
+import { ATTEMPT_CODES, LOOP_ISOLATION_FAILS, LOOP_LOG, LOOP_MODEL_PROPOSERS, LOOP_SCHEMA_V4, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
+import { candCan, detectRunner, installDeps, installShim, openDepsCache, openWorkDir, shimArgs, type WorkDir, type DepsCache, type DepsFail, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
 import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
 import { MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
 
@@ -55,13 +55,14 @@ const SELF_REPOS = /^peaceg03\//i; // PeaceAI's own repos (Workspace, Results, .
 
 /** A private working copy of the target at the pinned commit, plus the team's test files from the reference change. */
 export interface Copy { dir: string; head: string; teamTests: Map<string, string>; close(): void }
-export type CopyFetcher = (repo: string, commit: string, merge: string, testFiles: readonly string[]) => Copy;
+/** M171: `base` is the task's private work dir (openWorkDir); the copy is made inside it. Absent: os.tmpdir(). */
+export type CopyFetcher = (repo: string, commit: string, merge: string, testFiles: readonly string[], base?: string) => Copy;
 export class LoopError extends Error { constructor(readonly code: LoopCode) { super(code); } }
 
 /** Fetches exactly the pinned commit and the reference merge (depth 1, by URL: the copy never has a remote). */
 export function gitCopyFetcher(url: (repo: string) => string = (r) => `https://github.com/${r}.git`): CopyFetcher {
-  return (repo, commit, merge, testFiles) => {
-    const dir = mkdtempSync(join(tmpdir(), "peaceai-loop-"));
+  return (repo, commit, merge, testFiles, base) => {
+    const dir = mkdtempSync(join(base ?? tmpdir(), "peaceai-loop-"));
     try {
       git(dir, "init", "-q");
       for (const sha of [commit, merge]) {
@@ -127,6 +128,69 @@ export function applyEdits(c: Copy, edits: readonly Edit[]): LoopCode | null {
   return null;
 }
 
+// ---- the isolation checks before candidate code runs (M171, spec loop-isolation-v1.md; the work dir: loopdeps.ts openWorkDir)
+
+export type IsolationFail = (typeof LOOP_ISOLATION_FAILS)[number];
+/** The roots the candidate must never be pointed into: the runner's home (its credentials, RUNNER_TEMP's parent), RUNNER_TEMP and the workspace checkout. */
+export function privateRoots(root: string, env: Record<string, string | undefined>): string[] {
+  const out: string[] = [];
+  for (const p of [homedir(), env.RUNNER_TEMP, root]) {
+    if (!p) continue;
+    let r = resolve(p);
+    try { r = realpathSync(r); } catch { /* absent: lexical */ }
+    if (!out.includes(r)) out.push(r);
+  }
+  return out;
+}
+const under = (p: string, roots: readonly string[]): boolean => roots.some((r) => p === r || p.startsWith(r.endsWith(sep) ? r : r + sep));
+const CRED_CONFIG = /extraheader|credential|askpass|sshcommand|insteadof|includeif|\[include\]|:\/\/[^\s/]*@/i;
+const MAX_WALK = 1_000_000;
+
+/**
+ * M171: the checks before any candidate code runs in the copy (each failure is ISOLATION_UNAVAILABLE with a fixed
+ * subcode, attempts 0, and nothing is run; the tests never run as the runner uid instead):
+ *   the work dir admits no other user (no o= bits) and holds the copy;  the copy's .git/config names no credential;
+ *   no symlink in the copy (or in the installed trees its node_modules links point to) resolves into a private root;
+ *   the candidate uid can enter and read the copy and (`runner`: once installed) run its runner wrapper.
+ */
+export function isolationProblem(c: Copy, work: string, cand: CandUid, roots: readonly string[], runner: boolean): IsolationFail | null {
+  let wreal: string;
+  try { wreal = realpathSync(work); } catch { return "WORK_DIR"; }
+  if ((statSync(wreal).mode & 0o007) !== 0) return "WORK_DIR"; // m171-guard:iso-work-mode
+  if (!realpathSync(c.dir).startsWith(wreal + sep)) return "WORK_DIR"; // m171-guard:iso-in-work
+  let config = "";
+  try { config = readFileSync(join(c.dir, ".git/config"), "utf8"); } catch { config = ""; }
+  if (CRED_CONFIG.test(config)) return "PRIVATE_CONFIG"; // m171-guard:iso-config
+  // every symlink, by its lexical target and its realpath; trees outside the copy that a link points to are walked once
+  const top = realpathSync(c.dir);
+  const todo = [top];
+  const seen = new Set<string>(todo);
+  let n = 0;
+  let bad = false;
+  while (todo.length && !bad) {
+    const d = todo.pop()!;
+    let ents: string[];
+    try { ents = readdirSync(d); } catch { continue; }
+    for (const e of ents) {
+      if (++n > MAX_WALK) { bad = true; break; }
+      if (d === top && e === ".git") continue;
+      const p = join(d, e);
+      let st; try { st = lstatSync(p); } catch { continue; }
+      if (st.isDirectory()) { todo.push(p); continue; }
+      if (!st.isSymbolicLink()) continue;
+      const lex = resolve(d, readlinkSync(p));
+      let real: string | null = null;
+      try { real = realpathSync(p); } catch { real = null; }
+      if (under(lex, roots) || (real !== null && under(real, roots))) { bad = true; break; } // m171-guard:iso-links
+      if (real !== null && !seen.has(real)) { try { if (statSync(real).isDirectory()) { seen.add(real); todo.push(real); } } catch { /* gone */ } }
+    }
+  }
+  if (bad) return "PRIVATE_LINK";
+  const reach = ["-x", c.dir, "-a", "-r", c.dir, ...(runner ? ["-a", "-x", join(c.dir, "node_modules/.bin/tsx")] : [])];
+  if (!candCan(cand, ["test", ...reach])) return "CAND_NO_ACCESS"; // m171-guard:iso-access
+  return null;
+}
+
 // ---- the isolated runner
 
 /**
@@ -169,7 +233,7 @@ export function testNames(content: string): string[] {
   return out.slice(0, 200);
 }
 
-export interface RunOutcome { codes: AttemptCode[]; failing: string[]; tests: LoopTests; isolation: boolean }
+export interface RunOutcome { codes: AttemptCode[]; failing: string[]; tests: LoopTests; isolation: boolean; isoFail: IsolationFail | null }
 /**
  * One test run in the stage-2 isolation: node:test files whole and per named test (TAP), or vitest / jest files whole
  * through the loopdeps shim (counts from the runner's JSON report; per-test names are not collected for them).
@@ -182,6 +246,7 @@ function runTests(c: Copy, cand: CandUid, runMs: number, pick: RunnerPick, testF
   const rel = (f: string) => (pick.pkgDir ? posix.relative(pick.pkgDir, posix.normalize(f)) : posix.normalize(f));
   const whole = run(json ? shimArgs({ ...pick, files: files.map(rel) }) : [...TAP, ...files]);
   const isolation = whole.exitCode !== 97 && whole.exitCode !== 98; // guard:isolation-exit
+  const isoFail: IsolationFail | null = whole.exitCode === 97 ? "NO_NAMESPACES" : whole.exitCode === 98 ? "MOUNT_FAILED" : null; // M171: which one, a fixed code
   const codes = new Set<AttemptCode>();
   if (whole.exitCode === 124) codes.add("TIMEOUT");
   if (whole.leftovers > 0) codes.add("LEFTOVERS");
@@ -200,7 +265,7 @@ function runTests(c: Copy, cand: CandUid, runMs: number, pick: RunnerPick, testF
   const total = named.length || whole.pass + whole.fail;
   if (failing.length && !codes.has("TEST_FAIL")) codes.add("TEST_FAIL");
   if (passed > total) passed = total;
-  return { codes: [...codes].sort() as AttemptCode[], failing, tests: { total, passedByPeaceAI: codes.size ? Math.min(passed, total) : total, filledByTeam: total - (codes.size ? Math.min(passed, total) : total) }, isolation };
+  return { codes: [...codes].sort() as AttemptCode[], failing, tests: { total, passedByPeaceAI: codes.size ? Math.min(passed, total) : total, filledByTeam: total - (codes.size ? Math.min(passed, total) : total) }, isolation, isoFail };
 }
 
 // ---- the planner (M162)
@@ -307,6 +372,10 @@ export interface LoopOptions {
   depsDir?: string;
   /** M162 (runLoopFile): the planner flag (v1|v2|v3|v4 or plan-only-vN), resolved by selectPlanner; absent = the default. */
   plannerFlag?: string;
+  /** M171, tests only: where the task's work dir is made (default os.tmpdir()). */
+  workBase?: string;
+  /** M171, tests only: the private roots no link in the copy may point into (default privateRoots(root)). */
+  privateRoots?: string[];
 }
 export interface AttemptRecord { attempt: number; edits: string[]; codes: AttemptCode[]; failing: string[]; tests: LoopTests }
 export interface LoopResult { row: LoopRow; plan: LoopPlan | null; attempts: AttemptRecord[]; context: string[] }
@@ -321,7 +390,7 @@ export function loopSha256(root: string = ROOT): string {
 }
 
 /** Runs the loop on one task. Never throws: every outcome is a row with a fixed code. */
-export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training" | "deps" | "depsCache" | "depsDir" | "makeProposer" | "plannerFlag">> & { training: Set<string>; deps?: DepsOptions; depsCache?: DepsCache; planner?: PlannerName }): LoopResult {
+export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training" | "deps" | "depsCache" | "depsDir" | "makeProposer" | "plannerFlag" | "workBase" | "privateRoots">> & { training: Set<string>; deps?: DepsOptions; depsCache?: DepsCache; planner?: PlannerName; workBase?: string; privateRoots?: string[] }): LoopResult {
   const maxAttempts = Math.min(MAX_ATTEMPTS, Math.max(1, Math.floor(o.maxAttempts)));
   const workspace = (() => { try { return git(o.root, "rev-parse", "HEAD"); } catch { return "0".repeat(40); } })();
   const names = set === "public" ? { repo: task.repo, commit: task.commit } : {};
@@ -335,7 +404,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
   let pick: RunnerPick | null = null;
   let deps: LoopRow["deps"] = null;
   let baseline: LoopBaseline | null = null;
-  const done = (code: LoopCode, depsFail?: DepsFail): LoopResult => ({
+  const done = (code: LoopCode, depsFail?: DepsFail, isolationFail?: IsolationFail | null): LoopResult => ({
     row: {
       schema: LOOP_SCHEMA_V4, at: now(), set, taskFileSha256: fileSha, taskKey: taskKey(fileSha, task.id), ...names, workspace,
       loop: LOOP_VERSION_V2, loopSha256: loopSha256(), proposer: o.proposer.name, planner, plannerSha256: plannerSha,
@@ -347,6 +416,8 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       ...(set === "hidden" ? { runner: null, deps: null, baseline: null } : { runner: pick?.runner ?? null, deps: pick ? deps : null, baseline }),
       // M169: which install step failed (a fixed code), public rows only
       ...(set === "public" && code === "DEPS_INSTALL_FAILED" && depsFail ? { depsFail } : {}), // m169-guard:loop-depsfail
+      // M171: which isolation check failed (a fixed code), public rows only
+      ...(set === "public" && code === "ISOLATION_UNAVAILABLE" && isolationFail ? { isolationFail } : {}), // m171-guard:loop-isofail
     },
     plan, attempts: records, context,
   });
@@ -358,11 +429,19 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
   if (!cu.ok) return done(cu.reason as LoopCode); // guard:cand
   const cand = cu.cand;
   let c: Copy | null = null;
+  let work: WorkDir | null = null;
   const ownCache = o.depsCache ? null : openDepsCache();
   const cache = o.depsCache ?? ownCache!;
   try {
-    c = o.fetcher(task.repo, task.commit, task.reference.from.merge, task.tests.files);
+    // M171: the copy lives in a fresh private work dir only the runner and the candidate uid can enter
+    work = openWorkDir(cand, o.workBase);
+    if (work === null) return done("ISOLATION_UNAVAILABLE", undefined, "WORK_DIR"); // m171-guard:loop-work
+    const roots = o.privateRoots ?? privateRoots(o.root, o.env);
+    c = o.fetcher(task.repo, task.commit, task.reference.from.merge, task.tests.files, work.dir);
     if (c.head !== task.commit) return done("COMMIT_MISMATCH");
+    chmodSync(c.dir, 0o755); // the copy itself is mkdtemp's 0700; the work dir around it (0750, group cand) keeps others out
+    const early = isolationProblem(c, work.dir, cand, roots, false);
+    if (early) return done("ISOLATION_UNAVAILABLE", undefined, early); // m171-guard:loop-iso-early
     const lic = (() => { try { return readFileSync(join(c!.dir, task.licensePath), "utf8"); } catch { return null; } })();
     if (lic === null || sha256(lic) !== task.licenseSha256) return done("LICENSE_CHANGED");
     // 1. plan, 2. context (both read-only on the copy)
@@ -394,8 +473,10 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     if (det.runner !== "node-test") installShim(c.dir);
     // the team's tests must fail before any edit (else the task proves nothing)
     putTeamTests();
+    const iso = isolationProblem(c, work.dir, cand, roots, true);
+    if (iso) return done("ISOLATION_UNAVAILABLE", undefined, iso); // m171-guard:loop-iso
     const base = runTests(c, cand, o.runMs, det, [...c.teamTests.keys()]);
-    if (!base.isolation) return done("ISOLATION_UNAVAILABLE");
+    if (!base.isolation) return done("ISOLATION_UNAVAILABLE", undefined, base.isoFail);
     const bp = base.codes.length ? base.tests.passedByPeaceAI : base.tests.total;
     baseline = { total: base.tests.total, passing: bp, failing: base.tests.total - bp };
     if (base.codes.length === 0) return done("BASELINE_PASSES");
@@ -428,7 +509,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       if (bad) return done(bad);
       // 5. run, 6. read codes + names
       const r = runTests(c, cand, o.runMs, det, [...c.teamTests.keys()]);
-      if (!r.isolation) return done("ISOLATION_UNAVAILABLE");
+      if (!r.isolation) return done("ISOLATION_UNAVAILABLE", undefined, r.isoFail);
       // the team's tests pass: the tests the search tools relate to the edited files (testsFor) must not regress
       if (r.codes.length === 0) {
         const related = relatedTests(c, det, p.edits.map((e) => e.path)); // per attempt: each edit touches its own files
@@ -451,6 +532,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     return done(e instanceof LoopError ? e.code : "FETCH_FAILED");
   } finally {
     c?.close();
+    work?.close();
     ownCache?.close();
   }
 }

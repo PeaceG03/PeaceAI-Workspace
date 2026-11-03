@@ -27,10 +27,11 @@
 // case to fail. See peaceai/spec/loop-v2.md.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, posix } from "node:path";
-import type { CandUid } from "./selfpropose.ts";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join, posix, resolve } from "node:path";
+import { isolatedRun, type CandUid } from "./selfpropose.ts";
 
 export const RUNNERS = ["node-test", "vitest", "jest", "mocha"] as const;
 export type RunnerKind = (typeof RUNNERS)[number];
@@ -1151,4 +1152,146 @@ export function installShim(copyDir: string): void {
 }
 export function shimArgs(pick: RunnerPick): string[] {
   return [SHIM_PATH, pick.runner, pick.pkgDir, ...(pick.runner === "mocha" ? [...(pick.options ?? []), "--"] : []), ...pick.files];
+}
+
+// ---- M171: the task's private work dir (spec loop-isolation-v1.md)
+
+const candGid = (cand: CandUid): number => Number(spawnSync("id", ["-g", cand.name], { encoding: "utf8" }).stdout?.trim() ?? "");
+/** M171: true when `argv` exits 0 as the candidate uid (sudo -n -u, no shell, 20 s). */
+export function candCan(cand: CandUid, argv: readonly string[]): boolean {
+  return spawnSync("sudo", ["-n", "-u", cand.name, "--", ...argv], { stdio: "ignore", timeout: 20_000 }).status === 0;
+}
+
+/** A task's private work dir: a fresh mktemp dir (default under os.tmpdir(), i.e. /tmp on the runner), owned by the
+ *  runner, group the candidate's gid, mode 0750: only the runner and the candidate uid can enter it. Null (the task is
+ *  refused ISOLATION_UNAVAILABLE / WORK_DIR) unless the candidate uid can traverse it and write a dir it owns there. */
+export interface WorkDir { dir: string; close(): void }
+export function openWorkDir(cand: CandUid, base: string = tmpdir()): WorkDir | null {
+  let dir: string;
+  try { dir = mkdtempSync(join(base, "peaceai-work-")); } catch { return null; }
+  const close = () => { spawnSync("sudo", ["-n", "rm", "-rf", "--", dir], { stdio: "ignore" }); rmSync(dir, { recursive: true, force: true }); };
+  const gid = candGid(cand);
+  chmodSync(dir, 0o750);
+  if (!Number.isInteger(gid) || gid <= 0 || spawnSync("sudo", ["-n", "chgrp", String(gid), dir], { stdio: "ignore" }).status !== 0) { close(); return null; }
+  const probe = join(dir, "probe");
+  mkdirSync(probe);
+  const ok = spawnSync("sudo", ["-n", "chown", `${cand.name}:`, probe], { stdio: "ignore" }).status === 0 && candCan(cand, ["sh", "-c", 'touch "$1/w" && rm "$1/w"', "sh", probe]);
+  spawnSync("sudo", ["-n", "rm", "-rf", "--", probe], { stdio: "ignore" });
+  if (!ok || existsSync(probe)) { close(); return null; } // m171-guard:work-probe
+  return { dir, close };
+}
+
+// ---- M171 (Auditor ruling on run 41521457458, condition c): the isolation proofs, run ON CI by `bin/loop.ts proofs`
+// as the first command of the model-v1 attempt job's loop step, before any attempt, INSIDE the loop's own runner
+// wrapper (loop.ts runnerWrapper, passed in) as the candidate uid, started the way candidate test runs are
+// (selfpropose.ts isolatedRun). The probe (PROBE_SOURCE) must find:
+//   net              no TCP connect succeeds (a listener this process opens on 127.0.0.1, and two public addresses);
+//   uid              process.getuid() is the candidate uid;
+//   write            no file can be made outside the work dir (its parent, /var/tmp, /dev/shm, the workspace,
+//                    RUNNER_TEMP, home);
+//   runner-temp      RUNNER_TEMP (and the runner's home) cannot be listed;
+//   git-credentials  no git credential file the runner finds (by name, plus git's fixed paths) can be read.
+// It exits 64 + a bit mask of the failed proofs (64 = every proof passed, so a probe that never ran cannot pass); the
+// wrapper exits 97 / 98 without namespaces / mounts. Only fixed codes are printed. Any failure refuses (fail closed);
+// nothing falls back to the runner uid. Spec: peaceai/spec/loop-isolation-v1.md. Guards: `// m171-proof-guard:`.
+
+export const PROOFS = ["net", "uid", "write", "runner-temp", "git-credentials"] as const;
+export type Proof = (typeof PROOFS)[number];
+export const PROOF_REFUSALS = ["CAND_NO_NAMESPACES", "CAND_NO_MOUNT", "WORK_DIR", "NO_RUNNER_TEMP", "PROOF_ERROR", "PROOF_LEFTOVERS", "PROOF_FAILED"] as const;
+export type ProofRefusal = (typeof PROOF_REFUSALS)[number];
+export interface ProofResult { ok: boolean; refusal: ProofRefusal | null; proofs: Partial<Record<Proof, "pass" | "fail">>; credFiles: number }
+
+/** The probe the candidate runs (node, ESM, no imports outside node:). Arg: the JSON args file. */
+export const PROBE_SOURCE = [
+  'import { connect } from "node:net";',
+  'import { readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";',
+  'import { join } from "node:path";',
+  'const a = JSON.parse(readFileSync(process.argv[2], "utf8"));',
+  "let bad = 0;",
+  "const reach = (host, port) => new Promise((ok) => { const s = connect({ host, port }); const t = setTimeout(() => { s.unref(); ok(false); }, 3000); s.on(\"connect\", () => { clearTimeout(t); s.end(); s.unref(); ok(true); }); s.on(\"error\", () => { clearTimeout(t); ok(false); }); });",
+  "for (const [h, p] of a.net) if (await reach(h, p)) bad |= 1;", // m171-proof-guard:proof-net
+  "if (process.getuid() !== a.uid) bad |= 2;", // m171-proof-guard:proof-uid
+  'for (const d of a.outside) { const f = join(d, ".peaceai-proof-" + process.pid); try { writeFileSync(f, "x", { flag: "wx" }); try { unlinkSync(f); } catch {} bad |= 4; } catch {} }', // m171-proof-guard:proof-write
+  "for (const d of a.temp) { try { readdirSync(d); bad |= 8; } catch {} }", // m171-proof-guard:proof-runner-temp
+  "for (const f of a.creds) { try { readFileSync(f); bad |= 16; } catch {} }", // m171-proof-guard:proof-git-credentials
+  "process.exit(64 + bad);",
+  "",
+].join("\n");
+
+const CRED_NAME = /^(?:\.git-credentials|git-credentials.*|\.gitconfig)$/;
+/** The git credential files the runner can see: by name under RUNNER_TEMP and home (depth 4), plus git's fixed paths. */
+export function gitCredentialFiles(roots: readonly string[], home: string): string[] {
+  const out = new Set<string>();
+  const walk = (d: string, depth: number) => {
+    let ents: string[];
+    try { ents = readdirSync(d); } catch { return; }
+    for (const e of ents) {
+      const p = join(d, e);
+      let st; try { st = statSync(p); } catch { continue; }
+      if (st.isDirectory()) { if (depth < 4 && e !== "node_modules") walk(p, depth + 1); } else if (CRED_NAME.test(e)) out.add(p);
+    }
+  };
+  for (const r of roots) walk(r, 1);
+  for (const f of [".git-credentials", ".gitconfig", ".config/git/credentials"]) if (existsSync(join(home, f))) out.add(join(home, f));
+  return [...out].sort();
+}
+
+export interface ProofOptions {
+  env: Record<string, string | undefined>;
+  /** the workspace checkout (a write target outside the work dir) */
+  root: string;
+  /** where the work dir is made (default os.tmpdir()) */
+  workBase?: string;
+  /** tests only: the runner's home (default os.homedir()) */
+  home?: string;
+  /** tests only: extra TCP targets (the 127.0.0.1 listener is always tried) */
+  net?: [string, number][];
+  /** the program the probe starts under: loop.ts runnerWrapper (bin/loop.ts proofs); tests pass others */
+  wrapper: (uid: number, gid: number) => string;
+  /** tests only: the uid the probe must see (default the candidate uid) */
+  expectUid?: number;
+}
+
+/** Runs the proofs as `cand` inside the runner wrapper. ok only when every proof passed; never runs anything else. */
+export async function runIsolationProofs(cand: CandUid, o: ProofOptions): Promise<ProofResult> {
+  const temp = o.env.RUNNER_TEMP ? resolve(o.env.RUNNER_TEMP) : "";
+  const home = o.home ?? homedir();
+  const res = (refusal: ProofRefusal | null, proofs: ProofResult["proofs"] = {}, credFiles = 0): ProofResult => ({ ok: refusal === null, refusal, proofs, credFiles });
+  if (!temp || !existsSync(temp)) return res("NO_RUNNER_TEMP"); // m171-proof-guard:proof-temp-exists
+  const work = openWorkDir(cand, o.workBase);
+  if (work === null) return res("WORK_DIR"); // m171-proof-guard:proof-work
+  const server = createServer((s) => s.end());
+  try {
+    await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+    const port = (server.address() as { port: number }).port;
+    const gid = Number(spawnSync("id", ["-g", cand.name], { encoding: "utf8" }).stdout.trim());
+    const copy = join(work.dir, "proof");
+    mkdirSync(join(copy, "node_modules/.bin"), { recursive: true });
+    writeFileSync(join(copy, "node_modules/.bin/tsx"), o.wrapper(cand.uid, gid));
+    chmodSync(join(copy, "node_modules/.bin/tsx"), 0o755);
+    writeFileSync(join(copy, "probe.mjs"), PROBE_SOURCE);
+    const creds = gitCredentialFiles([temp, home], home);
+    const args = {
+      net: [["127.0.0.1", port], ["1.1.1.1", 443], ["140.82.112.3", 443], ...(o.net ?? [])],
+      uid: o.expectUid ?? cand.uid,
+      outside: [...new Set([dirname(work.dir), "/var/tmp", "/dev/shm", resolve(o.root), temp, home])].filter((d) => existsSync(d)),
+      temp: [temp, home],
+      creds,
+    };
+    writeFileSync(join(copy, "args.json"), JSON.stringify(args));
+    const r = isolatedRun(copy, [join(copy, "probe.mjs"), join(copy, "args.json")], Date.now() + 120_000, cand);
+    if (r.exitCode === 97) return res("CAND_NO_NAMESPACES", {}, creds.length); // m171-proof-guard:proof-97
+    if (r.exitCode === 98) return res("CAND_NO_MOUNT", {}, creds.length); // m171-proof-guard:proof-98
+    if (r.exitCode < 64 || r.exitCode > 64 + 31) return res("PROOF_ERROR", {}, creds.length); // m171-proof-guard:proof-range
+    const bad = r.exitCode - 64;
+    const proofs = Object.fromEntries(PROOFS.map((p, i) => [p, bad & (1 << i) ? "fail" : "pass"])) as ProofResult["proofs"];
+    if (bad !== 0) return res("PROOF_FAILED", proofs, creds.length); // m171-proof-guard:proof-bad
+    if (r.leftovers > 0) return res("PROOF_LEFTOVERS", proofs, creds.length); // m171-proof-guard:proof-leftovers
+    return res(null, proofs, creds.length);
+  } catch {
+    return res("PROOF_ERROR");
+  } finally {
+    server.close();
+    work?.close();
+  }
 }
