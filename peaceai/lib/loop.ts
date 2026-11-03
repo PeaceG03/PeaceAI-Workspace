@@ -484,7 +484,7 @@ export function loadEditProblem(edits: readonly Edit[], original: (path: string)
 /** PINNED edit-scope policy (m168-style): the only scope classes allowed before a run, per attempt mode. "load" is the
  *  M174 load-repair special case (one inserted `export ` keyword); "edit" is every other attempt (that, or an in-body
  *  change to an existing source file). Widening it later (multi-token edits, new imports, test/config edits) is a
- *  reviewed one-line change here, pinned by peaceai/test/m175-policy.test.ts. */
+ *  reviewed one-line change here, pinned by the M175 policy test (see the edit-gate-m175 spec). */
 export const EDIT_SCOPE_POLICY: { readonly edit: readonly EditScopeClass[]; readonly load: readonly EditScopeClass[] } =
   Object.freeze({ edit: Object.freeze(["export-keyword", "in-body"] as const), load: Object.freeze(["export-keyword"] as const) });
 
