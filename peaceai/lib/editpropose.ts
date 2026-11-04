@@ -447,8 +447,8 @@ function exportsOwn(sf: ts.SourceFile, name: string, fn: ts.Node): boolean {
 }
 /**
  * M184 (repair-v2 only): the top-level declaration a module that M172 resolved (but which does not declare the imported
- * name) re-exports under `name`: `export { name } from "./x"` / `export { impl as name } from "./x"` (followed first, as
- * in ES, an explicit export shadows `export *`), else `export * from "./x"` when exactly one star module exports the
+ * name) re-exports under `name`: `export { name } from './x'` / `export { impl as name } from './x'` (followed first, as
+ * in ES, an explicit export shadows `export *`), else `export * from './x'` when exactly one star module exports the
  * name (ES leaves an ambiguous star name unexported). Relative modules only (M172's resolveImport), value exports only
  * (no `export type`), at most `hops` steps, a cycle stops. In a module reached by a step, the declaration must be
  * exported under the name (a non-exported helper of the same name is not what the barrel re-exports). M186: the name
