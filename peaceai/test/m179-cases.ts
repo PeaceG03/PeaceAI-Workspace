@@ -329,9 +329,9 @@ export const CASES: Case[] = [
     id: "loop e2e: repair-v2 anchors on area's fix and composes fits' comparison on it; the row is a valid PASS with editScope in-body",
     needsCand: true,
     run() {
-      // batch 24 (M190 gives vitest runs their failing names, so m179-guard:an-names is no longer vacuous here): the
-      // fits tests use a 1 by 0.5 rectangle, so area's fix breaks no test that passed before and is still a clean anchor
-      // (with a 2 by 3 rectangle "fits at the limit" passed by accident at the baseline and area's fix broke it)
+      // batch 24: the fits tests use a 1 by 0.5 rectangle, so area's fix breaks no test that passed before and is a clean
+      // anchor whether or not the run's failing names are known (with a 2 by 3 rectangle "fits at the limit" passed by
+      // accident at the baseline and area's fix broke it, which m179-guard:an-names catches once names are known)
       const m151 = setup151();
       const scratch = mkdtempSync(join(tmpdir(), "peaceai-m179-e2e-"));
       try {

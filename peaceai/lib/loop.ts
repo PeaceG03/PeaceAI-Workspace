@@ -42,7 +42,7 @@ import { plannerSha256 } from "./planrun.ts";
 import { committedLog, isLocked, taskKey } from "./plangrade.ts";
 import { ATTEMPT_CODES, SHIM_SYNTH_CODES, EDIT_SCOPE_CLASSES, LOOP_ISOLATION_FAILS, LOOP_LOG, LOOP_MODEL_PROPOSERS, LOOP_SCHEMA_V4, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type EditScopeClass, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
 import { candCan, detectRunner, installDeps, installShim, openDepsCache, openWorkDir, SHIM_EXITS, shimArgs, type WorkDir, type DepsCache, type DepsFail, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
-import { guardedRun, stage2CandUid, type CandUid, type RawRun, type RunSink } from "./selfpropose.ts";
+import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
 import { MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
 
 export const ROOT = join(import.meta.dirname, "../..");
@@ -288,17 +288,16 @@ export function jsonFailing(stdout: string, run: Pick<RawRun, "fail" | "leftover
 }
 /**
  * One test run in the stage-2 isolation: node:test files whole and per named test (TAP), or vitest / jest files whole
- * through the loopdeps shim (counts from the runner's JSON report; M190: failing test names from that report when the
- * shim could give them, see jsonFailing; mocha / ava: none).
+ * through the loopdeps shim (counts from the runner's JSON report; per-test names are not collected for them: the
+ * M190 names line is printed by the shim but not read here, see the note above `failing`).
  */
 function runTests(c: Copy, cand: CandUid, runMs: number, pick: RunnerPick, testFiles: readonly string[]): RunOutcome {
   const files = [...testFiles].sort();
   const watch = [...new Set([...c.teamTests.keys(), ...files])].sort();
-  const run = (args: string[], sink: RunSink | null = null): RawRun => guardedRun(c.dir, args, Date.now() + runMs, watch, null, cand, sink); // guard:isolated
+  const run = (args: string[]): RawRun => guardedRun(c.dir, args, Date.now() + runMs, watch, null, cand); // guard:isolated
   const json = pick.runner !== "node-test";
   const rel = (f: string) => (pick.pkgDir ? posix.relative(pick.pkgDir, posix.normalize(f)) : posix.normalize(f));
-  const sink: RunSink = { stdout: "" };
-  const whole = json ? run(shimArgs({ ...pick, files: files.map(rel) }), sink) : run([...TAP, ...files]);
+  const whole = run(json ? shimArgs({ ...pick, files: files.map(rel) }) : [...TAP, ...files]);
   const isolation = whole.exitCode !== 97 && whole.exitCode !== 98; // guard:isolation-exit
   const isoFail: IsolationFail | null = whole.exitCode === 97 ? "NO_NAMESPACES" : whole.exitCode === 98 ? "MOUNT_FAILED" : null; // M171: which one, a fixed code
   const codes = new Set<AttemptCode>();
@@ -310,7 +309,10 @@ function runTests(c: Copy, cand: CandUid, runMs: number, pick: RunnerPick, testF
   const synth = isolation ? shimSynth(json, whole.exitCode) : null;
   if (synth) codes.add(synth); // m173-loop-guard:run-synth-code
   const named = json ? [] : files.flatMap((f) => testNames(c.teamTests.get(f) ?? (() => { try { return readFileSync(join(c.dir, f), "utf8"); } catch { return ""; } })()).map((name) => ({ f, name })));
-  const failing: string[] = json && isolation && (pick.runner === "vitest" || pick.runner === "jest") ? jsonFailing(sink.stdout, whole, synth) : [];
+  // M190 fix (batch 24): the loop reads no vitest / jest names. The only way to get the shim's names line out of the
+  // stage-2 isolation is its stdout, which selfpropose.ts (binding: never changed by the loop's batches, M146) does not
+  // return; shimFailedNames / jsonFailing stay as the tested reader for when a sanctioned channel exists.
+  const failing: string[] = [];
   let passed = 0;
   if (isolation && named.length) {
     for (const t of named) {

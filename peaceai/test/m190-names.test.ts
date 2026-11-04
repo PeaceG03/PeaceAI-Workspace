@@ -1,6 +1,6 @@
 // M190 (batch 24): failing test names for vitest / jest runs. Runs every case of m190-cases.ts (the end-to-end ones need
-// the stage-2 candidate uid, M151_CAND; elsewhere skipped) plus the selfpropose.ts plumbing: guardedRun hands a caller
-// that asks for it the run's raw stdout through a sink, and RawRun (what stage-2 run records hold) never carries it.
+// the stage-2 candidate uid, M151_CAND; elsewhere skipped). Batch 24 fix: selfpropose.ts is unchanged (M146), so
+// guardedRun returns the counts only and no test output (the names line included) leaves the stage-2 isolation.
 // Spec: peaceai/spec/json-failing-names-m190.md. Nothing here is modelled on a task repo or a reference diff.
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
@@ -10,7 +10,7 @@ import { join, resolve } from "node:path";
 import * as deps from "../lib/loopdeps.ts";
 import * as loop from "../lib/loop.ts";
 import * as prop from "../lib/editpropose.ts";
-import { guardedRun, type RunSink } from "../lib/selfpropose.ts";
+import { guardedRun } from "../lib/selfpropose.ts";
 import { CASES } from "./m190-cases.ts";
 import { setup as setup151, teardown as teardown151 } from "./m151-fixtures.ts";
 
@@ -25,18 +25,16 @@ for (const c of CASES) {
   });
 }
 
-test("M190: guardedRun gives the raw stdout to a sink only; the returned run has the same keys as before", () => {
+test("M190 fix: guardedRun (selfpropose.ts unchanged) returns the counts only; no stdout and no names leave the run", () => {
   const d = join(ctx.scratch, "sink");
   mkdirSync(d, { recursive: true });
   symlinkSync(join(ROOT, "node_modules"), join(d, "node_modules"));
   writeFileSync(join(d, "p.mjs"), 'process.stdout.write("hello\\n# failed-names -\\n# pass 2\\n# fail 1\\n");\n');
-  const sink: RunSink = { stdout: "" };
-  const r = guardedRun(d, ["p.mjs"], Date.now() + 60_000, [], null, null, sink);
-  assert.equal(sink.stdout, "hello\n# failed-names -\n# pass 2\n# fail 1\n");
+  const r = guardedRun(d, ["p.mjs"], Date.now() + 60_000, [], null, null);
   assert.deepEqual(Object.keys(r).sort(), ["exitCode", "fail", "leftovers", "pass", "tampered"]);
   assert.deepEqual([r.pass, r.fail], [2, 1]);
-  const plain = guardedRun(d, ["p.mjs"], Date.now() + 60_000, [], null, null);
-  assert.deepEqual(plain, r, "no sink: the same run");
+  assert.ok(!JSON.stringify(r).includes("failed-names") && !JSON.stringify(r).includes("hello"), "no output in the run");
+  assert.equal(guardedRun.length, 5, "guardedRun's parameters are the base's (work, args, deadline, files, grader, cand = null)");
 });
 
 test("M190: the shim always writes the names line right before its counts, for every runner and exit path", () => {
