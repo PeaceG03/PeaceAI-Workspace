@@ -168,3 +168,50 @@ v5 1).
   plan. The dev split has no failure-log requests; it neither supports nor contradicts M195.
 - The motivating real request was re-run as an informational check only (not a test, fixture or score); results are in
   the Batch 29 PR description.
+
+## Batch 31: `toplevel-catch` (a module-level `f().catch(..)` on a function of the same file)
+
+A report written by a `.catch` handler hung directly on a top-level call (`main().catch((e) => log("X_FAILED", e))`)
+has no enclosing function, so M195 planned it with symbol null at the `.catch` line: there was nothing to edit. The
+fix belongs in the called function (it is what threw or rejected). v5 now plans that site at the called function's
+declaration, with `shape: "toplevel-catch"` on the site and `(catch-log, toplevel-catch)` in the file reason. Every
+other site, rule and refusal is unchanged; v4 stays the default and byte-identical, v5 stays not selectable.
+
+Three tagged conditions in `toplevelCatch` (plan5.ts), all must hold:
+
+- `rule:diag-toplevel-call`: the handler is the single argument of `.catch` (not `.then(_, fn)`), and the receiver
+  (parens stripped) is a call of a plain identifier (not `obj.main()`, not a stored promise `pending.catch`).
+- `rule:diag-toplevel-module`: the `.catch` is at module level: no function or class encloses it (not inside a
+  `process.on(..)` callback, not a class field initialiser).
+- `rule:diag-toplevel-local`: the called name is declared at the top level of the same file as a function
+  declaration with a body, or a `const` bound directly to an arrow / function expression (not an import, not a
+  factory result `const boot = makeBoot()`).
+
+### Soundness note (Batch 31)
+
+- The rule only re-points a site M195 already admitted (a report-via site with no enclosing symbol); it never adds a
+  code, a site or a file the M195 rules did not find, so it cannot widen what v5 claims to diagnose.
+- The target is the function the `.catch` is attached to, which is exactly the promise whose rejection is reported.
+  When the name might not be that function (a method, an import whose body is elsewhere, a value built at runtime,
+  a nested or class-scoped `.catch`), the rule does not fire and the M195 site is kept as it was (symbol null): an
+  honest "report site only", never a guessed function.
+- It does not claim the rejection originates in that function's own body (it may come from a callee); the plan's
+  edit-source step names where the failure surfaces, as for the other report-via sites. Tracing further is still
+  notYet (`fix-at-report-site`, `trace-unthrown-codes`).
+- reproduce-v1 refuses a `toplevel-catch` site (`REPRO_NO_ENTRY`, detail `toplevel-catch`): such a function is a
+  process entry with no parameter dependency to inject, so v1 has no sound trigger there.
+
+### Tests (Batch 31)
+
+Fixtures `MAIL_CLI` (async function declaration, `main().catch` with console.error) and `AGENT_DAEMON` (const arrow,
+`void (boot()).catch` with a structured logger) in m195-fixtures.ts; two admit shapes per condition and six refused
+near misses (`cli.main().catch`, `.then(undefined, fn)`, `pending.catch`, inside a SIGHUP callback, a class field,
+an imported `main`, a factory-built `boot`), each expecting the unchanged M195 site. Two mutants per condition (removed
+and loosened); m194 now also requires each M195 mutant to be caught by a case of its own condition.
+
+### Scores (Batch 31, honest)
+
+- Public DEV split (12 tasks, plan-grade-v2, no tuning; hidden half not touched): v4 devScore 0.764, runTests 0.833;
+  v5 devScore 0.764, runTests 0.833, row-for-row identical (the dev split has no failure-log requests).
+- The motivating real request was re-run as an informational check only (not a test, fixture or score); results are
+  in the Batch 31 PR description.

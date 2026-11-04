@@ -101,6 +101,59 @@ behaviour, in ways three runs do not rule out.
   jest runs are skipped when offline outside CI.
 - Mutation: each `repro-guard:` line is removed or loosened in turn, and a case written for that guard must fail.
 
+## Batch 31: a call inside one helper callback
+
+v1 took an existing test only when the entry was called directly in a plain `test(..)` / `it(..)` callback. Many
+tests wrap the work in a helper of their own (`await withTmp(async (dir) => { .. entry(..) .. })`). v1 now also takes
+a call that sits inside ONE callback passed to such a helper, when all of these hold (tagged in reproduce.ts):
+
+- `repro-guard:existing-helper-local`: the helper is a plain identifier the test file declares at top level (function
+  declaration, `const` arrow / function expression) or imports / `require`-destructures from a RELATIVE path. A
+  helper from a package, a global, a member call (`t.step`), `test.each(..)(..)` or a hook is not one.
+- `repro-guard:existing-helper-one-level`: the helper call itself is directly in a plain test callback (inside the
+  same describe-only chain as before). A helper inside another helper's callback, or one called from a describe
+  body, is refused (`nested-callback`).
+- `repro-guard:existing-helper-async`: the callback is `async` (so the helper awaits what it runs). A sync callback is
+  refused (`sync-callback`).
+
+The candidate test keeps the statements before the helper call, then `await helper(<its other arguments as written>,
+async (<the callback's own parameters>) => { <the callback's statements before the call> <the same injected
+dependency, observe and check as before> })`, with try / finally levels kept on either side as before. The
+three-variant judge, the candidate-uid sandbox and every earlier refusal are unchanged.
+
+REPRO_NO_EXISTING_TEST now carries the first reason found, from a fixed vocabulary: `not-in-test` (a hook, a
+test.each row, module level), `args`, `path` (a try / catch or other non-plain block), `unknown-helper`,
+`nested-callback`, `sync-callback`.
+
+A site plan-only-v5 marks `shape: "toplevel-catch"` (a module-level `main().catch(..)`) is refused with
+REPRO_NO_ENTRY, detail `toplevel-catch` (`repro-guard:site-not-toplevel`): that function is a process entry with no
+parameter dependency v1 could inject.
+
+### Soundness note (Batch 31)
+
+- The helper is code of the same repository, so its behaviour is what the existing test already relies on; the
+  candidate calls it exactly as the test does (same arguments, awaited). A helper whose code is not in the repo
+  (package, global) might not run the callback, run it more than once, or swallow its throw: refused.
+- One level only: with the helper call directly in the test body, the only code between the test and the injected
+  call is the helper itself. Deeper nesting would multiply those unknowns: refused with a precise reason.
+- Async only: a sync callback would turn the injected rejection into an unawaited promise the helper never sees.
+- What if the helper does not call the callback, or swallows its throw? Then the repro variant cannot fail for the
+  code: probe fails (it asserts the code IS produced) and the judge returns REPRO_WRONG_REASON or REPRO_NOT_FAILING,
+  so nothing is kept. No separate "the callback ran" marker is added because the probe already proves it ran and
+  observed the code; a marker would be unreachable by a mutation test (the judge masks it).
+- The helper's own cleanup (e.g. its try / finally) runs as in the existing test, and the sandbox's leftover check
+  still applies to all three variants.
+- Generated tests stay a CANDIDATE: never a grading test, never for credit; credit for them needs the separate
+  reviewed design named above.
+
+### Tests (Batch 31)
+
+LEDGER_HELPERS (node:test; a local helper and the five near misses), SHELF `test/vault.test.ts` (vitest, helper
+imported from ./helpers), AGENT `packages/agent/test/fetch.test.js` (jest CJS, helper required from ./support). Each
+new condition has admit cases on two or three shapes and refused near misses that also check the reason; each new
+guard has a removal mutant caught by a case of its own condition. The sandbox runs REPRO_OK on all three helper
+admits as the candidate uid.
+
 ## Refusal codes
 
 `REPRO_NO_DIAGNOSIS`, `REPRO_TEST_TARGET`, `REPRO_NO_ENTRY`, `REPRO_NO_TRIGGER`, `REPRO_NO_OBSERVE`,
