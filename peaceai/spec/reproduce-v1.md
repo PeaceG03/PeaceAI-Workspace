@@ -154,6 +154,74 @@ new condition has admit cases on two or three shapes and refused near misses tha
 guard has a removal mutant caught by a case of its own condition. The sandbox runs REPRO_OK on all three helper
 admits as the candidate uid.
 
+## Batch 32: ranked base tests, bounded attempts
+
+v1 built its candidate from the FIRST existing test found that calls the entry, and stopped at REPRO_NOT_FAILING or
+REPRO_VACUOUS even when another existing test's setup does reach the reported site (the first one found may pass an
+option that returns early, or `null` for the dependency). `planRepros` now builds one candidate per usable existing
+test (the first usable call in each `test` / `it`, every earlier rule unchanged) and ranks them statically:
+
+1. `repro-guard:rank-names-dependency`: the base test's own setup provides or names the failing dependency: the
+   trigger's property appears as a whole word in its setup (the file's top-level statements other than imports and
+   tests, its describe chain's setup, the statements before the call at each block level and before the helper call,
+   the helper callback's parameters, and the call's argument at the trigger's position); for a parameter that is
+   itself called (no property), that argument is present and not `null` / `undefined` / `void`. Nothing from any other
+   test is read.
+2. `repro-guard:rank-own-file`: the base test is the module's own test file (same file stem as the site's file).
+3. Discovery order (related tests first, then the rest sorted; calls in file order).
+
+`reproduce` (and the CLI) then runs `attemptAll`:
+
+- `repro-guard:attempts-cap`: at most `MAX_ATTEMPTS` = 3 candidates are run, in rank order (each is a sandbox copy
+  and three runs). A fourth candidate is never run; the result says how many were left (`untried`).
+- Every attempt runs the full three-variant judge in its own sandbox copy.
+- `repro-guard:attempt-own-runs`: an attempt's verdict is `judge` of ITS OWN three runs. A result claiming REPRO_OK
+  without its own passing runs is REPRO_WRONG_REASON. No variant of one attempt is ever combined with another's.
+- `repro-guard:attempt-stop-ok`: the first REPRO_OK stops the attempts; its plan (and so the test text) and runs are
+  returned. Nothing else returns a plan.
+- `repro-guard:attempt-stop-env`: only base-test reasons (REPRO_NOT_FAILING, REPRO_WRONG_REASON, REPRO_VACUOUS) move
+  on to the next candidate. A refusal about the repository or the sandbox (REPRO_RUNNER, REPRO_DEPS,
+  REPRO_ISOLATION) is the same for every base test: it stops.
+- `repro-guard:attempts-best-ranked`: with no REPRO_OK, the result is the best-ranked attempt's code (and detail and
+  runs). It is never REPRO_OK.
+- The result lists every attempt run: its base test (path, line), its rank (namesDependency, ownFile, found), its code
+  and detail, and its runs.
+
+`planRepro` is kept and returns the first-ranked candidate. A candidate whose runner `detectRunner` refuses is
+dropped; when every one is, the result is REPRO_RUNNER with the first reason.
+
+### Soundness note (Batch 32)
+
+- The ranking is a static ORDER only. It never decides a result: whatever order is chosen, a candidate is kept only
+  when its own three runs pass the judge, exactly as in v1. A wrong rank costs an attempt, not soundness. A setup that
+  names the property for another reason ranks a test early; that test is then judged like any other.
+- More attempts mean more chances, so the bar per attempt is unchanged and the number is capped at three. Each
+  attempt is an independent candidate with its own copy, its own repro / probe / control runs and its own leftover and
+  tamper checks; REPRO_OK from attempt k means attempt k alone would have been REPRO_OK in v1 had its base been found
+  first. Picking the first of up to three passing candidates does not weaken what REPRO_OK proves (the Soundness
+  section above); it only widens which existing tests can be used.
+- Evidence is never pooled: a repro that failed in one attempt and a control that passed in another prove nothing
+  about either test (M196 checks a vacuous attempt and a wrong-reason attempt that would pass together are refused,
+  and a mutant that pools them is caught).
+- With no REPRO_OK, the code reported is the best-ranked attempt's, so the reason refers to the base test the
+  ranking puts first; every other attempt is listed beside it, never merged into it.
+- A sandbox or dependency refusal stops the attempts: running more base tests cannot change it and each run costs a
+  copy and an install.
+- Generated tests stay a CANDIDATE: never a grading test, never for credit; nothing new imports reproduce.ts.
+
+### Tests (Batch 32)
+
+LEDGER_BASES (node:test) and SHELF_BASES (vitest 4), written for this batch: GAUGE_READ_FAILED / FEED_FETCH_FAILED
+(the first-found base passes `null` with an early-return option; the base that provides the dependency is ranked first
+and is REPRO_OK on attempt 1; the first-found base alone is REPRO_NOT_FAILING), METER_SAMPLE_FAILED /
+BEACON_POST_FAILED (both bases provide the dependency; the first-ranked one returns early: attempt 1
+REPRO_NOT_FAILING, attempt 2 REPRO_OK), TALLY_COUNT_FAILED (the first-found base is another file's test; the module's
+own test file is ranked first) and PUMP_DRAIN_FAILED (four bases, only the fourth reaches the site: three
+REPRO_NOT_FAILING attempts, the fourth never run, and run alone it is REPRO_OK). The attempt rules are also checked as
+pure cases on recorded runs (all fail with mixed reasons, the cap, stop at the first OK, a claimed OK without its own
+runs, combined evidence, a sandbox refusal). Each new guard has a mutant caught by a case of its own condition; the
+own-runs guard has two (removed: the claimed code trusted; loosened: variants pooled across attempts).
+
 ## Refusal codes
 
 `REPRO_NO_DIAGNOSIS`, `REPRO_TEST_TARGET`, `REPRO_NO_ENTRY`, `REPRO_NO_TRIGGER`, `REPRO_NO_OBSERVE`,
