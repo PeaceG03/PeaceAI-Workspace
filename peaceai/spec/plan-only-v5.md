@@ -130,7 +130,9 @@ cap counts every site; step reasons say `catches and reports CODE (catch-log|cat
 plan says which shape matched. Reported steps are `missing` (`edit-existing-function`); `notYet` gains
 `fix-at-report-site` (no rule writes the retry / recovery around a caught failure) next to `reproduce-reported-failure`;
 `fix-at-throw-site` is listed only when some site throws; `trace-unthrown-codes` when some code is neither thrown nor
-reported. A refused diagnosis is still v4's plan exactly.
+reported. A refused diagnosis is still v4's plan exactly. Fix (M194 defect found in the Batch 29 informational run): an
+admitted plan's last step (v4's run-tests step) kept v4's step number, so two steps could share a number; it is now
+numbered after the diagnose steps.
 
 ### Soundness note (M195)
 
@@ -155,3 +157,14 @@ admit on the two shapes, 11 near misses); the tag check now covers 22 conditions
 mutants for each M195 condition; the mutation check runs every mutant (15 + 14) against all 55 cases; the generality
 check covers the M195 files; the synthetic grade gains one caught-and-reported task (`mail`, fileRecall v4 0.333 ->
 v5 1).
+
+### Scores (M195, honest)
+
+- Synthetic (written with M195, so not evidence of generalisation): the caught-and-reported task's fileRecall goes from
+  v4 0.333 to v5 1; the four M194 synthetic rows are unchanged.
+- Public DEV split (12 tasks, plan-grade-v2, no tuning; hidden half not touched): v4 devScore 0.764, runTests 0.833;
+  v5 devScore 0.764, runTests 0.833, row-for-row identical. The family admits none of the 12 requests (9
+  NO_FAILURE_REPORT, 3 NO_CODES, decided from the request text before any code search), so every v5 dev plan is v4's
+  plan. The dev split has no failure-log requests; it neither supports nor contradicts M195.
+- The motivating real request was re-run as an informational check only (not a test, fixture or score); results are in
+  the Batch 29 PR description.

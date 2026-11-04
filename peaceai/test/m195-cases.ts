@@ -92,6 +92,7 @@ export const CASES_V5_REPORT: ShapedCase[] = [
     assert.deepEqual(p.diagnosis.notYet, ["reproduce-reported-failure", "fix-at-report-site"]);
     assert.deepEqual(shape(p), ["edit-source src/sync.ts missing", "edit-source src/digest.ts missing", "edit-source src/quota.ts missing", "edit-test test/sync.test.ts missing", "edit-test test/digest.test.ts missing", "edit-test test/quota.test.ts missing", "run-tests - missing"]);
     assert.equal(p.tests.command, "npx vitest run test/sync.test.ts test/digest.test.ts test/quota.test.ts");
+    assert.deepEqual(p.steps.map((s) => s.n), [1, 2, 3, 4, 5, 6, 7], "v4's run-tests step is renumbered, not copied with v4's number");
   } },
   { id: "agent-site-is-the-chain", shape: "agent", kind: "admit", condition: "diag-report-caught", run: (m, c) => {
     const p = planV5(m, c, AGENT, AGENT_REQ);

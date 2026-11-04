@@ -293,7 +293,8 @@ export function planTaskV5(taskId: string, request: string, ctx: PlanContext, co
   for (const s of sources) push({ action: "edit-source", file: s.path, symbol: s.symbol, status: "missing", rule: null, objective: null, missing: "edit-existing-function" });
   if (tests.length === 0) push({ action: "add-test", file: null, symbol: null, status: "missing", rule: null, objective: null, missing: "add-test-file" });
   for (const t of tests) push({ action: t.add ? "add-test" : "edit-test", file: t.path, symbol: null, status: "missing", rule: null, objective: null, missing: t.add ? "add-test-file" : "extend-existing-test" });
-  push({ ...base.steps[base.steps.length - 1]! }); // v4's run-tests step (same target check)
+  const { n: _v4n, ...runTests } = base.steps[base.steps.length - 1]!;
+  push(runTests); // v4's run-tests step (same target check), renumbered after the diagnose steps
   const tc = testCommandFor(code, all, sources[0]?.path ?? null, tests.map((t) => t.path));
   return {
     ...base, planner: PLANNER_V5,
