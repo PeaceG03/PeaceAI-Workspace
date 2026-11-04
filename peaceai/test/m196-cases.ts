@@ -97,6 +97,12 @@ export const CASES: ReproCase[] = [
   { id: "refuse-trigger-no-param-call", condition: "trigger-param", kind: "refuse", shape: "ledger", run: (m, c) => refused(m, c.ledger, "CLOCK_READ_FAILED", "REPRO_NO_TRIGGER") },
   { id: "refuse-test-imports-other-module", condition: "existing-binds", kind: "refuse", shape: "ledger", run: (m, c) => refused(m, c.ledger, "ARCHIVE_WRITE_FAILED", "REPRO_NO_EXISTING_TEST") },
   { id: "refuse-call-only-in-hook", condition: "existing-in-test", kind: "refuse", shape: "ledger", run: (m, c) => refused(m, c.ledger, "ROTATE_FAILED", "REPRO_NO_EXISTING_TEST") },
+  { id: "admit-call-in-try-finally", condition: "existing-plain-path", kind: "admit", shape: "ledger", run: (m, c) => {
+    const p = plan(m, c.ledger, "SWEEP_BIN_STUCK");
+    assert.match(p.variants.repro, /async \(\) => \{\nconst opened: string\[\] = \[\];\ntry \{\nopened\.push\("bin"\);\nconst bin = \{ empty: async \(\) => 3 \};\nconst __peaceaiArgs = \[bin\];/);
+    assert.match(p.variants.repro, /throw new Error\("peaceai-repro: the reported failure was produced"\);\n\} finally \{\n {4}opened\.length = 0;\n {2}\}\n\}\);/);
+  } },
+  { id: "refuse-call-in-try-catch", condition: "existing-plain-path", kind: "refuse", shape: "ledger", run: (m, c) => refused(m, c.ledger, "REFILL_PUMP_STUCK", "REPRO_NO_EXISTING_TEST") },
   { id: "refuse-call-with-spread", condition: "existing-args", kind: "refuse", shape: "ledger", run: (m, c) => refused(m, c.ledger, "STAMP_SIGN_FAILED", "REPRO_NO_EXISTING_TEST") },
   { id: "refuse-no-candidate-uid", condition: "needs-cand", kind: "refuse", shape: "ledger", run: (m, c) => {
     const r = m.validateRepro(c.ledger, plan(m, c.ledger, "QUOTA_STORE_DOWN"), { env: {}, roots: [] });

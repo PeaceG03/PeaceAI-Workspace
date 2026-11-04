@@ -9,7 +9,8 @@
 //           a callback (no entry), src/upload.ts logs through an imported logger and src/track.ts pushes into module
 //           state (not observable), src/archive.ts / src/rotate.ts / src/stamp.ts have no usable existing test, and
 //           test/fake-store.ts is a test helper (a test-file target). src/fetchall.ts, src/publish.ts and src/save.ts
-//           check which dependency call is the trigger.
+//           check which dependency call is the trigger. test/sweep.test.ts calls inside a try / finally (kept with
+//           its finally); test/refill.test.ts calls inside a try / catch (refused: the catch could swallow the test's throw).
 //   SHELF:  a flat npm + vitest 4 package (lockfile: fixtures/m173-forge-vitest4). src/settings.ts throws
 //           SETTINGS_UNREADABLE from a catch (admit, thrown); its test is inside a describe.
 //   AGENT:  a pnpm workspace with jest 29 in packages/agent (CommonJS). src/sync.js logs SYNC_PUSH_FAILED through an
@@ -266,6 +267,47 @@ export const LEDGER: Files = {
     "  const w: string[] = [];",
     '  await publish({ lock: async () => {}, write: async (d: string) => { w.push(d); } }, "d");',
     '  assert.deepEqual(w, ["d"]);',
+    "});",
+  ),
+  "src/sweep.ts": lines(
+    "export async function sweep(bin: { empty(): Promise<number> }): Promise<{ swept: number }> {",
+    "  try {",
+    "    return { swept: await bin.empty() };",
+    "  } catch {",
+    '    throw new Error("SWEEP_BIN_STUCK");',
+    "  }",
+    "}",
+  ),
+  "test/sweep.test.ts": nodeTest + 'import { sweep } from "../src/sweep.ts";\n' + lines(
+    'test("sweep empties the bin", async () => {',
+    "  const opened: string[] = [];",
+    "  try {",
+    '    opened.push("bin");',
+    "    const bin = { empty: async () => 3 };",
+    "    const r = await sweep(bin);",
+    "    assert.deepEqual(r, { swept: 3 });",
+    "  } finally {",
+    "    opened.length = 0;",
+    "  }",
+    "});",
+  ),
+  "src/refill.ts": lines(
+    "export async function refill(tank: { pump(): Promise<number> }): Promise<{ level: number }> {",
+    "  try {",
+    "    return { level: await tank.pump() };",
+    "  } catch {",
+    '    throw new Error("REFILL_PUMP_STUCK");',
+    "  }",
+    "}",
+  ),
+  "test/refill.test.ts": nodeTest + 'import { refill } from "../src/refill.ts";\n' + lines(
+    'test("refill pumps the tank", async () => {',
+    "  try {",
+    "    const tank = { pump: async () => 7 };",
+    "    assert.deepEqual(await refill(tank), { level: 7 });",
+    "  } catch (e) {",
+    "    assert.fail(String(e));",
+    "  }",
     "});",
   ),
   "src/save.ts": lines(

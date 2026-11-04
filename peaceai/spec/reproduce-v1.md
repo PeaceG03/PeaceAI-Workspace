@@ -27,12 +27,13 @@ that was observed to fail on the current code because the reported code was prod
      module cannot be tapped without a module mock, `REPRO_NO_OBSERVE`), or pushed into a list that is a parameter
      or a local returned by the function (a module-level list: `REPRO_NO_OBSERVE`);
    - the existing test: a behaviour test of the same module (related tests first) whose import or destructured require
-     binds the entry FROM the site's file, and calls it directly inside a plain `test` / `it` callback (not a hook),
-     with at least as many arguments as the trigger and the logger need and no spread. None: `REPRO_NO_EXISTING_TEST`;
+     binds the entry FROM the site's file, and calls it directly inside a plain `test` / `it` callback (not a hook; the
+     call's statement in the callback body or in the try block of a try / finally, not under a catch, an if or a
+     loop), with at least as many arguments as the trigger and the logger need and no spread. None: `REPRO_NO_EXISTING_TEST`;
    - the runner: `loopdeps.detectRunner` on the package of the existing test, as the loop picks it (`REPRO_RUNNER`).
 2. The candidate test is written beside the existing test (`x.peaceai-repro.test.ts`), from that test's own file: its
    imports and top-level setup, the enclosing describe chain with its setup statements, and the statements of the
-   test that precede the call. The call's argument list is captured into `__peaceaiArgs`; one argument is wrapped so
+   test that precede the call (inside a try / finally: kept with its finally, the test's own cleanup). The call's argument list is captured into `__peaceaiArgs`; one argument is wrapped so
    the trigger throws (or rejects, when the call is awaited or chained); the entry is then called with the same
    arguments. Three variants:
    - `repro`: dependency failing, asserts the code is NOT produced;

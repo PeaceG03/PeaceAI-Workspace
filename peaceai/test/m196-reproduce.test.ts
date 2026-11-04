@@ -32,7 +32,7 @@ const ctx: CaseCtx = {
   shelf: writeRepo(join(scratch, "shelf"), SHELF()),
   agent: writeRepo(join(scratch, "agent"), AGENT),
 };
-const TAGS = ["code-shape", "entry-direct", "entry-exported", "existing-args", "existing-binds", "existing-in-test", "judge-clean", "judge-control", "judge-isolation", "judge-one-fail", "judge-one-pass", "judge-probe", "judge-repro-fails", "needs-cand", "observe-log", "observe-push", "site-source", "throw-caught", "trigger-handled", "trigger-no-inner-try", "trigger-no-nested-fn", "trigger-not-builtin", "trigger-param"];
+const TAGS = ["code-shape", "entry-direct", "entry-exported", "existing-args", "existing-binds", "existing-in-test", "existing-plain-path", "judge-clean", "judge-control", "judge-isolation", "judge-one-fail", "judge-one-pass", "judge-probe", "judge-repro-fails", "needs-cand", "observe-log", "observe-push", "site-source", "throw-caught", "trigger-handled", "trigger-no-inner-try", "trigger-no-nested-fn", "trigger-not-builtin", "trigger-param"];
 
 /** One mutant per guard (removing it, or loosening it where removing leaves nothing to run). `find` occurs once. */
 const MUTANTS: { id: string; find: string; replace: string }[] = [
@@ -50,6 +50,7 @@ const MUTANTS: { id: string; find: string; replace: string }[] = [
   { id: "observe-push", find: 'return id && (paramIdx(id) >= 0 || local(id)) ? { channel: "pushed", logParam: null } : null; // repro-guard:observe-push', replace: 'return { channel: "pushed", logParam: null };' },
   { id: "existing-binds", find: "&& to(st.moduleSpecifier.text) && !st.importClause?.isTypeOnly) { // repro-guard:existing-binds", replace: "&& !st.importClause?.isTypeOnly) {" },
   { id: "existing-in-test", find: 'ts.isCallExpression(tc) && plainCall(tc, ["test", "it"])', replace: "ts.isCallExpression(tc)" },
+  { id: "existing-plain-path", find: "if (!(t && ts.isTryStatement(t) && t.tryBlock === b && !t.catchClause && !!t.finallyBlock)) return null; // repro-guard:existing-plain-path", replace: "if (!t || !ts.isTryStatement(t)) return null;" },
   { id: "existing-args", find: "&& !n.arguments.some(ts.isSpreadElement); // repro-guard:existing-args", replace: "; // removed" },
   { id: "needs-cand", find: 'if (!cu.ok) return { code: "REPRO_ISOLATION", detail: cu.reason }; // repro-guard:needs-cand', replace: "" },
   { id: "judge-isolation", find: 'if (all.some((r) => r.exitCode === 97 || r.exitCode === 98)) return "REPRO_ISOLATION"; // repro-guard:judge-isolation', replace: "" },
@@ -98,12 +99,13 @@ const env = () => ({ PEACEAI_STAGE2_CAND: CAND });
 const roots = () => privateRoots(repo, process.env);
 const busy = () => Number(spawnSync("sh", ["-c", `pgrep -u ${CAND} | wc -l`], { encoding: "utf8" }).stdout.trim() || "0");
 
-test("M196 sandbox (node:test): admit returned; passes on current code, vacuous and wrong-reason refused; the kept test passes once fixed", { skip: noCand }, () => {
+test("M196 sandbox (node:test): admit returned and thrown; passes on current code, vacuous and wrong-reason refused; the kept test passes once fixed", { skip: noCand }, () => {
   assert.equal(busy(), 0, "the candidate uid must be idle (tests run one at a time)");
   const run = (dir: string, code: string) => repro.reproduce(dir, code, siteOf(ctx.ledger, code), { env: env(), roots: roots() });
   const ok = run(ctx.ledger, "QUOTA_STORE_DOWN");
   assert.equal(ok.code, "REPRO_OK", JSON.stringify(ok));
   assert.deepEqual(ok.runs, { repro: { exitCode: 1, pass: 0, fail: 1, leftovers: 0 }, probe: { exitCode: 0, pass: 1, fail: 0, leftovers: 0 }, control: { exitCode: 0, pass: 1, fail: 0, leftovers: 0 } });
+  assert.equal(run(ctx.ledger, "SWEEP_BIN_STUCK").code, "REPRO_OK", "the call is inside the test's try / finally");
   assert.equal(run(ctx.ledger, "PROFILE_MISSING").code, "REPRO_NOT_FAILING", "an injected failure the code does not report: the test cannot fail");
   assert.equal(run(ctx.ledger, "THEME_DEFAULTED").code, "REPRO_VACUOUS", "the code is produced with no failure injected");
   const wrong = run(ctx.ledger, "RATES_UNAVAILABLE");

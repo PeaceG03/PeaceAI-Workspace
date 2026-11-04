@@ -224,7 +224,29 @@ function observeOf(sf: ts.SourceFile, code: string, site: ThrowSite, r: Region, 
 }
 
 /** An existing test of the entry: the binding it imports it by, the call it makes inside a plain test callback. */
-interface Existing { path: string; sf: ts.SourceFile; local: string; call: ts.CallExpression; cb: ts.FunctionLikeDeclaration; testCall: ts.CallExpression; describes: ts.CallExpression[] }
+interface Existing { path: string; sf: ts.SourceFile; local: string; call: ts.CallExpression; cb: ts.FunctionLikeDeclaration; testCall: ts.CallExpression; describes: ts.CallExpression[]; blocks: ts.Block[] }
+/** The blocks from the test callback's body down to the call's statement: the body, then only the try block of a
+ *  try / finally (no catch: a catch in the test could swallow the candidate's own throw). The call's statement is
+ *  directly in the last block (not under an if, a loop or a nested callback). Null: not such a path. */
+function blocksTo(call: ts.Node, body: ts.Block): ts.Block[] | null {
+  const out: ts.Block[] = [];
+  let s: ts.Node = call;
+  for (;;) {
+    // up through expressions only, to the statement that sits directly in a block
+    let st: ts.Node = s;
+    while (st.parent && !ts.isBlock(st.parent)) {
+      if (ts.isStatement(st) || ts.isFunctionLike(st.parent)) return null;
+      st = st.parent;
+    }
+    const b = st.parent as ts.Block | undefined;
+    if (!b) return null;
+    out.unshift(b);
+    if (b === body) return out;
+    const t = b.parent;
+    if (!(t && ts.isTryStatement(t) && t.tryBlock === b && !t.catchClause && !!t.finallyBlock)) return null; // repro-guard:existing-plain-path
+    s = t;
+  }
+}
 function bindingOf(sf: ts.SourceFile, testPath: string, entry: { name: string; path: string }, known: ReadonlySet<string>): string | null {
   const to = (spec: string) => resolveSpecifier(testPath, spec, known) === entry.path;
   for (const st of sf.statements) {
@@ -254,7 +276,8 @@ function existingCall(sf: ts.SourceFile, local: string, need: number): Omit<Exis
       // the call is directly in a plain test("..", fn) / it("..", fn) callback (not in a helper, a hook or a nested callback)
       const inTest = !!cb && (ts.isArrowFunction(cb) || ts.isFunctionExpression(cb)) && !!tc && ts.isCallExpression(tc) && plainCall(tc, ["test", "it"]) && tc.arguments[tc.arguments.length - 1] === cb; // repro-guard:existing-in-test
       const argsOk = n.arguments.length >= need && !n.arguments.some(ts.isSpreadElement); // repro-guard:existing-args
-      if (inTest && argsOk) {
+      const blocks = inTest && cb!.body && ts.isBlock(cb!.body) ? blocksTo(n, cb!.body) : inTest ? [] : null;
+      if (inTest && argsOk && blocks) {
         const describes: ts.CallExpression[] = [];
         let ok = ts.isExpressionStatement(tc!.parent) && !!tc!.parent.parent;
         for (let s: ts.Node | undefined = tc!.parent.parent; ok && s && !ts.isSourceFile(s); ) {
@@ -264,7 +287,7 @@ function existingCall(sf: ts.SourceFile, local: string, need: number): Omit<Exis
           if (ts.isBlock(s) && fnb && (ts.isArrowFunction(fnb) || ts.isFunctionExpression(fnb)) && d && ts.isCallExpression(d) && plainCall(d, ["describe", "suite"]) && ts.isExpressionStatement(d.parent)) { describes.unshift(d); s = d.parent.parent; }
           else ok = false;
         }
-        if (ok) { out = { call: n, cb: cb!, testCall: tc as ts.CallExpression, describes }; return; }
+        if (ok) { out = { call: n, cb: cb!, testCall: tc as ts.CallExpression, describes, blocks }; return; }
       }
     }
     ts.forEachChild(n, visit);
@@ -278,12 +301,16 @@ function variantsOf(ex: Existing, plan: Omit<ReproPlan, "variants">, keepParams:
   const sf = ex.sf;
   const txt = (n: ts.Node) => n.getText(sf);
   const keep = (sts: readonly ts.Statement[]) => sts.filter((s) => !isTestish(s)).map(txt);
-  const body = ex.cb.body!;
-  let prefix: string[] = [];
-  if (ts.isBlock(body)) {
-    const at = body.statements.findIndex((s) => s.pos <= ex.call.pos && s.end >= ex.call.end);
-    prefix = body.statements.slice(0, Math.max(0, at)).map(txt);
-  }
+  // the statements before the call at each block level; an inner level is the try block of a try / finally, kept
+  // with its finally (the test's own cleanup)
+  const prefix: string[] = [];
+  const suffix: string[] = [];
+  ex.blocks.forEach((b, i) => {
+    if (i > 0) prefix.push("try {");
+    const at = b.statements.findIndex((s) => s.pos <= ex.call.pos && s.end >= ex.call.end);
+    prefix.push(...b.statements.slice(0, Math.max(0, at)).map(txt));
+    if (i > 0) suffix.unshift(`} finally ${txt((b.parent as ts.TryStatement).finallyBlock!)}`);
+  });
   const params = keepParams ? ex.cb.parameters.map(txt).join(", ") : "";
   const testName = (v: Variant) => `peaceai-repro ${v}: ${plan.entry.name} with ${plan.trigger.callee} failing`;
   const T = (ex.testCall.expression as ts.Identifier).text;
@@ -297,6 +324,7 @@ function variantsOf(ex: Existing, plan: Omit<ReproPlan, "variants">, keepParams:
     lines.push(v === "probe"
       ? `if (!__peaceaiHas(__peaceaiSeen, ${JSON.stringify(plan.code)})) throw new Error("peaceai-repro probe: the reported failure was not observed");`
       : `if (__peaceaiHas(__peaceaiSeen, ${JSON.stringify(plan.code)})) throw new Error("peaceai-repro: the reported failure was produced");`);
+    for (const x of suffix) lines.push(x);
     lines.push("});");
     let inner = lines.join("\n");
     for (let i = ex.describes.length - 1; i >= 0; i--) {
