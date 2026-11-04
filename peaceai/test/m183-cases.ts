@@ -76,7 +76,7 @@ export const CASES: Case[] = [
       const arrow = "export class Note {\n  describe(): string {\n    return \"n\";\n  }\n}\nexport class Todo extends Note {\n  all(xs: string[]): string[] {\n    return xs.map(() => super.describe());\n  }\n}\n";
       assert.deepEqual(members(l, ctx, { "src/todo.ts": arrow }, "`all` is wrong."), ["describe@2"], "an arrow keeps super");
       const noBase = 'import { Note } from "./note.ts";\nexport class Todo extends Note {\n  summary(): string {\n    return super.describe();\n  }\n}\n';
-      assert.deepEqual(members(l, ctx, { "src/note.ts": "export class Note {\n  describe(): string {\n    return \"n\";\n  }\n}\n", "src/todo.ts": noBase }, "`summary` is wrong."), [], "an imported base is not resolved");
+      assert.deepEqual(members(l, ctx, { "src/note.ts": "export class Note {\n  describe(): string {\n    return \"n\";\n  }\n}\n", "src/todo.ts": noBase }, "`summary` is wrong."), ["describe@2"], "batch 21 (M185): an imported base is resolved in its own file");
     },
   },
   // ---- near misses, one per guard / condition

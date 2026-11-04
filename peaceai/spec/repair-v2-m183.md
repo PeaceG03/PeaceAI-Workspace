@@ -41,8 +41,8 @@ unchanged. Conditions, each a tagged guard line:
   may be broken; following it would invent a call that cannot happen).
 - `ih-depth`: at most MAX_BASE_DEPTH = 3 `extends` steps above the start class.
 
-Not guards but structure: the base must be a plain identifier naming a top-level class declaration of the same file (an
-imported base, a mixin call `extends mix(B)`, a property-access base `extends ns.B` and a class expression bound to a
+Not guards but structure: the base must be a plain identifier naming a top-level class declaration of the same file
+(batch 21: or, by M185, an imported class resolved in its own file, see `repair-v2-m185.md`; a mixin call `extends mix(B)`, a property-access base `extends ns.B` and a class expression bound to a
 const are not resolved); a cyclic chain (broken code) stops at the first repeated class. `mc-rebind` now also skips a
 `super` inside a nested non-arrow function or class (an arrow keeps `super`).
 
@@ -83,7 +83,7 @@ member IS followed, and adds an imported-base case that is still not followed.
   no repeated proposal, and every proposal in-body under the M175 gate (M182's `admit` helper).
 - Order and v1: inherited sites last, earlier sites identical to the depth-1 prefix; repair-v1 locates none.
 - super: `super.describe()` in a class that overrides `describe` reaches the base's, `this.describe()` the override; an
-  arrow keeps `super`; an imported base is not resolved.
+  arrow keeps `super`; an imported base is resolved in its own file (batch 21, M185; the case asserts it).
 - Near misses per guard: `implements` vs `extends` (`ih-extends`), the override itself vs `super` (`ih-super`), a middle
   class's data field / override shadowing the base and a static name not shadowing an instance one (`ih-nearest`), a
   base's `#seed` from a subclass vs from its own class (`ih-private`), 3 steps admitted vs 4 refused and a cyclic chain

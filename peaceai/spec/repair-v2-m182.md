@@ -79,8 +79,9 @@ and model-v1 never see tier-4 sites: M182 is appended after `m173-guard:cs-v2-on
   in-process attempt protocol, that the passing edit lies inside a member site and outside every earlier site (so
   nothing before M182 could produce it), no repeated proposal, and every proposal in-body under the M175 gate.
 - Order: member sites last, earlier sites identical to the depth-1 list prefix; repair-v1 locates no member site.
-- Resolution: a static call to another same-file class is followed; an imported class, and a member of an imported base,
-  are not (batch 20: a member inherited from a same-file base is followed by M183, and the case asserts it).
+- Resolution: a static call to another same-file class is followed; a static call through an imported class is not
+  (batch 20: a member inherited from a same-file base is followed by M183; batch 21: a member of an imported base is
+  followed by M185, and the case asserts it).
 - Near misses per guard: object literal vs the same class (`mc-class`), function expression vs arrow (`mc-rebind`),
   instance vs static `norm` (`mc-static`), getter read vs method reference (`mc-kind`), abstract method and overload
   signatures vs the implementation (`mc-body`), named / inside a located class (`mc-known`), six helpers (`mc-cap`).

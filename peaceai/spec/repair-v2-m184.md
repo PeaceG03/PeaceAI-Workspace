@@ -1,7 +1,7 @@
 # M184: barrel re-exports for repair-v2 localisation (batch 20)
 
 Spec for the M184 block in `peaceai/lib/editpropose.ts` (`MAX_REEXPORT_HOPS`, `MAX_REEXPORT_SITES`, `exportsOwn`,
-`reExportedFunction`), its call in M172's imported-callee step (`viaReExport` in `locate`) and the last lines of
+`reExportedFunction`, renamed `reExportedDecl` in batch 21), its call in M172's imported-callee step (`viaReExport` in `locate`) and the last lines of
 `locate`. Tests: `m184-cases.ts` (run by `m184-barrel.test.ts`; the pure cases are replayed against mutants by
 `m184-mutation.test.ts`). Independent of M183 (same batch, separate tags and tests).
 
@@ -50,7 +50,8 @@ each a tagged guard line:
 - `rx-cap`: at most MAX_REEXPORT_SITES = 4 barrel sites, in call order.
 
 Not followed (stated reach limits, not fixes): non-relative specifiers (packages, path aliases), `export * as ns`,
-default exports, a local `export { impl as name }` without `from`, namespace and default imports.
+a local `export { impl as name }` without `from`, namespace imports. (Default exports and default imports are followed
+since batch 21 by M186, see `repair-v2-m186.md`; `export default function f` no longer counts as a named export `f`.)
 
 The found functions are tier-5 sites appended after every other site (after M173's const sites and M182 / M183's
 member sites). They are not walked further.

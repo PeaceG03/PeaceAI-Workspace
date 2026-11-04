@@ -166,18 +166,18 @@ export const CASES: Case[] = [
     },
   },
   {
-    id: "resolution: a static call to another top-level class of the same file is followed; an imported class is not, nor a member of an imported base (no cross-file resolution; same-file inheritance is M183)",
+    id: "resolution: a static call to another top-level class of the same file is followed; a static call through an imported class is not (same-file and imported inheritance are M183 / M185)",
     run(l, ctx) {
       const units = "export class Units {\n  static toCm(inches: number): number {\n    return inches * 2;\n  }\n}\n";
       const shelf = "export class Shelf {\n  depth: number;\n  constructor(depth: number) {\n    this.depth = depth;\n  }\n  holds(inches: number): boolean {\n    return Units.toCm(inches) < this.depth;\n  }\n}\n";
       assert.deepEqual(members(l, ctx, { "src/shelf.ts": units + shelf }, "`holds` is wrong."), ["toCm@2"]);
       assert.deepEqual(members(l, ctx, { "src/units.ts": units, "src/shelf.ts": 'import { Units } from "./units.ts";\n' + shelf }, "`holds` is wrong."), []);
-      // batch 20 (M183): a member inherited from a same-file base class is now followed (m183-cases.ts); one in an
-      // imported base still is not
+      // batch 20 (M183): a member inherited from a same-file base class is now followed (m183-cases.ts); batch 21
+      // (M185): one in a base imported from a relative module is followed too, in the base's file (m185-cases.ts)
       const base = "export class Base {\n  helper(): number {\n    return 1;\n  }\n}\nexport class Kid extends Base {\n  run(): number {\n    return this.helper() + 1;\n  }\n}\n";
       assert.deepEqual(members(l, ctx, { "src/kid.ts": base }, "`run` is wrong."), ["helper@2"]);
       const kid = 'import { Base } from "./base.ts";\nexport class Kid extends Base {\n  run(): number {\n    return this.helper() + 1;\n  }\n}\n';
-      assert.deepEqual(members(l, ctx, { "src/base.ts": "export class Base {\n  helper(): number {\n    return 1;\n  }\n}\n", "src/kid.ts": kid }, "`run` is wrong."), []);
+      assert.deepEqual(members(l, ctx, { "src/base.ts": "export class Base {\n  helper(): number {\n    return 1;\n  }\n}\n", "src/kid.ts": kid }, "`run` is wrong."), ["helper@2"]);
     },
   },
   // ---- near misses, one per guard

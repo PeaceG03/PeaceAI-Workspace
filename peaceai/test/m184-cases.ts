@@ -34,7 +34,7 @@ export interface Case { id: string; needsCand?: boolean; run: (l: Libs, ctx: Ctx
 export function setup(): Ctx { return { base: mkdtempSync(join(tmpdir(), "peaceai-m184-")) }; }
 export function teardown(ctx: Ctx): void { rmSync(ctx.base, { recursive: true, force: true }); }
 
-type Files = Record<string, string>;
+export type Files = Record<string, string>;
 let n = 0;
 function repoDir(ctx: Ctx, files: Files): string {
   const d = join(ctx.base, `r${n++}`);
@@ -106,12 +106,13 @@ function simulate(l: Libs, ctx: Ctx, files: Files, request: string, path: string
   return { proposals, result, orig };
 }
 
-/** An admit: the exact barrel sites, PASS within MAX_ATTEMPTS, the passing edit inside a tier-5 site and outside every
- *  earlier site, no repeated proposal, every proposal in-body under the M175 gate. */
-const admit = (id: string, files: Files, request: string, path: string, checks: Check[], want: string[], fixRe: RegExp): Case => ({
+/** An admit: the exact sites of the given tier (5: barrel; M185 / M186 reuse it for tiers 4 and 5), PASS within
+ *  MAX_ATTEMPTS, the passing edit inside a site of that tier and outside every other site, no repeated proposal, every
+ *  proposal in-body under the M175 gate. */
+export const admitAt = (tier: number) => (id: string, files: Files, request: string, path: string, checks: Check[], want: string[], fixRe: RegExp): Case => ({
   id, run(l, ctx) {
     const sites = sitesOf(l, ctx, files, request);
-    const bs = sites.filter((s) => s.tier === 5);
+    const bs = sites.filter((s) => s.tier === tier);
     assert.deepEqual(bs.map((s) => `${s.name}@${s.path}`), want, "the barrel-resolved functions are located");
     const s = simulate(l, ctx, files, request, path, checks);
     assert.equal(s.result, "pass", `${s.result} after ${s.proposals.length}`);
@@ -122,12 +123,14 @@ const admit = (id: string, files: Files, request: string, path: string, checks: 
     let b = 0; while (b < before.length - a && before[before.length - 1 - b] === after[after.length - 1 - b]) b++;
     const end = before.length - b;
     assert.ok(bs.some((m) => m.path === last[0]!.path && m.start <= a && end <= m.end), "the fix is inside the barrel site");
-    assert.ok(!sites.some((x) => x.tier !== 5 && x.path === last[0]!.path && x.start < end && a < x.end), "the fix is outside every earlier site");
+    assert.ok(!sites.some((x) => x.tier !== tier && x.path === last[0]!.path && x.start < end && a < x.end), "the fix is outside every earlier site");
     assert.match(after, fixRe);
     assert.equal(new Set(s.proposals.map(key)).size, s.proposals.length, "a proposal repeated");
     for (const p of s.proposals) assert.equal(gate(s.orig, p), "in-body");
   },
 });
+
+const admit = admitAt(5);
 
 // ---- fixtures (synthetic, general module layouts)
 // A: a folder index with named re-exports: the money formatter multiplies the cents by 100 instead of dividing
