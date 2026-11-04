@@ -14,6 +14,11 @@
 // is written only to the output dir, never into the checkout. Using such tests for credit needs a separate reviewed
 // design (a self-written test can be vacuous in ways three runs do not rule out). Each condition is one line tagged
 // `repro-guard:<id>`; M196 removes each in turn and requires a case to fail.
+// Batch 32: more than one existing test may call the entry, and the first one found may never reach the site (an
+// early return, an option that skips the dependency). planRepros builds one candidate per usable existing test and
+// ranks them statically (setup naming the failing dependency, then the module's own test file, then discovery
+// order); reproduce tries at most MAX_ATTEMPTS of them in that order, each with the full three-variant judge on its
+// own three runs, and stops at the first REPRO_OK. Every attempt is recorded; evidence is never pooled across attempts.
 // Nothing here names a repository, task, task set or file of any task set.
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -22,7 +27,7 @@ import ts from "typescript";
 import { isGeneratedPath, isTestPath, openRepo, resolveSpecifier, type CodeRepo } from "./codesearch.ts";
 import { isolationProblem, runnerWrapper, type Copy } from "./loop.ts";
 import { detectRunner, installDeps, installShim, openDepsCache, openWorkDir, shimArgs, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
-import { isBehaviorTest, isSourceFile } from "./plan4.ts";
+import { fileStem, isBehaviorTest, isSourceFile } from "./plan4.ts";
 import { caughtBy, REPORT_VIAS, templatePrefix, type ThrowSite } from "./plan5.ts";
 import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
 
@@ -38,6 +43,15 @@ export const VARIANTS = ["repro", "probe", "control"] as const;
 export type Variant = (typeof VARIANTS)[number];
 
 export interface Trigger { param: number; prop: string | null; reject: boolean; callee: string }
+/** Batch 32: why a base test is ranked where it is (static; it never decides a result, the judge does). */
+export interface BaseRank {
+  /** Its setup provides or names the failing dependency (the trigger's property, or a non-null argument for a called parameter). */
+  namesDependency: boolean;
+  /** It is the module's own test file (same file stem as the site's file). */
+  ownFile: boolean;
+  /** Discovery order (related tests first, then the rest sorted; calls in file order). */
+  found: number;
+}
 export interface ReproPlan {
   version: typeof REPRO_VERSION;
   code: string;
@@ -54,8 +68,12 @@ export interface ReproPlan {
   /** node:test only: the package's test script runs through tsx and tsx is a dependency, so node gets `--import tsx`. */
   tsxImport: boolean;
   variants: Record<Variant, string>;
+  rank: BaseRank;
 }
 export type PlanResult = ReproPlan | { refuse: ReproRefusal; detail?: string };
+export type PlansResult = { plans: ReproPlan[] } | { refuse: ReproRefusal; detail?: string };
+/** Batch 32: at most this many base tests are run (each attempt is a sandbox copy and three runs). */
+export const MAX_ATTEMPTS = 3;
 
 const CODE_SHAPE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
 const TESTISH = new Set(["test", "it", "describe", "suite", "context", "specify", "bench", "xit", "xdescribe", "fit", "fdescribe", "xtest"]);
@@ -346,22 +364,52 @@ function usable(n: ts.CallExpression, need: number, helpers: ReadonlySet<string>
   const describes = describesOf(tcb.parent as ts.CallExpression);
   return describes ? { call: n, cb: tcb, testCall: tcb.parent as ts.CallExpression, describes, blocks, helper: { call: hc, cb, outer: outerBlocks } } : "not-in-test";
 }
-function existingCall(sf: ts.SourceFile, local: string, need: number): Found | ExistingMiss | null {
-  let out: Found | null = null;
+/** Every usable call of the entry in the file, in file order, the first per test (Batch 32), and the first miss. */
+function existingCalls(sf: ts.SourceFile, local: string, need: number): { found: Found[]; miss: ExistingMiss | null } {
+  const found: Found[] = [];
   let miss: ExistingMiss | null = null;
   const helpers = helpersOf(sf, local);
   const visit = (n: ts.Node): void => {
-    if (out) return;
     if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === local) {
       const r = usable(n, need, helpers);
       if (typeof r === "string") miss ??= r;
-      else { out = r; return; }
+      else if (!found.some((f) => f.testCall === r.testCall)) found.push(r);
+      return;
     }
     ts.forEachChild(n, visit);
   };
   visit(sf);
-  return out ?? miss;
+  return { found, miss };
 }
+
+/** The base test's own setup, as text: the file's top-level statements (no imports, no tests), its describe chain's
+ *  setup, the statements before the call at each block level (and before the helper call, with the helper
+ *  callback's parameters), and the call's argument at the trigger's position. Nothing from any other test. */
+function setupOf(ex: Existing, trigger: Trigger): { text: string; arg: ts.Expression | undefined } {
+  const sf = ex.sf;
+  const before = (blocks: readonly ts.Block[], anchor: ts.Node) => blocks.flatMap((b) => b.statements.filter((s) => s.end <= anchor.pos).map((s) => s.getText(sf)));
+  const parts: string[] = [];
+  for (const st of sf.statements) if (!ts.isImportDeclaration(st) && !isTestish(st)) parts.push(st.getText(sf));
+  for (const d of ex.describes) {
+    const f = d.arguments[d.arguments.length - 1];
+    if (f && (ts.isArrowFunction(f) || ts.isFunctionExpression(f)) && ts.isBlock(f.body)) for (const st of f.body.statements) if (!isTestish(st)) parts.push(st.getText(sf));
+  }
+  if (ex.helper) { parts.push(...before(ex.helper.outer, ex.helper.call), ...ex.helper.cb.parameters.map((p) => p.getText(sf))); }
+  parts.push(...before(ex.blocks, ex.call));
+  const arg = ex.call.arguments[trigger.param];
+  if (arg) parts.push(arg.getText(sf));
+  return { text: parts.join("\n"), arg };
+}
+const NO_VALUE = (e: ts.Expression | undefined) => !e || e.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(e) && e.text === "undefined") || ts.isVoidExpression(e);
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+function rankOf(ex: Existing, trigger: Trigger, sitePath: string, found: number): BaseRank {
+  const { text, arg } = setupOf(ex, trigger);
+  const namesDependency = trigger.prop !== null ? word(trigger.prop.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).test(text) : !NO_VALUE(arg); // repro-guard:rank-names-dependency
+  const ownFile = norm(fileStem(ex.path)) === norm(fileStem(sitePath)); // repro-guard:rank-own-file
+  return { namesDependency, ownFile, found };
+}
+/** Pure: the base tests in the order they are tried (setup naming the dependency, then own file, then found). */
+export const byRank = (a: BaseRank, b: BaseRank): number => Number(b.namesDependency) - Number(a.namesDependency) || Number(b.ownFile) - Number(a.ownFile) || a.found - b.found;
 
 /** The candidate test's three variants, from the existing test's own statements. */
 function variantsOf(ex: Existing, plan: Omit<ReproPlan, "variants">, keepParams: boolean): Record<Variant, string> {
@@ -477,9 +525,10 @@ export const HELPERS = [
   "}",
 ].join("\n");
 
-/** Static half: the candidate test for `code` at `site`, or the precise refusal. Reads files only. */
-export function planRepro(code: CodeRepo, errCode: string, site: ThrowSite): PlanResult {
-  const refuse = (r: ReproRefusal, detail?: string): PlanResult => (detail ? { refuse: r, detail } : { refuse: r });
+/** Static half: every candidate test for `code` at `site` (one per usable existing test), ranked, or the precise
+ *  refusal. Reads files only. */
+export function planRepros(code: CodeRepo, errCode: string, site: ThrowSite): PlansResult {
+  const refuse = (r: ReproRefusal, detail?: string): PlansResult => (detail ? { refuse: r, detail } : { refuse: r });
   if (!CODE_SHAPE.test(errCode)) return refuse("REPRO_NO_DIAGNOSIS"); // repro-guard:code-shape
   if (!isSourceFile(site.path) || isTestPath(site.path) || isGeneratedPath(site.path)) return refuse("REPRO_TEST_TARGET"); // repro-guard:site-source
   // a top-level `main().catch(..)` site (plan5 Batch 31) names the called function, not a try / chain around a
@@ -498,14 +547,14 @@ export function planRepro(code: CodeRepo, errCode: string, site: ThrowSite): Pla
   const obs = observeOf(sf, errCode, site, region, fn);
   if (!obs) return refuse("REPRO_NO_OBSERVE");
   const entry = { name: site.symbol!, path: site.path };
-  // an existing test of the same module: related tests first (codesearch's import graph / naming), then any other
+  // existing tests of the same module: related tests first (codesearch's import graph / naming), then any other
   const tree = code.tree({ limit: 50_000 });
   const all = tree.ok ? tree.files : [];
   const known = new Set(all);
   const related = (() => { const r = code.testsFor(site.path); return r.ok ? r.tests.map((t) => t.path) : []; })();
   const order = [...new Set([...related, ...all.filter(isBehaviorTest).sort()])].filter(isBehaviorTest).slice(0, MAX_TESTS_SCANNED);
   const need = Math.max(trigger.param, obs.logParam ?? -1) + 1;
-  let ex: Existing | null = null;
+  const bases: Existing[] = [];
   let miss: ExistingMiss | null = null;
   for (const p of order) {
     const t = readSmall(root, p);
@@ -513,17 +562,28 @@ export function planRepro(code: CodeRepo, errCode: string, site: ThrowSite): Pla
     const tsf = parse(p, t);
     const local = bindingOf(tsf, p, entry, known);
     if (!local) continue;
-    const c = existingCall(tsf, local, need);
-    if (typeof c === "string") miss ??= c;
-    else if (c) { ex = { path: p, sf: tsf, local, ...c }; break; }
+    const c = existingCalls(tsf, local, need);
+    miss ??= c.miss;
+    for (const f of c.found) bases.push({ path: p, sf: tsf, local, ...f });
   }
-  if (!ex) return refuse("REPRO_NO_EXISTING_TEST", miss ?? undefined);
-  const testPath = ex.path.replace(/(\.(?:test|spec))?(\.[cm]?[jt]sx?)$/, ".peaceai-repro$1$2");
-  const det = detectRunner(root, [testPath]);
-  if ("refuse" in det) return refuse("REPRO_RUNNER", det.refuse);
-  const tsxImport = det.runner === "node-test" && usesTsx(root, det.pkgDir);
-  const base: Omit<ReproPlan, "variants"> = { version: REPRO_VERSION, code: errCode, site, channel: obs.channel, entry, trigger, logParam: obs.logParam, existing: { path: ex.path, line: lineOf(ex.sf, ex.call) }, runner: det, testPath, tsxImport };
-  return { ...base, variants: variantsOf(ex, base, det.runner === "node-test" || det.runner === "vitest") };
+  if (!bases.length) return refuse("REPRO_NO_EXISTING_TEST", miss ?? undefined);
+  const plans: ReproPlan[] = [];
+  let runnerMiss: string | null = null;
+  bases.forEach((ex, found) => {
+    const testPath = ex.path.replace(/(\.(?:test|spec))?(\.[cm]?[jt]sx?)$/, ".peaceai-repro$1$2");
+    const det = detectRunner(root, [testPath]);
+    if ("refuse" in det) { runnerMiss ??= det.refuse; return; }
+    const tsxImport = det.runner === "node-test" && usesTsx(root, det.pkgDir);
+    const base: Omit<ReproPlan, "variants"> = { version: REPRO_VERSION, code: errCode, site, channel: obs.channel, entry, trigger, logParam: obs.logParam, existing: { path: ex.path, line: lineOf(ex.sf, ex.call) }, runner: det, testPath, tsxImport, rank: rankOf(ex, trigger, site.path, found) };
+    plans.push({ ...base, variants: variantsOf(ex, base, det.runner === "node-test" || det.runner === "vitest") });
+  });
+  if (!plans.length) return refuse("REPRO_RUNNER", runnerMiss ?? undefined);
+  return { plans: plans.sort((a, b) => byRank(a.rank, b.rank)) };
+}
+/** The first-ranked candidate only (the static half of attempt 1). */
+export function planRepro(code: CodeRepo, errCode: string, site: ThrowSite): PlanResult {
+  const r = planRepros(code, errCode, site);
+  return "refuse" in r ? r : r.plans[0]!;
 }
 function usesTsx(root: string, pkgDir: string): boolean {
   try {
@@ -562,7 +622,41 @@ export interface ValidateOptions {
   /** Tests only: fills the copy's node_modules (a pinned tree the test installed) instead of installDeps. */
   provideDeps?: (copyDir: string) => void;
 }
-export interface ReproResult { code: ReproCode; detail?: string; runs?: Record<Variant, VariantRun>; plan?: ReproPlan }
+/** Batch 32: one base test tried: which test, why it was ranked there, and its own verdict and runs. */
+export interface Attempt { base: { path: string; line: number }; rank: BaseRank; code: ReproCode; detail?: string; runs?: Record<Variant, VariantRun> }
+export interface ReproResult {
+  code: ReproCode;
+  detail?: string;
+  /** The runs of the attempt the code comes from (one attempt's, never pooled). */
+  runs?: Record<Variant, VariantRun>;
+  /** Only on REPRO_OK: the plan of the attempt that passed the judge. */
+  plan?: ReproPlan;
+  attempts?: Attempt[];
+  /** Ranked candidates never run (beyond MAX_ATTEMPTS, or after a stop). */
+  untried?: number;
+}
+/** Reasons about the base test (another base test may reach the site). Any other code is about the repository or
+ *  the sandbox (runner, dependencies, isolation, candidate uid), the same for every base: no further attempt. */
+const BASE_REASONS: ReadonlySet<ReproCode> = new Set<ReproCode>(["REPRO_NOT_FAILING", "REPRO_WRONG_REASON", "REPRO_VACUOUS"]);
+
+/** Batch 32: the ranked candidates tried in order, at most MAX_ATTEMPTS, stopping at the first REPRO_OK. Each attempt
+ *  is judged on its OWN three runs (`run` is validateRepro outside tests). With no REPRO_OK the result is the
+ *  best-ranked attempt's code. */
+export function attemptAll(plans: readonly ReproPlan[], run: (p: ReproPlan) => ReproResult): ReproResult {
+  const tried = plans.slice(0, MAX_ATTEMPTS); // repro-guard:attempts-cap
+  const attempts: Attempt[] = [];
+  for (const p of tried) {
+    const r = run(p);
+    // an attempt's verdict is the judge of its own three runs; a claimed REPRO_OK without them is not one
+    const code: ReproCode = r.runs ? judge(r.runs) : r.code === "REPRO_OK" ? "REPRO_WRONG_REASON" : r.code; // repro-guard:attempt-own-runs
+    attempts.push({ base: { ...p.existing }, rank: p.rank, code, ...(r.detail ? { detail: r.detail } : {}), ...(r.runs ? { runs: r.runs } : {}) });
+    if (code === "REPRO_OK") return { code, runs: r.runs!, plan: p, attempts, untried: plans.length - attempts.length }; // repro-guard:attempt-stop-ok
+    if (!BASE_REASONS.has(code)) break; // repro-guard:attempt-stop-env
+  }
+  const best = attempts[0]; // repro-guard:attempts-best-ranked
+  if (!best) return { code: "REPRO_NO_EXISTING_TEST", attempts, untried: plans.length };
+  return { code: best.code, ...(best.detail ? { detail: best.detail } : {}), ...(best.runs ? { runs: best.runs } : {}), attempts, untried: plans.length - attempts.length };
+}
 
 /** The files copied into the sandbox: tracked files when `root` is a git checkout, else the tree (no node_modules,
  *  .git or symlinks either way). */
@@ -638,9 +732,10 @@ export function validateRepro(root: string, plan: ReproPlan, o: ValidateOptions)
   }
 }
 
-/** Plan + validate, from a checkout dir: the CLI's whole job. The test text is returned only when it is REPRO_OK. */
+/** Plan + validate the ranked candidates, from a checkout dir: the CLI's whole job. The plan (and so the test text)
+ *  is returned only with REPRO_OK. */
 export function reproduce(root: string, errCode: string, site: ThrowSite, o: ValidateOptions): ReproResult {
-  const p = planRepro(openRepo(root), errCode, site);
+  const p = planRepros(openRepo(root), errCode, site);
   if ("refuse" in p) return { code: p.refuse, ...(p.detail ? { detail: p.detail } : {}) };
-  return validateRepro(root, p, o);
+  return attemptAll(p.plans, (plan) => validateRepro(root, plan, o));
 }

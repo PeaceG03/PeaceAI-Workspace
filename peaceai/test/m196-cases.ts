@@ -7,7 +7,7 @@ import { openRepo } from "../lib/codesearch.ts";
 import { diagnose, type ThrowSite } from "../lib/plan5.ts";
 import type * as Repro from "../lib/reproduce.ts";
 
-export type ReproModule = Pick<typeof Repro, "planRepro" | "judge" | "validateRepro">;
+export type ReproModule = Pick<typeof Repro, "planRepro" | "planRepros" | "attemptAll" | "judge" | "validateRepro">;
 export interface CaseCtx { ledger: string; shelf: string; agent: string }
 export interface ReproCase { id: string; condition: string; kind: "admit" | "refuse"; shape: "ledger" | "shelf" | "agent" | "judge"; run(m: ReproModule, c: CaseCtx): void }
 
@@ -52,6 +52,31 @@ const AGENT_HELPER = (m: ReproModule, c: CaseCtx) => viaHelper(m, c.agent, "FETC
   /__peaceaiArgs\[0\] = __peaceaiFail\(__peaceaiArgs\[0\], "get", true\);/);
 const R = (exitCode: number, pass: number, fail: number, extra: Partial<Repro.VariantRun> = {}): Repro.VariantRun => ({ exitCode, pass, fail, leftovers: 0, ...extra });
 const FAIL = R(1, 0, 1), PASS = R(0, 1, 0);
+
+// ---- Batch 32: ranked base tests and bounded attempts
+/** The ranked candidates for `code`: [path, line, namesDependency, ownFile] in the order they are tried. */
+const ranked = (m: ReproModule, dir: string, code: string): Plan[] => {
+  const r = m.planRepros(openRepo(dir), code, siteOf(dir, code));
+  assert.ok(!("refuse" in r), `expected plans for ${code}`);
+  return (r as { plans: Plan[] }).plans;
+};
+const order = (ps: Plan[]) => ps.map((p) => [p.existing.path, p.existing.line, p.rank.namesDependency, p.rank.ownFile, p.rank.found]);
+/** A fake sandbox: the runs given per candidate index (and a log of what was run); each verdict is the judge's. */
+const fakeRun = (m: ReproModule, plans: Plan[], runs: (Record<Repro.Variant, Repro.VariantRun> | Repro.ReproResult)[]) => {
+  const log: number[] = [];
+  const run = (p: Plan): Repro.ReproResult => {
+    const i = plans.indexOf(p);
+    log.push(i);
+    const x = runs[i]!;
+    return "code" in x ? (x as Repro.ReproResult) : { code: m.judge(x as Record<Repro.Variant, Repro.VariantRun>), runs: x as Record<Repro.Variant, Repro.VariantRun> };
+  };
+  return { log, run };
+};
+const OK3 = { repro: FAIL, probe: PASS, control: PASS };
+const NOT_FAILING3 = { repro: PASS, probe: FAIL, control: PASS };
+const VACUOUS3 = { repro: FAIL, probe: PASS, control: FAIL };
+const WRONG3 = { repro: FAIL, probe: FAIL, control: PASS };
+const pumpPlans = (m: ReproModule, c: CaseCtx) => { const ps = ranked(m, c.ledger, "PUMP_DRAIN_FAILED"); assert.equal(ps.length, 4); return ps; };
 
 export const CASES: ReproCase[] = [
   // ---- admits (the variants are checked on each: only repro / probe inject the failure; probe asserts the opposite)
@@ -157,4 +182,92 @@ export const CASES: ReproCase[] = [
   { id: "judge-probe-ran-nothing", condition: "judge-one-pass", kind: "refuse", shape: "judge", run: (m) => assert.equal(m.judge({ repro: FAIL, probe: R(0, 0, 0), control: PASS }), "REPRO_WRONG_REASON") },
   { id: "judge-repro-two-failures", condition: "judge-one-fail", kind: "refuse", shape: "judge", run: (m) => assert.equal(m.judge({ repro: R(1, 0, 2), probe: PASS, control: PASS }), "REPRO_WRONG_REASON") },
   { id: "judge-shim-made-up-fail", condition: "judge-one-fail", kind: "refuse", shape: "judge", run: (m) => assert.equal(m.judge({ repro: R(94, 0, 1), probe: PASS, control: PASS }), "REPRO_WRONG_REASON") },
+  // ---- Batch 32: ranked base tests, at most three attempts, each judged on its own runs
+  { id: "admit-rank-names-dependency-ledger", condition: "rank-names-dependency", kind: "admit", shape: "ledger", run: (m, c) => {
+    // found first: the test passing null (mode "off"); ranked first: the test whose setup provides `read`
+    assert.deepEqual(order(ranked(m, c.ledger, "GAUGE_READ_FAILED")), [["test/gauge.test.ts", 9, true, true, 1], ["test/gauge.test.ts", 5, false, true, 0]]);
+    assert.equal(plan(m, c.ledger, "GAUGE_READ_FAILED").existing.line, 9, "planRepro is the first-ranked candidate");
+  } },
+  { id: "admit-rank-names-dependency-shelf", condition: "rank-names-dependency", kind: "admit", shape: "shelf", run: (m, c) => {
+    assert.deepEqual(order(ranked(m, c.shelf, "FEED_FETCH_FAILED")), [["test/feed.test.ts", 8, true, true, 1], ["test/feed.test.ts", 4, false, true, 0]]);
+  } },
+  { id: "refuse-rank-unnamed-base-not-first", condition: "rank-names-dependency", kind: "refuse", shape: "ledger", run: (m, c) => {
+    // a base whose setup neither provides nor names the dependency (null at its position) is tried after one that does
+    const ps = ranked(m, c.ledger, "GAUGE_READ_FAILED");
+    assert.equal(ps[0]!.rank.namesDependency, true);
+    assert.deepEqual([ps[1]!.rank.namesDependency, ps[1]!.rank.found], [false, 0]);
+  } },
+  { id: "admit-rank-own-file-ledger", condition: "rank-own-file", kind: "admit", shape: "ledger", run: (m, c) => {
+    assert.deepEqual(order(ranked(m, c.ledger, "TALLY_COUNT_FAILED")), [["test/tally.test.ts", 6, true, true, 1], ["test/board.test.ts", 8, true, false, 0]]);
+  } },
+  { id: "refuse-rank-other-file-not-first", condition: "rank-own-file", kind: "refuse", shape: "ledger", run: (m, c) => {
+    // found first (it also imports two modules that import the site's file), but not the module's own test file
+    const ps = ranked(m, c.ledger, "TALLY_COUNT_FAILED");
+    assert.deepEqual([ps[1]!.existing.path, ps[1]!.rank.ownFile, ps[1]!.rank.found], ["test/board.test.ts", false, 0]);
+  } },
+  { id: "admit-rank-found-order-shelf", condition: "rank-own-file", kind: "admit", shape: "shelf", run: (m, c) => {
+    // both provide `post` (the describe's setup) and both are the own file: discovery order decides
+    assert.deepEqual(order(ranked(m, c.shelf, "BEACON_POST_FAILED")), [["test/beacon.test.ts", 7, true, true, 0], ["test/beacon.test.ts", 10, true, true, 1]]);
+  } },
+  { id: "admit-later-attempt-ok", condition: "attempt-stop-ok", kind: "admit", shape: "judge", run: (m, c) => {
+    const ps = ranked(m, c.ledger, "METER_SAMPLE_FAILED");
+    const f = fakeRun(m, ps, [NOT_FAILING3, OK3]);
+    const r = m.attemptAll(ps, f.run);
+    assert.deepEqual([r.code, r.plan?.existing.line, r.untried, f.log], ["REPRO_OK", ps[1]!.existing.line, 0, [0, 1]]);
+    assert.deepEqual(r.attempts!.map((a) => [a.base.line, a.code]), [[ps[0]!.existing.line, "REPRO_NOT_FAILING"], [ps[1]!.existing.line, "REPRO_OK"]]);
+    assert.deepEqual(r.runs, OK3, "the runs are the passing attempt's own");
+  } },
+  { id: "refuse-no-attempt-after-ok", condition: "attempt-stop-ok", kind: "refuse", shape: "judge", run: (m, c) => {
+    const ps = pumpPlans(m, c);
+    const f = fakeRun(m, ps, [OK3, OK3, OK3, OK3]);
+    const r = m.attemptAll(ps, f.run);
+    assert.deepEqual([r.code, f.log, r.untried, r.plan === ps[0]], ["REPRO_OK", [0], 3, true]);
+  } },
+  { id: "refuse-all-attempts-fail-best-ranked", condition: "attempts-best-ranked", kind: "refuse", shape: "judge", run: (m, c) => {
+    const ps = pumpPlans(m, c);
+    const f = fakeRun(m, ps, [VACUOUS3, WRONG3, NOT_FAILING3, OK3]);
+    const r = m.attemptAll(ps, f.run);
+    assert.deepEqual([r.code, r.plan, r.runs, r.untried], ["REPRO_VACUOUS", undefined, VACUOUS3, 1]);
+    assert.deepEqual(r.attempts!.map((a) => a.code), ["REPRO_VACUOUS", "REPRO_WRONG_REASON", "REPRO_NOT_FAILING"]);
+  } },
+  { id: "refuse-fourth-beyond-cap", condition: "attempts-cap", kind: "refuse", shape: "judge", run: (m, c) => {
+    const ps = pumpPlans(m, c);
+    const f = fakeRun(m, ps, [NOT_FAILING3, NOT_FAILING3, NOT_FAILING3, OK3]);
+    const r = m.attemptAll(ps, f.run);
+    assert.deepEqual([r.code, f.log, r.untried, r.attempts!.length], ["REPRO_NOT_FAILING", [0, 1, 2], 1, 3]);
+    assert.ok(!r.attempts!.some((a) => a.base.line === ps[3]!.existing.line), "the fourth candidate is never tried");
+  } },
+  { id: "admit-three-attempts", condition: "attempts-cap", kind: "admit", shape: "judge", run: (m, c) => {
+    const ps = pumpPlans(m, c).slice(0, 3);
+    const f = fakeRun(m, ps, [NOT_FAILING3, NOT_FAILING3, OK3]);
+    assert.deepEqual([m.attemptAll(ps, f.run).code, f.log], ["REPRO_OK", [0, 1, 2]]);
+  } },
+  { id: "refuse-combined-evidence", condition: "attempt-own-runs", kind: "refuse", shape: "judge", run: (m, c) => {
+    // attempt 1 is vacuous (control failed), attempt 2 fails for the wrong reason (probe failed): attempt 2's control
+    // with attempt 1's repro and probe would pass the judge, but no single attempt does
+    const ps = pumpPlans(m, c).slice(0, 2);
+    const f = fakeRun(m, ps, [VACUOUS3, WRONG3]);
+    const r = m.attemptAll(ps, f.run);
+    assert.deepEqual([r.code, r.plan], ["REPRO_VACUOUS", undefined]);
+    assert.ok(r.attempts!.every((a) => a.code !== "REPRO_OK"));
+  } },
+  { id: "refuse-ok-claim-without-own-runs", condition: "attempt-own-runs", kind: "refuse", shape: "judge", run: (m, c) => {
+    // a result that says REPRO_OK but whose own runs do not pass the judge, or that has no runs, is not an OK
+    const ps = pumpPlans(m, c).slice(0, 2);
+    const f = fakeRun(m, ps, [{ code: "REPRO_OK", runs: WRONG3 }, { code: "REPRO_OK" }]);
+    const r = m.attemptAll(ps, f.run);
+    assert.deepEqual([r.code, r.plan, r.attempts!.map((a) => a.code)], ["REPRO_WRONG_REASON", undefined, ["REPRO_WRONG_REASON", "REPRO_WRONG_REASON"]]);
+  } },
+  { id: "refuse-stop-on-sandbox-refusal", condition: "attempt-stop-env", kind: "refuse", shape: "judge", run: (m, c) => {
+    // the dependencies or the sandbox failed: the same for every base test, so no further attempt is run
+    const ps = pumpPlans(m, c);
+    const f = fakeRun(m, ps, [{ code: "REPRO_DEPS", detail: "DEPS_INSTALL" }, OK3, OK3, OK3]);
+    const r = m.attemptAll(ps, f.run);
+    assert.deepEqual([r.code, r.detail, f.log, r.untried], ["REPRO_DEPS", "DEPS_INSTALL", [0], 3]);
+  } },
+  { id: "admit-continue-on-base-reason", condition: "attempt-stop-env", kind: "admit", shape: "judge", run: (m, c) => {
+    const ps = pumpPlans(m, c);
+    const f = fakeRun(m, ps, [WRONG3, VACUOUS3, OK3]);
+    assert.deepEqual([m.attemptAll(ps, f.run).code, f.log], ["REPRO_OK", [0, 1, 2]]);
+  } },
 ];

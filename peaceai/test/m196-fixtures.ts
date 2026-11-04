@@ -649,3 +649,154 @@ export const LEDGER_HELPERS: Files = {
     "});",
   ),
 };
+
+/** Batch 32: several existing tests call the entry, and the first one found does not reach the site (an option that
+ *  returns early). reproduce ranks the base tests (setup naming the failing dependency, then the module's own test
+ *  file, then discovery order) and tries at most three, each judged on its own runs.
+ *    src/gauge.ts  the first test passes `null` and mode "off" (never reaches the site); the second's setup provides
+ *                  `read`: ranked first, REPRO_OK on attempt 1.
+ *    src/meter.ts  both tests provide `sample`; the first passes `{ dry: true }` (early return): attempt 1
+ *                  REPRO_NOT_FAILING, attempt 2 REPRO_OK.
+ *    src/tally.ts  test/board.test.ts (found first: it also imports two modules that import tally) passes
+ *                  `{ cached: true }`; test/tally.test.ts (the module's own test file) reaches it: ranked first.
+ *    src/pump.ts   four tests; only the fourth reaches the site: beyond the cap of three, never tried. */
+export const LEDGER_BASES: Files = {
+  "src/gauge.ts": lines(
+    "export async function sampleGauge(probe: { read(): Promise<number> } | null, mode: string): Promise<{ ok: boolean; value?: number; code?: string }> {",
+    '  if (mode === "off" || probe === null) return { ok: true };',
+    "  try {",
+    "    return { ok: true, value: await probe.read() };",
+    "  } catch {",
+    '    return { ok: false, code: "GAUGE_READ_FAILED" };',
+    "  }",
+    "}",
+  ),
+  "test/gauge.test.ts": nodeTest + 'import { sampleGauge } from "../src/gauge.ts";\n' + lines(
+    'test("an idle gauge reports nothing", async () => {',
+    '  assert.deepEqual(await sampleGauge(null, "off"), { ok: true });',
+    "});",
+    'test("a gauge reads its probe", async () => {',
+    "  const probe = { read: async () => 7 };",
+    '  assert.deepEqual(await sampleGauge(probe, "on"), { ok: true, value: 7 });',
+    "});",
+  ),
+  "src/meter.ts": lines(
+    "export async function readMeter(dev: { sample(): Promise<number> }, opts: { dry: boolean }): Promise<{ ok: boolean; value?: number; code?: string }> {",
+    "  if (opts.dry) return { ok: true };",
+    "  try {",
+    "    return { ok: true, value: await dev.sample() };",
+    "  } catch {",
+    '    return { ok: false, code: "METER_SAMPLE_FAILED" };',
+    "  }",
+    "}",
+  ),
+  "test/meter.test.ts": nodeTest + 'import { readMeter } from "../src/meter.ts";\n' + lines(
+    'test("a dry read skips the device", async () => {',
+    "  const dev = { sample: async () => 1 };",
+    "  assert.deepEqual(await readMeter(dev, { dry: true }), { ok: true });",
+    "});",
+    'test("a read samples the device", async () => {',
+    "  const dev = { sample: async () => 4 };",
+    "  assert.deepEqual(await readMeter(dev, { dry: false }), { ok: true, value: 4 });",
+    "});",
+  ),
+  "src/tally.ts": lines(
+    "export async function tally(src: { count(): Promise<number> }, opts: { cached: boolean }): Promise<{ ok: boolean; n?: number; code?: string }> {",
+    "  if (opts.cached) return { ok: true, n: 0 };",
+    "  try {",
+    "    return { ok: true, n: await src.count() };",
+    "  } catch {",
+    '    return { ok: false, code: "TALLY_COUNT_FAILED" };',
+    "  }",
+    "}",
+  ),
+  "src/tally-view.ts": 'import { tally } from "./tally.ts";\nexport const viewOf = (n: number) => `n=${n}`;\nexport const tallyFn = tally;\n',
+  "src/tally-csv.ts": 'import { tally } from "./tally.ts";\nexport const csvOf = (n: number) => `${n}\\n`;\nexport const tallyCsv = tally;\n',
+  "test/board.test.ts": nodeTest + 'import { tally } from "../src/tally.ts";\nimport { viewOf } from "../src/tally-view.ts";\nimport { csvOf } from "../src/tally-csv.ts";\n' + lines(
+    'test("the board shows a cached tally", async () => {',
+    "  const src = { count: async () => 9 };",
+    "  const r = await tally(src, { cached: true });",
+    '  assert.equal(viewOf(r.n ?? -1), "n=0");',
+    '  assert.equal(csvOf(1), "1\\n");',
+    "});",
+  ),
+  "test/tally.test.ts": nodeTest + 'import { tally } from "../src/tally.ts";\n' + lines(
+    'test("tally counts the source", async () => {',
+    "  const src = { count: async () => 3 };",
+    "  assert.deepEqual(await tally(src, { cached: false }), { ok: true, n: 3 });",
+    "});",
+  ),
+  "src/pump.ts": lines(
+    "export async function drainPump(pump: { drain(): Promise<number> }, opts: { hold: boolean }): Promise<{ ok: boolean; n?: number; code?: string }> {",
+    "  if (opts.hold) return { ok: true, n: 0 };",
+    "  try {",
+    "    return { ok: true, n: await pump.drain() };",
+    "  } catch {",
+    '    return { ok: false, code: "PUMP_DRAIN_FAILED" };',
+    "  }",
+    "}",
+  ),
+  "test/pump.test.ts": nodeTest + 'import { drainPump } from "../src/pump.ts";\n' + lines(
+    ...[1, 2, 3].flatMap((i) => [
+      `test("a held pump drains nothing (${i})", async () => {`,
+      `  const pump = { drain: async () => ${i} };`,
+      "  assert.deepEqual(await drainPump(pump, { hold: true }), { ok: true, n: 0 });",
+      "});",
+    ]),
+    'test("an open pump drains", async () => {',
+    "  const pump = { drain: async () => 5 };",
+    "  assert.deepEqual(await drainPump(pump, { hold: false }), { ok: true, n: 5 });",
+    "});",
+  ),
+};
+
+/** Batch 32 (vitest 4): src/feed.ts (the first test passes `null` offline; the second provides `fetch`: ranked first)
+ *  and src/beacon.ts (both tests, in one describe, provide `post`; the first is muted: attempt 2 is REPRO_OK). */
+export const SHELF_BASES: Files = {
+  "src/feed.ts": lines(
+    "export async function pullFeed(src: { fetch(): Promise<string[]> } | null, opts: { offline: boolean }): Promise<string[]> {",
+    "  if (opts.offline || src === null) return [];",
+    "  try {",
+    "    return await src.fetch();",
+    "  } catch (e) {",
+    '    throw new Error("FEED_FETCH_FAILED", { cause: e });',
+    "  }",
+    "}",
+  ),
+  "test/feed.test.ts": lines(
+    'import { expect, it } from "vitest";',
+    'import { pullFeed } from "../src/feed";',
+    'it("an offline feed is empty", async () => {',
+    "  expect(await pullFeed(null, { offline: true })).toEqual([]);",
+    "});",
+    'it("a feed pulls its source", async () => {',
+    '  const src = { fetch: async () => ["a"] };',
+    '  expect(await pullFeed(src, { offline: false })).toEqual(["a"]);',
+    "});",
+  ),
+  "src/beacon.ts": lines(
+    "export async function sendBeacon(net: { post(body: string): Promise<void> }, opts: { muted: boolean }): Promise<{ ok: boolean; code?: string }> {",
+    "  if (opts.muted) return { ok: true };",
+    "  try {",
+    '    await net.post("ping");',
+    "    return { ok: true };",
+    "  } catch {",
+    '    return { ok: false, code: "BEACON_POST_FAILED" };',
+    "  }",
+    "}",
+  ),
+  "test/beacon.test.ts": lines(
+    'import { describe, expect, it } from "vitest";',
+    'import { sendBeacon } from "../src/beacon";',
+    'describe("sendBeacon", () => {',
+    "  const sent: string[] = [];",
+    "  const net = { post: async (b: string) => { sent.push(b); } };",
+    '  it("a muted beacon sends nothing", async () => {',
+    "    expect(await sendBeacon(net, { muted: true })).toEqual({ ok: true });",
+    "  });",
+    '  it("a beacon posts", async () => {',
+    "    expect(await sendBeacon(net, { muted: false })).toEqual({ ok: true });",
+    "  });",
+    "});",
+  ),
+};
