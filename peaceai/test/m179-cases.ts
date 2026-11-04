@@ -233,6 +233,17 @@ export const CASES: Case[] = [
       assert.equal(l.prop.anchorFor([cand("a", 1)], [], BASE), null);
     },
   },
+  {
+    id: "anchor near miss (m179-guard:an-names): a higher count that breaks a test which passed before (a failing name outside the baseline's) is no anchor",
+    run(l) {
+      const names = (attempt: number, pass: number, failing: string[]): Prop.RepairFeedback => ({ attempt, codes: ["TEST_FAIL"], failing, tests: { total: 4, passedByPeaceAI: pass } });
+      const baseFailing = ["t1", "t2"];
+      assert.equal(l.prop.anchorFor([cand("a", 1)], [names(1, 3, ["t3"])], BASE, baseFailing), null, "t3 passed at baseline and fails now");
+      assert.equal(l.prop.anchorFor([cand("a", 1), cand("b", 3)], [names(1, 3, ["t1"]), names(2, 4, ["t3"])], BASE, baseFailing)?.key, "a", "the later higher result breaks t3, so the earlier clean one stays the anchor");
+      assert.equal(l.prop.anchorFor([cand("a", 1)], [names(1, 3, ["t2"])], BASE, baseFailing)?.key, "a", "a subset of the baseline's failing names is an anchor");
+      assert.equal(l.prop.anchorFor([cand("a", 1)], [names(1, 3, [])], BASE, baseFailing)?.key, "a", "no names (vitest / jest) is an anchor, as before");
+    },
+  },
   { id: "anchor near miss (m179-guard:an-room): a candidate with MAX_ANCHOR_MUTS mutations is no anchor (no room for one more)", run(l) { assert.equal(l.prop.anchorFor([cand("abc", 1, 3, 5), cand("d", 7)], [fb(1, 4), fb(2, 3)], BASE)?.key, "d"); } },
   // ---- composition (pure)
   {

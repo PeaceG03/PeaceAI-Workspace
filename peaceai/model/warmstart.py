@@ -27,7 +27,10 @@ re-warmed to 5x chain 1's final LR with a fresh optimizer):
   held-out bpb within TOL on the same split (WARM_START_STEP0_SPLIT / WARM_START_STEP0_MISMATCH);
 - best is seeded with the step-0 val loss (seed_best), so a later eval becomes best only by beating step 0;
 - the LR may not re-warm: warmup 0 and a peak LR at or below the save's own final LR (lr_at(step - 1) of the save's
-  cfg) (WARM_START_LR_REWARM / WARM_START_LR_ABOVE_FINAL).
+  cfg) (WARM_START_LR_REWARM / WARM_START_LR_ABOVE_FINAL);
+- batch 19: the weights and the kept optimizer state must be from the same step (best.npz meta step and t equal to
+  checkpoint.npz's, which is the save's step): WARM_START_STEP_MISMATCH (check_same_step). Later days resume from the
+  chain-2 save's last checkpoint.npz (weights and optimizer from one file), not from its best.npz.
 Standard library only at import time (numpy is passed in by train.py)."""
 import math
 import os
@@ -134,11 +137,35 @@ def load_opt(np, from_dir, man, trainable, optimizer, opt_load):
         raise WarmError("WARM_START_FILE_SHA")
     import json
     with np.load(p, allow_pickle=False) as z:
-        t = json.loads(str(z["meta"]))["t"]
+        meta = json.loads(str(z["meta"]))
+        check_same_step(from_dir, man, meta)
+        t = meta["t"]
         try:
             return opt_load(z, t, trainable, optimizer)
         except Exception:  # noqa: BLE001  (lbtrain.LbError: a missing key)
             raise WarmError("WARM_START_OPT_MISMATCH")
+
+
+def check_same_step(from_dir, man, ckpt_meta):
+    """Batch 19 (Auditor, #679): the warm-start weights (weights_file: best.npz when the save has one) and the kept
+    optimizer state (checkpoint.npz: moments and t) come from the SAME step. best.npz is a copy of checkpoint.npz taken
+    at the best eval (meta step and t included, saves._trim_best keeps the meta), so a save whose best eval was not its
+    last step pairs older weights with newer moments: refused (WARM_START_STEP_MISMATCH), never silently mixed. A save
+    without best.npz warm-starts from checkpoint.npz alone (one file, one step). Resumed days do not come here: they
+    load weights and optimizer state from the one checkpoint.npz of the chain-2 save (the last step, not the best)."""
+    n = weights_file(man)
+    if n == "checkpoint.npz":
+        return
+    p = os.path.join(from_dir, n)
+    if saves.sha256_file(p) != man["files"][n]["sha256"]:  # guard:ws-same-step-sha
+        raise WarmError("WARM_START_FILE_SHA")
+    try:
+        import json
+        w = json.loads(saves.npz_meta(p))
+    except (ValueError, KeyError, OSError):
+        w = {}
+    if not isinstance(w, dict) or w.get("step") != ckpt_meta.get("step") or w.get("t") != ckpt_meta.get("t") or ckpt_meta.get("step") != man.get("step"):  # guard:ws-same-step
+        raise WarmError("WARM_START_STEP_MISMATCH")
 
 
 def final_lr(man, lr_at):

@@ -99,6 +99,17 @@ lb-train.json chain2Run and daily.trainArgsAllowed); the workflow and every key 
    The optimizer state is kept, not fresh. warmstart.load_opt reads the AdamW 8-bit moments and t from the save's
    checkpoint.npz (sha re-checked against the manifest). The optimizer must equal the save's
    (WARM_START_OPT_MISMATCH).
+   Same step (batch 19, Auditor #679): the weights and the kept optimizer state must come from the same step.
+   best.npz is a copy of checkpoint.npz taken at the best eval, so its meta records that step and t.
+   warmstart.check_same_step (called by load_opt before any state is used) re-hashes best.npz and requires its
+   meta step and t to equal checkpoint.npz's, and checkpoint.npz's step to equal the save's manifest step.
+   Otherwise the day fails closed with WARM_START_STEP_MISMATCH (a filtered code; nothing trained or saved).
+   A save without best.npz uses checkpoint.npz for both (one file, one step).
+   Later days do not warm-start. They resume (train.py --resume-from) from the chain-2 save's last checkpoint.npz,
+   not from its best.npz: weights, moments and t all come from that one file, so they are from the same step by
+   construction. best.npz and best.json travel only as the model of record and the early-stop seed. The same-step
+   check therefore applies only to the warm start, which is the one place weights and optimizer state come from
+   two files.
 4. Rows v2 and the retired v1 chain. Row schema peaceai-lb-chain2-run:v2 adds step0 (warm day only, else null),
    bestStep and improved (= bestStep > 0). v1 rows are still fully validated, and they still count for once-a-day
    (c2-once). They no longer decide warm / resume / done. A v2 chain may not reuse a v1 chainId
@@ -124,10 +135,14 @@ lb-train.json chain2Run and daily.trainArgsAllowed); the workflow and every key 
   for every parameter, whatever the gradient scale, and that shock comes on top of the re-warm. The kept 8-bit
   moments are chain 1's gradient statistics at step 6000 (b1 0.9, b2 0.95, so horizons of about 10 to 20 steps).
   With t about 6000, the bias corrections are about 1.
-  Residual risk: if chain 1's best step was before 6000, the moments come from a later point on the same
-  trajectory at the floor LR, not from best.npz itself. They re-adapt within tens of steps at lr <= 6e-5. The
-  Results row does not record chain 1's best step, but the step-0 check makes the weights exact either way.
-- Tests: m181. Every new c2-* and ws-* guard has a killed mutant. There are admit and near-miss cases for the
+  Batch 19 closes the old residual risk (moments from a later step than the best.npz weights): such a pair is
+  now refused (WARM_START_STEP_MISMATCH), not tolerated. Consequence: if chain 1's best step was before 6000, the
+  pinned save cannot warm-start chain 2 and day 1 stops before training. The Results row does not record chain 1's
+  best step, so this is only known when the day runs; the fix would be a new pinned save, not a looser check.
+- Tests: m181. Every new c2-* and ws-* guard has a killed mutant (batch 19: ws-same-step, ws-same-step-sha, with
+  a save whose best.npz is one eval older refused, and a save with no best.npz or a best.npz of its own step
+  passing). Batch 19 also drifts each of the four c2-row-step0-pins fields (expectBpb, tolBpb, tokens, bytes)
+  alone, with every other check satisfied, and kills a per-clause mutant for each. There are admit and near-miss cases for the
   step-0 tolerance (+-0.0004 passes, +-0.0006 refuses), the LR cap (the final LR passes, a hair above refuses,
   warmup 1 refuses) and seeding. Separate mutants remove the train.py call sites one at a time: the step-0 check,
   the seed, the LR check, the kept optimizer, and the best.npz choice. End to end, a warm day's step0.bpb equals

@@ -260,7 +260,8 @@ export function locate(search: CodeRepo, input: PrepareInput, depth: number = CA
   }
   const consts = constSites(sites, textOf);
   if (depth < 2) return sites; // m173-guard:cs-v2-only
-  return [...sites, ...consts];
+  // M182 (repair-v2 only, behind the line above): the class members the located members call, after every other site
+  return [...sites, ...consts, ...memberSites(sites, textOf)];
 }
 
 /**
@@ -310,6 +311,74 @@ function constSites(sites: readonly Site[], textOf: (p: string) => string | null
       if (sites.some((x) => x.path === site.path && x.start === s && x.end === e) || out.some((x) => x.path === site.path && x.start === s && x.end === e)) continue;
       if (out.length >= MAX_CONST_SITES) return out; // m173-guard:cs-cap
       out.push({ path: site.path, name, start: s, end: e, tier: 3 });
+    }
+  }
+  return out;
+}
+
+// ---- M182 member callees (repair-v2 only; spec: peaceai/spec/repair-v2-m182.md)
+
+/** M182: at most this many class-member sites (tier 4) are added after every other site (repair-v2 only). */
+export const MAX_MEMBER_SITES = 4;
+type ClassMember = ts.MethodDeclaration | ts.GetAccessorDeclaration | ts.SetAccessorDeclaration | ts.ConstructorDeclaration | ts.PropertyDeclaration;
+const isMember = (n: ts.Node): n is ClassMember => ts.isMethodDeclaration(n) || ts.isGetAccessorDeclaration(n) || ts.isSetAccessorDeclaration(n) || ts.isConstructorDeclaration(n) || ts.isPropertyDeclaration(n);
+const isStaticMember = (n: ts.Node): boolean => (ts.canHaveModifiers(n) ? ts.getModifiers(n) ?? [] : []).some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
+/** The members of a class, or of an object literal (read only so that the mc-class guard is what refuses the latter). */
+const membersOf = (n: ts.Node): readonly ts.Node[] => (ts.isClassLike(n) ? n.members : ts.isObjectLiteralExpression(n) ? n.properties : []);
+/** A member that runs when called: a method, or a property initialised with an arrow / function expression. */
+const callableMember = (m: ts.Node): boolean => ts.isMethodDeclaration(m) || (ts.isPropertyDeclaration(m) && !!m.initializer && (ts.isArrowFunction(m.initializer) || ts.isFunctionExpression(m.initializer)));
+/** A member with code: a body (not an overload signature, not abstract), or a function initializer. */
+const memberHasBody = (m: ts.Node): boolean => (ts.isPropertyDeclaration(m) ? callableMember(m) : !!(m as { body?: ts.Node }).body);
+
+/**
+ * M182 (repair-v2 only): the class members a located class member reaches, one level. Inside a located member of a
+ * class, `this.m(...)` (also `this.#m(...)`), a read `this.g` of a get accessor, and `C.m(...)` where C is a top-level
+ * class of the same file resolve to the member of that class DECLARED there (no inheritance), with the same static-ness
+ * as the access (`this` in a static member is the class), with a body. `this` inside a nested non-arrow function or a
+ * nested class is another `this` and is not followed. The members become tier-4 sites in located-site order, then
+ * source order, at most MAX_MEMBER_SITES, after every other site (so the located sites, the const sites and their
+ * numbers are unchanged), skipping any that is already inside a site. The fault is often one call below the entry in
+ * class code too; the M152 / M168 / M172 walks follow only plain-identifier calls to functions.
+ */
+function memberSites(sites: readonly Site[], textOf: (p: string) => string | null): Site[] {
+  const out: Site[] = [];
+  for (const site of sites) {
+    const text = textOf(site.path);
+    if (text === null) continue;
+    const sf = parseSource(site.path, text);
+    let member: ClassMember | null = null;
+    const find = (n: ts.Node) => { if (member) return; if (isMember(n) && n.getStart(sf) === site.start && n.getEnd() === site.end) member = n; else ts.forEachChild(n, find); };
+    find(sf);
+    const self = member as ClassMember | null;
+    if (!self?.parent) continue;
+    if (!ts.isClassLike(self.parent)) continue; // m182-guard:mc-class
+    const classes = new Map<string, ts.Node>();
+    for (const st of sf.statements) if (ts.isClassDeclaration(st) && st.name) classes.set(st.name.text, st);
+    const refs: { n: ts.PropertyAccessExpression; own: boolean }[] = [];
+    const walk = (n: ts.Node, own: boolean) => {
+      // a nested function (not an arrow) or class has its own `this`
+      const rebinds = n !== self && ((isFn(n) && !ts.isArrowFunction(n)) || ts.isClassLike(n));
+      if (ts.isPropertyAccessExpression(n)) refs.push({ n, own });
+      ts.forEachChild(n, (c) => walk(c, own && !rebinds));
+    };
+    walk(self, true);
+    for (const { n, own } of refs) {
+      const isThis = n.expression.kind === ts.SyntaxKind.ThisKeyword;
+      if (isThis && !own) continue; // m182-guard:mc-rebind
+      const owner = isThis ? self.parent : ts.isIdentifier(n.expression) ? classes.get(n.expression.text) : undefined;
+      if (!owner) continue;
+      const call = ts.isCallExpression(n.parent) && n.parent.expression === n;
+      const wantStatic = isThis ? isStaticMember(self) : true;
+      for (const m of membersOf(owner)) {
+        if (nameOf(m) !== n.name.text) continue;
+        if (isStaticMember(m) !== wantStatic) continue; // m182-guard:mc-static
+        if (!(call ? callableMember(m) : ts.isGetAccessorDeclaration(m))) continue; // m182-guard:mc-kind
+        if (!memberHasBody(m)) continue; // m182-guard:mc-body
+        const s = m.getStart(sf), e = m.getEnd();
+        if (sites.some((x) => x.path === site.path && x.start <= s && e <= x.end) || out.some((x) => x.path === site.path && x.start === s && x.end === e)) continue; // m182-guard:mc-known
+        if (out.length >= MAX_MEMBER_SITES) return out; // m182-guard:mc-cap
+        out.push({ path: site.path, name: n.name.text, start: s, end: e, tier: 4 });
+      }
     }
   }
   return out;
@@ -982,10 +1051,11 @@ export const MAX_ANCHOR_MUTS = 3;
 /**
  * M179: the anchor, the tried candidate that is the best clean partial fix so far, or null: a result with no code but
  * TEST_FAIL, the baseline's total, and a passing count above the baseline's and above every earlier anchor's (ties keep
- * the earliest), carrying fewer than MAX_ANCHOR_MUTS mutations (room for one more). The same counts the improved-pair
- * step reads; never a message. tried[i] is attempt i + 1.
+ * the earliest), carrying fewer than MAX_ANCHOR_MUTS mutations (room for one more), whose failing test names are all
+ * among the baseline's (no previously passing test broken; as M178's ev-names). The same counts and names the loop
+ * already gives; never a message. tried[i] is attempt i + 1.
  */
-export function anchorFor(tried: readonly Candidate[], feedback: readonly RepairFeedback[], baseline: RepairInput["baseline"]): Candidate | null {
+export function anchorFor(tried: readonly Candidate[], feedback: readonly RepairFeedback[], baseline: RepairInput["baseline"], baseFailing: readonly string[] = []): Candidate | null {
   let best: Candidate | null = null;
   let bestPass = baseline?.passing ?? Infinity; // no baseline: nothing is above it
   tried.forEach((c, i) => {
@@ -994,6 +1064,8 @@ export function anchorFor(tried: readonly Candidate[], feedback: readonly Repair
     // no counts, or no baseline, also stop here (undefined is not a total)
     if (fb?.tests?.total !== baseline?.total) return; // m179-guard:an-total
     if (c.muts.length >= MAX_ANCHOR_MUTS) return; // m179-guard:an-room
+    // batch 19 (Auditor #680): a test that passed before must not fail now (failing names a subset of the baseline's)
+    if (!(fb?.failing ?? []).every((x) => baseFailing.includes(x))) return; // m179-guard:an-names
     if ((fb?.tests?.passedByPeaceAI ?? -1) <= bestPass) return; // m179-guard:an-improves
     best = c;
     bestPass = fb?.tests?.passedByPeaceAI ?? bestPass;
@@ -1095,7 +1167,7 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
       // it: first every candidate tried so far, in the order it was tried (an edit the tests did not notice on the
       // original code may be masked by the anchor's fault), then the queue; a queued candidate's standalone form goes to
       // the end (deferred, not dropped). A composed result that improves further becomes the next anchor.
-      let anchor = anchorFor(tried, input.feedback, input.baseline);
+      let anchor = anchorFor(tried, input.feedback, input.baseline, baseFailing);
       if (opts.v2 !== true || opts.order) anchor = null; // m179-guard:an-v2-only
       if (anchor && anchor.key !== anchorKey) { anchorKey = anchor.key; redo = [...tried]; }
       if (!anchor) redo = [];

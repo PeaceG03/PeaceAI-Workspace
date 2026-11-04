@@ -52,7 +52,7 @@ test("M179 mutation: the guard tags are unique and cover the guards", () => {
   const ids = guards.map((g) => g.id);
   assert.equal(new Set(ids).size, ids.length, "duplicate guard id");
   assert.deepEqual([...ids].sort(), [
-    "an-clean", "an-improves", "an-no-evidence", "an-room", "an-total", "an-v2-only", "co-cap", "co-overlap", "co-seen", "co-valid", "df-defer", "df-tail", "rb-deferred",
+    "an-clean", "an-improves", "an-names", "an-no-evidence", "an-room", "an-total", "an-v2-only", "co-cap", "co-overlap", "co-seen", "co-valid", "df-defer", "df-tail", "rb-deferred",
   ]);
 });
 
