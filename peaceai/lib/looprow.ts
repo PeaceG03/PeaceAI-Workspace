@@ -20,7 +20,7 @@ export const LOOP_SCHEMA_V4 = "peaceai-plan-loop:v4" as const;
 export const LOOP_MODEL_PROPOSERS = ["model-v1"] as const;
 /** The planner names a v3 row can carry (plandefault.ts PLANNERS; kept here as data, since this module has no imports). */
 export const LOOP_PLANNER_NAMES = ["plan-only-v1", "plan-only-v2", "plan-only-v3", "plan-only-v4"] as const;
-export const LOOP_RUNNERS = ["node-test", "vitest", "jest", "mocha"] as const; // M172: mocha
+export const LOOP_RUNNERS = ["node-test", "vitest", "jest", "mocha", "ava"] as const; // M172: mocha; M187: ava
 export const LOOP_DEPS = ["none", "npm", "pnpm", "yarn"] as const;
 /** M169: v4 public rows only, and only with code DEPS_INSTALL_FAILED: which install step failed, as a fixed code
  *  (never package-manager output). Optional: rows written before M169 have none. Same list as loopdeps.ts DEPS_FAILS. */
