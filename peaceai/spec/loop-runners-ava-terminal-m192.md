@@ -83,6 +83,9 @@ assertions. The decision is to refuse, not to ship a weak guard.
   ava's trusts its IPC, and the M173 report channel protects only the reporter-to-shim hop. jest (workers or in-band)
   and mocha instance-level rewrites of `currentTest.state` were not probed in this batch and are presumed to be in
   the same class.
+  Batch 26 (M193, `peaceai/spec/loop-runners-inproc-m193.md`) probed all three: mocha is made sound against the
+  class (PeaceAI's reporter pins and plans the run); vitest and jest are terminal at the runner and the attacks,
+  including source code reaching `__vitest_worker__` (Auditor, #687), are killed by the M175 edit gate.
 - In the loop's own threat model, the code that runs is team test files (edits refused, `TEAM_TEST_EDIT`) plus
   candidate source edits bounded by M175 (in-body template edits, no new imports or words, no global writes).
   That model does not give the candidate an obvious way to reach `ctx.task` or a runner channel. But M175 is a

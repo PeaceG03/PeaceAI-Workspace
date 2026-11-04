@@ -215,9 +215,11 @@ const NEIGHBOURS: Case[] = [
 ];
 // HAZARD: the code under test (imported by an honest test) rewrites the result; credited on the real runner
 const V_SRC = "export function isLeap(y: number): boolean {\n  const t = (globalThis as any).__vitest_worker__.current;\n  (t.onFailed ||= []).push(() => { t.result.state = \"pass\"; t.result.errors = []; });\n  return y % 4 === 0;\n}\n";
+const V_SRC_IMPORT = 'import { onTestFailed } from "vitest";\nexport function isLeap(y: number): boolean {\n  onTestFailed((c: any) => { c.task.result.state = "pass"; c.task.result.errors = []; });\n  return y % 4 === 0;\n}\n';
 const J_SRC = `exports.isLeap = function isLeap(y) {\n  const t = globalThis[${JSTATE}].currentlyRunningTest;\n  t.errors.push = () => 0;\n  return y % 4 === 0;\n};\n`;
 const HAZARD: Case[] = [
   { id: "vitest: the code under test reaches __vitest_worker__.current and rewrites the result", runner: "vitest", test: T, files: { "src/leap.ts": V_SRC, [T]: `import { test, expect } from "vitest";\nimport { isLeap } from "../src/leap.ts";\n${V_BAD}` } },
+  { id: "vitest: the code under test imports onTestFailed and rewrites the result", runner: "vitest", test: T, files: { "src/leap.ts": V_SRC_IMPORT, [T]: `import { test, expect } from "vitest";\nimport { isLeap } from "../src/leap.ts";\n${V_BAD}` } },
   { id: "jest: the code under test reaches the circus state and swallows the test's errors", runner: "jest", test: T, files: { "src/leap.js": J_SRC, [T]: `const { isLeap } = require("../src/leap.js");\n${J_BAD}` } },
 ];
 
@@ -245,8 +247,20 @@ test("M193 gate: every placement of an in-process rewrite is refused by the M175
     ["jest circus state (a global write)", "export function isLeap(y: number): boolean {\n  const k = Object.getOwnPropertySymbols(globalThis).find((s) => String(s).includes(\"JEST_STATE\"))!;\n  (globalThis as any)[k].currentlyRunningTest.errors.push = () => 0;\n  return y % 4 === 0;\n}\n", "global-write"],
     ["expect.extend from source", "export function isLeap(y: number): boolean {\n  (globalThis as any).expect.extend({ toBe: () => ({ pass: true, message: () => \"\" }) });\n  return y % 4 === 0;\n}\n", "dangerous:globalThis"],
     ["mocha hook from source", "export function isLeap(y: number): boolean {\n  (globalThis as any).beforeEach(function (this: any) { this.currentTest.fn = () => {}; });\n  return y % 4 === 0;\n}\n", "dangerous:globalThis"],
+    ["vitest onTestFailed imported by the source", V_SRC_IMPORT, "top-level-count"],
+    ["vitest onTestFailed through a dynamic import", "export function isLeap(y: number): boolean {\n  import(\"vitest\").then((v: any) => v.onTestFailed((c: any) => { c.task.result.state = \"pass\"; }));\n  return y % 4 === 0;\n}\n", "dangerous:import"],
+    ["vitest worker reach through Reflect", "export function isLeap(y: number): boolean {\n  const w = Reflect.get(Reflect.getPrototypeOf(Reflect.getPrototypeOf(Object)) as any, \"__vitest_worker__\");\n  return y % 4 === 0;\n}\n", "dangerous:Reflect"],
   ];
   for (const [id, content, why] of SRC) assert.equal(gate({ path: "src/leap.ts", content }), why, id);
+  // a source that already holds the global in a const: no dangerous word is added, the worker's name is a new word
+  // (words inside strings count, so splitting the name only makes other new words)
+  const G0 = "const g = globalThis as any;\nexport function isLeap(y: number): boolean {\n  if (g.onFailed) return false;\n  return y % 4 === 0;\n}\n";
+  const og = (p: string) => (p === "src/g.ts" ? G0 : null);
+  const viaG = (body: string) => editScopeProblem([{ path: "src/g.ts", content: G0.replace("  return y", `${body}\n  return y`) }], og, () => false);
+  assert.equal(viaG("  const t = g.__vitest_worker__.current;\n  (t.onFailed ||= []).push(() => { t.result.state = \"pass\"; t.result.errors = []; });"), "new-word:t");
+  assert.equal(viaG("  g.__vitest_worker__.current.onFailed = [() => { g.__vitest_worker__.current.result.state = \"pass\"; }];"), "new-word:__vitest_worker__");
+  assert.equal(viaG("  g[\"__vitest_\" + \"worker__\"].current.onFailed = [];"), "new-word:__vitest_");
+  assert.equal(viaG("  if (g.onFailed) return true;"), null, "a neighbour using only the file's own words is admitted");
   assert.equal(gate({ path: "src/leap.js", content: J_SRC }), "config", "jest's plain .js source is outside the admitted class");
   // admitted near misses: the honest fixes of the same functions
   assert.equal(gate({ path: "src/leap.ts", content: "export function isLeap(y: number): boolean {\n  return y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);\n}\n" }), null, "leap fix");
