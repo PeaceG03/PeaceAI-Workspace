@@ -21,7 +21,7 @@ import { dirname, join, posix } from "node:path";
 import ts from "typescript";
 import { isGeneratedPath, isTestPath, openRepo, resolveSpecifier, type CodeRepo } from "./codesearch.ts";
 import { isolationProblem, runnerWrapper, type Copy } from "./loop.ts";
-import { detectRunner, installDeps, installShim, openDepsCache, openWorkDir, SHIM_EXITS, shimArgs, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
+import { detectRunner, installDeps, installShim, openDepsCache, openWorkDir, shimArgs, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
 import { isBehaviorTest, isSourceFile } from "./plan4.ts";
 import { caughtBy, REPORT_VIAS, templatePrefix, type ThrowSite } from "./plan5.ts";
 import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
@@ -60,6 +60,8 @@ export type PlanResult = ReproPlan | { refuse: ReproRefusal; detail?: string };
 const CODE_SHAPE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
 const TESTISH = new Set(["test", "it", "describe", "suite", "context", "specify", "bench", "xit", "xdescribe", "fit", "fdescribe", "xtest"]);
 const MAX_FILE = 1 << 20;
+/** Methods of plain data (arrays, strings) a parameter is read with; calling one is not a dependency call. */
+const DATA_METHODS = new Set(["map", "filter", "forEach", "reduce", "reduceRight", "find", "findIndex", "findLast", "some", "every", "flatMap", "flat", "includes", "indexOf", "lastIndexOf", "slice", "join", "split", "trim", "trimStart", "trimEnd", "toLowerCase", "toUpperCase", "startsWith", "endsWith", "replace", "replaceAll", "concat", "at", "keys", "values", "entries", "sort", "toString", "padStart", "padEnd"]);
 const MAX_TESTS_SCANNED = 400;
 
 const lineOf = (sf: ts.SourceFile, n: ts.Node) => sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
@@ -103,7 +105,6 @@ function findRegion(sf: ts.SourceFile, code: string, site: ThrowSite): Region | 
     visit(sf);
     return found ?? "REPRO_NO_DIAGNOSIS";
   }
-  if (site.via === "error-class") return "REPRO_NO_TRIGGER"; // repro-guard:no-class-site (a class that passes the code, never seen thrown)
   // a thrown code: the innermost throw / reject / new Error spanning the site line that names the code
   let best: ts.Node | null = null;
   const visit = (n: ts.Node): void => {
@@ -183,6 +184,8 @@ function triggerIn(sf: ts.SourceFile, r: Region, fn: ts.SignatureDeclaration): T
     if (n !== r.guarded && ts.isTryStatement(n)) return; // repro-guard:trigger-no-inner-try (an inner catch takes the failure)
     if (ts.isCallExpression(n) && !(n !== r.guarded && handledLocally(n))) { // repro-guard:trigger-handled
       const t = paramCallee(n.expression, fn); // repro-guard:trigger-param
+      // a data parameter's own method (`ids.map(..)`, `name.trim()`) is not a dependency that can fail
+      if (t && t.prop !== null && DATA_METHODS.has(t.prop)) { ts.forEachChild(n, visit); return; } // repro-guard:trigger-not-builtin
       if (t) { found = { ...t, reject: r.chain || ts.isAwaitExpression(n.parent), callee: n.expression.getText(sf) }; return; }
     }
     ts.forEachChild(n, visit);
@@ -422,12 +425,12 @@ function usesTsx(root: string, pkgDir: string): boolean {
 // ---- the dynamic half: the three runs, as the candidate uid, in the loop's isolation
 
 export interface VariantRun { exitCode: number; pass: number; fail: number; leftovers: number; tampered?: string[] }
-const SYNTH = new Set<number>(Object.values(SHIM_EXITS));
-/** Pure: what the three runs prove. `json`: a vitest / jest / mocha run through the loop's shim. */
-export function judge(json: boolean, runs: Record<Variant, VariantRun>): ReproCode {
+/** Pure: what the three runs prove. A vitest / jest / mocha run goes through the loop's shim, whose made-up counts
+ *  exit 93-95 (never 0 or 1), so they are neither a pass nor a fail here. */
+export function judge(runs: Record<Variant, VariantRun>): ReproCode {
   const all = VARIANTS.map((v) => runs[v]);
   if (all.some((r) => r.exitCode === 97 || r.exitCode === 98)) return "REPRO_ISOLATION"; // repro-guard:judge-isolation
-  const clean = (r: VariantRun) => r.leftovers === 0 && !r.tampered?.length && !(json && SYNTH.has(r.exitCode)); // repro-guard:judge-clean
+  const clean = (r: VariantRun) => r.leftovers === 0 && !r.tampered?.length; // repro-guard:judge-clean
   const passed = (r: VariantRun) => clean(r) && r.exitCode === 0 && r.fail === 0 && r.pass === 1; // repro-guard:judge-one-pass
   const failed = (r: VariantRun) => clean(r) && r.exitCode === 1 && r.fail === 1 && r.pass === 0; // repro-guard:judge-one-fail
   if (passed(runs.repro)) return "REPRO_NOT_FAILING"; // repro-guard:judge-repro-fails
@@ -517,7 +520,7 @@ export function validateRepro(root: string, plan: ReproPlan, o: ValidateOptions)
       runs[v] = { exitCode: r.exitCode, pass: r.pass, fail: r.fail, leftovers: r.leftovers, ...(r.tampered?.length ? { tampered: r.tampered } : {}) };
       rmSync(full, { force: true });
     }
-    return { code: judge(json, runs), runs, plan };
+    return { code: judge(runs), runs, plan };
   } finally {
     work.close();
     cache.close();
