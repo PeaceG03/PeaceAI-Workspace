@@ -5,13 +5,13 @@
 import assert from "node:assert/strict";
 import type { IndexFile } from "../lib/symbols.ts";
 import { planV5, type Case, type CaseCtx, type V5Module } from "./m194-cases.ts";
-import { AGENT, AGENT_REQ, agentWith, MAIL, MAIL_REQ, mailWith } from "./m195-fixtures.ts";
+import { AGENT, AGENT_DAEMON, AGENT_REQ, agentWith, MAIL, MAIL_CLI, MAIL_REQ, mailWith } from "./m195-fixtures.ts";
 
 export interface ShapedCase extends Case { shape: "mail" | "agent" }
 type PlanV5 = ReturnType<V5Module["planTaskV5"]>;
 const A = "packages/agent";
 const code = (p: PlanV5, c: string) => p.diagnosis.codes.find((x) => x.code === c);
-const sites = (p: PlanV5, c: string) => code(p, c)?.sites.map((s) => `${s.path}:${s.line} ${s.via} ${s.match} ${s.symbol}`);
+const sites = (p: PlanV5, c: string) => code(p, c)?.sites.map((s) => `${s.path}:${s.line} ${s.via} ${s.match} ${s.symbol}${s.shape ? ` ${s.shape}` : ""}`);
 const shape = (p: PlanV5) => p.steps.map((s) => `${s.action} ${s.file ?? "-"} ${s.status}`);
 /** Plans `request` on `files` and checks it is refused with every stated code unplaced. */
 function refused(m: V5Module, c: CaseCtx, files: IndexFile[], request: string, codes: string[]): void {
@@ -151,3 +151,62 @@ export const CASES_V5_REPORT: ShapedCase[] = [
     assert.equal(code(p, "QUOTA_READ_FAILED")?.detail, null, "a detail that is only a full stop is no detail");
   } },
 ];
+
+// -- Batch 31, toplevel-catch: a module-level `.catch(fn)` hung directly on a call to a function defined in the same
+//    file is planned at that function (rules diag-toplevel-call, diag-toplevel-module, diag-toplevel-local). Each
+//    near miss keeps the M195 site (the `.catch` call, symbol null), so "everything else stays as is".
+const CLI_REQ = "The mail CLI exits with MAIL_CLI_FAILED.";
+const DAEMON_REQ = "The agent daemon crashes on start: DAEMON_BOOT_FAILED.";
+const mailTop = (m: V5Module, c: CaseCtx) => {
+  const p = planV5(m, c, mail("src/cli.ts", MAIL_CLI), CLI_REQ);
+  assert.deepEqual(sites(p, "MAIL_CLI_FAILED"), ["src/cli.ts:2 catch-log token main toplevel-catch"]);
+  assert.deepEqual(p.steps.filter((s) => s.action === "edit-source").map((s) => `${s.file} ${s.symbol}`), ["src/cli.ts main"]);
+  assert.equal(p.files[0]?.reason, "catches and reports MAIL_CLI_FAILED (catch-log, toplevel-catch)");
+};
+const agentTop = (m: V5Module, c: CaseCtx) => {
+  const p = planV5(m, c, agent("src/daemon.ts", AGENT_DAEMON), DAEMON_REQ);
+  assert.deepEqual(sites(p, "DAEMON_BOOT_FAILED"), [`${A}/src/daemon.ts:2 catch-log token boot toplevel-catch`]);
+  assert.equal(p.steps[0]?.symbol, "boot");
+};
+/** The near miss: the site stays the `.catch` call at `line`, with no symbol and no shape (M195's site, unchanged). */
+const unchanged = (m: V5Module, c: CaseCtx, files: IndexFile[], request: string, codeName: string, at: string) => {
+  const p = planV5(m, c, files, request);
+  assert.deepEqual(sites(p, codeName), [`${at} catch-log token null`]);
+};
+for (const [condition, why] of [["diag-toplevel-call", "call"], ["diag-toplevel-module", "module"], ["diag-toplevel-local", "local"]] as const) {
+  CASES_V5_REPORT.push(
+    { id: `mail-toplevel-catch-${why}`, shape: "mail", kind: "admit", condition, run: mailTop },
+    { id: `agent-toplevel-catch-${why}`, shape: "agent", kind: "admit", condition, run: agentTop },
+  );
+}
+CASES_V5_REPORT.push(
+  { id: "toplevel-catch-on-method-call-or-then", shape: "mail", kind: "refuse", condition: "diag-toplevel-call", run: (m, c) => {
+    // `.catch` on a method call (even one named like a local function), or a `.then(_, fn)`: not a call to that function
+    const method = MAIL_CLI.replace("main().catch(", "const cli = { main };\ncli.main().catch(");
+    unchanged(m, c, mail("src/cli.ts", method), CLI_REQ, "MAIL_CLI_FAILED", "src/cli.ts:7");
+    const then = MAIL_CLI.replace("main().catch((e) => {", "main().then(undefined, (e) => {");
+    unchanged(m, c, mail("src/cli.ts", then), CLI_REQ, "MAIL_CLI_FAILED", "src/cli.ts:6");
+  } },
+  { id: "toplevel-catch-on-non-call", shape: "agent", kind: "refuse", condition: "diag-toplevel-call", run: (m, c) => {
+    const pending = AGENT_DAEMON.replace("void (boot()).catch(", "const pending = boot();\npending.catch(");
+    unchanged(m, c, agent("src/daemon.ts", pending), DAEMON_REQ, "DAEMON_BOOT_FAILED", `${A}/src/daemon.ts:6`);
+  } },
+  { id: "toplevel-catch-inside-callback", shape: "agent", kind: "refuse", condition: "diag-toplevel-module", run: (m, c) => {
+    // inside an anonymous callback (a signal handler): not a module-level call
+    const inCb = AGENT_DAEMON.replace("void (boot()).catch((err: unknown) => logger.error({ code: \"DAEMON_BOOT_FAILED\", err }));", "process.on(\"SIGHUP\", () => {\n  boot().catch((err: unknown) => logger.error({ code: \"DAEMON_BOOT_FAILED\", err }));\n});");
+    unchanged(m, c, agent("src/daemon.ts", inCb), DAEMON_REQ, "DAEMON_BOOT_FAILED", `${A}/src/daemon.ts:6`);
+  } },
+  { id: "toplevel-catch-in-class-field", shape: "mail", kind: "refuse", condition: "diag-toplevel-module", run: (m, c) => {
+    const inClass = MAIL_CLI.replace("main().catch((e) => {", "export default class {\n  done = main().catch((e) => {").replace("  process.exitCode = 1;\n});", "  process.exitCode = 1;\n});\n}");
+    unchanged(m, c, mail("src/cli.ts", inClass), CLI_REQ, "MAIL_CLI_FAILED", "src/cli.ts:7");
+  } },
+  { id: "toplevel-catch-on-imported-function", shape: "mail", kind: "refuse", condition: "diag-toplevel-local", run: (m, c) => {
+    const imported = 'import { main } from "./main.ts";\nmain().catch((e) => {\n  console.error("MAIL_CLI_FAILED", e);\n});\n';
+    unchanged(m, c, mail("src/cli.ts", imported), CLI_REQ, "MAIL_CLI_FAILED", "src/cli.ts:2");
+  } },
+  { id: "toplevel-catch-on-built-function", shape: "agent", kind: "refuse", condition: "diag-toplevel-local", run: (m, c) => {
+    // a local name bound to a value that is not a function literal (built by a factory): the fix is not visibly there
+    const built = AGENT_DAEMON.replace("const boot = async (): Promise<void> => {\n  await Promise.resolve();\n};", "const makeBoot = () => async (): Promise<void> => {};\nconst boot = makeBoot();");
+    unchanged(m, c, agent("src/daemon.ts", built), DAEMON_REQ, "DAEMON_BOOT_FAILED", `${A}/src/daemon.ts:4`);
+  } },
+);

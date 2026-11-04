@@ -15,6 +15,8 @@
 // line, with `via: catch-log | catch-push | catch-result`. Codes built by templates (`PREFIX_${x}`) match a reported
 // `PREFIX_<SEGMENT>` through a boundary-safe CONSTANT_CASE prefix (`match: "template-prefix"`). A `CODE:detail` detail
 // drops a sentence's trailing full stop.
+// Batch 31: a code reported in a module-level `main().catch(fn)` on a function defined in the same file is planned at
+// that function (`shape: "toplevel-catch"`); every other site is planned as before.
 // Nothing here names a repository, task, task set or file of any task set, and no dev-set wording is matched.
 // Read-only: the checkout is opened through codesearch.openRepo (readdir/stat/readFile only, nothing executed).
 import ts from "typescript";
@@ -38,7 +40,7 @@ export const REPORT_VIAS: readonly SiteVia[] = ["catch-log", "catch-push", "catc
 /** `token`: a literal holds the code as a whole token (or a name bound to it); `template-prefix`: a template literal
  *  builds it as `PREFIX_${x}` (M195). For a reported site, `line`/`symbol` are the try statement or promise chain whose
  *  failure is reported (where the fix belongs), not the logging line. */
-export interface ThrowSite { path: string; line: number; symbol: string | null; via: SiteVia; match: "token" | "template-prefix" }
+export interface ThrowSite { path: string; line: number; symbol: string | null; via: SiteVia; match: "token" | "template-prefix"; shape?: "toplevel-catch" }
 export interface ReportedCode { code: string; detail: string | null }
 export interface DiagCode extends ReportedCode { status: "thrown" | "reported" | "not-thrown" | "ambiguous"; sites: ThrowSite[] }
 export interface Diagnosis { family: "diagnose-failure-codes" | null; refused: DiagRefusal | null; codes: DiagCode[]; notYet: DiagNotYet[] }
@@ -120,6 +122,23 @@ export function caughtBy(n: ts.Node): ts.Node | null {
   return null;
 }
 
+/** Batch 31 (M195): a reported site that is a module-level `.catch(fn)` hung directly on a call to a function defined at
+ *  the top level of the same file (`main().catch((e) => log(..))`). The call's failure is that function's failure, so the
+ *  fix is planned at that function (`shape: "toplevel-catch"`, line and symbol of its declaration). Null otherwise (the
+ *  site stays the `.catch` call, symbol null, as before). */
+export function toplevelCatch(sf: ts.SourceFile, at: ts.Node): { symbol: string; line: number } | null {
+  if (!ts.isCallExpression(at) || !ts.isPropertyAccessExpression(at.expression)) return null;
+  let recv: ts.Expression = at.expression.expression;
+  while (ts.isParenthesizedExpression(recv)) recv = recv.expression;
+  const name = ts.isCallExpression(recv) ? nameOf(recv.expression) : null;
+  if (at.expression.name.text !== "catch" || !ts.isCallExpression(recv) || !ts.isIdentifier(recv.expression)) return null; // rule:diag-toplevel-call
+  if (ts.findAncestor(at.parent, (p) => ts.isFunctionLike(p) || ts.isClassLike(p))) return null; // rule:diag-toplevel-module
+  if (!name) return null;
+  const decl = sf.statements.find((st) => (ts.isFunctionDeclaration(st) && st.name?.text === name && !!st.body) || (ts.isVariableStatement(st) && st.declarationList.declarations.some((d) => ts.isIdentifier(d.name) && d.name.text === name && !!d.initializer && (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer)))));
+  if (!decl) return null; // rule:diag-toplevel-local
+  return { symbol: name, line: sf.getLineAndCharacterOfPosition(decl.getStart(sf)).line + 1 };
+}
+
 /** How the value at `n` leaves as a failure, or null: walks up the expression until the first statement or function.
  *  A reported failure (`catch-*`) carries `at`, the try statement or promise chain that caught it. */
 export function throwContext(n: ts.Node): { via: SiteVia; cls: string | null; at?: ts.Node } | null {
@@ -191,8 +210,9 @@ export function throwSites(code: CodeRepo, errCode: string): ThrowSite[] | null 
   const sites: ThrowSite[] = [];
   const classes = new Set<string>();
   const add = (sf: ts.SourceFile, n: ts.Node, via: SiteVia, match: ThrowSite["match"]) => {
-    const line = sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
-    if (!sites.some((s) => s.path === sf.fileName && s.line === line)) sites.push({ path: sf.fileName, line, symbol: enclosing(n), via, match });
+    const top = REPORT_VIAS.includes(via) && enclosing(n) === null ? toplevelCatch(sf, n) : null;
+    const line = top?.line ?? sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
+    if (!sites.some((s) => s.path === sf.fileName && s.line === line)) sites.push({ path: sf.fileName, line, symbol: top?.symbol ?? enclosing(n), via, match, ...(top ? { shape: "toplevel-catch" as const } : {}) });
   };
   const parsed = new Map<string, ts.SourceFile | null>();
   const sfOf = (p: string) => { if (!parsed.has(p)) parsed.set(p, parse(code, p)); return parsed.get(p)!; };
@@ -277,7 +297,7 @@ export function planTaskV5(taskId: string, request: string, ctx: PlanContext, co
   const all = tree.ok ? tree.files : [];
   const sources: { path: string; symbol: string | null; reason: string }[] = [];
   for (const c of d.codes) for (const s of c.sites) {
-    if (sources.length < MAX_SOURCES_V4 && !sources.some((x) => x.path === s.path)) sources.push({ path: s.path, symbol: s.symbol, reason: `${s.via === "reject" ? "rejects with" : REPORT_VIAS.includes(s.via) ? "catches and reports" : "throws"} ${c.code}${REPORT_VIAS.includes(s.via) ? ` (${s.via})` : ""}${s.match === "template-prefix" ? " (template)" : ""}` }); // rule:diag-plan-sites
+    if (sources.length < MAX_SOURCES_V4 && !sources.some((x) => x.path === s.path)) sources.push({ path: s.path, symbol: s.symbol, reason: `${s.via === "reject" ? "rejects with" : REPORT_VIAS.includes(s.via) ? "catches and reports" : "throws"} ${c.code}${REPORT_VIAS.includes(s.via) ? ` (${s.via}${s.shape ? `, ${s.shape}` : ""})` : ""}${s.match === "template-prefix" ? " (template)" : ""}` }); // rule:diag-plan-sites
   }
   const tests: TestPick[] = [];
   const named = namedTests(all, statedNames(request), new Set(sources.map((s) => packageDirOf(all, s.path))));

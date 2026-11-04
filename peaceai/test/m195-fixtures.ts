@@ -10,6 +10,9 @@
 //          src/cache.ts pushes CACHE_SAVE_FAILED into `this.problems` in a `.catch`; src/deps.ts resolves
 //          `{ ok: false, code: "DEPS_RESOLVE_FAILED" }` from a `.catch` arrow; src/artifact.ts logs a template
 //          `ARTIFACT_PUSH_${...}` with `log.warn` in a catch block. packages/web is an unrelated package.
+//   Batch 31 (top-level catch): MAIL_CLI is a CLI file whose module-level `main().catch(..)` logs MAIL_CLI_FAILED for a
+//          `main` declared in the same file; AGENT_DAEMON does the same for a const arrow `boot` with a parenthesized
+//          receiver behind `void`, logging DAEMON_BOOT_FAILED through `logger.error`.
 import type { IndexFile } from "../lib/symbols.ts";
 import { LICENSE } from "./m153-fixtures.ts";
 
@@ -157,3 +160,23 @@ export function agentWith(over: IndexFile[], drop: (p: string) => boolean = () =
 /** Requests written for these fixtures: failure reports in plain words plus the codes a log would show. */
 export const MAIL_REQ = "The hourly mail sync job fails. Logs show MAILBOX_SYNC_FAILED:timeout, then DIGEST_SEND_FAILED and QUOTA_READ_FAILED. A transient inbox error must be retried instead of failing the sync. Add regression tests.";
 export const AGENT_REQ = "The build agent crashes. Its log shows STEP_RUN_FAILED, then AGENT_CLI_CRASHED and CACHE_SAVE_FAILED:k1, and DEPS_RESOLVE_FAILED. A failed step must be retried before the agent gives up; add tests.";
+
+/** Batch 31: a top-level `.catch` hung directly on a call to a function defined in the same file. */
+export const MAIL_CLI = lines(
+  'import { syncMailbox } from "./sync.ts";',
+  "async function main(): Promise<void> {",
+  '  const n = await syncMailbox(process.argv[2] ?? "me");',
+  "  console.log(`synced ${n}`);",
+  "}",
+  "main().catch((e) => {",
+  '  console.error("MAIL_CLI_FAILED", e);',
+  "  process.exitCode = 1;",
+  "});",
+);
+export const AGENT_DAEMON = lines(
+  'import { logger } from "./logger.ts";',
+  "const boot = async (): Promise<void> => {",
+  "  await Promise.resolve();",
+  "};",
+  'void (boot()).catch((err: unknown) => logger.error({ code: "DAEMON_BOOT_FAILED", err }));',
+);

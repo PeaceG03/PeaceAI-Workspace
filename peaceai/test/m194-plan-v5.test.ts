@@ -37,9 +37,9 @@ const ctx3 = { ...ctx, targetRepo: Object.keys(loadTargets().targets).sort()[0]!
 const H40 = "a".repeat(40);
 /** v5 in M153's PlannerModule shape, so M153's and M164's cases run on it unchanged. */
 const asV3 = (m: V5Module): PlannerModule => ({ planTaskV3: m.planTaskV5 as unknown as PlannerModule["planTaskV3"], repoFromFiles: m.repoFromFiles });
-const TAGS = ["diag-alias", "diag-alias-use", "diag-ambiguous", "diag-class-follow", "diag-code-shape", "diag-detail-trim", "diag-error-class", "diag-error-new", "diag-failure-report", "diag-fallback-v4", "diag-needs-site", "diag-plan-sites", "diag-reject", "diag-report-caught", "diag-report-log", "diag-report-push", "diag-report-result", "diag-source-only", "diag-statement-bound", "diag-template-boundary", "diag-template-prefix", "diag-throw"];
+const TAGS = ["diag-alias", "diag-alias-use", "diag-ambiguous", "diag-class-follow", "diag-code-shape", "diag-detail-trim", "diag-error-class", "diag-error-new", "diag-failure-report", "diag-fallback-v4", "diag-needs-site", "diag-plan-sites", "diag-reject", "diag-report-caught", "diag-report-log", "diag-report-push", "diag-report-result", "diag-source-only", "diag-statement-bound", "diag-template-boundary", "diag-template-prefix", "diag-throw", "diag-toplevel-call", "diag-toplevel-local", "diag-toplevel-module"];
 /** M195's conditions: each needs admit cases on two shapes (`mail`, `agent`), a near miss, a removing mutant and a loosening one. */
-const TAGS_M195 = ["diag-detail-trim", "diag-report-caught", "diag-report-log", "diag-report-push", "diag-report-result", "diag-template-boundary", "diag-template-prefix"];
+const TAGS_M195 = ["diag-detail-trim", "diag-report-caught", "diag-report-log", "diag-report-push", "diag-report-result", "diag-template-boundary", "diag-template-prefix", "diag-toplevel-call", "diag-toplevel-local", "diag-toplevel-module"];
 const CASES = [...CASES_V5, ...CASES_V5_REPORT];
 
 /** One mutant per tagged rule. `find` must occur exactly once in plan5.ts. */
@@ -73,7 +73,13 @@ const MUTANTS: { id: string; find: string; replace: string }[] = [
   { id: "diag-template-boundary", find: "if ((before === \"\" ? i === 0 : /[^A-Za-z0-9_$]$/.test(before)) && !/^[A-Za-z0-9_$]/.test(parts[i + 1]!)) return true; // rule:diag-template-boundary", replace: "" },
   { id: "diag-template-boundary", find: "if ((before === \"\" ? i === 0 : /[^A-Za-z0-9_$]$/.test(before)) && !/^[A-Za-z0-9_$]/.test(parts[i + 1]!)) return true; // rule:diag-template-boundary", replace: "return true;" },
   { id: "diag-detail-trim", find: 'const detail = m[2]?.replace(/\\.+$/, "") || null; // rule:diag-detail-trim', replace: "const detail = m[2] ?? null;" },
-  { id: "diag-detail-trim", find: 'const detail = m[2]?.replace(/\\.+$/, "") || null; // rule:diag-detail-trim', replace: 'const detail = m[2]?.replace(/\\./g, "") || null;' },
+  { id: "diag-detail-trim", find: 'const detail = m[2]?.replace(/\\.+$/, "") || null; // rule:diag-detail-trim', replace: 'const detail = m[2]?.replace(/\\./g, "") || null;' },  // Batch 31 (toplevel-catch): removing each guard's admit path fails the admit cases; loosening it fails its near miss
+  { id: "diag-toplevel-call", find: 'if (at.expression.name.text !== "catch" || !ts.isCallExpression(recv) || !ts.isIdentifier(recv.expression)) return null; // rule:diag-toplevel-call', replace: "return null;" },
+  { id: "diag-toplevel-call", find: 'if (at.expression.name.text !== "catch" || !ts.isCallExpression(recv) || !ts.isIdentifier(recv.expression)) return null; // rule:diag-toplevel-call', replace: "" },
+  { id: "diag-toplevel-module", find: "if (ts.findAncestor(at.parent, (p) => ts.isFunctionLike(p) || ts.isClassLike(p))) return null; // rule:diag-toplevel-module", replace: "return null;" },
+  { id: "diag-toplevel-module", find: "if (ts.findAncestor(at.parent, (p) => ts.isFunctionLike(p) || ts.isClassLike(p))) return null; // rule:diag-toplevel-module", replace: "" },
+  { id: "diag-toplevel-local", find: "if (!decl) return null; // rule:diag-toplevel-local", replace: "return null;" },
+  { id: "diag-toplevel-local", find: "if (!decl) return null; // rule:diag-toplevel-local", replace: "if (!decl) return { symbol: name, line: 1 };" },
 ];
 
 const dir = mkdtempSync(join(tmpdir(), "peaceai-m194-mut-"));
@@ -111,6 +117,8 @@ test("M194 mutation: mutating any one tagged rule of plan5.ts fails at least one
     const failed: string[] = [];
     for (const c of CASES) { try { c.run(mod, ctx); } catch (e) { if (e instanceof assert.AssertionError) failed.push(c.id); else throw e; } }
     assert.ok(failed.length > 0, `mutant ${m.id} survived every case`);
+    // M195 / Batch 31 guards: caught by a case written for that same condition, not only by a side effect elsewhere
+    if (TAGS_M195.includes(m.id)) assert.ok(CASES.some((c) => c.condition === m.id && failed.includes(c.id)), `mutant ${m.id}: no ${m.id} case fails (${failed.join(", ")})`);
   }
 });
 
