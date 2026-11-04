@@ -1131,6 +1131,7 @@ export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<stri
   const rank = (x: Mutation) => order.indexOf(x.template);
   all.sort((a, b) => rank(a) - rank(b) || a.site - b.site || a.start - b.start || a.end - b.end || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0));
   const queue: Candidate[] = [];
+  if (v2) return reachReserved(all, sites, files, seen); // m189-guard:v2-only
   for (const x of all) {
     if (queue.length >= MAX_CANDIDATES) break; // guard:cap
     const c = candidateFor(files, [x]);
@@ -1140,6 +1141,41 @@ export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<stri
     queue.push(c);
   }
   return queue;
+}
+
+/** M189: the first site tier reached through the code rather than named by the request (M182 class members, M184 /
+ *  M186 barrel and default re-exports). */
+export const REACH_TIER = 4;
+/** M189: candidate slots kept for reach sites (tier >= REACH_TIER) when the located sites alone would fill the cap. */
+export const REACH_RESERVED = 12;
+/**
+ * M189 (repair-v2 only; repair-v1 and model-v1's scoring list are unchanged): the same fixed-order walk as above, but the
+ * cap no longer lets the located sites' many template mutations push every reach-site candidate out (Auditor note,
+ * batch 22). Candidates are collected per side (located: tier < REACH_TIER; reach: the rest), up to MAX_CANDIDATES
+ * each; the reach side keeps what fits after the located side, and at least REACH_RESERVED; the located side keeps the
+ * rest. The kept candidates stay in the walk's order. When the cap does not bind, or there is no reach site, the list
+ * is exactly the plain walk's.
+ */
+function reachReserved(all: readonly Mutation[], sites: readonly Site[], files: ReadonlyMap<string, string>, seen: Set<string>): Candidate[] {
+  const low: { c: Candidate; i: number }[] = [], high: { c: Candidate; i: number }[] = [];
+  const local = new Set<string>();
+  for (let i = 0; i < all.length; i++) {
+    if (low.length >= MAX_CANDIDATES && high.length >= MAX_CANDIDATES) break;
+    const x = all[i]!;
+    const side = (sites[x.site]?.tier ?? 0) >= REACH_TIER ? high : low;
+    if (side.length >= MAX_CANDIDATES) continue;
+    const c = candidateFor(files, [x]);
+    if (!c || seen.has(c.key) || local.has(c.key)) continue;
+    local.add(c.key);
+    side.push({ c, i });
+  }
+  let nHigh = Math.min(high.length, Math.max(0, MAX_CANDIDATES - low.length));
+  nHigh = Math.max(nHigh, Math.min(high.length, REACH_RESERVED)); // m189-guard:reserve
+  const nLow = Math.min(low.length, MAX_CANDIDATES - nHigh);
+  const kept = [...low.slice(0, nLow), ...high.slice(0, nHigh)];
+  kept.sort((a, b) => a.i - b.i); // m189-guard:order
+  for (const k of kept) seen.add(k.c.key);
+  return kept.map((k) => k.c);
 }
 
 // ---- M174: load-repair candidates (repair-v2 only)
