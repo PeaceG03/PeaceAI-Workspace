@@ -156,12 +156,15 @@ export function resolveImport(from: string, spec: string, exists: (p: string) =>
   for (const c of [base, `${stem}.ts`, `${stem}.tsx`, `${stem}.mts`, `${stem}.cts`, `${stem}/index.ts`, `${stem}/index.tsx`]) if (SOURCE.test(c) && exists(c)) return c;
   return null;
 }
-/** M172: the file's import bindings from relative modules: local name -> { spec, imported name } (named imports only). */
+/** M172: the file's import bindings from relative modules: local name -> { spec, imported name } (named imports; M186:
+ *  and the default import, as the name "default"; never a namespace import). */
 function relativeImports(sf: ts.SourceFile): Map<string, { spec: string; name: string }> {
   const m = new Map<string, { spec: string; name: string }>();
   for (const st of sf.statements) {
     if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier) || !st.importClause) continue;
     if (st.importClause.isTypeOnly) continue; // m172-guard:imp-type-only
+    // M186 (spec: repair-v2-m186.md): a default import binds the module's default export, looked up as "default"
+    if (st.importClause.name) m.set(st.importClause.name.text, { spec: st.moduleSpecifier.text, name: "default" });
     const b = st.importClause.namedBindings;
     if (!b || !ts.isNamedImports(b)) continue;
     for (const e of b.elements) {
@@ -182,6 +185,11 @@ export function locate(search: CodeRepo, input: PrepareInput, depth: number = CA
     if (!texts.has(p)) { const r = search.read(p); texts.set(p, r.ok && !r.truncated ? r.text : null); }
     return texts.get(p) ?? null;
   };
+  const parsed = new Map<string, ts.SourceFile | null>();
+  const sfOf: SfOf = (p) => {
+    if (!parsed.has(p)) { const t = textOf(p); parsed.set(p, t === null ? null : parseSource(p, t)); }
+    return parsed.get(p) ?? null;
+  };
   const allowed = (p: string) => {
     if (!SOURCE.test(p) || p.endsWith(".d.ts")) return false;
     if (isTestPath(p)) return false; // guard:test-path
@@ -189,6 +197,16 @@ export function locate(search: CodeRepo, input: PrepareInput, depth: number = CA
     return true;
   };
   const push = (s: Site) => { if (sites.length < MAX_SITES && !sites.some((x) => x.path === s.path && x.start === s.start && x.end === s.end)) sites.push(s); };
+  // M184: functions reached through a barrel's re-exports; tier 5, appended after every other site
+  const barrel: Site[] = [];
+  const viaReExport = (mod: string, name: string) => {
+    const r = reExportedDecl(mod, name, "function", MAX_REEXPORT_HOPS, sfOf);
+    if (!r) return;
+    if (!allowed(r.path)) return; // m184-guard:rx-allowed
+    if (barrel.some((x) => x.path === r.path && x.start === r.start)) return;
+    if (barrel.length >= MAX_REEXPORT_SITES) return; // m184-guard:rx-cap
+    barrel.push({ path: r.path, name: r.name, start: r.start, end: r.end, tier: 5 });
+  };
   for (const name of names) {
     const files: string[] = [];
     const sym = search.symbol(name);
@@ -225,6 +243,9 @@ export function locate(search: CodeRepo, input: PrepareInput, depth: number = CA
           const tsf = parseSource(target, textOf(target)!);
           const fn = topFunctions(tsf).get(im.name);
           if (fn) push({ path: target, name: im.name, start: fn.getStart(tsf), end: fn.getEnd(), tier });
+          // M184 (repair-v2 only, behind imp-v2-only): the module is a barrel that re-exports the name from another file;
+          // M186: a default import ("default") is resolved there too, so its site is appended (tier 5), never in place
+          else viaReExport(target, im.name);
         }
       };
       for (const d of declarationsNamed(sf, name)) {
@@ -261,7 +282,12 @@ export function locate(search: CodeRepo, input: PrepareInput, depth: number = CA
   const consts = constSites(sites, textOf);
   if (depth < 2) return sites; // m173-guard:cs-v2-only
   // M182 (repair-v2 only, behind the line above): the class members the located members call, after every other site
-  return [...sites, ...consts, ...memberSites(sites, textOf)];
+  const members = memberSites(sites, sfOf, allowed);
+  // M184 (repair-v2 only): the barrel-resolved imported functions, after every other site; one already inside a site is
+  // not added again
+  const earlier = [...sites, ...consts, ...members];
+  const known = (b: Site) => earlier.some((x) => x.path === b.path && x.start <= b.start && b.end <= x.end);
+  return [...earlier, ...barrel.filter((b) => !known(b))]; // m184-guard:rx-known
 }
 
 /**
@@ -333,27 +359,28 @@ const memberHasBody = (m: ts.Node): boolean => (ts.isPropertyDeclaration(m) ? ca
 /**
  * M182 (repair-v2 only): the class members a located class member reaches, one level. Inside a located member of a
  * class, `this.m(...)` (also `this.#m(...)`), a read `this.g` of a get accessor, and `C.m(...)` where C is a top-level
- * class of the same file resolve to the member of that class DECLARED there (no inheritance), with the same static-ness
+ * class of the same file resolve to the member of that class DECLARED there (M183: or, when that class does not declare
+ * the name, in its nearest `extends` ancestor; `super.m` starts at the base; M185: an ancestor may be a class the file
+ * imports from a relative module, resolved in the file that names it), with the same static-ness
  * as the access (`this` in a static member is the class), with a body. `this` inside a nested non-arrow function or a
  * nested class is another `this` and is not followed. The members become tier-4 sites in located-site order, then
  * source order, at most MAX_MEMBER_SITES, after every other site (so the located sites, the const sites and their
  * numbers are unchanged), skipping any that is already inside a site. The fault is often one call below the entry in
  * class code too; the M152 / M168 / M172 walks follow only plain-identifier calls to functions.
  */
-function memberSites(sites: readonly Site[], textOf: (p: string) => string | null): Site[] {
+function memberSites(sites: readonly Site[], sfOf: SfOf, allowed: (p: string) => boolean): Site[] {
   const out: Site[] = [];
   for (const site of sites) {
-    const text = textOf(site.path);
-    if (text === null) continue;
-    const sf = parseSource(site.path, text);
+    const sf = sfOf(site.path);
+    if (!sf) continue;
     let member: ClassMember | null = null;
     const find = (n: ts.Node) => { if (member) return; if (isMember(n) && n.getStart(sf) === site.start && n.getEnd() === site.end) member = n; else ts.forEachChild(n, find); };
     find(sf);
     const self = member as ClassMember | null;
     if (!self?.parent) continue;
     if (!ts.isClassLike(self.parent)) continue; // m182-guard:mc-class
-    const classes = new Map<string, ts.Node>();
-    for (const st of sf.statements) if (ts.isClassDeclaration(st) && st.name) classes.set(st.name.text, st);
+    const own: ClassAt = { node: self.parent, path: site.path, sf };
+    const classes = topClasses(sf);
     const refs: { n: ts.PropertyAccessExpression; own: boolean }[] = [];
     const walk = (n: ts.Node, own: boolean) => {
       // a nested function (not an arrow) or class has its own `this`
@@ -362,26 +389,198 @@ function memberSites(sites: readonly Site[], textOf: (p: string) => string | nul
       ts.forEachChild(n, (c) => walk(c, own && !rebinds));
     };
     walk(self, true);
-    for (const { n, own } of refs) {
+    for (const { n, own: ownThis } of refs) {
       const isThis = n.expression.kind === ts.SyntaxKind.ThisKeyword;
-      if (isThis && !own) continue; // m182-guard:mc-rebind
-      const owner = isThis ? self.parent : ts.isIdentifier(n.expression) ? classes.get(n.expression.text) : undefined;
-      if (!owner) continue;
+      const isSuper = n.expression.kind === ts.SyntaxKind.SuperKeyword;
+      if ((isThis || isSuper) && !ownThis) continue; // m182-guard:mc-rebind
+      const named = ts.isIdentifier(n.expression) ? classes.get(n.expression.text) : undefined;
+      let from: ClassAt | undefined = isThis ? own : named ? { node: named, path: site.path, sf } : undefined;
+      // M183: `super.m` starts at the class the member's own class extends, never at the own class
+      if (isSuper) from = baseOf(own, sfOf, allowed); // m183-guard:ih-super
       const call = ts.isCallExpression(n.parent) && n.parent.expression === n;
-      const wantStatic = isThis ? isStaticMember(self) : true;
-      for (const m of membersOf(owner)) {
+      const wantStatic = isThis || isSuper ? isStaticMember(self) : true;
+      // M183: the nearest class in the extends chain that declares the name (M182 alone: the start class only)
+      const owner = from ? ownerOf(from, n.name.text, wantStatic, sfOf, allowed) : undefined;
+      if (!owner) continue;
+      for (const m of membersOf(owner.node)) {
         if (nameOf(m) !== n.name.text) continue;
         if (isStaticMember(m) !== wantStatic) continue; // m182-guard:mc-static
         if (!(call ? callableMember(m) : ts.isGetAccessorDeclaration(m))) continue; // m182-guard:mc-kind
         if (!memberHasBody(m)) continue; // m182-guard:mc-body
-        const s = m.getStart(sf), e = m.getEnd();
-        if (sites.some((x) => x.path === site.path && x.start <= s && e <= x.end) || out.some((x) => x.path === site.path && x.start === s && x.end === e)) continue; // m182-guard:mc-known
+        const s = m.getStart(owner.sf), e = m.getEnd();
+        if (sites.some((x) => x.path === owner.path && x.start <= s && e <= x.end) || out.some((x) => x.path === owner.path && x.start === s && x.end === e)) continue; // m182-guard:mc-known
         if (out.length >= MAX_MEMBER_SITES) return out; // m182-guard:mc-cap
-        out.push({ path: site.path, name: n.name.text, start: s, end: e, tier: 4 });
+        out.push({ path: owner.path, name: n.name.text, start: s, end: e, tier: 4 });
       }
     }
   }
   return out;
+}
+
+// ---- M184 barrel re-exports (repair-v2 only; spec: peaceai/spec/repair-v2-m184.md)
+
+/** M184: at most this many re-export steps are followed from the module an import names. */
+export const MAX_REEXPORT_HOPS = 3;
+/** M184: at most this many barrel-resolved sites (tier 5) are added after every other site. */
+export const MAX_REEXPORT_SITES = 4;
+/** A parsed repo file by path (cached per locate call, so a declaration is the same node wherever it is reached), or null. */
+type SfOf = (p: string) => ts.SourceFile | null;
+/** What a module-level lookup finds: functions (M184 / M186) or classes (M185). */
+type DeclKind = "function" | "class";
+/** A declaration found by a module-level lookup, with the file it is in. */
+interface Found { path: string; name: string; start: number; end: number; node: ts.Node; sf: ts.SourceFile }
+const hasModifier = (n: ts.Node, k: ts.SyntaxKind): boolean => (ts.canHaveModifiers(n) ? ts.getModifiers(n) ?? [] : []).some((m) => m.kind === k);
+/** M185: the named top-level class declarations of a file, by name (a class expression bound to a const is not one). */
+function topClasses(sf: ts.SourceFile): Map<string, ts.Node> {
+  const m = new Map<string, ts.Node>();
+  for (const st of sf.statements) if (ts.isClassDeclaration(st) && st.name) m.set(st.name.text, st);
+  return m;
+}
+const topDecls = (sf: ts.SourceFile, kind: DeclKind): Map<string, ts.Node> => (kind === "function" ? topFunctions(sf) : topClasses(sf));
+/** M184: does the file export its top-level declaration `name` under that same name (an export modifier or a local `export { name }`)? */
+function exportsOwn(sf: ts.SourceFile, name: string, fn: ts.Node): boolean {
+  let named = hasModifier(fn, ts.SyntaxKind.ExportKeyword);
+  // M186: `export default function f` / `export default class C` exports the default, not the name f / C
+  if (hasModifier(fn, ts.SyntaxKind.DefaultKeyword)) named = false; // m186-guard:dx-not-named
+  if (named) return true;
+  return sf.statements.some((st) => ts.isExportDeclaration(st) && !st.moduleSpecifier && !st.isTypeOnly && !!st.exportClause && ts.isNamedExports(st.exportClause) && st.exportClause.elements.some((e) => !e.isTypeOnly && e.name.text === name && (e.propertyName ?? e.name).text === name));
+}
+/**
+ * M184 (repair-v2 only): the top-level declaration a module that M172 resolved (but which does not declare the imported
+ * name) re-exports under `name`: `export { name } from './x'` / `export { impl as name } from './x'` (followed first, as
+ * in ES, an explicit export shadows `export *`), else `export * from './x'` when exactly one star module exports the
+ * name (ES leaves an ambiguous star name unexported). Relative modules only (M172's resolveImport), value exports only
+ * (no `export type`), at most `hops` steps, a cycle stops. In a module reached by a step, the declaration must be
+ * exported under the name (a non-exported helper of the same name is not what the barrel re-exports). M186: the name
+ * "default" is the module's default export (defaultDecl), including in the module the import names; `export *` never
+ * carries a default. M185: for kind "class" the module the import names is searched too (M172 handles only functions).
+ */
+function reExportedDecl(mod: string, name: string, kind: DeclKind, hops: number, sfOf: SfOf, seen: Set<string> = new Set(), step = 0): Found | null {
+  if (seen.has(mod)) return null;
+  seen.add(mod);
+  const sf = sfOf(mod);
+  if (!sf) return null;
+  const at = (n: ts.Node): Found => ({ path: mod, name: nameOf(n) ?? name, start: n.getStart(sf), end: n.getEnd(), node: n, sf });
+  if (name === "default") { const d = defaultDecl(sf, kind); if (d) return at(d); }
+  const own = name === "default" ? undefined : topDecls(sf, kind).get(name);
+  if (own && (step > 0 || kind === "class")) {
+    if (!exportsOwn(sf, name, own)) return null; // m184-guard:rx-exported
+    return at(own);
+  }
+  if (own) return null; // the importer's own module: M172 already handles a function it declares
+  if (step >= hops) return null; // m184-guard:rx-hops
+  const next = (spec: string) => resolveImport(mod, spec, (q) => sfOf(q) !== null);
+  const stars: string[] = [];
+  for (const st of sf.statements) {
+    if (!ts.isExportDeclaration(st) || !st.moduleSpecifier || !ts.isStringLiteral(st.moduleSpecifier)) continue;
+    if (st.isTypeOnly) continue; // m184-guard:rx-type-only
+    if (!st.exportClause) { stars.push(st.moduleSpecifier.text); continue; }
+    if (!ts.isNamedExports(st.exportClause)) continue;
+    const e = st.exportClause.elements.find((x) => x.name.text === name);
+    if (!e || e.isTypeOnly) continue;
+    const t = next(st.moduleSpecifier.text);
+    return t ? reExportedDecl(t, (e.propertyName ?? e.name).text, kind, hops, sfOf, seen, step + 1) : null; // m184-guard:rx-named-first
+  }
+  // M186: ES `export * from` re-exports every name except the default
+  if (name === "default") return null; // m186-guard:dx-star
+  const hits: Found[] = [];
+  for (const spec of stars) {
+    const t = next(spec);
+    const r = t ? reExportedDecl(t, name, kind, hops, sfOf, new Set(seen), step + 1) : null;
+    if (r) hits.push(r);
+  }
+  if (hits.length !== 1) return null; // m184-guard:rx-star-unique
+  return hits[0]!;
+}
+
+// ---- M183 inherited members (repair-v2 only; spec: peaceai/spec/repair-v2-m183.md)
+
+/** M183: at most this many `extends` steps are followed above the class an access starts at (M185: across files too). */
+export const MAX_BASE_DEPTH = 3;
+/** M185: a class declaration and the file it is in (its own `extends` and imports resolve in that file). */
+interface ClassAt { node: ts.Node; path: string; sf: ts.SourceFile }
+/** M183: the class a class `extends` by a plain name: a top-level class of the same file, else (M185) a class the file
+ *  imports from a relative module, or undefined (`implements` is not inheritance; a mixin call or a property-access base
+ *  is not resolved). */
+function baseOf(c: ClassAt, sfOf: SfOf, allowed: (p: string) => boolean): ClassAt | undefined {
+  if (!ts.isClassLike(c.node)) return undefined;
+  for (const h of c.node.heritageClauses ?? []) {
+    if (h.token !== ts.SyntaxKind.ExtendsKeyword) continue; // m183-guard:ih-extends
+    const e = h.types[0]?.expression;
+    if (!e || !ts.isIdentifier(e)) return undefined;
+    const local = topClasses(c.sf).get(e.text);
+    return local ? { node: local, path: c.path, sf: c.sf } : importedClass(c, e.text, sfOf, allowed);
+  }
+  return undefined;
+}
+/**
+ * M183 (repair-v2 only): the class whose own declaration an access `x.name` starting at class `from` reaches: `from`
+ * itself when it declares `name` with the access's static-ness, else the nearest ancestor that does, at most
+ * MAX_BASE_DEPTH `extends` steps up. The nearest declaration wins even when it is not followable code (a data field or
+ * an abstract member shadows the base's method; M182's mc-kind / mc-body then refuse it). A private `#name` is lexically
+ * scoped to the class that declares it and is never looked up in a base. A cyclic chain (broken code) stops at the
+ * first repeated class.
+ */
+function ownerOf(from: ClassAt, name: string, wantStatic: boolean, sfOf: SfOf, allowed: (p: string) => boolean): ClassAt | undefined {
+  const seen = new Set<ts.Node>();
+  let c: ClassAt | undefined = from;
+  for (let up = 0; c && !seen.has(c.node); up++) {
+    seen.add(c.node);
+    const declares = membersOf(c.node).some((m) => nameOf(m) === name && isStaticMember(m) === wantStatic);
+    if (declares) return c; // m183-guard:ih-nearest
+    if (name.startsWith("#")) return undefined; // m183-guard:ih-private
+    if (up >= MAX_BASE_DEPTH) return undefined; // m183-guard:ih-depth
+    c = baseOf(c, sfOf, allowed);
+  }
+  return undefined;
+}
+
+// ---- M185 imported base classes (repair-v2 only; spec: peaceai/spec/repair-v2-m185.md)
+
+/**
+ * M185 (repair-v2 only): the class a file's `extends <local>` names through a value import from a relative module (a
+ * named import, `{ X as local }`, or M186's default import), resolved by M172's resolveImport and M184's re-export walk
+ * (named before star, ambiguous star dropped, type-only skipped, MAX_REEXPORT_HOPS, cycle stop): the module must
+ * export a class declaration under the imported name (or as its default). The declaring file must pass the same test /
+ * generated filters as any site. The base is then an ordinary link of M183's chain: its own `extends` resolves in its
+ * own file, and the steps count toward MAX_BASE_DEPTH.
+ */
+function importedClass(c: ClassAt, local: string, sfOf: SfOf, allowed: (p: string) => boolean): ClassAt | undefined {
+  const im = relativeImports(c.sf).get(local);
+  if (!im) return undefined;
+  const target = resolveImport(c.path, im.spec, (q) => sfOf(q) !== null);
+  const r = target ? reExportedDecl(target, im.name, "class", MAX_REEXPORT_HOPS, sfOf) : null;
+  if (!r) return undefined;
+  if (!allowed(r.path)) return undefined; // m185-guard:xb-allowed
+  return { node: r.node, path: r.path, sf: r.sf };
+}
+
+// ---- M186 default exports (repair-v2 only; spec: peaceai/spec/repair-v2-m186.md)
+
+/**
+ * M186 (repair-v2 only): the module's own default export of the given kind, or null. A default is claimed by
+ * `export default function [f]` / `export default class [C]`, by `export default f` naming a top-level declaration of
+ * the module (or, for a function, an inline arrow / function expression), or by a local `export { f as default }`.
+ * Exactly one claim must exist (two are broken code; neither is followed); a claim of another kind or of something that
+ * is not a top-level declaration (an object, a call, an imported binding) yields null. `export =` (CommonJS interop,
+ * whose meaning depends on compiler flags the syntactic resolver cannot see) and type-only export lists are not claims.
+ */
+function defaultDecl(sf: ts.SourceFile, kind: DeclKind): ts.Node | null {
+  const tops = topDecls(sf, kind);
+  const claims: (ts.Node | null)[] = [];
+  for (const st of sf.statements) {
+    if ((ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st)) && hasModifier(st, ts.SyntaxKind.DefaultKeyword)) claims.push(ts.isFunctionDeclaration(st) === (kind === "function") ? st : null);
+    else if (ts.isExportAssignment(st)) {
+      if (st.isExportEquals) continue; // m186-guard:dx-equals
+      const e = st.expression;
+      claims.push(ts.isIdentifier(e) ? tops.get(e.text) ?? null : kind === "function" && (ts.isArrowFunction(e) || ts.isFunctionExpression(e)) ? st : null);
+    } else if (ts.isExportDeclaration(st) && !st.moduleSpecifier && st.exportClause && ts.isNamedExports(st.exportClause)) {
+      if (st.isTypeOnly) continue; // m186-guard:dx-type-only
+      for (const x of st.exportClause.elements) if (x.name.text === "default" && !x.isTypeOnly) claims.push(tops.get((x.propertyName ?? x.name).text) ?? null);
+    }
+  }
+  if (claims.length !== 1) return null; // m186-guard:dx-unique
+  return claims[0]!;
 }
 
 // ---- templates

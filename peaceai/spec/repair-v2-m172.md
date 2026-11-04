@@ -72,3 +72,9 @@ calls down (a form-title trim with the idiom fault), and on an entry in a subdir
 inside a template literal (a comparison fault); near misses: repair-v1, a bare specifier, a path above the root, a
 module under `__tests__/`, `import type { f }`, `import { type f }`. The mutation test deletes each m172 guard line
 and needs a case to fail.
+
+## Batch 20 note (M184)
+
+When the module an imported name resolves to does not itself declare the function (a barrel: `export { f } from`,
+`export *`), M184 follows its re-exports to the declaring file and adds that function as a tier-5 site after every
+other site; the M172 sites and their order are unchanged. See `repair-v2-m184.md`.

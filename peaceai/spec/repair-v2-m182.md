@@ -27,7 +27,7 @@ walked once (one level; the new sites are not walked again):
 
 1. `this.m(...)` / `this.#m(...)` (a call) and `this.g` (a read) resolve in the member's own class; `C.m(...)` /
    `C.g` resolve in C when C is a top-level class declaration of the same file. Only members DECLARED in that class
-   are found (no inheritance, no other files).
+   are found (no other files; batch 20's M183 adds the same-file `extends` chain, see `repair-v2-m183.md`).
 2. Conditions, each a tagged guard line:
    - `mc-class`: the located member belongs to a class (an object literal's method is skipped: its `this` depends on
      how it is called).
@@ -65,7 +65,7 @@ and model-v1 never see tier-4 sites: M182 is appended after `m173-guard:cs-v2-on
   wrongly resolved member (a name collision the syntactic resolution cannot see, e.g. a subclass overriding a member)
   costs attempts, not correctness.
 - Resolution is syntactic and conservative: only `this` / same-file class names, only own declared members, no
-  inheritance, no cross-file classes, no object-literal `this`. Each of these is a stated reach limit, not a fix.
+  inheritance (until M183, same file only), no cross-file classes, no object-literal `this`. Each of these is a stated reach limit, not a fix.
 - Bounded: one level, at most 4 extra sites, the same MAX_CANDIDATES cap; the read happens in `prepare()` on the pinned
   commit without the team's tests, like every other locate step.
 - A getter that is also the target of an assignment (`this.g = v` with a get / set pair) is still followed as a read
@@ -79,7 +79,9 @@ and model-v1 never see tier-4 sites: M182 is appended after `m173-guard:cs-v2-on
   in-process attempt protocol, that the passing edit lies inside a member site and outside every earlier site (so
   nothing before M182 could produce it), no repeated proposal, and every proposal in-body under the M175 gate.
 - Order: member sites last, earlier sites identical to the depth-1 list prefix; repair-v1 locates no member site.
-- Resolution: a static call to another same-file class is followed; an imported class and an inherited member are not.
+- Resolution: a static call to another same-file class is followed; a static call through an imported class is not
+  (batch 20: a member inherited from a same-file base is followed by M183; batch 21: a member of an imported base is
+  followed by M185, and the case asserts it).
 - Near misses per guard: object literal vs the same class (`mc-class`), function expression vs arrow (`mc-rebind`),
   instance vs static `norm` (`mc-static`), getter read vs method reference (`mc-kind`), abstract method and overload
   signatures vs the implementation (`mc-body`), named / inside a located class (`mc-known`), six helpers (`mc-cap`).
