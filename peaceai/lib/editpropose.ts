@@ -189,6 +189,16 @@ export function locate(search: CodeRepo, input: PrepareInput, depth: number = CA
     return true;
   };
   const push = (s: Site) => { if (sites.length < MAX_SITES && !sites.some((x) => x.path === s.path && x.start === s.start && x.end === s.end)) sites.push(s); };
+  // M184: functions reached through a barrel's re-exports; tier 5, appended after every other site
+  const barrel: Site[] = [];
+  const viaReExport = (mod: string, name: string) => {
+    const r = reExportedFunction(mod, name, MAX_REEXPORT_HOPS, textOf);
+    if (!r) return;
+    if (!allowed(r.path)) return; // m184-guard:rx-allowed
+    if (barrel.some((x) => x.path === r.path && x.start === r.start)) return;
+    if (barrel.length >= MAX_REEXPORT_SITES) return; // m184-guard:rx-cap
+    barrel.push({ ...r, tier: 5 });
+  };
   for (const name of names) {
     const files: string[] = [];
     const sym = search.symbol(name);
@@ -225,6 +235,8 @@ export function locate(search: CodeRepo, input: PrepareInput, depth: number = CA
           const tsf = parseSource(target, textOf(target)!);
           const fn = topFunctions(tsf).get(im.name);
           if (fn) push({ path: target, name: im.name, start: fn.getStart(tsf), end: fn.getEnd(), tier });
+          // M184 (repair-v2 only, behind imp-v2-only): the module is a barrel that re-exports the name from another file
+          else viaReExport(target, im.name);
         }
       };
       for (const d of declarationsNamed(sf, name)) {
@@ -261,7 +273,12 @@ export function locate(search: CodeRepo, input: PrepareInput, depth: number = CA
   const consts = constSites(sites, textOf);
   if (depth < 2) return sites; // m173-guard:cs-v2-only
   // M182 (repair-v2 only, behind the line above): the class members the located members call, after every other site
-  return [...sites, ...consts, ...memberSites(sites, textOf)];
+  const members = memberSites(sites, textOf);
+  // M184 (repair-v2 only): the barrel-resolved imported functions, after every other site; one already inside a site is
+  // not added again
+  const earlier = [...sites, ...consts, ...members];
+  const known = (b: Site) => earlier.some((x) => x.path === b.path && x.start <= b.start && b.end <= x.end);
+  return [...earlier, ...barrel.filter((b) => !known(b))]; // m184-guard:rx-known
 }
 
 /**
@@ -388,6 +405,60 @@ function memberSites(sites: readonly Site[], textOf: (p: string) => string | nul
     }
   }
   return out;
+}
+
+// ---- M184 barrel re-exports (repair-v2 only; spec: peaceai/spec/repair-v2-m184.md)
+
+/** M184: at most this many re-export steps are followed from the module an import names. */
+export const MAX_REEXPORT_HOPS = 3;
+/** M184: at most this many barrel-resolved sites (tier 5) are added after every other site. */
+export const MAX_REEXPORT_SITES = 4;
+/** M184: does the file export its top-level function `name` under that same name (an export modifier or a local `export { name }`)? */
+function exportsOwn(sf: ts.SourceFile, name: string, fn: ts.Node): boolean {
+  if ((ts.canHaveModifiers(fn) ? ts.getModifiers(fn) ?? [] : []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) return true;
+  return sf.statements.some((st) => ts.isExportDeclaration(st) && !st.moduleSpecifier && !st.isTypeOnly && !!st.exportClause && ts.isNamedExports(st.exportClause) && st.exportClause.elements.some((e) => !e.isTypeOnly && e.name.text === name && (e.propertyName ?? e.name).text === name));
+}
+/**
+ * M184 (repair-v2 only): the top-level function a module that M172 resolved (but which does not declare the imported
+ * name) re-exports under `name`: `export { name } from "./x"` / `export { impl as name } from "./x"` (followed first, as
+ * in ES, an explicit export shadows `export *`), else `export * from "./x"` when exactly one star module exports the
+ * name (ES leaves an ambiguous star name unexported). Relative modules only (M172's resolveImport), value exports only
+ * (no `export type`), at most `hops` steps, a cycle stops. In a module reached by a step, the function must be exported
+ * under the name (a non-exported helper of the same name is not what the barrel re-exports).
+ */
+function reExportedFunction(mod: string, name: string, hops: number, textOf: (p: string) => string | null, seen: Set<string> = new Set(), step = 0): Omit<Site, "tier"> | null {
+  if (seen.has(mod)) return null;
+  seen.add(mod);
+  const text = textOf(mod);
+  if (text === null) return null;
+  const sf = parseSource(mod, text);
+  const fn = topFunctions(sf).get(name);
+  if (fn && step > 0) {
+    if (!exportsOwn(sf, name, fn)) return null; // m184-guard:rx-exported
+    return { path: mod, name, start: fn.getStart(sf), end: fn.getEnd() };
+  }
+  if (fn) return null; // the importer's own module: M172 already handles it
+  if (step >= hops) return null; // m184-guard:rx-hops
+  const next = (spec: string) => resolveImport(mod, spec, (q) => textOf(q) !== null);
+  const stars: string[] = [];
+  for (const st of sf.statements) {
+    if (!ts.isExportDeclaration(st) || !st.moduleSpecifier || !ts.isStringLiteral(st.moduleSpecifier)) continue;
+    if (st.isTypeOnly) continue; // m184-guard:rx-type-only
+    if (!st.exportClause) { stars.push(st.moduleSpecifier.text); continue; }
+    if (!ts.isNamedExports(st.exportClause)) continue;
+    const e = st.exportClause.elements.find((x) => x.name.text === name);
+    if (!e || e.isTypeOnly) continue;
+    const t = next(st.moduleSpecifier.text);
+    return t ? reExportedFunction(t, (e.propertyName ?? e.name).text, hops, textOf, seen, step + 1) : null; // m184-guard:rx-named-first
+  }
+  const hits: Omit<Site, "tier">[] = [];
+  for (const spec of stars) {
+    const t = next(spec);
+    const r = t ? reExportedFunction(t, name, hops, textOf, new Set(seen), step + 1) : null;
+    if (r) hits.push(r);
+  }
+  if (hits.length !== 1) return null; // m184-guard:rx-star-unique
+  return hits[0]!;
 }
 
 // ---- M183 inherited members (repair-v2 only; spec: peaceai/spec/repair-v2-m183.md)
