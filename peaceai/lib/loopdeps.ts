@@ -28,7 +28,7 @@
 //      A missing or unreadable report counts as a failure (fail closed). As in v1, counts are advisory (the
 //      candidate shares the process); the tamper hashes and leftover kill still apply.
 // Each safety guard is a single line tagged "guard:<id>"; the m151 mutation test deletes each in turn and requires a
-// case to fail (M169 / M187 / M188 guards carry their own tags and mutation tests). See peaceai/spec/loop-v2.md.
+// case to fail (M169 / M188 / M192 guards carry their own tags and mutation tests). See peaceai/spec/loop-v2.md.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
@@ -180,12 +180,17 @@ export function detectRunner(root: string, testFiles: readonly string[]): Runner
   // m172-order:service-first (batch 11: the next line must stay above guard:runner-other; m172-mutation swaps them)
   if (SERVICE_FILES.some((f) => existsSync(join(root, f)) || (pkgDir && existsSync(join(root, pkgDir, f)))) || words.includes("docker") || words.includes("docker-compose")) return { refuse: "TEST_NEEDS_SERVICE" }; // guard:service
   if (words.some((w) => (OTHER_RUNNERS as readonly string[]).includes(w))) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // guard:runner-other
+  // M192 (batch 25): a refused runner (ava above all: its verdict is made in a worker the code under test owns, spec
+  // loop-runners-ava-terminal-m192.md) named by path (`node_modules/.bin/ava`, `node node_modules/ava/entrypoints/cli.mjs`)
+  if (words.some((w) => w.includes("/") && OTHER_RUNNERS.some((r) => w.split("/").pop() === r || w.split("/").includes("node_modules") && w.split("/")[w.split("/").indexOf("node_modules") + 1] === r))) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // m192-guard:runner-path
   const rel = (f: string) => (pkgDir ? posix.relative(pkgDir, posix.normalize(f)) : posix.normalize(f));
   const named = (["vitest", "jest", "mocha"] as const).filter((r) => words.includes(r));
   const nodeTest = typeof pkg.scripts?.test === "string" && /^(?:node|tsx)\b[^&|;]*\s--test\b/.test(pkg.scripts.test.trim());
   let runner: RunnerKind | null = null;
   if (named.length === 1) runner = named[0]!;
   else if (named.length === 0 && nodeTest) runner = "node-test";
+  // M192: with no runner named, a refused runner in the dependencies is refused, not run under vitest / jest beside it
+  else if (named.length === 0 && OTHER_RUNNERS.some((r) => Object.hasOwn(deps, r))) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // m192-guard:runner-dep-other
   else if (named.length === 0) { const inDeps = (["vitest", "jest"] as const).filter((r) => Object.hasOwn(deps, r)); runner = inDeps.length === 1 ? inDeps[0]! : null; }
   if (!runner) return { refuse: "TEST_RUNNER_UNSUPPORTED" };
   if (runner !== "node-test" && !Object.hasOwn(deps, runner)) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // guard:runner-dep

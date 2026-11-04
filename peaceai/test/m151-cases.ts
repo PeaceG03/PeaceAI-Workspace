@@ -85,6 +85,10 @@ export const CASES: Case[] = [
       assert.deepEqual(l.deps.detectRunner(d, ["test/a.test.ts"]), { refuse: "TEST_RUNNER_UNSUPPORTED" });
       const ava = plain(dir(ctx, "det"), { "package.json": pkgJson({ test: "xo && ava" }, { ava: "1", vitest: "1" }) });
       assert.deepEqual(l.deps.detectRunner(ava, ["test.ts"]), { refuse: "TEST_RUNNER_UNSUPPORTED" });
+      // M192 (batch 25): with ava declared, m192-guard:runner-dep-other refuses the repo too; this one (ava not declared,
+      // only vitest) is refused by guard:runner-other alone, so deleting it is still noticed
+      const undeclared = plain(dir(ctx, "det"), { "package.json": pkgJson({ test: "xo && ava" }, VDEP) });
+      assert.deepEqual(l.deps.detectRunner(undeclared, ["test.ts"]), { refuse: "TEST_RUNNER_UNSUPPORTED" });
     },
   },
   {
