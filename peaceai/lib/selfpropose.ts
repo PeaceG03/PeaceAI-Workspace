@@ -237,14 +237,17 @@ export function watchedHashes(work: string, files: readonly string[], grader: st
   if (grader) m.set("grader", treeHash(real(grader)));
   return m;
 }
-export function guardedRun(work: string, args: string[], deadline: number, files: readonly string[], grader: string | null, cand: CandUid | null = null): RawRun {
+/** M190 (batch 24): where a caller that asks for it gets the run's raw stdout (the loop's shim names line); never part of
+ *  RawRun, so no stage-2 run record ever carries test output. */
+export interface RunSink { stdout: string }
+export function guardedRun(work: string, args: string[], deadline: number, files: readonly string[], grader: string | null, cand: CandUid | null = null, sink: RunSink | null = null): RawRun {
   const before = watchedHashes(work, files, grader);
-  const r = isolatedRun(work, args, deadline, cand);
+  const r = isolatedRun(work, args, deadline, cand, sink);
   const after = watchedHashes(work, files, grader);
   const tampered = [...before].filter(([k, v]) => after.get(k) !== v).map(([k]) => k);
   return tampered.length ? { ...r, exitCode: r.exitCode || 1, fail: r.fail + 1, tampered } : { ...r, tampered };
 }
-export function isolatedRun(cwd: string, args: string[], deadline: number, cand: CandUid | null = null): { exitCode: number; pass: number; fail: number; leftovers: number } {
+export function isolatedRun(cwd: string, args: string[], deadline: number, cand: CandUid | null = null, sink: RunSink | null = null): { exitCode: number; pass: number; fail: number; leftovers: number } {
   const strict = selfChangeAllowedHere(process.env).ok;
   const before = pidsNow();
   const left = Math.max(1000, deadline - Date.now());
@@ -273,6 +276,7 @@ export function isolatedRun(cwd: string, args: string[], deadline: number, cand:
     spawnSync("sleep", ["0.2"]);
   }
   if (priv) { spawnSync("sudo", ["-n", "rm", "-rf", "--", priv], { stdio: "ignore" }); rmSync(priv, { recursive: true, force: true }); }
+  if (sink) sink.stdout = r.stdout ?? "";
   return { exitCode: r.status ?? 124, pass: lastCount(r.stdout ?? "", "pass"), fail: lastCount(r.stdout ?? "", "fail") + (r.status === null ? 1 : 0), leftovers };
 }
 

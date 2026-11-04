@@ -38,7 +38,9 @@ export interface LoadDiag { kind: "MISSING_EXPORT" | "MISSING_MODULE"; test: str
 export interface RepairEdit { path: string; content: string }
 export interface RepairFeedback { attempt: number; codes: readonly string[]; failing: readonly string[]; tests?: { total: number; passedByPeaceAI: number } | null }
 export interface RepairInput { files: readonly { path: string; content: string }[]; attempt: number; feedback: readonly RepairFeedback[]; baseline?: { total: number; passing: number; failing: number } | null; loadDiagnostics?: readonly LoadDiag[] }
-export interface PrepareInput { request: string; failing: readonly string[] }
+/** M190: `failing` feeds localisation (node:test names only); `baseFailing` (when given) is the baseline's failing test
+ *  names for the outcome evidence (M178 / M179), vitest / jest names included. */
+export interface PrepareInput { request: string; failing: readonly string[]; baseFailing?: readonly string[] }
 export type RepairProposal = { edits: RepairEdit[] } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };
 
 export const REPAIR_PROPOSER = "repair-v1";
@@ -1345,7 +1347,7 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
     // M174: repair-v2 only (never repair-v1 or a reranked list such as model-v1's): the loop may then ask it for a
     // suite that does not load, giving only its load diagnostics
     loadRepair: opts.v2 === true && !opts.order, // m174-guard:lr-v2-only
-    prepare(search, input) { sites = locate(search, input, opts.v2 ? CALLEE_DEPTH.v2 : CALLEE_DEPTH.v1); baseFailing = [...input.failing]; },
+    prepare(search, input) { sites = locate(search, { request: input.request, failing: input.failing }, opts.v2 ? CALLEE_DEPTH.v2 : CALLEE_DEPTH.v1); baseFailing = [...(input.baseFailing ?? input.failing)]; },
     next(input) {
       if (input.loadDiagnostics && opts.v2 === true) {
         // a suite that did not load: only load-repair candidates, one per attempt (the other templates have no signal)

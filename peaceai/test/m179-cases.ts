@@ -329,11 +329,14 @@ export const CASES: Case[] = [
     id: "loop e2e: repair-v2 anchors on area's fix and composes fits' comparison on it; the row is a valid PASS with editScope in-body",
     needsCand: true,
     run() {
+      // batch 24 (M190 gives vitest runs their failing names, so m179-guard:an-names is no longer vacuous here): the
+      // fits tests use a 1 by 0.5 rectangle, so area's fix breaks no test that passed before and is still a clean anchor
+      // (with a 2 by 3 rectangle "fits at the limit" passed by accident at the baseline and area's fix broke it)
       const m151 = setup151();
       const scratch = mkdtempSync(join(tmpdir(), "peaceai-m179-e2e-"));
       try {
         const ctx = { m151, scratch };
-        const test = 'import assert from "node:assert/strict";\nimport { Rect } from "../src/rect.ts";\n\ntest("area small", () => assert.equal(new Rect(2, 3).area(), 6));\ntest("area large", () => assert.equal(new Rect(4, 5).area(), 20));\ntest("fits at the limit", () => assert.equal(new Rect(2, 3).fits(6), true));\ntest("does not fit", () => assert.equal(new Rect(2, 3).fits(5), false));\n';
+        const test = 'import assert from "node:assert/strict";\nimport { Rect } from "../src/rect.ts";\n\ntest("area small", () => assert.equal(new Rect(2, 3).area(), 6));\ntest("area large", () => assert.equal(new Rect(4, 5).area(), 20));\ntest("fits at the limit", () => assert.equal(new Rect(1, 0.5).fits(0.5), true));\ntest("does not fit", () => assert.equal(new Rect(1, 0.5).fits(0.4), false));\n';
         const task = { ...e2eTask(ctx, `m179-rect-${Date.now() % 100000}`, RECTS, test), request: RECT_REQ };
         const r = loop.runLoopTask(task as never, "public", "a".repeat(64), { ...opts174(ctx, repairProposer({ v2: true }) as unknown as Loop.Proposer, MAX_ATTEMPTS), env: { ...m151.env, [STAGE2_CAND_ENV]: M179_CAND } } as never);
         assert.equal(loopRowProblem(r.row), null, `row valid (${loopRowProblem(r.row)})`);
