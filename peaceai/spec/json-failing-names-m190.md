@@ -1,8 +1,17 @@
 # M190: failing test names for vitest and jest runs
 
+**Batch 24 fix (after review): the loop does not read these names.** The first M190 commit (5e3b6fe) added an
+optional stdout sink (`RunSink`) to `selfpropose.ts` `guardedRun` / `isolatedRun` so the loop could read the shim's
+names line. `selfpropose.ts` (the stage-2 isolation) is binding-unchanged for the loop's batches (M146, Peace
+2026-10-30), and m146-loop's static checks failed on it. That change is reverted: `selfpropose.ts` is byte-identical
+to its base again, `runTests` is back to `failing: []` for vitest / jest, and the proposer gets `baseFailing: []` for
+them (M178 / M179 name evidence is as vacuous for those runners as before M190). The stage-2 isolation returns counts
+only, so no other channel carries the names out; the shim's names line, the reporters' names and the reader /
+`jsonFailing` stay, tested, for when a channel is sanctioned (that needs Peace's approval of a selfpropose.ts change).
+Sections 4 and the end-to-end part of the tests below describe the withdrawn wiring; the e2e cases now assert no names.
+
 Spec for the M190 changes in `peaceai/lib/loopdeps.ts` (the shim's `failedNames` and the jest / vitest reporters'
-`failedNames` field), `peaceai/lib/selfpropose.ts` (`RunSink`, the optional sink of `guardedRun` / `isolatedRun`) and
-`peaceai/lib/loop.ts` (`shimFailedNames`, `jsonFailing`, and their use in `runTests`). Tests: `m190-cases.ts` (run by
+`failedNames` field) and `peaceai/lib/loop.ts` (`shimFailedNames`, `jsonFailing`). Tests: `m190-cases.ts` (run by
 `m190-names.test.ts`; the pure cases are replayed against mutants of all three files by `m190-mutation.test.ts`).
 
 ## Why

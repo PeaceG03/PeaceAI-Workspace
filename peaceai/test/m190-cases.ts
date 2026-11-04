@@ -5,8 +5,9 @@
 //      the runner's own and there is exactly one name per failed test (capped, printable);
 //   2. the loop reads that line only when it is the one right before the last `# pass` line, and uses the names only
 //      when there is one per failed test of a clean run with real counts (else []: no names, as before);
-//   3. end to end (candidate uid): the proposer gets the baseline's names as baseFailing (localisation still gets []),
-//      and an edit that fixes one test while breaking another shows different names (M178 reads it as LIVE, not INERT).
+//   3. end to end (candidate uid): NO names leave the stage-2 isolation (batch 24 fix: selfpropose.ts stays unchanged,
+//      M146, and its guardedRun returns counts only), so the proposer gets baseFailing [] and every attempt's failing
+//      is [] for vitest, exactly the pre-M190 behavior; the shim's names line and the reader above stay tested.
 // Every fixture is synthetic (a parser, a money rounder, a fee table, a word wrapper); none is modelled on a practice
 // task or a reference diff, and none is a PeaceSTOCKS shape.
 import assert from "node:assert/strict";
@@ -226,7 +227,7 @@ export const CASES: readonly Case[] = [
   },
   // ---- 3. end to end (candidate uid)
   {
-    id: "loop, vitest: the proposer gets the baseline's names as baseFailing (localisation gets []), and a swap shows in the names",
+    id: "loop, vitest: no names leave the isolation (selfpropose.ts unchanged): baseFailing [] and a swap is not seen in names",
     needsCand: true,
     run(l, ctx) {
       // a fee table: fee(1) should be 3 (fails), fee(2) is 4 (passes); the edit fixes the first and breaks the second
@@ -237,17 +238,17 @@ export const CASES: readonly Case[] = [
       const r = l.loop.runLoopTask(t as never, "public", "a".repeat(64), opts(ctx, p, 2) as never);
       assert.equal(r.row.code, "ATTEMPT_LIMIT");
       assert.deepEqual(r.row.baseline, { total: 2, passing: 1, failing: 1 });
-      assert.deepEqual(seen.prepare, { failing: [], baseFailing: ["fee for one"] });
-      assert.deepEqual(seen.feedback.map((f) => [f.failing, f.tests.passedByPeaceAI]), [[["fee for two"], 1]]);
-      // the same counts as the baseline, different names: M178 reads LIVE (before M190 the names were [] on both sides: INERT)
-      assert.equal(l.prop.siteEvidence(seen.feedback[0] as never, r.row.baseline as never, seen.prepare!.baseFailing!), "live");
-      assert.deepEqual(r.attempts.map((a) => a.failing), [["fee for two"], ["fee for two"]]);
+      assert.deepEqual(seen.prepare, { failing: [], baseFailing: [] });
+      assert.deepEqual(seen.feedback.map((f) => [f.failing, f.tests.passedByPeaceAI]), [[[], 1]]);
+      // the same counts as the baseline and no names on either side: M178 reads INERT, as before M190
+      assert.equal(l.prop.siteEvidence(seen.feedback[0] as never, r.row.baseline as never, seen.prepare!.baseFailing!), "inert");
+      assert.deepEqual(r.attempts.map((a) => a.failing), [[], []]);
       // the public row carries no names (the fixed keys only)
       assert.ok(!JSON.stringify(r.row).includes("fee for"));
     },
   },
   {
-    id: "loop, vitest: a second shape (a word wrapper, two failing): names of every failing test, one per failure",
+    id: "loop, vitest: a second shape (a word wrapper, two failing): no names, whatever the failure count",
     needsCand: true,
     run(l, ctx) {
       const src = "export function wrap(s, w) {\n  return s.length > w ? s.slice(0, w) : s;\n}\n";
@@ -255,8 +256,8 @@ export const CASES: readonly Case[] = [
       const { p, seen } = recording([[{ path: "src/wrap.ts", content: "export function wrap(s, w) {\n  return s;\n}\n" }]]);
       const r = l.loop.runLoopTask(t as never, "public", "a".repeat(64), opts(ctx, p, 1) as never);
       assert.deepEqual(r.row.baseline, { total: 3, passing: 1, failing: 2 });
-      assert.deepEqual(seen.prepare, { failing: [], baseFailing: ["exact width stays", "long is cut with a mark"] });
-      assert.deepEqual(r.attempts.map((a) => a.failing), [["exact width stays", "long is cut with a mark"]]);
+      assert.deepEqual(seen.prepare, { failing: [], baseFailing: [] });
+      assert.deepEqual(r.attempts.map((a) => a.failing), [[]]);
     },
   },
 ];
