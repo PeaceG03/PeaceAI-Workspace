@@ -26,6 +26,8 @@ import { LICENSE_SHA } from "./m153-fixtures.ts";
 import { CASES_V4 } from "./m164-cases.ts";
 import { CASES_V5, planV4, planV5, type CaseCtx, type V5Module } from "./m194-cases.ts";
 import { BACKUP, BACKUP_REQ, QUEUE, QUEUE_REQ } from "./m194-fixtures.ts";
+import { CASES_V5_REPORT } from "./m195-cases.ts";
+import { MAIL, MAIL_REQ } from "./m195-fixtures.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
 const libDir = join(repo, "peaceai/lib");
@@ -35,7 +37,10 @@ const ctx3 = { ...ctx, targetRepo: Object.keys(loadTargets().targets).sort()[0]!
 const H40 = "a".repeat(40);
 /** v5 in M153's PlannerModule shape, so M153's and M164's cases run on it unchanged. */
 const asV3 = (m: V5Module): PlannerModule => ({ planTaskV3: m.planTaskV5 as unknown as PlannerModule["planTaskV3"], repoFromFiles: m.repoFromFiles });
-const TAGS = ["diag-alias", "diag-alias-use", "diag-ambiguous", "diag-class-follow", "diag-code-shape", "diag-error-class", "diag-error-new", "diag-failure-report", "diag-fallback-v4", "diag-needs-site", "diag-plan-sites", "diag-reject", "diag-source-only", "diag-statement-bound", "diag-throw"];
+const TAGS = ["diag-alias", "diag-alias-use", "diag-ambiguous", "diag-class-follow", "diag-code-shape", "diag-detail-trim", "diag-error-class", "diag-error-new", "diag-failure-report", "diag-fallback-v4", "diag-needs-site", "diag-plan-sites", "diag-reject", "diag-report-caught", "diag-report-log", "diag-report-push", "diag-report-result", "diag-source-only", "diag-statement-bound", "diag-template-boundary", "diag-template-prefix", "diag-throw"];
+/** M195's conditions: each needs admit cases on two shapes (`mail`, `agent`), a near miss, a removing mutant and a loosening one. */
+const TAGS_M195 = ["diag-detail-trim", "diag-report-caught", "diag-report-log", "diag-report-push", "diag-report-result", "diag-template-boundary", "diag-template-prefix"];
+const CASES = [...CASES_V5, ...CASES_V5_REPORT];
 
 /** One mutant per tagged rule. `find` must occur exactly once in plan5.ts. */
 const MUTANTS: { id: string; find: string; replace: string }[] = [
@@ -51,9 +56,24 @@ const MUTANTS: { id: string; find: string; replace: string }[] = [
   { id: "diag-alias-use", find: "for (const a of aliases) uses(a, (n) => { // rule:diag-alias-use", replace: "for (const a of [] as string[]) uses(a, (n) => {" },
   { id: "diag-class-follow", find: "for (const cls of classes) { // rule:diag-class-follow", replace: "for (const cls of [] as string[]) {" },
   { id: "diag-ambiguous", find: " || new Set(sites.map((s) => s.path)).size > MAX_SITE_FILES_PER_CODE)", replace: ")" },
-  { id: "diag-needs-site", find: 'if (!codes.some((c) => c.status === "thrown")) return refuse("NO_THROW_SITE", codes); // rule:diag-needs-site', replace: "" },
+  { id: "diag-needs-site", find: 'if (!codes.some((c) => c.status === "thrown" || c.status === "reported")) return refuse("NO_THROW_SITE", codes); // rule:diag-needs-site', replace: "" },
   { id: "diag-fallback-v4", find: "if (d.family === null) return { ...base, planner: PLANNER_V5, diagnosis: d }; // rule:diag-fallback-v4", replace: "if (d.family === null && Date.now() < 0) return { ...base, planner: PLANNER_V5, diagnosis: d };" },
   { id: "diag-plan-sites", find: "!sources.some((x) => x.path === s.path)) sources.push(", replace: "true) sources.push(" },
+  // M195: for each new guard, one mutant that removes it (the admit cases fail) and one that loosens it (a near miss fails)
+  { id: "diag-report-log", find: 'const log = isLogCall(p.expression) ? caught("catch-log", p) : null; // rule:diag-report-log', replace: "const log = null;" },
+  { id: "diag-report-log", find: 'const log = isLogCall(p.expression) ? caught("catch-log", p) : null; // rule:diag-report-log', replace: 'const log = caught("catch-log", p);' },
+  { id: "diag-report-push", find: 'const push = isProblemPush(p.expression) ? caught("catch-push", p) : null; // rule:diag-report-push', replace: "const push = null;" },
+  { id: "diag-report-push", find: 'const push = isProblemPush(p.expression) ? caught("catch-push", p) : null; // rule:diag-report-push', replace: 'const push = ts.isPropertyAccessExpression(p.expression) && p.expression.name.text === "push" ? caught("catch-push", p) : null;' },
+  { id: "diag-report-result", find: 'const result = ts.isObjectLiteralExpression(p) && isFailedResult(p) ? caught("catch-result", p) : null; // rule:diag-report-result', replace: "const result = null;" },
+  { id: "diag-report-result", find: 'const result = ts.isObjectLiteralExpression(p) && isFailedResult(p) ? caught("catch-result", p) : null; // rule:diag-report-result', replace: 'const result = ts.isObjectLiteralExpression(p) ? caught("catch-result", p) : null;' },
+  { id: "diag-report-caught", find: "const at = caughtBy(sink); return at ? { via, cls: null, at } : null; }; // rule:diag-report-caught", replace: "return null; };" },
+  { id: "diag-report-caught", find: "const at = caughtBy(sink); return at ? { via, cls: null, at } : null; }; // rule:diag-report-caught", replace: "return { via, cls: null, at: sink }; };" },
+  { id: "diag-template-prefix", find: "return m && m[1]!.length - 1 >= 5 ? m[1]! : null; // rule:diag-template-prefix", replace: "return null;" },
+  { id: "diag-template-prefix", find: "return m && m[1]!.length - 1 >= 5 ? m[1]! : null; // rule:diag-template-prefix", replace: 'return /^([A-Z][A-Z0-9]*_(?:[A-Z0-9]+_)*)[A-Z0-9]+$/.exec(errCode)?.[1] ?? null;' },
+  { id: "diag-template-boundary", find: "if ((before === \"\" ? i === 0 : /[^A-Za-z0-9_$]$/.test(before)) && !/^[A-Za-z0-9_$]/.test(parts[i + 1]!)) return true; // rule:diag-template-boundary", replace: "" },
+  { id: "diag-template-boundary", find: "if ((before === \"\" ? i === 0 : /[^A-Za-z0-9_$]$/.test(before)) && !/^[A-Za-z0-9_$]/.test(parts[i + 1]!)) return true; // rule:diag-template-boundary", replace: "return true;" },
+  { id: "diag-detail-trim", find: 'const detail = m[2]?.replace(/\\.+$/, "") || null; // rule:diag-detail-trim', replace: "const detail = m[2] ?? null;" },
+  { id: "diag-detail-trim", find: 'const detail = m[2]?.replace(/\\.+$/, "") || null; // rule:diag-detail-trim', replace: 'const detail = m[2]?.replace(/\\./g, "") || null;' },
 ];
 
 const dir = mkdtempSync(join(tmpdir(), "peaceai-m194-mut-"));
@@ -66,15 +86,19 @@ test("M194: every M153 case (v3's rules) and every M164 case (v4's named-test ru
 });
 
 test("M194: every diagnose admit case and refused near miss holds; each tagged rule has a mutant, an admit and a near miss", () => {
-  for (const c of CASES_V5) c.run(plan5, ctx);
+  for (const c of CASES) c.run(plan5, ctx);
   const tags = [...new Set([...source.matchAll(/\/\/ rule:([a-z0-9-]+)/g)].map((m) => m[1]!))].sort();
   assert.deepEqual(tags, TAGS);
   for (const t of TAGS) {
     assert.ok(MUTANTS.some((m) => m.id === t), `rule ${t} has no mutant`);
-    assert.ok(CASES_V5.some((c) => c.condition === t && c.kind === "admit"), `rule ${t} has no admit case`);
-    assert.ok(CASES_V5.some((c) => c.condition === t && c.kind === "refuse"), `rule ${t} needs a refused near miss`);
+    assert.ok(CASES.some((c) => c.condition === t && c.kind === "admit"), `rule ${t} has no admit case`);
+    assert.ok(CASES.some((c) => c.condition === t && c.kind === "refuse"), `rule ${t} needs a refused near miss`);
   }
-  for (const c of CASES_V5) assert.ok(TAGS.includes(c.condition), c.id);
+  for (const c of CASES) assert.ok(TAGS.includes(c.condition), c.id);
+  for (const t of TAGS_M195) {
+    assert.equal(new Set(CASES_V5_REPORT.filter((c) => c.condition === t && c.kind === "admit").map((c) => c.shape)).size, 2, `rule ${t} needs admit cases on both M195 shapes`);
+    assert.equal(MUTANTS.filter((m) => m.id === t).length, 2, `rule ${t} needs a removing and a loosening mutant`);
+  }
 });
 
 test("M194 mutation: mutating any one tagged rule of plan5.ts fails at least one case", async () => {
@@ -85,7 +109,7 @@ test("M194 mutation: mutating any one tagged rule of plan5.ts fails at least one
     writeFileSync(file, absImports(source.replace(m.find, () => m.replace)));
     const mod = (await import(pathToFileURL(file).href)) as V5Module;
     const failed: string[] = [];
-    for (const c of CASES_V5) { try { c.run(mod, ctx); } catch (e) { if (e instanceof assert.AssertionError) failed.push(c.id); else throw e; } }
+    for (const c of CASES) { try { c.run(mod, ctx); } catch (e) { if (e instanceof assert.AssertionError) failed.push(c.id); else throw e; } }
     assert.ok(failed.length > 0, `mutant ${m.id} survived every case`);
   }
 });
@@ -98,7 +122,7 @@ test("M194 generality: plan5.ts, plan5run.ts and the M194 fixtures name no task,
     for (const part of t.repo.toLowerCase().split("/")) if (part.length >= 4) words.add(part);
     for (const f of [...t.reference.files.map((x) => x.path), ...t.tests.files]) if (f.split("/").length >= 2) words.add(f.toLowerCase());
   }
-  for (const f of [join(libDir, "plan5.ts"), join(libDir, "plan5run.ts"), join(repo, "peaceai/test/m194-fixtures.ts"), join(repo, "peaceai/test/m194-cases.ts")]) {
+  for (const f of [join(libDir, "plan5.ts"), join(libDir, "plan5run.ts"), join(repo, "peaceai/test/m194-fixtures.ts"), join(repo, "peaceai/test/m194-cases.ts"), join(repo, "peaceai/test/m195-fixtures.ts"), join(repo, "peaceai/test/m195-cases.ts")]) {
     const lower = readFileSync(f, "utf8").toLowerCase();
     for (const w of words) assert.ok(!new RegExp(String.raw`(?<![a-z0-9])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-z0-9])`).test(lower), `${f} mentions ${w}`);
   }
@@ -110,11 +134,12 @@ const task = (request: string, sources: string[], tests: string[], command: stri
   reference: { from: { pr: 1, merge: "b".repeat(40) }, files: [...sources.map((path) => ({ path, change: "modify" as const })), ...tests.map((path) => ({ path, change: "modify" as const }))], steps: [...sources.map((file) => ({ action: "edit-source" as const, file })), ...tests.map((file) => ({ action: "edit-test" as const, file })), { action: "run-tests", file: null }], docs: [] },
   trainingCheck: { workspaceCommit: H40, sources: 1, inTraining: false },
 });
-/** Synthetic tasks written for the fixtures: the fix is at the throwing site (2), or the request is one the family
- *  refuses (2: v5 must grade exactly as v4). */
+/** Synthetic tasks written for the fixtures: the fix is at the throwing site (2), at the try statements whose failure
+ *  is caught and reported (M195, 1), or the request is one the family refuses (2: v5 must grade exactly as v4). */
 const SYNTHETIC: [string, IndexFile[], PlanTask][] = [
   ["backup", BACKUP, task(BACKUP_REQ, ["src/upload.ts"], ["test/upload.test.ts"], "npx vitest run test/upload.test.ts")],
   ["queue", QUEUE, task(QUEUE_REQ, ["packages/worker/src/run.ts", "packages/worker/src/lease.ts"], ["packages/worker/test/run.test.ts", "packages/worker/test/lease.test.ts"], "cd packages/worker && pnpm jest test/run.test.ts test/lease.test.ts")],
+  ["mail-reported", MAIL, task(MAIL_REQ, ["src/sync.ts", "src/digest.ts", "src/quota.ts"], ["test/sync.test.ts", "test/digest.test.ts", "test/quota.test.ts"], "npx vitest run test/sync.test.ts test/digest.test.ts test/quota.test.ts")],
   ["symptom-only", BACKUP, task("The nightly backup job fails: the manifest check reports MANIFEST_STALE.", ["src/manifest.ts"], ["test/manifest.test.ts"], "npx vitest run test/manifest.test.ts")],
   ["no-failure", BACKUP, task("`checkManifest` should treat two days as stale.", ["src/manifest.ts"], ["test/manifest.test.ts"], "npx vitest run test/manifest.test.ts")],
 ];
@@ -123,8 +148,8 @@ test("M194: synthetic grade before (v4) and after (v5): v5 finds the throwing si
   const g = (p: unknown, files: IndexFile[], t: PlanTask) => gradePlan(p as Plan, t, ctx.rules, files.filter((f) => /\.ts$/.test(f.path)));
   const rows = SYNTHETIC.map(([id, files, t]) => ({ id, v4: g(planV4(ctx, files, t.request), files, t), v5: g(planV5(plan5, ctx, files, t.request), files, t) }));
   for (const r of rows) assert.ok(r.v5.score >= r.v4.score, `v5 lost ${r.id}`);
-  assert.deepEqual(rows.map((r) => [r.v4.fileRecall, r.v5.fileRecall]), [[0, 1], [0, 1], [1, 1], [1, 1]]);
-  assert.deepEqual(rows.slice(2).map((r) => r.v5), rows.slice(2).map((r) => r.v4), "refused requests grade exactly as v4");
+  assert.deepEqual(rows.map((r) => [r.v4.fileRecall, r.v5.fileRecall]), [[0, 1], [0, 1], [0.333, 1], [1, 1], [1, 1]]);
+  assert.deepEqual(rows.slice(3).map((r) => r.v5), rows.slice(3).map((r) => r.v4), "refused requests grade exactly as v4");
 });
 
 test("M194 wiring: v5 is EXPERIMENTAL (own CLI and digest, not in plandefault); v4 stays the default and byte-identical", () => {

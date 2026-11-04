@@ -8,6 +8,13 @@
 // unchanged. Every diagnose step is `missing`: no approved rule edits a throwing site, and v5 says what it cannot do yet
 // (`notYet`, a fixed vocabulary). Each condition is one line tagged `rule:<id>`; M194 removes each in turn and
 // requires a case to fail.
+// M195 (Batch 29) widens "raises the code" to codes that are CAUGHT AND REPORTED: logged (console / logger /
+// process.stderr.write), pushed into an errors / warnings / failures / problems / issues array, or returned / resolved as
+// `{ ok|success: false, ... }`, inside a catch block or a `.catch(fn)` / `.then(_, fn)` rejection handler. Such a site is
+// planned at the try statement or promise chain whose failure is reported (its enclosing function), not at the logging
+// line, with `via: catch-log | catch-push | catch-result`. Codes built by templates (`PREFIX_${x}`) match a reported
+// `PREFIX_<SEGMENT>` through a boundary-safe CONSTANT_CASE prefix (`match: "template-prefix"`). A `CODE:detail` detail
+// drops a sentence's trailing full stop.
 // Nothing here names a repository, task, task set or file of any task set, and no dev-set wording is matched.
 // Read-only: the checkout is opened through codesearch.openRepo (readdir/stat/readFile only, nothing executed).
 import ts from "typescript";
@@ -21,13 +28,19 @@ export { repoFromFiles };
 export const MAX_CODES_V5 = 8;
 export const MAX_SITE_FILES_PER_CODE = 3;
 /** What a diagnose plan cannot do yet. Fixed vocabulary (a plan never carries free text). */
-export const DIAG_NOT_YET = ["reproduce-reported-failure", "fix-at-throw-site", "trace-unthrown-codes"] as const;
+export const DIAG_NOT_YET = ["reproduce-reported-failure", "fix-at-throw-site", "fix-at-report-site", "trace-unthrown-codes"] as const;
 export type DiagNotYet = (typeof DIAG_NOT_YET)[number];
 export type DiagRefusal = "NO_FAILURE_REPORT" | "NO_CODES" | "NO_THROW_SITE";
-export type SiteVia = "throw" | "reject" | "error-new" | "error-class";
-export interface ThrowSite { path: string; line: number; symbol: string | null; via: SiteVia }
+/** How a site raises the code: thrown (M194), or caught and then reported (M195: logged, pushed into a problems array,
+ *  or returned as a failed result, inside a catch block or a promise's rejection handler). */
+export type SiteVia = "throw" | "reject" | "error-new" | "error-class" | "catch-log" | "catch-push" | "catch-result";
+export const REPORT_VIAS: readonly SiteVia[] = ["catch-log", "catch-push", "catch-result"];
+/** `token`: a literal holds the code as a whole token (or a name bound to it); `template-prefix`: a template literal
+ *  builds it as `PREFIX_${x}` (M195). For a reported site, `line`/`symbol` are the try statement or promise chain whose
+ *  failure is reported (where the fix belongs), not the logging line. */
+export interface ThrowSite { path: string; line: number; symbol: string | null; via: SiteVia; match: "token" | "template-prefix" }
 export interface ReportedCode { code: string; detail: string | null }
-export interface DiagCode extends ReportedCode { status: "thrown" | "not-thrown" | "ambiguous"; sites: ThrowSite[] }
+export interface DiagCode extends ReportedCode { status: "thrown" | "reported" | "not-thrown" | "ambiguous"; sites: ThrowSite[] }
 export interface Diagnosis { family: "diagnose-failure-codes" | null; refused: DiagRefusal | null; codes: DiagCode[]; notYet: DiagNotYet[] }
 export interface PlanV5 extends Omit<PlanV4, "planner"> { planner: typeof PLANNER_V5; diagnosis: Diagnosis }
 
@@ -44,7 +57,8 @@ export function reportedCodes(request: string): ReportedCode[] {
   const text = request.replace(/`/g, " ");
   for (const m of text.matchAll(/(?<![\w$.\/:-])([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)(?::([A-Za-z0-9_.-]{1,40}))?(?![\w$])/g)) { // rule:diag-code-shape
     if (m[1]!.length < 5 || out.some((c) => c.code === m[1])) continue;
-    out.push({ code: m[1]!, detail: m[2] ?? null });
+    const detail = m[2]?.replace(/\.+$/, "") || null; // rule:diag-detail-trim
+    out.push({ code: m[1]!, detail });
   }
   return out.slice(0, MAX_CODES_V5);
 }
@@ -71,20 +85,63 @@ function enclosing(n: ts.Node): string | null {
   return null;
 }
 
-/** How the value at `n` leaves as a failure, or null: walks up the expression until the first statement or function. */
-export function throwContext(n: ts.Node): { via: SiteVia; cls: string | null } | null {
+const LOG_METHOD = /^(?:error|warn|warning|fatal|critical|info|notice|log|debug|trace)$/;
+/** A logging call: `console.<level>`, `<log|logger|...Logger>.<level>` (also `this.logger.<level>`), `process.stderr|stdout.write`. */
+function isLogCall(e: ts.Expression): boolean {
+  if (!ts.isPropertyAccessExpression(e)) return false;
+  const r = e.expression;
+  if (ts.isPropertyAccessExpression(r) && ts.isIdentifier(r.expression) && r.expression.text === "process" && /^(?:stderr|stdout)$/.test(r.name.text)) return e.name.text === "write";
+  const recv = nameOf(r);
+  return recv !== null && /^(?:console|log|logger|Log|Logger)$|[a-z0-9]Logger$/.test(recv) && LOG_METHOD.test(e.name.text);
+}
+/** `<problems>.push(..)` / `.unshift(..)` where the array is named errors / warnings / failures / problems / issues. */
+const isProblemPush = (e: ts.Expression): boolean =>
+  ts.isPropertyAccessExpression(e) && /^(?:push|unshift)$/.test(e.name.text) && /^(?:errors?|warnings?|failures?|problems?|issues?)$|[a-z0-9](?:Errors?|Warnings?|Failures?|Problems?|Issues?)$/.test(nameOf(e.expression) ?? "");
+/** An object literal with `ok|success|succeeded: false` that is returned, an arrow's result, or resolved. */
+function isFailedResult(o: ts.ObjectLiteralExpression): boolean {
+  if (!o.properties.some((pr) => ts.isPropertyAssignment(pr) && ts.isIdentifier(pr.name) && /^(?:ok|success|succeeded)$/.test(pr.name.text) && pr.initializer.kind === ts.SyntaxKind.FalseKeyword)) return false;
+  let e: ts.Node = o;
+  while (ts.isParenthesizedExpression(e.parent) || ts.isAsExpression(e.parent) || ts.isSatisfiesExpression(e.parent) || ts.isTypeAssertionExpression(e.parent)) e = e.parent;
+  const p = e.parent;
+  return ts.isReturnStatement(p) || (ts.isArrowFunction(p) && p.body === e) || (ts.isCallExpression(p) && p.arguments.some((a) => a === e) && nameOf(p.expression) === "resolve");
+}
+/** The try statement whose catch block holds `n`, or the `.catch(fn)` / `.then(_, fn)` call whose handler holds it;
+ *  null when `n` is not in a catch (a try block, a success handler or any other function stops the walk). */
+export function caughtBy(n: ts.Node): ts.Node | null {
+  for (let p = n.parent; p; p = p.parent) {
+    if (ts.isCatchClause(p)) return p.parent;
+    if (ts.isFunctionLike(p)) {
+      const c = p.parent;
+      if (c && ts.isCallExpression(c) && ts.isPropertyAccessExpression(c.expression) && ((c.expression.name.text === "catch" && c.arguments[0] === p) || (c.expression.name.text === "then" && c.arguments[1] === p))) return c;
+      return null;
+    }
+    if (ts.isClassLike(p) || ts.isSourceFile(p)) return null;
+  }
+  return null;
+}
+
+/** How the value at `n` leaves as a failure, or null: walks up the expression until the first statement or function.
+ *  A reported failure (`catch-*`) carries `at`, the try statement or promise chain that caught it. */
+export function throwContext(n: ts.Node): { via: SiteVia; cls: string | null; at?: ts.Node } | null {
   let cur = n;
+  const caught = (via: SiteVia, sink: ts.Node) => { const at = caughtBy(sink); return at ? { via, cls: null, at } : null; }; // rule:diag-report-caught
   for (let p = n.parent; p; cur = p, p = p.parent) {
     if (ts.isThrowStatement(p)) return { via: "throw", cls: null }; // rule:diag-throw
     if (ts.isNewExpression(p) && p.arguments?.some((a) => a === cur) && ERRORISH.test(nameOf(p.expression) ?? "")) return { via: "error-new", cls: null }; // rule:diag-error-new
     if (ts.isCallExpression(p) && p.arguments.some((a) => a === cur)) {
       if (nameOf(p.expression) === "reject") return { via: "reject", cls: null }; // rule:diag-reject
+      const log = isLogCall(p.expression) ? caught("catch-log", p) : null; // rule:diag-report-log
+      if (log) return log;
+      const push = isProblemPush(p.expression) ? caught("catch-push", p) : null; // rule:diag-report-push
+      if (push) return push;
       if (p.expression.kind === ts.SyntaxKind.SuperKeyword) { // rule:diag-error-class
         const cls = ts.findAncestor(p, ts.isClassLike);
         const base = cls?.heritageClauses?.find((h) => h.token === ts.SyntaxKind.ExtendsKeyword)?.types[0]?.expression;
         return base && ERRORISH.test(nameOf(base) ?? "") && cls?.name ? { via: "error-class", cls: cls.name.text } : null;
       }
     }
+    const result = ts.isObjectLiteralExpression(p) && isFailedResult(p) ? caught("catch-result", p) : null; // rule:diag-report-result
+    if (result) return result;
     if (ts.isStatement(p) || ts.isFunctionLike(p) || ts.isClassLike(p) || ts.isSourceFile(p)) return null; // rule:diag-statement-bound
   }
   return null;
@@ -94,20 +151,48 @@ export function throwContext(n: ts.Node): { via: SiteVia; cls: string | null } |
 const literalText = (n: ts.Node): string | null =>
   ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) ? n.text : ts.isTemplateExpression(n) ? [n.head.text, ...n.templateSpans.map((s) => s.literal.text)].join("\0") : null;
 
+/** The literal prefix a template may build `errCode` from (`A_B_${x}` for `A_B_C`): the code minus its last
+ *  `_SEGMENT`, only when that prefix is itself CONSTANT_CASE with at least two segments and 5+ characters (so `HTTP_${s}`
+ *  or `E_${s}` never match) and the dropped segment is one plain [A-Z0-9]+ segment. Null otherwise. */
+export function templatePrefix(errCode: string): string | null {
+  const m = /^([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+_)[A-Z0-9]+$/.exec(errCode);
+  return m && m[1]!.length - 1 >= 5 ? m[1]! : null; // rule:diag-template-prefix
+}
+/** A template literal that builds a code from `prefix` + a hole: some head/middle text ends with `prefix` at a word
+ *  boundary of that same text (not after a hole), and the text after the hole does not continue the code. */
+export function templateBuilds(n: ts.Node, prefix: string): boolean {
+  if (!ts.isTemplateExpression(n)) return false;
+  const parts = [n.head.text, ...n.templateSpans.map((s) => s.literal.text)];
+  for (let i = 0; i < parts.length - 1; i++) {
+    const t = parts[i]!;
+    if (!t.endsWith(prefix)) continue;
+    const before = t.slice(0, t.length - prefix.length);
+    if ((before === "" ? i === 0 : /[^A-Za-z0-9_$]$/.test(before)) && !/^[A-Za-z0-9_$]/.test(parts[i + 1]!)) return true; // rule:diag-template-boundary
+  }
+  return false;
+}
+
 /** Sites in the shipped source that throw `code`: literals holding it as a whole token, or CONSTANT_CASE names bound to
  *  exactly it (a const, object property or enum member whose value is the code), in a throw context. Error subclasses that
  *  pass it to `super` are followed to where the class is thrown. Null when the search itself is too broad. */
 export function throwSites(code: CodeRepo, errCode: string): ThrowSite[] | null {
   const tok = word(errCode);
+  const prefix = templatePrefix(errCode);
   const g = code.grep(errCode, { limit: 500 });
   if (!g.ok || g.truncated) return null;
-  const files = [...new Set(g.hits.map((h) => h.path))].filter(isSourceFile); // rule:diag-source-only
+  const hits = g.hits.map((h) => h.path);
+  if (prefix) {
+    const gp = code.grep(prefix, { limit: 500 });
+    if (!gp.ok || gp.truncated) return null;
+    hits.push(...gp.hits.map((h) => h.path));
+  }
+  const files = [...new Set(hits)].filter(isSourceFile); // rule:diag-source-only
   const aliases = new Set<string>();
   const sites: ThrowSite[] = [];
   const classes = new Set<string>();
-  const add = (sf: ts.SourceFile, n: ts.Node, via: SiteVia) => {
+  const add = (sf: ts.SourceFile, n: ts.Node, via: SiteVia, match: ThrowSite["match"]) => {
     const line = sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
-    if (!sites.some((s) => s.path === sf.fileName && s.line === line)) sites.push({ path: sf.fileName, line, symbol: enclosing(n), via });
+    if (!sites.some((s) => s.path === sf.fileName && s.line === line)) sites.push({ path: sf.fileName, line, symbol: enclosing(n), via, match });
   };
   const parsed = new Map<string, ts.SourceFile | null>();
   const sfOf = (p: string) => { if (!parsed.has(p)) parsed.set(p, parse(code, p)); return parsed.get(p)!; };
@@ -116,10 +201,11 @@ export function throwSites(code: CodeRepo, errCode: string): ThrowSite[] | null 
     if (!sf) continue;
     const visit = (n: ts.Node): void => {
       const t = literalText(n);
-      if (t !== null && tok.test(t)) {
+      const match = t === null ? null : tok.test(t) ? "token" : prefix && templateBuilds(n, prefix) ? "template-prefix" : null;
+      if (t !== null && match) {
         const ctx = throwContext(n);
         if (ctx?.via === "error-class") classes.add(ctx.cls!);
-        else if (ctx) add(sf, n, ctx.via);
+        else if (ctx) add(sf, ctx.at ?? n, ctx.via, match);
         const d = n.parent;
         if (t === errCode && d && (ts.isVariableDeclaration(d) || ts.isPropertyAssignment(d) || ts.isEnumMember(d) || ts.isPropertyDeclaration(d)) && d.initializer === n && ts.isIdentifier(d.name) && /^[A-Z][A-Z0-9_]*$/.test(d.name.text)) aliases.add(d.name.text); // rule:diag-alias
       }
@@ -129,13 +215,13 @@ export function throwSites(code: CodeRepo, errCode: string): ThrowSite[] | null 
     visit(sf);
   }
   aliases.add(errCode);
-  const uses = (name: string, test: (n: ts.Node) => SiteVia | null) => {
+  const uses = (name: string, test: (n: ts.Node) => { via: SiteVia; at?: ts.Node } | null) => {
     const h = code.grep(name, { limit: 500 });
     if (!h.ok) return;
     for (const p of [...new Set(h.hits.map((x) => x.path))].filter(isSourceFile)) {
       const sf = sfOf(p);
       if (!sf) continue;
-      const visit = (n: ts.Node): void => { const via = test(n); if (via) add(sf, n, via); ts.forEachChild(n, visit); };
+      const visit = (n: ts.Node): void => { const r = test(n); if (r) add(sf, r.at ?? n, r.via, "token"); ts.forEachChild(n, visit); };
       visit(sf);
     }
   };
@@ -145,15 +231,15 @@ export function throwSites(code: CodeRepo, errCode: string): ThrowSite[] | null 
     const at = ts.isPropertyAccessExpression(n.parent) && n.parent.name === n ? n.parent : n;
     const ctx = throwContext(at);
     if (ctx?.via === "error-class") { classes.add(ctx.cls!); return null; }
-    return ctx?.via ?? null;
+    return ctx;
   });
   for (const cls of classes) { // rule:diag-class-follow
     const before = sites.length;
-    uses(cls, (n) => (ts.isNewExpression(n) && nameOf(n.expression) === cls ? throwContext(n)?.via ?? null : null));
+    uses(cls, (n) => (ts.isNewExpression(n) && nameOf(n.expression) === cls ? throwContext(n) : null));
     if (sites.length === before) { // never thrown where we can see: the class itself is the site
       const sf = files.map(sfOf).find((s) => s && s.statements.some((st) => ts.isClassDeclaration(st) && st.name?.text === cls));
       const decl = sf?.statements.find((st): st is ts.ClassDeclaration => ts.isClassDeclaration(st) && st.name?.text === cls);
-      if (sf && decl) sites.push({ path: sf.fileName, line: sf.getLineAndCharacterOfPosition(decl.getStart(sf)).line + 1, symbol: cls, via: "error-class" });
+      if (sf && decl) sites.push({ path: sf.fileName, line: sf.getLineAndCharacterOfPosition(decl.getStart(sf)).line + 1, symbol: cls, via: "error-class", match: "token" });
     }
   }
   return sites.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : a.line - b.line));
@@ -168,11 +254,15 @@ export function diagnose(code: CodeRepo, request: string): Diagnosis {
   const codes: DiagCode[] = reported.map((c) => {
     const sites = throwSites(code, c.code);
     if (sites === null || new Set(sites.map((s) => s.path)).size > MAX_SITE_FILES_PER_CODE) return { ...c, status: "ambiguous", sites: [] }; // rule:diag-ambiguous
-    return { ...c, status: sites.length ? "thrown" : "not-thrown", sites };
+    const status = sites.length === 0 ? "not-thrown" : sites.some((s) => !REPORT_VIAS.includes(s.via)) ? "thrown" : "reported";
+    return { ...c, status, sites };
   });
-  if (!codes.some((c) => c.status === "thrown")) return refuse("NO_THROW_SITE", codes); // rule:diag-needs-site
-  const notYet: DiagNotYet[] = ["reproduce-reported-failure", "fix-at-throw-site"];
-  if (codes.some((c) => c.status !== "thrown")) notYet.push("trace-unthrown-codes");
+  if (!codes.some((c) => c.status === "thrown" || c.status === "reported")) return refuse("NO_THROW_SITE", codes); // rule:diag-needs-site
+  const all = codes.flatMap((c) => c.sites);
+  const notYet: DiagNotYet[] = ["reproduce-reported-failure"];
+  if (all.some((s) => !REPORT_VIAS.includes(s.via))) notYet.push("fix-at-throw-site");
+  if (all.some((s) => REPORT_VIAS.includes(s.via))) notYet.push("fix-at-report-site");
+  if (codes.some((c) => c.status !== "thrown" && c.status !== "reported")) notYet.push("trace-unthrown-codes");
   return { family: "diagnose-failure-codes", refused: null, codes, notYet };
 }
 
@@ -187,7 +277,7 @@ export function planTaskV5(taskId: string, request: string, ctx: PlanContext, co
   const all = tree.ok ? tree.files : [];
   const sources: { path: string; symbol: string | null; reason: string }[] = [];
   for (const c of d.codes) for (const s of c.sites) {
-    if (sources.length < MAX_SOURCES_V4 && !sources.some((x) => x.path === s.path)) sources.push({ path: s.path, symbol: s.symbol, reason: `${s.via === "reject" ? "rejects with" : "throws"} ${c.code}` }); // rule:diag-plan-sites
+    if (sources.length < MAX_SOURCES_V4 && !sources.some((x) => x.path === s.path)) sources.push({ path: s.path, symbol: s.symbol, reason: `${s.via === "reject" ? "rejects with" : REPORT_VIAS.includes(s.via) ? "catches and reports" : "throws"} ${c.code}${REPORT_VIAS.includes(s.via) ? ` (${s.via})` : ""}${s.match === "template-prefix" ? " (template)" : ""}` }); // rule:diag-plan-sites
   }
   const tests: TestPick[] = [];
   const named = namedTests(all, statedNames(request), new Set(sources.map((s) => packageDirOf(all, s.path))));
@@ -207,7 +297,7 @@ export function planTaskV5(taskId: string, request: string, ctx: PlanContext, co
   const tc = testCommandFor(code, all, sources[0]?.path ?? null, tests.map((t) => t.path));
   return {
     ...base, planner: PLANNER_V5,
-    understanding: { ...base.understanding, kind: "edit", testsOnly: false, scope: { names: d.codes.filter((c) => c.status === "thrown").length, sources: sources.length, tests: tests.length } },
+    understanding: { ...base.understanding, kind: "edit", testsOnly: false, scope: { names: d.codes.filter((c) => c.status === "thrown" || c.status === "reported").length, sources: sources.length, tests: tests.length } },
     files: [...sources.map((s) => ({ path: s.path, role: "source" as const, reason: s.reason })), ...tests.map((t) => ({ path: t.path, role: "test" as const, reason: t.reason }))],
     steps, tests: { files: tests.map((t) => t.path), command: tc.command },
     testCommand: { pm: tc.pm, runner: tc.runner, packageDir: tc.packageDir, form: tc.form },
