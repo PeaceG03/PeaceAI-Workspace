@@ -1,7 +1,7 @@
 // M151 (loop v2, step 3 of the general coding-agent roadmap): what the test-and-fix loop needs to run a real repo's
 // tests. Three parts, all general (nothing here names a task, a repo or a task set):
 //   1. detectRunner: which runner the team's test files belong to (node:test, vitest, jest) and in which package;
-//      other runners (tap, uvu, ...; mocha since M172, ava since M187 are run) and suites that need an outside service (docker compose) are refused.
+//      other runners (mocha, ava, tap, ...) and suites that need an outside service (docker compose) are refused.
 //   2. installDeps: the repo's dependencies, ONLY from its lockfile (npm ci / pnpm install --frozen-lockfile /
 //      yarn install --frozen-lockfile), install scripts off (--ignore-scripts), as the stage-2 candidate uid with
 //      `env -i` and a private HOME/cache, in a per-run staging dir (never the copy, never a shared cache), with a
@@ -33,7 +33,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, posix, resolve } from "node:path";
 import { isolatedRun, type CandUid } from "./selfpropose.ts";
 
-export const RUNNERS = ["node-test", "vitest", "jest", "mocha", "ava"] as const; // M187: ava
+export const RUNNERS = ["node-test", "vitest", "jest", "mocha"] as const;
 export type RunnerKind = (typeof RUNNERS)[number];
 export const PACKAGE_MANAGERS = ["npm", "pnpm", "yarn"] as const;
 export type PackageManager = (typeof PACKAGE_MANAGERS)[number];
@@ -57,12 +57,11 @@ const readJson = (p: string): Record<string, any> | null => { try { const o = JS
 // ---- 1. the runner
 
 /** Runners the loop does not drive (refused with TEST_RUNNER_UNSUPPORTED); matched as whole script words. */
-export const OTHER_RUNNERS = ["tap", "tape", "uvu", "jasmine", "karma", "cypress", "playwright", "qunit", "lab", "ospec", "bun", "deno"] as const;
+export const OTHER_RUNNERS = ["ava", "tap", "tape", "uvu", "jasmine", "karma", "cypress", "playwright", "qunit", "lab", "ospec", "bun", "deno"] as const;
 /** Files that mean the suite needs an outside service (a database, a broker): refused with TEST_NEEDS_SERVICE. */
 export const SERVICE_FILES = ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"] as const;
 
-/** M172: `options` (mocha only) are the allowlisted mocha options read from the package's scripts (mochaOptions).
- *  M187: for ava, `options` is one JSON string: the vetted ava config (avaOptions). */
+/** M172: `options` (mocha only) are the allowlisted mocha options read from the package's scripts (mochaOptions). */
 export interface RunnerPick { runner: RunnerKind; pkgDir: string; files: string[]; hasDeps: boolean; options?: string[] }
 
 // ---- M172: mocha (batch 11). mocha has no lockfile-free way to say "these files only, report as JSON" beyond its CLI,
@@ -137,108 +136,6 @@ export function mochaOptions(root: string, pkgDir: string, scripts: Record<strin
   return out;
 }
 
-// ---- M187: ava (batch 22). Like mocha, PeaceAI reads ava's options itself and passes on only a fixed allowlist, as
-// one JSON config the shim hands to a static config file it wrote (node_modules/.peaceai-loop/ava-config.mjs, given
-// with --config, so ava reads no repo config: an explicit --config makes ava ignore package.json's "ava" key and stop
-// searching for ava.config.*). Read from: the package's test script (exactly one `ava` command, optionally behind npx /
-// c8 / nyc; allowlisted flags only; its file globs dropped) and its package.json "ava" key (allowlisted keys and value
-// shapes only). An ava config file anywhere from the package dir up to the repo root (ava searches up to the repo
-// root, and would refuse to run with two), any other key or flag, or a value off the allowlist is refused with
-// TEST_RUNNER_UNSUPPORTED. Spec: peaceai/spec/loop-runners-v4.md.
-
-/** ava config files ava looks for in the project dir and every dir above it up to the repo root (refused). */
-export const AVA_CONFIG_FILES = ["ava.config.js", "ava.config.cjs", "ava.config.mjs", "ava.config.json"] as const;
-/** ava script flags passed through (as config keys), with the config key each sets. Others are refused. */
-const AVA_BOOL_FLAGS: Readonly<Record<string, string | null>> = { "--verbose": null, "-v": null, "--tap": null, "-t": null, "--serial": "serial", "-s": "serial", "--fail-fast": "failFast", "--color": null, "--no-color": null, "--no-worker-threads": null };
-const AVA_VALUE_FLAGS: Readonly<Record<string, string>> = { "--timeout": "timeout", "-T": "timeout", "--concurrency": "concurrency", "-c": "concurrency" };
-/** package.json "ava" keys accepted. `files`, `workerThreads`, `cache`, `verbose` and `tap` are read and dropped (the
- *  loop names the files; the shim forces child processes, no cache, the TAP report). */
-const AVA_KEYS: readonly string[] = ["files", "extensions", "require", "nodeArguments", "timeout", "concurrency", "serial", "failFast", "failWithoutAssertions", "verbose", "tap", "workerThreads", "cache"];
-const AVA_BOOL_KEYS: readonly string[] = ["serial", "failFast", "failWithoutAssertions", "verbose", "tap", "workerThreads", "cache"];
-/** node options a worker may get (ava's nodeArguments): flags with no value, or a loader / hook naming a package or a
- *  file inside the package. */
-const AVA_NODE_FLAGS: readonly string[] = ["--enable-source-maps", "--no-warnings", "--experimental-vm-modules", "--experimental-strip-types", "--experimental-transform-types", "--no-experimental-strip-types", "--experimental-specifier-resolution=node"];
-const AVA_NODE_HOOKS: readonly string[] = ["--import", "--loader", "--experimental-loader", "--require"];
-
-/** A file inside the package (./relative or bare, no "..", no absolute path) that is a regular file reached through no
- *  symlink; as mocha's --require check (mochaValue). */
-function packageFile(root: string, pkgDir: string, v: string): boolean {
-  if (v.startsWith("/") || v.split("/").some((seg) => seg === "..") || !/^(?:\.\/)?(?:[\w.-]+\/)*[\w.-]+$/.test(v)) return false;
-  const base = join(root, pkgDir), rel = v.replace(/^\.\//, "");
-  try { return lstatSync(join(base, rel)).isFile() && realpathSync(join(base, rel)) === join(realpathSync(base), rel); } catch { return false; }
-}
-const avaTimeout = (v: unknown): string | number | null => (typeof v === "number" ? (Number.isInteger(v) && v > 0 && v < 1e7 ? v : null) : typeof v === "string" && /^\d{1,7}(?:ms|s|m)?$/.test(v) ? v : null);
-const avaConcurrency = (v: unknown): number | null => { const n = typeof v === "string" && /^\d{1,2}$/.test(v) ? Number(v) : v; return typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= 64 ? n : null; };
-
-/** One package.json "ava" key's value, normalised, or undefined when it is off the allowlist. */
-function avaKeyValue(root: string, pkgDir: string, k: string, v: unknown): unknown {
-  if (AVA_BOOL_KEYS.includes(k)) return typeof v === "boolean" ? v : undefined; // m187-guard:ava-bool
-  if (k === "timeout") return avaTimeout(v) ?? undefined; // m187-guard:ava-timeout
-  if (k === "concurrency") return avaConcurrency(v) ?? undefined; // m187-guard:ava-concurrency
-  if (k === "files") return Array.isArray(v) && v.every((x) => typeof x === "string") ? v : undefined;
-  if (k === "extensions") {
-    // ["js", "ts"] or { js: true, ts: "module", cts: "commonjs" }: short extensions only
-    const ext = (e: string) => /^[a-z0-9]{1,8}$/i.test(e);
-    if (Array.isArray(v)) return v.every((e) => typeof e === "string" && ext(e)) ? v : undefined;
-    if (v && typeof v === "object" && Object.entries(v).every(([e, t]) => ext(e) && (t === true || t === "module" || t === "commonjs"))) return v;
-    return undefined; // a bad extensions shape (defense in depth; the list check below also refuses it)
-  }
-  const list = typeof v === "string" ? [v] : Array.isArray(v) && v.every((x) => typeof x === "string") ? (v as string[]) : null;
-  if (list === null) return undefined;
-  // require: files inside the package only (ava would load a package name through a stub it writes into
-  // node_modules/.cache/ava, which the read-only copy refuses; a run that cannot work is refused up front)
-  if (k === "require") return list.every((x) => packageFile(root, pkgDir, x)) ? list : undefined; // m187-guard:ava-require
-  if (k === "nodeArguments") {
-    const ok = (a: string) => {
-      if (AVA_NODE_FLAGS.includes(a)) return true;
-      const eq = a.indexOf("=");
-      if (eq < 0 || !AVA_NODE_HOOKS.includes(a.slice(0, eq))) return false;
-      const x = a.slice(eq + 1);
-      return packageFile(root, pkgDir, x) || (MOCHA_REQUIRE_PKG.test(x) && !x.startsWith("."));
-    };
-    return list.every(ok) ? list : undefined; // m187-guard:ava-node-args
-  }
-  return undefined;
-}
-
-/**
- * The ava options of a package (the config the shim passes to ava), or null (refuse). The test script (or, one level,
- * a package script it names) must hold exactly one `ava` command; its flags must be on the allowlist; the package's
- * "ava" key may hold only allowlisted keys and value shapes. Script flags win over the key (as on ava's own CLI).
- */
-export function avaOptions(root: string, pkgDir: string, scripts: Record<string, unknown> | undefined, conf: unknown): Record<string, unknown> | null {
-  const out: Record<string, unknown> = {};
-  if (conf !== undefined) {
-    if (!conf || typeof conf !== "object" || Array.isArray(conf)) return null;
-    for (const [k, v] of Object.entries(conf)) {
-      if (!AVA_KEYS.includes(k)) return null; // an unknown key (defense in depth; avaKeyValue also returns undefined for it)
-      const ok = avaKeyValue(root, pkgDir, k, v);
-      if (ok === undefined) return null;
-      if (!["files", "verbose", "tap", "workerThreads", "cache"].includes(k)) out[k] = ok;
-    }
-  }
-  const texts: string[] = [typeof scripts?.test === "string" ? scripts.test : ""];
-  for (const w of scriptWords(scripts)) if (w !== "test" && scripts && Object.hasOwn(scripts, w) && typeof scripts[w] === "string" && !texts.includes(scripts[w] as string)) texts.push(scripts[w] as string);
-  const strip = (w: string[]) => (w[0] === "npx" || w[0] === "c8" || w[0] === "nyc" ? w.slice(1) : w);
-  const commands = texts.flatMap((t) => t.split(/&&|\|\||[;|&]/)).map((c) => strip(c.trim().split(/\s+/).filter(Boolean))).filter((w) => w[0] === "ava");
-  if (commands.length !== 1) return null; // m187-guard:ava-one-command
-  const words = commands[0]!.slice(1);
-  for (let i = 0; i < words.length; i++) {
-    const w = words[i]!;
-    if (!w.startsWith("-")) continue; // a file glob of the script's own run: the loop names the files itself
-    const eq = w.indexOf("=");
-    const name = eq > 0 ? w.slice(0, eq) : w;
-    if (Object.hasOwn(AVA_BOOL_FLAGS, name) && eq < 0) { const key = AVA_BOOL_FLAGS[name]; if (key) out[key] = true; continue; }
-    const key = Object.hasOwn(AVA_VALUE_FLAGS, name) ? AVA_VALUE_FLAGS[name]! : null;
-    if (!key) return null; // m187-guard:ava-flag
-    const v = eq > 0 ? w.slice(eq + 1) : words[++i];
-    const ok = key === "timeout" ? avaTimeout(v) : avaConcurrency(v);
-    if (ok === null) return null; // m187-guard:ava-flag-value
-    out[key] = ok;
-  }
-  return out;
-}
-
 /** Words of a package's test script, plus (one level) the words of the package scripts it names. */
 export function scriptWords(scripts: Record<string, unknown> | undefined, name = "test"): string[] {
   const words = (s: unknown): string[] => (typeof s === "string" ? s.split(/[\s;&|()<>"'`=]+/).filter(Boolean) : []);
@@ -280,7 +177,7 @@ export function detectRunner(root: string, testFiles: readonly string[]): Runner
   if (SERVICE_FILES.some((f) => existsSync(join(root, f)) || (pkgDir && existsSync(join(root, pkgDir, f)))) || words.includes("docker") || words.includes("docker-compose")) return { refuse: "TEST_NEEDS_SERVICE" }; // guard:service
   if (words.some((w) => (OTHER_RUNNERS as readonly string[]).includes(w))) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // guard:runner-other
   const rel = (f: string) => (pkgDir ? posix.relative(pkgDir, posix.normalize(f)) : posix.normalize(f));
-  const named = (["vitest", "jest", "mocha", "ava"] as const).filter((r) => words.includes(r));
+  const named = (["vitest", "jest", "mocha"] as const).filter((r) => words.includes(r));
   const nodeTest = typeof pkg.scripts?.test === "string" && /^(?:node|tsx)\b[^&|;]*\s--test\b/.test(pkg.scripts.test.trim());
   let runner: RunnerKind | null = null;
   if (named.length === 1) runner = named[0]!;
@@ -294,15 +191,6 @@ export function detectRunner(root: string, testFiles: readonly string[]): Runner
     const options = mochaOptions(root, pkgDir, pkgDir && !pkg.scripts?.test ? rootPkg.scripts : pkg.scripts);
     if (!options) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // m172-guard:mocha-options
     return { runner, pkgDir, files: testFiles.map(rel), hasDeps, options };
-  }
-  if (runner === "ava") {
-    // M187: an ava config file PeaceAI does not read is refused, in the package dir or any dir above it up to the root
-    const up: string[] = [];
-    for (let d = pkgDir; ; d = posix.dirname(d)) { up.push(d === "." ? "" : d); if (d === "" || d === ".") break; }
-    if (up.some((d) => AVA_CONFIG_FILES.some((f) => existsSync(join(root, d, f))))) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // m187-guard:ava-config-file
-    const options = avaOptions(root, pkgDir, pkgDir && !pkg.scripts?.test ? rootPkg.scripts : pkg.scripts, pkg.ava);
-    if (!options) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // m187-guard:ava-options
-    return { runner, pkgDir, files: testFiles.map(rel), hasDeps, options: [JSON.stringify(options)] };
   }
   return { runner, pkgDir, files: testFiles.map(rel), hasDeps };
 }
@@ -1165,7 +1053,7 @@ export const SHIM_SOURCE = [
   "import { fileURLToPath, pathToFileURL } from \"node:url\";",
   "const [runner, pkgDir, ...rest] = process.argv.slice(2);",
   "// M172: mocha's allowlisted options (read by PeaceAI from the package's scripts) come first, ended by `--`",
-  "const sep = runner === \"mocha\" || runner === \"ava\" ? rest.indexOf(\"--\") : -1;",
+  "const sep = runner === \"mocha\" ? rest.indexOf(\"--\") : -1;",
   "const opts = sep >= 0 ? rest.slice(0, sep) : [];",
   "const files = sep >= 0 ? rest.slice(sep + 1) : rest;",
   "const cwd = resolve(pkgDir || \".\");",
@@ -1177,9 +1065,8 @@ export const SHIM_SOURCE = [
   "const NO_REPORT = 95, SUITE_LOAD = 94, EXIT_ONLY = 93;",
   "let pkgJson = null;",
   "for (let d = cwd; ; d = dirname(d)) { const p = join(d, \"node_modules\", runner, \"package.json\"); if (existsSync(p)) { pkgJson = realpathSync(p); break; } if (dirname(d) === d) break; }",
-  "if (!pkgJson || (runner !== \"vitest\" && runner !== \"jest\" && runner !== \"mocha\" && runner !== \"ava\")) done(0, 1, NO_REPORT);",
+  "if (!pkgJson || (runner !== \"vitest\" && runner !== \"jest\" && runner !== \"mocha\")) done(0, 1, NO_REPORT);",
   "if (runner === \"mocha\" && sep < 0) done(0, 1, NO_REPORT); // m172-guard:shim-mocha-sep",
-  "if (runner === \"ava\" && sep < 0) done(0, 1, NO_REPORT); // ava, like mocha, is given its vetted options before `--`",
   "const meta = JSON.parse(readFileSync(pkgJson, \"utf8\"));",
   "const binRel = typeof meta.bin === \"string\" ? meta.bin : meta.bin?.[runner];",
   "if (typeof binRel !== \"string\") done(0, 1, NO_REPORT);",
@@ -1193,13 +1080,7 @@ export const SHIM_SOURCE = [
   "// runs through PEACEAI_MOCHA_LIB and fails a test that ends in a Pending this.skip() did not raise",
   "const guard = join(here, \"mocha-guard.cjs\");",
   "if (runner === \"mocha\") args = [\"--no-config\", \"--no-package\", \"--require\", guard, ...opts, \"--reporter\", guard, ...files]; // m172-guard:shim-mocha-args",
-  "// M187: ava reads no repo config (--config a static file PeaceAI wrote), reports TAP to stdout (the reporter preload",
-  "// claims it and suppresses it), its options come through PEACEAI_AVA_OPTIONS + the team files, and a worker guard",
-  "// (ava-guard.cjs) is prepended to ava's require so code under test cannot forge an IPC result",
-  "const avaConfig = join(here, \"ava-config.mjs\"), avaGuard = join(here, \"ava-guard.cjs\");",
-  "if (runner === \"ava\") args = [\"--tap\", \"--config\", avaConfig]; // ava reads no repo config; the static config carries the vetted options",
-  "const avaEnv = runner === \"ava\" ? { PEACEAI_AVA_OPTIONS: JSON.stringify({ ...(opts[0] ? JSON.parse(opts[0]) : {}), files }), PEACEAI_AVA_GUARD: avaGuard, PEACEAI_AVA_PKG: realpathSync(dirname(pkgJson)) } : {};",
-  "const runEnv = runner === \"mocha\" ? { ...process.env, PEACEAI_MOCHA_LIB: join(dirname(pkgJson), \"lib\") } : runner === \"ava\" ? { ...process.env, ...avaEnv } : process.env;",
+  "const runEnv = runner === \"mocha\" ? { ...process.env, PEACEAI_MOCHA_LIB: join(dirname(pkgJson), \"lib\") } : process.env;",
   "// batch 10: vitest < 2 writes its results cache into node_modules/.vitest after every run; the copy is read-only, so",
   "// that write fails (EACCES) and the run exits 1 even when every test passed. Its CLI has no flag to turn the cache",
   "// off, so for those versions the same run is started through vitest's own node API (what its CLI calls) with the",
@@ -1208,7 +1089,7 @@ export const SHIM_SOURCE = [
   "const nodeEntry = (() => { const e = meta.exports && meta.exports[\"./node\"]; const rel = typeof e === \"string\" ? e : e && (typeof e.import === \"string\" ? e.import : e.import && e.import.default || e.default); return typeof rel === \"string\" ? join(dirname(pkgJson), rel) : null; })();",
   "let legacy = false;",
   "if (runner === \"vitest\" && maj < 2 && nodeEntry && existsSync(nodeEntry)) legacy = true; // m170-guard:vitest-legacy-api",
-  "const preload = runner === \"mocha\" ? guard : join(here, runner === \"jest\" ? \"jest-reporter.cjs\" : runner === \"ava\" ? \"ava-reporter.cjs\" : \"vitest-reporter.mjs\");",
+  "const preload = runner === \"mocha\" ? guard : join(here, runner === \"jest\" ? \"jest-reporter.cjs\" : \"vitest-reporter.mjs\");",
   "// where the runner's own code is (the first node_modules in its real path: the copy's, or the read-only deps tree its",
   "// links point to); launch.cjs takes a reporter made by code there (or beside this file) as the runner's",
   "const real = dirname(pkgJson), at = real.indexOf(\"/node_modules/\");",
@@ -1543,109 +1424,6 @@ export const REPORT_LINE_PREFIX = "PEACEAI-REPORT ";
 /** The symbol (Symbol.for) on `process` under which launch.cjs keeps its one-time claim of the report writer. */
 export const REPORT_CLAIM_SYMBOL = "peaceai.loop.claim";
 
-// ---- M187 (batch 22): ava. ava has no pluggable reporter API and runs each test file in its own worker process, so
-// (1) PeaceAI gives ava a static config file (--config, which also makes ava ignore the repo's package.json "ava" key
-// and stop searching for ava.config.*); the config reads PEACEAI_AVA_OPTIONS (the vetted options) and the team files
-// from the environment and forces child-process workers (not worker threads, so process.send exists and is pinnable),
-// no result cache, and the TAP reporter; (2) ava-reporter.cjs is preloaded in the MAIN process (which runs no code
-// under test) by launch.cjs: it claims the report writer, captures and suppresses ava's TAP on stdout, and on exit
-// writes the counts read ONLY from the finish block at the very end of that stream (a test title with injected summary
-// lines sits before it, so it is not read); (3) ava-guard.cjs is prepended to ava's `require`, so it loads in each
-// worker before the test file and pins process.send to callers inside the ava package (code under test cannot forge an
-// IPC `test-passed` or drop a `test-failed`). The nonce (never in ava's env or argv) keeps a worker that writes the
-// report line through /proc/<main>/fd/3 from being credited (two lines -> no report). Spec: loop-runners-v4.md.
-
-/** Repo-relative path of ava's static config in the copy (beside the shim; read-only and tamper-hashed like it). */
-export const AVA_CONFIG_PATH = "node_modules/.peaceai-loop/ava-config.mjs";
-export const AVA_CONFIG_SOURCE = [
-  "// PeaceAI loop (M187): ava's config, handed to ava with --config (so ava reads no repo config). Written by",
-  "// peaceai/lib/loopdeps.ts. It takes only what PeaceAI vetted (PEACEAI_AVA_OPTIONS) plus the team's files, prepends",
-  "// the worker guard to `require`, and forces child-process workers, no cache and the TAP report.",
-  "const o = JSON.parse(process.env.PEACEAI_AVA_OPTIONS || \"{}\");",
-  "const guard = process.env.PEACEAI_AVA_GUARD;",
-  "const req = Array.isArray(o.require) ? o.require : o.require ? [o.require] : [];",
-  "const pick = (k) => (o[k] === undefined ? {} : { [k]: o[k] });",
-  "export default {",
-  "  files: Array.isArray(o.files) ? o.files : [],",
-  "  ...pick(\"extensions\"), ...pick(\"timeout\"), ...pick(\"concurrency\"), ...pick(\"serial\"), ...pick(\"failFast\"),",
-  "  ...pick(\"failWithoutAssertions\"), ...pick(\"nodeArguments\"),",
-  "  require: guard ? [guard, ...req] : req,",
-  "  workerThreads: false,",
-  "  cache: false,",
-  "};",
-  "",
-].join("\n");
-
-/** Repo-relative path of ava's report reporter in the copy (preloaded by launch.cjs in ava's main process). */
-export const AVA_REPORTER_PATH = "node_modules/.peaceai-loop/ava-reporter.cjs";
-export const AVA_REPORTER_SOURCE = [
-  "\"use strict\";",
-  "// PeaceAI loop (M187): ava's report channel. Preloaded by launch.cjs in ava's MAIN process (no code under test runs",
-  "// there) before ava starts. It claims the one report writer, then captures and SUPPRESSES ava's TAP on stdout (so",
-  "// nothing ava prints reaches the shim's own summary), and on exit writes the pass / fail counts read from the finish",
-  "// block at the very end of that stream. Written by peaceai/lib/loopdeps.ts.",
-  "const claim = process[Symbol.for(\"peaceai.loop.claim\")];",
-  "const write = typeof claim === \"function\" ? claim() : null;",
-  "let captured = \"\";",
-  "const out = process.stdout;",
-  "const realWrite = out.write.bind(out);",
-  "out.write = function (chunk, enc, cb) {",
-  "  try { captured += typeof chunk === \"string\" ? chunk : Buffer.from(chunk).toString(enc && typeof enc === \"string\" ? enc : \"utf8\"); } catch { /* keep what we have */ }",
-  "  if (typeof enc === \"function\") enc(); else if (typeof cb === \"function\") cb();",
-  "  return true;",
-  "};",
-  "const n = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);",
-  "// The genuine finish block is always the last thing ava's TAP reporter writes: a plan line (1..N) then the summary.",
-  "// It is read only when it is anchored to the end of the stream, so a test title carrying those lines (which sits in a",
-  "// `ok K - <title>` line, before the real finish) is never read as the report.",
-  "const FINISH = /\\n1\\.\\.\\d+\\n# tests \\d+\\n# pass (\\d+)\\n(?:# skip (\\d+)\\n)?# fail (\\d+)\\n\\s*$/;",
-  "const report = () => {",
-  "  if (!write) return;",
-  "  const m = FINISH.exec(captured); // only the finish block at the very end of the stream (ava flattens title newlines to spaces, so no `ok` line can carry one)",
-  "  if (!m) return; // no usable finish block: the shim credits nothing (NO_REPORT)",
-  "  const pass = n(Number(m[1])), fail = n(Number(m[3])), skip = n(Number(m[2]));",
-  "  write(JSON.stringify({ numPassedTests: pass, numFailedTests: fail, numFailedTestSuites: 0, numRuntimeErrorTestSuites: 0, numPendingTests: skip, numTotalTests: pass + fail + skip, success: fail === 0 && pass > 0 }));",
-  "};",
-  "process.on(\"exit\", report);",
-  "",
-].join("\n");
-
-/** Repo-relative path of ava's worker guard in the copy (loaded in each ava worker before the test file). */
-export const AVA_GUARD_PATH = "node_modules/.peaceai-loop/ava-guard.cjs";
-export const AVA_GUARD_SOURCE = [
-  "\"use strict\";",
-  "// PeaceAI loop (M187): ava's worker guard. ava loads it (through the config's `require`) in each worker process before",
-  "// the test file, so code under test cannot forge an IPC result. It pins process.send to callers inside the ava",
-  "// package: ava's own worker reports every test result to the main process through process.send, so a worker that",
-  "// calls it (a forged test-passed, or to drop a test-failed) is dropped. Written by peaceai/lib/loopdeps.ts.",
-  "const fs = require(\"node:fs\"), path = require(\"node:path\");",
-  "const real = (p) => { try { return fs.realpathSync(p); } catch { return null; } };",
-  "const avaPkg = real(process.env.PEACEAI_AVA_PKG || \"/nonexistent\");",
-  "const E = Error, gopd = Object.getOwnPropertyDescriptor, defp = Object.defineProperty;",
-  "const sites = (_e, cs) => cs;",
-  "// Who called process.send: the frame above this wrapper must be a file under the ava package (ava's own worker code).",
-  "const fromAva = () => {",
-  "  if (avaPkg === null) return false;",
-  "  const savedP = gopd(E, \"prepareStackTrace\"), savedL = gopd(E, \"stackTraceLimit\");",
-  "  let cs = null;",
-  "  try { E.prepareStackTrace = sites; E.stackTraceLimit = 10; const o = {}; E.captureStackTrace(o, pinnedSend); cs = o.stack; } catch { return false; }",
-  "  finally { try { if (savedP) defp(E, \"prepareStackTrace\", savedP); else delete E.prepareStackTrace; } catch { /* left */ } try { if (savedL) defp(E, \"stackTraceLimit\", savedL); } catch { /* left */ } }",
-  "  if (!Array.isArray(cs) || !cs[0] || typeof cs[0].getFileName !== \"function\") return false;",
-  "  let f = cs[0].getFileName();",
-  "  if (typeof f !== \"string\") return false;",
-  "  try { if (f.startsWith(\"file:\")) f = require(\"node:url\").fileURLToPath(f); f = fs.realpathSync(f); } catch { return false; }",
-  "  return f.startsWith(avaPkg + path.sep);",
-  "};",
-  "const send = typeof process.send === \"function\" ? process.send.bind(process) : null;",
-  "function pinnedSend(...a) {",
-  "  if (!fromAva()) return true; // m187-forge-guard:ava-send-pin",
-  "  return send ? send(...a) : true;",
-  "}",
-  "if (send) { try { defp(process, \"send\", { value: pinnedSend, writable: false, enumerable: true, configurable: false }); } catch { /* cannot pin: left as ava set it */ } }",
-  "module.exports = function () {};",
-  "",
-].join("\n");
-
 /** Writes the shim, its launcher, the reporters and the mocha guard beside it into the copy. */
 export function installShim(copyDir: string): void {
   mkdirSync(join(copyDir, dirname(SHIM_PATH)), { recursive: true });
@@ -1654,12 +1432,9 @@ export function installShim(copyDir: string): void {
   writeFileSync(join(copyDir, LAUNCH_PATH), LAUNCH_SOURCE);
   writeFileSync(join(copyDir, JEST_REPORTER_PATH), JEST_REPORTER_SOURCE);
   writeFileSync(join(copyDir, VITEST_REPORTER_PATH), VITEST_REPORTER_SOURCE);
-  writeFileSync(join(copyDir, AVA_CONFIG_PATH), AVA_CONFIG_SOURCE);
-  writeFileSync(join(copyDir, AVA_REPORTER_PATH), AVA_REPORTER_SOURCE);
-  writeFileSync(join(copyDir, AVA_GUARD_PATH), AVA_GUARD_SOURCE);
 }
 export function shimArgs(pick: RunnerPick): string[] {
-  return [SHIM_PATH, pick.runner, pick.pkgDir, ...(pick.runner === "mocha" || pick.runner === "ava" ? [...(pick.options ?? []), "--"] : []), ...pick.files];
+  return [SHIM_PATH, pick.runner, pick.pkgDir, ...(pick.runner === "mocha" ? [...(pick.options ?? []), "--"] : []), ...pick.files];
 }
 
 // ---- M171: the task's private work dir (spec loop-isolation-v1.md)

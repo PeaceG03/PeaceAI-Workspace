@@ -309,17 +309,17 @@ export const CASES: Case[] = [
       assert.deepEqual(l.deps.detectRunner(d, ["test/a.test.js"]), REFUSED, "package.json mocha key");
       assert.deepEqual(detect(l, ctx, { test: "mocha --grep x test" }), REFUSED, "options refused");
       assert.deepEqual(detect(l, ctx, { test: "mocha test" }, {}, { vitest: "1.0.0" }), REFUSED, "no mocha dependency");
-      assert.deepEqual(detect(l, ctx, { test: "tape" }, {}, { tape: "5.0.0" }), REFUSED, "tape stays unsupported"); // M187: ava is a loop runner now
+      assert.deepEqual(detect(l, ctx, { test: "ava" }, {}, { ava: "6.0.0" }), REFUSED, "ava stays unsupported");
     },
   },
   // ---- the service check stays before the runner check (m172-order:service-first; batch 10 made the order, now mocha
-  // is admitted a compose file with mocha no longer shows it; ava too (M187), so these use tape, which stays unsupported)
+  // is admitted a compose file with mocha no longer shows it, so these use ava, which stays unsupported)
   {
-    id: "service first (m172-order:service-first): a compose file with an unsupported runner (tape) is TEST_NEEDS_SERVICE, direct and one script down; near miss: tape alone",
+    id: "service first (m172-order:service-first): a compose file with an unsupported runner (ava) is TEST_NEEDS_SERVICE, direct and one script down; near miss: ava alone",
     run(l, ctx) {
-      assert.deepEqual(detect(l, ctx, { test: "tape" }, { "docker-compose.yml": "services: {}\n" }, { tape: "5.0.0" }), { refuse: "TEST_NEEDS_SERVICE" });
-      assert.deepEqual(detect(l, ctx, { test: "npm run test:unit", "test:unit": "tape" }, { "compose.yaml": "services: {}\n" }, { tape: "5.0.0" }), { refuse: "TEST_NEEDS_SERVICE" });
-      assert.deepEqual(detect(l, ctx, { test: "tape" }, {}, { tape: "5.0.0" }), REFUSED);
+      assert.deepEqual(detect(l, ctx, { test: "ava" }, { "docker-compose.yml": "services: {}\n" }, { ava: "6.0.0" }), { refuse: "TEST_NEEDS_SERVICE" });
+      assert.deepEqual(detect(l, ctx, { test: "npm run test:unit", "test:unit": "ava" }, { "compose.yaml": "services: {}\n" }, { ava: "6.0.0" }), { refuse: "TEST_NEEDS_SERVICE" });
+      assert.deepEqual(detect(l, ctx, { test: "ava" }, {}, { ava: "6.0.0" }), REFUSED);
     },
   },
   // ---- mocha: the shim

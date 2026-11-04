@@ -83,8 +83,8 @@ export const CASES: Case[] = [
     run(l, ctx) {
       const d = plain(dir(ctx, "det"), { "package.json": pkgJson({ test: "mocha --require x test" }, VDEP) });
       assert.deepEqual(l.deps.detectRunner(d, ["test/a.test.ts"]), { refuse: "TEST_RUNNER_UNSUPPORTED" });
-      const tape = plain(dir(ctx, "det"), { "package.json": pkgJson({ test: "xo && tape" }, { tape: "5", vitest: "1" }) }); // M187: ava is a loop runner now; tape is not
-      assert.deepEqual(l.deps.detectRunner(tape, ["test.ts"]), { refuse: "TEST_RUNNER_UNSUPPORTED" });
+      const ava = plain(dir(ctx, "det"), { "package.json": pkgJson({ test: "xo && ava" }, { ava: "1", vitest: "1" }) });
+      assert.deepEqual(l.deps.detectRunner(ava, ["test.ts"]), { refuse: "TEST_RUNNER_UNSUPPORTED" });
     },
   },
   {
