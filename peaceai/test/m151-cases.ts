@@ -85,6 +85,10 @@ export const CASES: Case[] = [
       assert.deepEqual(l.deps.detectRunner(d, ["test/a.test.ts"]), { refuse: "TEST_RUNNER_UNSUPPORTED" });
       const ava = plain(dir(ctx, "det"), { "package.json": pkgJson({ test: "xo && ava" }, { ava: "1", vitest: "1" }) });
       assert.deepEqual(l.deps.detectRunner(ava, ["test.ts"]), { refuse: "TEST_RUNNER_UNSUPPORTED" });
+      // M192 (batch 25): with ava declared, m192-guard:runner-dep-other refuses the repo too; this one (ava not declared,
+      // only vitest) is refused by guard:runner-other alone, so deleting it is still noticed
+      const undeclared = plain(dir(ctx, "det"), { "package.json": pkgJson({ test: "xo && ava" }, VDEP) });
+      assert.deepEqual(l.deps.detectRunner(undeclared, ["test.ts"]), { refuse: "TEST_RUNNER_UNSUPPORTED" });
     },
   },
   {
@@ -393,7 +397,8 @@ export const CASES: Case[] = [
       const bad: [string, string][] = [
         ["registries (Auditor)", ok + "registries:\n  default: https://evil.example/\n"],
         ["sharedWorkspaceLockfile (Auditor)", ok + "sharedWorkspaceLockfile: false\n"],
-        ["a harmless-looking setting is still a setting (M169: build/age keys are listed as inert; this one is not)", ok + "hoistPattern:\n  - '*'\n"],
+        // M188 (batch 23): hoistPattern is now an admitted layout setting (asserted below); an unlisted setting is still refused
+        ["a harmless-looking setting is still a setting (M169/M188: build/age/layout keys are listed; this one is not)", ok + "verifyStoreIntegrity: false\n"],
         ["overrides", ok + "overrides:\n  a: 1.0.0\n"],
         ["pnpmfile", ok + "pnpmfile: x.cjs\n"],
         ["an inline comment (outside the subset)", ok.replace("  - website\n", "  - website # site\n")],
@@ -413,6 +418,7 @@ export const CASES: Case[] = [
         ["a map as a catalog entry", ok.replace("  vitest: ^3.0.0\n", "  vitest:\n    x: y\n")],
       ];
       for (const [why, text] of bad) { assert.notEqual(text, ok, why); assert.equal(l.deps.pnpmWorkspaceAllowed(text), false, why); }
+      assert.equal(l.deps.pnpmWorkspaceAllowed(ok + "hoistPattern:\n  - '*'\n"), true, "M188: a layout pattern list is admitted");
     },
   },
   {
@@ -438,13 +444,14 @@ export const CASES: Case[] = [
         ["package.yaml in a workspace package", { ...base, "packages/lib/package.yaml": "name: lib\n" }],
         ["package.json5 in a workspace package", { ...base, "packages/lib/package.json5": "{name: 'lib'}\n" }],
         ["pnpm.overrides in the root package.json", { ...base, "package.json": JSON.stringify({ packageManager: "pnpm@9.15.9", devDependencies: VDEP, pnpm: { overrides: { b: "https://evil.example/b.tgz" } } }) }],
-        ["an empty pnpm field", { ...base, "package.json": JSON.stringify({ packageManager: "pnpm@9.15.9", devDependencies: VDEP, pnpm: {} }) }],
         ["a pnpm field in a workspace package", { ...base, "packages/app/package.json": JSON.stringify({ name: "app", pnpm: { onlyBuiltDependencies: ["esbuild"] } }) }],
         ["a pnpm field behind a BOM", { ...base, "packages/app/package.json": "\ufeff" + JSON.stringify({ name: "app", pnpm: { overrides: {} } }) }],
         ["a package.json that is not JSON", { ...base, "packages/app/package.json": "{name: app}" }],
       ];
       for (const [why, files] of bad) assert.equal(problem(files), "DEPS_PM_CONFIG", why);
       assert.equal(problem({ ...base, "packages/app/package.json": "\ufeff" + JSON.stringify({ name: "app" }) }), null, "a BOM alone is fine");
+      // M188 (batch 23): an empty root pnpm field is admitted (pnpm reads nothing from it); was refused before M188
+      assert.equal(problem({ ...base, "package.json": JSON.stringify({ packageManager: "pnpm@9.15.9", devDependencies: VDEP, pnpm: {} }) }), null, "an empty root pnpm field (M188)");
       assert.equal(problem(noWs, ["pnpm-workspace.yaml", "packages/app/package.json"]), "DEPS_PM_CONFIG", "a symlinked workspace file");
       // npm never reads pnpm's files: an npm repo is judged on its own lockfile only
       const npmOk = JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/a": { version: "1.0.0", resolved: `${REG}a/-/a-1.0.0.tgz`, integrity: INT } } });

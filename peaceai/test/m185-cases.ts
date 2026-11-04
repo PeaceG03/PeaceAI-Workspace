@@ -10,9 +10,10 @@
 // reference diff, and none is a PeaceSTOCKS shape. The end-to-end case (needsCand) runs the real loop and needs
 // M185_CAND (no fallback user). Spec: peaceai/spec/repair-v2-m185.md.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { openRepo } from "../lib/codesearch.ts";
 import { repairProposer } from "../lib/editpropose.ts"; // the e2e case runs the real (unmutated) proposer
 import * as loop from "../lib/loop.ts";
 import type * as Loop from "../lib/loop.ts";
@@ -187,6 +188,45 @@ export const CASES: Case[] = [
       assert.deepEqual(inherited(l, ctx, { "src/base.ts": "export class Base {\n  static make(): number {\n    return 1;\n  }\n}\n", "src/kid.ts": stat }, RUN), []);
       // the request names the base member itself: it is located (tier 0) and not added again as a member site
       assert.deepEqual(inherited(l, ctx, { "src/base.ts": BASE, "src/kid.ts": kid('import { Base } from "./base.ts";') }, "`run` and `helper` are wrong."), []);
+    },
+  },
+  // ---- (batch 25, Auditor's optional item) resolveImport, as locate wires it (exists = a listed, readable file of the
+  // repo), never follows a symlink: one escaping the repo and one into node_modules are refused, while a regular in-repo
+  // neighbour in the same repo is admitted. Pinned as found: an in-repo symlink (file or directory) is refused too,
+  // because the repo walk lists no symlink (codesearch filter:symlink-walk / filter:read-listed); nothing here widens that.
+  {
+    id: "near miss: resolveImport refuses a symlink escaping the repo and one into node_modules; a regular in-repo neighbour is admitted",
+    run(l, ctx) {
+      let k = 0;
+      const repo = (files: Files, links: Record<string, string>): string => {
+        const d = join(ctx.base, `sym${k++}`);
+        for (const [p, c] of Object.entries(files)) { mkdirSync(dirname(join(d, p)), { recursive: true }); writeFileSync(join(d, p), c); }
+        for (const [p, t] of Object.entries(links)) { mkdirSync(dirname(join(d, p)), { recursive: true }); symlinkSync(t, join(d, p)); }
+        return d;
+      };
+      const at = (d: string): string[] => l.prop.locate(openRepo(d), { request: RUN, failing: [] }, l.prop.CALLEE_DEPTH.v2).filter((s) => s.tier === 4).map((s) => `${s.name}@${s.path}`);
+      const outside = join(ctx.base, "outside-base.ts");
+      writeFileSync(outside, BASE);
+      const imp = (spec: string) => kid(`import { Base } from "${spec}";`);
+      // control: the same import of a regular file is admitted
+      assert.deepEqual(at(repo({ "src/base.ts": BASE, "src/kid.ts": imp("./base.ts") }, {})), ["helper@src/base.ts"]);
+      // a symlink escaping the repo (absolute target outside the root): refused
+      assert.deepEqual(at(repo({ "src/kid.ts": imp("./base.ts") }, { "src/base.ts": outside })), []);
+      // a symlink escaping by a relative target: refused
+      assert.deepEqual(at(repo({ "src/kid.ts": imp("./base.ts") }, { "src/base.ts": "../../outside-base.ts" })), []);
+      // a symlink into node_modules (the target is a regular file inside the repo's node_modules): refused
+      assert.deepEqual(at(repo({ "node_modules/shape-kit/base.ts": BASE, "src/kid.ts": imp("./base.ts") }, { "src/base.ts": "../node_modules/shape-kit/base.ts" })), []);
+      // a symlinked directory into node_modules: refused
+      assert.deepEqual(at(repo({ "node_modules/shape-kit/base.ts": BASE, "src/kid.ts": imp("./kit/base.ts") }, { "src/kit": "../node_modules/shape-kit" })), []);
+      // the admitted neighbour: a regular in-repo file, in the same repo as both refused symlinks
+      const both = { "src/escape.ts": outside, "src/vendored.ts": "../node_modules/shape-kit/base.ts" };
+      const nb = { "node_modules/shape-kit/base.ts": BASE, "src/shapes/base.ts": BASE };
+      assert.deepEqual(at(repo({ ...nb, "src/kid.ts": imp("./shapes/base.ts") }, both)), ["helper@src/shapes/base.ts"]);
+      assert.deepEqual(at(repo({ ...nb, "src/kid.ts": imp("./escape.ts") }, both)), []);
+      assert.deepEqual(at(repo({ ...nb, "src/kid.ts": imp("./vendored.ts") }, both)), []);
+      // pinned as found: an in-repo symlink (to a file, or a symlinked directory) is not followed either
+      assert.deepEqual(at(repo({ "src/shapes/base.ts": BASE, "src/kid.ts": imp("./base.ts") }, { "src/base.ts": "shapes/base.ts" })), []);
+      assert.deepEqual(at(repo({ "src/shapes/base.ts": BASE, "src/kid.ts": imp("./lib/base.ts") }, { "src/lib": "shapes" })), []);
     },
   },
   // ---- end to end (candidate uid): the real loop with repair-v2 fixes fixture A within the attempt budget

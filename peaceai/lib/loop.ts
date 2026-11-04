@@ -250,9 +250,46 @@ export function baselineRefusal(base: Pick<RunOutcome, "synth" | "executed">): L
   if (base.synth === "EXIT_ONLY") return "BASELINE_EXIT_ONLY"; // m173-loop-guard:base-exit-only
   return null;
 }
+/** M190 (batch 24; spec peaceai/spec/json-failing-names-m190.md): the most failed-test names, and characters per name. */
+export const FAILED_NAMES_CAP = 100;
+export const FAILED_NAME_CHARS = 200;
+/**
+ * M190: the failed tests' names the shim wrote (loopdeps.ts SHIM_SOURCE: `# failed-names <hex of a JSON array>` right
+ * before its final `# pass` line), or null when there are none to read: the last names line is not the line right
+ * before the last `# pass` line (so it is not the shim's), it is `-` (unknown), or it is not a capped list of short
+ * printable strings.
+ */
+export function shimFailedNames(stdout: string): string[] | null {
+  const lines = stdout.split("\n");
+  let at = -1, k = -1;
+  for (let i = lines.length - 1; i >= 0 && at < 0; i--) if (/^# pass \d+$/.test(lines[i]!)) at = i;
+  for (let i = lines.length - 1; i >= 0 && k < 0; i--) if (lines[i]!.startsWith("# failed-names ")) k = i;
+  if (k < 0) return null;
+  if (k !== at - 1) return null; // m190-guard:pn-adjacent
+  const m = /^# failed-names ([0-9a-f]+)$/.exec(lines[k]!);
+  if (!m) return null;
+  let v: unknown;
+  try { v = JSON.parse(Buffer.from(m[1]!, "hex").toString("utf8")); } catch { return null; }
+  if (!Array.isArray(v)) return null;
+  if (v.length > FAILED_NAMES_CAP) return null; // m190-guard:pn-cap
+  if (!v.every((x) => typeof x === "string" && x.length <= FAILED_NAME_CHARS && /^[\x20-\x7e]*$/.test(x))) return null; // m190-guard:pn-shape
+  return v as string[];
+}
+/**
+ * M190: a vitest / jest run's failing test names (sorted), or [] when they are not known: the shim made the counts up
+ * (synth), the run left processes behind or changed a watched file, or the names are not exactly one per failed test.
+ */
+export function jsonFailing(stdout: string, run: Pick<RawRun, "fail" | "leftovers" | "tampered">, synth: ShimSynth | null): string[] {
+  if (synth) return []; // m190-guard:jf-synth
+  if (run.leftovers > 0 || run.tampered?.length) return []; // m190-guard:jf-clean
+  const names = shimFailedNames(stdout);
+  if (!names || names.length !== run.fail) return []; // m190-guard:jf-count
+  return [...names].sort();
+}
 /**
  * One test run in the stage-2 isolation: node:test files whole and per named test (TAP), or vitest / jest files whole
- * through the loopdeps shim (counts from the runner's JSON report; per-test names are not collected for them).
+ * through the loopdeps shim (counts from the runner's JSON report; per-test names are not collected for them: the
+ * M190 names line is printed by the shim but not read here, see the note above `failing`).
  */
 function runTests(c: Copy, cand: CandUid, runMs: number, pick: RunnerPick, testFiles: readonly string[]): RunOutcome {
   const files = [...testFiles].sort();
@@ -272,6 +309,9 @@ function runTests(c: Copy, cand: CandUid, runMs: number, pick: RunnerPick, testF
   const synth = isolation ? shimSynth(json, whole.exitCode) : null;
   if (synth) codes.add(synth); // m173-loop-guard:run-synth-code
   const named = json ? [] : files.flatMap((f) => testNames(c.teamTests.get(f) ?? (() => { try { return readFileSync(join(c.dir, f), "utf8"); } catch { return ""; } })()).map((name) => ({ f, name })));
+  // M190 fix (batch 24): the loop reads no vitest / jest names. The only way to get the shim's names line out of the
+  // stage-2 isolation is its stdout, which selfpropose.ts (binding: never changed by the loop's batches, M146) does not
+  // return; shimFailedNames / jsonFailing stay as the tested reader for when a sanctioned channel exists.
   const failing: string[] = [];
   let passed = 0;
   if (isolation && named.length) {
@@ -721,7 +761,7 @@ export interface Proposer {
    * NOT in it), with the code search tools and the baseline's failing test names (node:test only). A proposer must do
    * all its searching here: from the first next() on, the copy holds the team's tests it is graded by.
    */
-  prepare?(search: CodeRepo, input: { request: string; failing: readonly string[] }): void;
+  prepare?(search: CodeRepo, input: { request: string; failing: readonly string[]; baseFailing?: readonly string[] }): void;
   next(input: ProposeInput): Proposal;
   /**
    * M174: true only for a proposer that can repair a suite that does not load from its load diagnostics (repair-v2).
@@ -932,7 +972,9 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       resetCopy(c); // m152-guard:prepare-clean
       // a throwing search is the proposer's failure, not the fetch's: a fixed code, the error itself is dropped
       let prepared = true;
-      try { o.proposer.prepare(openRepo(c.dir), { request: task.request, failing: [...base.failing] }); } catch { prepared = false; }
+      // M190: vitest / jest names are outcome evidence (baseFailing) only; localisation keeps using node:test names alone
+      const locFailing = det.runner === "node-test" ? [...base.failing] : [];
+      try { o.proposer.prepare(openRepo(c.dir), { request: task.request, failing: locFailing, baseFailing: [...base.failing] }); } catch { prepared = false; }
       if (!prepared) return done("PROPOSER_FAILED"); // m152-guard:prepare-failed
     }
     // 4. the proposals. (M164) a throwing next() is the proposer's failure, not the fetch's: a fixed code, the error

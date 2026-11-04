@@ -13,18 +13,22 @@
 //      package must come from https://registry.npmjs.org/ (yarn v1: or registry.yarnpkg.com) with an integrity hash
 //      (git, remote-tarball, file: and outside-the-repo link entries are refused with DEPS_NONREGISTRY; workspace /
 //      link entries inside the repo are allowed); a lockfile below the root, and for pnpm any pnpm-workspace.yaml key but
-//      packages / catalog(s) or any `pnpm` field in a package.json, a packageManager other than name@x.y.z[+hash], and
-//      for yarn v1 any dependency spec in any package.json without a yarn.lock header (or resolutions), is refused with DEPS_PM_CONFIG; npm also gets --allow-git/--allow-remote/--allow-file=none. The package manager itself runs here
+//      packages / catalog(s), the M169 inert keys and the M188 vetted settings, or a `pnpm` field outside the root
+//      package.json or with an unvetted key / value, a packageManager other than name@x.y.z[+hash], a devEngines
+//      manager / runtime that may download, and for yarn v1 any dependency spec in any package.json without a
+//      yarn.lock header (or resolutions other than root ones pinned to locked headers), is refused with
+//      DEPS_PM_CONFIG (M188: peaceai/spec/deps-pm-config-v1.md); npm also gets --allow-git/--allow-remote/--allow-file=none.
+//      Of the root .npmrc only vetted layout / peer settings are written back into the staging tree (npmrcCarry). The package manager itself runs here
 //      as the candidate uid WITH network (registry only by config; it runs no package code: scripts off, no
 //      pnpmfile). Every candidate-uid process is killed right after the install. Tests never get network. Refusals are fixed codes (DEPS_*), never message text. Installs are cached by lockfile
-//      sha256 (+ package manager and manifests) inside one run dir only, removed with the run.
+//      sha256 (+ package manager, manifests, patch files and the carried .npmrc) inside one run dir only, removed with the run.
 //   3. the json-runner shim: vitest / jest run inside the existing no-network isolation (loop.ts wrapper, selfpropose
 //      guardedRun) through a PeaceAI-written shim that asks the runner for its JSON report (in the private TMPDIR)
 //      and prints the pass / fail counts in the TAP summary form guardedRun reads (`# pass N`, `# fail N`, last).
 //      A missing or unreadable report counts as a failure (fail closed). As in v1, counts are advisory (the
 //      candidate shares the process); the tamper hashes and leftover kill still apply.
 // Each safety guard is a single line tagged "guard:<id>"; the m151 mutation test deletes each in turn and requires a
-// case to fail. See peaceai/spec/loop-v2.md.
+// case to fail (M169 / M188 / M192 guards carry their own tags and mutation tests). See peaceai/spec/loop-v2.md.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
@@ -176,12 +180,17 @@ export function detectRunner(root: string, testFiles: readonly string[]): Runner
   // m172-order:service-first (batch 11: the next line must stay above guard:runner-other; m172-mutation swaps them)
   if (SERVICE_FILES.some((f) => existsSync(join(root, f)) || (pkgDir && existsSync(join(root, pkgDir, f)))) || words.includes("docker") || words.includes("docker-compose")) return { refuse: "TEST_NEEDS_SERVICE" }; // guard:service
   if (words.some((w) => (OTHER_RUNNERS as readonly string[]).includes(w))) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // guard:runner-other
+  // M192 (batch 25): a refused runner (ava above all: its verdict is made in a worker the code under test owns, spec
+  // loop-runners-ava-terminal-m192.md) named by path (`node_modules/.bin/ava`, `node node_modules/ava/entrypoints/cli.mjs`)
+  if (words.some((w) => w.includes("/") && OTHER_RUNNERS.some((r) => w.split("/").pop() === r || w.split("/").includes("node_modules") && w.split("/")[w.split("/").indexOf("node_modules") + 1] === r))) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // m192-guard:runner-path
   const rel = (f: string) => (pkgDir ? posix.relative(pkgDir, posix.normalize(f)) : posix.normalize(f));
   const named = (["vitest", "jest", "mocha"] as const).filter((r) => words.includes(r));
   const nodeTest = typeof pkg.scripts?.test === "string" && /^(?:node|tsx)\b[^&|;]*\s--test\b/.test(pkg.scripts.test.trim());
   let runner: RunnerKind | null = null;
   if (named.length === 1) runner = named[0]!;
   else if (named.length === 0 && nodeTest) runner = "node-test";
+  // M192: with no runner named, a refused runner in the dependencies is refused, not run under vitest / jest beside it
+  else if (named.length === 0 && OTHER_RUNNERS.some((r) => Object.hasOwn(deps, r))) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // m192-guard:runner-dep-other
   else if (named.length === 0) { const inDeps = (["vitest", "jest"] as const).filter((r) => Object.hasOwn(deps, r)); runner = inDeps.length === 1 ? inDeps[0]! : null; }
   if (!runner) return { refuse: "TEST_RUNNER_UNSUPPORTED" };
   if (runner !== "node-test" && !Object.hasOwn(deps, runner)) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // guard:runner-dep
@@ -746,15 +755,20 @@ function readPkg(p: string): Record<string, unknown> | null {
   try { const o = JSON.parse(t.replace(/^\ufeff/, "")); return o && typeof o === "object" && !Array.isArray(o) ? o : null; } catch { return null; }
 }
 
-/** packageManager (read by corepack and by pnpm itself) only as name@x.y.z[+hash]; no devEngines package manager /
- * runtime (corepack and pnpm can fetch those). The root must be a JSON object; other package.json files are judged
+/** packageManager (read by corepack and by pnpm itself) only as name@x.y.z[+hash]; a devEngines package manager /
+ * runtime only with an explicit onFail that is not "download" (M188: corepack and pnpm can fetch on download). The root must be a JSON object; other package.json files are judged
  * when they parse (corepack reads the nearest one to the install dir: the root). */
 export function managerFieldsOk(p: string, isRoot: boolean): boolean {
   const o = readPkg(p);
   if (!o) return !isRoot;
   if (o.packageManager !== undefined && !(typeof o.packageManager === "string" && PACKAGE_MANAGER_FIELD.test(o.packageManager))) return false;
   const de = o.devEngines;
-  return de === undefined || (!!de && typeof de === "object" && !Array.isArray(de) && !Object.hasOwn(de, "packageManager") && !Object.hasOwn(de, "runtime"));
+  if (de === undefined) return true;
+  if (!de || typeof de !== "object" || Array.isArray(de)) return false;
+  // M188: a package manager / runtime entry only as a check that never downloads (devEnginesEntryOk); the loop's
+  // install names its manager explicitly (corepack pm@x.y.z), which corepack 0.36 runs without reading devEngines
+  if (!(["packageManager", "runtime"] as const).every((k) => !Object.hasOwn(de, k) || devEnginesEntryOk(k, (de as Record<string, unknown>)[k]))) return false; // m188-guard:dev-entry
+  return true;
 }
 
 /** Dependency fields yarn v1 installs. peerDependencies are not installed by yarn v1 (PackageRequest/install pushDeps
@@ -764,7 +778,8 @@ export const YARN_DEP_FIELDS = ["dependencies", "devDependencies", "optionalDepe
  * yarn v1 only: --frozen-lockfile does not stop yarn fetching a dependency that has no yarn.lock entry, so every
  * dependency spec in the root and in every other package.json in the tree (workspace or not) must be a `name@spec`
  * header in yarn.lock, or name a workspace package (name + strict semver version) whose version satisfies the spec
- * as a plain semver range. resolutions (anywhere) are refused outright; workspaces must be
+ * as a plain semver range. resolutions only at the root and only to a locked registry range (M188,
+ * yarnResolutionsOk), else refused; workspaces must be
  * plain globs (an array, or {packages, nohoist}).
  */
 export function yarnManifestsAllowed(root: string, files: readonly string[]): boolean {
@@ -792,7 +807,7 @@ export function yarnManifestsAllowed(root: string, files: readonly string[]): bo
   const wsVer = new Map<string, SemVer | null>();
   for (const x of wsSure.map((d) => readPkg(join(root, d, "package.json")))) if (x && typeof x.name === "string" && typeof x.version === "string" && x.name && x.version) wsVer.set(x.name, semverParse(x.version));
   for (const pkg of pkgs as Record<string, unknown>[]) {
-    if (Object.hasOwn(pkg, "resolutions")) return false; // guard:yarn-resolutions
+    if (Object.hasOwn(pkg, "resolutions") && !(pkg === rootPkg && yarnResolutionsOk(pkg.resolutions, lock))) return false; // guard:yarn-resolutions
     for (const b of ["bundledDependencies", "bundleDependencies"]) if (pkg[b] !== undefined && !(Array.isArray(pkg[b]) && (pkg[b] as unknown[]).length === 0)) return false; // guard:yarn-bundled
     for (const field of YARN_DEP_FIELDS) {
       const deps = pkg[field];
@@ -815,13 +830,21 @@ function smallFile(p: string): string | null {
   try { const st = lstatSync(p); if (!st.isFile() || st.size > LOCK_MAX_BYTES) return null; return readFileSync(p, "utf8"); } catch { return null; }
 }
 
-/** pnpm-workspace.yaml: the plain YAML subset (the lockfile parser), only packages / catalog / catalogs, packages
- * globs inside the repo, catalog entries plain version ranges (npm: aliases allowed; no other protocol). */
-export function pnpmWorkspaceAllowed(text: string): boolean {
+/** What a pnpm setting is checked against: the repo (patch files) and the scanned root lockfile (null: none read). */
+export interface PnpmCtx { root: string; files: readonly string[]; lock: { [k: string]: YNode } | null }
+const NO_PNPM_CTX: PnpmCtx = { root: "", files: [], lock: null };
+/** M188: a key pnpmSettingOk judges (layout / check settings, overrides, patchedDependencies, peerDependencyRules). */
+const pnpmSettingKey = (k: string): boolean => (PNPM_LAYOUT_BOOLS as readonly string[]).includes(k) || Object.hasOwn(PNPM_LAYOUT_ENUMS, k) || (PNPM_LAYOUT_PATTERNS as readonly string[]).includes(k) || (PNPM_LOCKED_KEYS as readonly string[]).includes(k);
+/** pnpm-workspace.yaml: the plain YAML subset (the lockfile parser), only packages / catalog / catalogs, the M169
+ * inert keys and the M188 settings (each in its vetted shape; overrides / patchedDependencies only against the
+ * lockfile in ctx), packages globs inside the repo, catalog entries plain version ranges (npm: aliases allowed; no
+ * other protocol). Every other key (registries, packageExtensions, configDependencies, pnpmfile, ...) is refused. */
+export function pnpmWorkspaceAllowed(text: string, ctx: PnpmCtx = NO_PNPM_CTX): boolean {
   const parsed = pnpmParse(text);
   if (parsed === null) return false; // guard:pnpm-ws-parse
   const doc = parsed ?? ymap();
-  if (!Object.keys(doc).every((k) => (PNPM_WORKSPACE_KEYS as readonly string[]).includes(k) || (PNPM_WORKSPACE_INERT_KEYS as readonly string[]).includes(k))) return false; // guard:pnpm-ws-key
+  if (!Object.keys(doc).every((k) => (PNPM_WORKSPACE_KEYS as readonly string[]).includes(k) || (PNPM_WORKSPACE_INERT_KEYS as readonly string[]).includes(k) || pnpmSettingKey(k))) return false; // guard:pnpm-ws-key
+  if (!Object.keys(doc).every((k) => !pnpmSettingKey(k) || pnpmSettingOk(k, doc[k], ctx.root, ctx.files, ctx.lock))) return false; // m188-guard:ws-setting
   if (!PNPM_WORKSPACE_INERT_KEYS.every((k) => pnpmInertOk(k, doc[k]))) return false; // m169-guard:pnpm-inert-shape
   const pk = doc.packages;
   if (pk !== undefined && pk !== "" && !(Array.isArray(pk) && pk.every((g) => typeof g === "string" && plainGlob(g.replace(/^!/, ""))))) return false; // guard:pnpm-ws-packages
@@ -830,23 +853,227 @@ export function pnpmWorkspaceAllowed(text: string): boolean {
   return true;
 }
 
-/** A package.json with no `pnpm` field (any `pnpm` field is refused: overrides, packageExtensions, patchedDependencies,
- * and the settings pnpm still reads there can change what is fetched or from where; none is needed to install). Not a
- * regular file, or not a JSON object (a leading BOM is stripped first, as pnpm does) -> refused too. */
-export function pnpmFieldFree(p: string): boolean {
-  const t = smallFile(p);
+// ---- M188 (batch 23): package-manager settings the loop vouches for instead of refusing them (DEPS_PM_CONFIG).
+// Spec: peaceai/spec/deps-pm-config-v1.md. General rule: a setting is admitted only when, under the loop's install
+// (frozen lockfile, scripts off, pnpmfile ignored, registry pinned), it cannot change what is fetched, from where, or
+// what runs: it only lays out or checks the locked tree, or it must equal what the scanned lockfile already records
+// (pnpm itself refuses a frozen install whose overrides / patches differ from the lockfile:
+// ERR_PNPM_LOCKFILE_CONFIG_MISMATCH). Anything else stays DEPS_PM_CONFIG. Each guard line carries an m188 guard tag.
+
+/** pnpm layout / check settings (pnpm-workspace.yaml keys): boolean ones. */
+export const PNPM_LAYOUT_BOOLS = ["autoInstallPeers", "strictPeerDependencies", "dedupePeerDependents", "resolvePeersFromWorkspaceRoot", "shamefullyHoist", "hoist", "preferWorkspacePackages", "injectWorkspacePackages", "saveExact", "engineStrict", "excludeLinksFromLockfile", "strictDepBuilds", "ignoreWorkspaceRootCheck", "dedupeDirectDeps", "dedupeInjectedDeps", "disallowWorkspaceCycles"] as const;
+/** pnpm layout settings with a fixed value set (nodeLinker: never pnp; sharedWorkspaceLockfile: only true, since
+ *  false makes pnpm install each package from a lockfile the loop never scanned). */
+export const PNPM_LAYOUT_ENUMS: Readonly<Record<string, readonly string[]>> = { nodeLinker: ["isolated", "hoisted"], linkWorkspacePackages: ["true", "false", "deep"], savePrefix: ["", "^", "~"], resolutionMode: ["highest", "time-based", "lowest-direct"], sharedWorkspaceLockfile: ["true"] };
+/** pnpm hoisting pattern lists. */
+export const PNPM_LAYOUT_PATTERNS = ["hoistPattern", "publicHoistPattern"] as const;
+/** Settings that must agree with the lockfile (overrides, patchedDependencies) or only tune peer warnings. */
+export const PNPM_LOCKED_KEYS = ["overrides", "patchedDependencies", "peerDependencyRules"] as const;
+/** The keys a root package.json `pnpm` field may hold (pnpm reads the field from the root only). */
+export const PNPM_FIELD_KEYS = [...PNPM_LOCKED_KEYS, "onlyBuiltDependencies", "neverBuiltDependencies", "ignoredBuiltDependencies", "allowBuilds", "allowedDeprecatedVersions"] as const;
+const PATTERN = /^!?[A-Za-z0-9@*._~/-]{1,214}$/;
+const MAX_SETTING_ENTRIES = 200;
+
+/** A package.json value as the YAML subset's tree (booleans and numbers as their text), or null for null / other. */
+export function jsonToY(v: unknown): YNode | null {
+  if (typeof v === "string") return v;
+  if (typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v))) return String(v);
+  if (Array.isArray(v)) { const out: YNode[] = []; for (const x of v) { const y = jsonToY(x); if (y === null) return null; out.push(y); } return out; }
+  if (v && typeof v === "object") { const out = ymap(); for (const [k, x] of Object.entries(v)) { const y = jsonToY(x); if (y === null) return null; out[k] = y; } return out; }
+  return null;
+}
+const strMap = (v: YNode | undefined): v is { [k: string]: string } => isYMap(v) && Object.keys(v).length <= MAX_SETTING_ENTRIES && Object.values(v).every((x) => typeof x === "string");
+/** "name" or "name@range" (scoped names too) -> its parts, or null. */
+function nameAt(s: string): { name: string; range: string | null } | null {
+  const at = s.indexOf("@", s.startsWith("@") ? 1 : 0);
+  const name = at > 0 ? s.slice(0, at) : s, range = at > 0 ? s.slice(at + 1) : null;
+  return NPM_NAME.test(name) && (range === null || semverRange(range) !== null) ? { name, range } : null;
+}
+/** An override selector: up to three name[@range] parts joined by ">" (parent>child). */
+export function overrideKeyOk(k: string): boolean {
+  const parts = k.split(">");
+  return parts.length <= 3 && parts.every((p) => nameAt(p) !== null);
+}
+/** An override value: a registry range (semver subset or npm: alias) or "-" (drop the dependency). Never a
+ *  protocol (link:, file:, git, a URL) and never a $reference (pnpm writes the resolved spec, not the reference). */
+export const overrideValueOk = (v: string): boolean => v === "-" || registryRange(v);
+/** overrides: a string map of vetted selectors -> vetted values, equal entry for entry to the lockfile's. */
+export function overridesOk(cfg: YNode | undefined, lock: { [k: string]: YNode } | null): boolean {
+  if (!strMap(cfg)) return false;
+  if (!Object.keys(cfg).every(overrideKeyOk)) return false; // m188-guard:ovr-key
+  if (!Object.values(cfg).every(overrideValueOk)) return false; // m188-guard:ovr-value
+  const lo = isYMap(lock?.overrides) ? lock.overrides : ymap();
+  if (!(Object.keys(lo).length === Object.keys(cfg).length && Object.entries(cfg).every(([k, v]) => lo[k] === v))) return false; // m188-guard:ovr-equal
+  return true;
+}
+/** One path of a unified diff header: /dev/null, or an a/ b/ (or bare) path inside the patched package. */
+const patchPathOk = (p: string): boolean => p === "/dev/null" || (insideRepo(".", p.replace(/^[ab]\//, "")) && !p.split("/").includes(".."));
+/**
+ * A patch file pnpm applies to a dependency: a plain unified (git-style) text diff whose every file path stays inside
+ * the package (no absolute path, no ".." segment), no binary patch, hunks whose line counts match their headers, and
+ * no other line kinds (so no reader sees a different file list than this check did).
+ */
+export function patchTextOk(text: string): boolean {
+  if (/[\r\0]/.test(text)) return false;
+  let oldLeft = 0, newLeft = 0, hunks = 0;
+  for (const line of text.split("\n")) {
+    if (oldLeft > 0 || newLeft > 0) {
+      const c = line[0];
+      if (c === " ") { oldLeft--; newLeft--; } else if (c === "-") oldLeft--; else if (c === "+") newLeft--; else if (c !== "\\") return false;
+      if (oldLeft < 0 || newLeft < 0) return false;
+      continue;
+    }
+    if (line === "" || line.startsWith("\\")) continue;
+    const h = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(line);
+    if (h) { oldLeft = h[1] === undefined ? 1 : +h[1]; newLeft = h[2] === undefined ? 1 : +h[2]; hunks++; continue; }
+    const g = /^diff --git (\S+) (\S+)$/.exec(line);
+    if (g && !(patchPathOk(g[1]!) && patchPathOk(g[2]!))) return false; // m188-guard:patch-git-path
+    if (g) continue;
+    const f = /^(?:---|\+\+\+) ([^\t]+)(?:\t.*)?$/.exec(line);
+    if (f && !patchPathOk(f[1]!.trim())) return false; // m188-guard:patch-path
+    if (f) continue;
+    const r = /^(?:rename|copy) (?:from|to) (.+)$/.exec(line);
+    if (r && !patchPathOk(r[1]!)) return false; // m188-guard:patch-rename
+    if (r) continue;
+    if (/^(?:index [0-9a-f]+\.\.[0-9a-f]+(?: [0-7]{6})?|(?:new file|deleted file|old|new) mode [0-7]{6}|(?:dis)?similarity index \d{1,3}%)$/.test(line)) continue;
+    return false; // m188-guard:patch-line
+  }
+  if (oldLeft !== 0 || newLeft !== 0) return false; // m188-guard:patch-counts
+  return hunks > 0;
+}
+/** patchedDependencies: name[@version] -> a regular patch file in the tree that passes patchTextOk, with exactly the
+ *  lockfile's patched keys (pnpm compares the patch hashes itself). */
+export function patchedOk(root: string, files: readonly string[], cfg: YNode | undefined, lock: { [k: string]: YNode } | null): boolean {
+  if (!strMap(cfg)) return false;
+  for (const [k, p] of Object.entries(cfg)) {
+    if (!PKG_NAME.test(k)) return false;
+    if (!insideRepo(".", p) || !files.includes(posix.normalize(p))) return false; // m188-guard:patch-file
+    const t = smallFile(join(root, p));
+    if (t === null || !patchTextOk(t)) return false; // m188-guard:patch-text
+  }
+  const lp = isYMap(lock?.patchedDependencies) ? lock.patchedDependencies : ymap();
+  if (!(Object.keys(lp).length === Object.keys(cfg).length && Object.keys(cfg).every((k) => Object.hasOwn(lp, k)))) return false; // m188-guard:patch-keys
+  return true;
+}
+/** peerDependencyRules: ignoreMissing / allowAny name patterns, allowedVersions selector -> range. They only turn peer
+ *  warnings off (a frozen install resolves nothing). */
+export function peerRulesOk(v: YNode | undefined): boolean {
+  if (!isYMap(v)) return false;
+  for (const [k, x] of Object.entries(v)) {
+    if (k === "ignoreMissing" || k === "allowAny") { if (!Array.isArray(x) || x.length > MAX_SETTING_ENTRIES || !x.every((n) => typeof n === "string" && PATTERN.test(n))) return false; continue; }
+    if (k === "allowedVersions") { if (!strMap(x) || !Object.entries(x).every(([s, r]) => /^[A-Za-z0-9@*._~/>-]{1,214}$/.test(s) && /^[A-Za-z0-9.^~<>=|* -]{1,64}$/.test(r))) return false; continue; }
+    return false; // m188-guard:peer-key
+  }
+  return true;
+}
+/** One pnpm setting (workspace-file key, or a root `pnpm` field key) in its vetted shape. */
+export function pnpmSettingOk(key: string, v: YNode | undefined, root: string, files: readonly string[], lock: { [k: string]: YNode } | null): boolean {
+  const isBool = (PNPM_LAYOUT_BOOLS as readonly string[]).includes(key), isEnum = Object.hasOwn(PNPM_LAYOUT_ENUMS, key), isPat = (PNPM_LAYOUT_PATTERNS as readonly string[]).includes(key);
+  if (isBool && !(v === "true" || v === "false")) return false; // m188-guard:layout-bool
+  if (isEnum && !(typeof v === "string" && PNPM_LAYOUT_ENUMS[key]!.includes(v))) return false; // m188-guard:layout-enum
+  if (isPat && !(Array.isArray(v) && v.every((n) => typeof n === "string" && PATTERN.test(n)))) return false; // m188-guard:layout-pattern
+  if (isBool || isEnum || isPat) return true;
+  if ((PNPM_WORKSPACE_INERT_KEYS as readonly string[]).includes(key)) return pnpmInertOk(key, v);
+  if (key === "allowedDeprecatedVersions") return strMap(v) && Object.entries(v).every(([n, r]) => PKG_NAME.test(n) && semverRange(r) !== null);
+  if (key === "overrides") return overridesOk(v, lock);
+  if (key === "patchedDependencies") return patchedOk(root, files, v, lock);
+  if (key === "peerDependencyRules") return peerRulesOk(v);
+  return false;
+}
+/** The root package.json `pnpm` field: only PNPM_FIELD_KEYS, each vetted; a non-root package.json has none. */
+function pnpmFieldOk(root: string, f: string, files: readonly string[], lock: { [k: string]: YNode } | null, wsKeys: readonly string[]): boolean {
+  const t = smallFile(join(root, f));
   if (t === null) return false;
   let o: unknown;
   try { o = JSON.parse(t.replace(/^\ufeff/, "")); } catch { return false; }
-  return !!o && typeof o === "object" && !Array.isArray(o) && !Object.hasOwn(o, "pnpm");
+  if (!o || typeof o !== "object" || Array.isArray(o)) return false;
+  if (!Object.hasOwn(o, "pnpm")) return true;
+  if (f !== "package.json") return false; // m188-guard:field-root-only
+  const field = jsonToY((o as Record<string, unknown>).pnpm);
+  if (!isYMap(field)) return false;
+  for (const [k, v] of Object.entries(field)) {
+    if (!(PNPM_FIELD_KEYS as readonly string[]).includes(k)) return false; // m188-guard:field-key
+    if ((PNPM_LOCKED_KEYS as readonly string[]).includes(k) && wsKeys.includes(k)) return false; // m188-guard:field-ws-both
+    if (!pnpmSettingOk(k, v, root, files, lock)) return false; // m188-guard:field-value
+  }
+  return true;
+}
+
+/** .npmrc keys carried into the install tree (every other line of the repo's root .npmrc is dropped, as before
+ *  M188): layout / peer / check settings of npm and pnpm, each with the values it may take. */
+const NPMRC_BOOL = /^(?:true|false)$/;
+export const NPMRC_CARRY: Readonly<Record<string, RegExp>> = {
+  "auto-install-peers": NPMRC_BOOL, "strict-peer-dependencies": NPMRC_BOOL, "dedupe-peer-dependents": NPMRC_BOOL, "resolve-peers-from-workspace-root": NPMRC_BOOL,
+  "shamefully-hoist": NPMRC_BOOL, hoist: NPMRC_BOOL, "prefer-workspace-packages": NPMRC_BOOL, "inject-workspace-packages": NPMRC_BOOL, "save-exact": NPMRC_BOOL,
+  "engine-strict": NPMRC_BOOL, "exclude-links-from-lockfile": NPMRC_BOOL, "strict-dep-builds": NPMRC_BOOL, "ignore-workspace-root-check": NPMRC_BOOL,
+  "dedupe-direct-deps": NPMRC_BOOL, "legacy-peer-deps": NPMRC_BOOL, "strict-peer-deps": NPMRC_BOOL,
+  "node-linker": /^(?:isolated|hoisted)$/, "link-workspace-packages": /^(?:true|false|deep)$/, "save-prefix": /^[\^~]?$/,
+  "resolution-mode": /^(?:highest|time-based|lowest-direct)$/, "shared-workspace-lockfile": /^true$/, "install-strategy": /^(?:hoisted|nested|shallow|linked)$/,
+  "hoist-pattern[]": PATTERN, "public-hoist-pattern[]": PATTERN,
+};
+/** The root .npmrc reduced to the carried keys, as the text PeaceAI writes into the install tree ("" for none). Lines
+ *  are key=value only; a value with an env reference, a quote or anything outside its shape is dropped. Last one wins
+ *  (npm's ini reader); [] keys keep every value. */
+export function npmrcCarry(text: string | null): string {
+  if (text === null) return "";
+  const one = new Map<string, string>(), many = new Map<string, string[]>();
+  for (const raw of text.split("\n")) {
+    const line = raw.replace(/\r$/, "").trim();
+    const m = /^([a-z][a-z0-9-]*(?:\[\])?)\s*=\s*(.*)$/.exec(line);
+    if (!m) continue;
+    const k = m[1]!, v = m[2]!.trim(), rx = NPMRC_CARRY[k];
+    if (!Object.hasOwn(NPMRC_CARRY, k)) continue; // m188-guard:npmrc-key
+    if (rx && !rx.test(v)) continue; // m188-guard:npmrc-value
+    if (k.endsWith("[]")) many.set(k, [...(many.get(k) ?? []), v]); else one.set(k, v);
+  }
+  const out = [...[...one].sort().map(([k, v]) => `${k}=${v}`), ...[...many].sort().flatMap(([k, vs]) => vs.map((v) => `${k}=${v}`))];
+  return out.length ? out.join("\n") + "\n" : "";
+}
+
+/** devEngines.packageManager / runtime entries: an object (or a list of them) naming a supported package manager or
+ *  node, an optional semver range, and an explicit onFail that never downloads (ignore / warn / error). */
+export function devEnginesEntryOk(kind: "packageManager" | "runtime", v: unknown): boolean {
+  const list = Array.isArray(v) ? v : [v];
+  if (!list.length || list.length > 4) return false;
+  return list.every((e) => {
+    if (!e || typeof e !== "object" || Array.isArray(e)) return false;
+    if (!Object.keys(e).every((k) => k === "name" || k === "version" || k === "onFail")) return false; // m188-guard:dev-keys
+    const { name, version, onFail } = e as Record<string, unknown>;
+    if (!(onFail === "ignore" || onFail === "warn" || onFail === "error")) return false; // m188-guard:dev-onfail
+    if (!(kind === "runtime" ? name === "node" : (PACKAGE_MANAGERS as readonly string[]).includes(name as string))) return false; // m188-guard:dev-name
+    if (version !== undefined && !(typeof version === "string" && semverRange(version) !== null)) return false; // m188-guard:dev-version
+    return true;
+  });
+}
+
+/** yarn v1 root resolutions: each key a selector path ending in a package name, each value a registry range whose
+ *  name@value is itself a yarn.lock header (else yarn resolves it afresh from the registry). */
+export function yarnResolutionsOk(res: unknown, lock: ReadonlySet<string>): boolean {
+  if (!res || typeof res !== "object" || Array.isArray(res) || Object.keys(res).length > MAX_SETTING_ENTRIES) return false;
+  for (const [k, v] of Object.entries(res)) {
+    const segs = k.split("/");
+    const parts: string[] = [];
+    for (let i = 0; i < segs.length; i++) parts.push(segs[i]!.startsWith("@") ? `${segs[i]}/${segs[++i] ?? ""}` : segs[i]!);
+    const last = parts[parts.length - 1]!;
+    if (!parts.every((p, i) => (p === "**" && i < parts.length - 1) || (p !== "**" && NPM_NAME.test(p)))) return false; // m188-guard:res-key
+    if (typeof v !== "string" || !registryRange(v)) return false; // m188-guard:res-value
+    if (!lock.has(`${last}@${v}`)) return false; // m188-guard:res-locked
+  }
+  return true;
 }
 
 /** pnpm only: one root pnpm-workspace.yaml at most, no other manifest format, every package.json free of `pnpm`. */
-function pnpmConfigAllowed(root: string, files: readonly string[]): boolean {
+function pnpmConfigAllowed(root: string, files: readonly string[], lockfile: string): boolean {
   if (files.some((f) => f !== "pnpm-workspace.yaml" && /^pnpm-workspace\.ya?ml$/.test(posix.basename(f)))) return false; // guard:pnpm-ws-other
   if (files.some((f) => /^package\.(?:json5|ya?ml)$/.test(posix.basename(f)))) return false; // guard:pnpm-manifest
-  if (files.includes("pnpm-workspace.yaml") && !pnpmWorkspaceAllowed(smallFile(join(root, "pnpm-workspace.yaml")) ?? "\t")) return false; // guard:pnpm-ws
-  for (const f of files) if (posix.basename(f) === "package.json" && !pnpmFieldFree(join(root, f))) return false; // guard:pnpm-field
+  const lockText = smallFile(join(root, lockfile));
+  const ctx: PnpmCtx = { root, files, lock: lockText === null ? null : pnpmParse(lockText) };
+  const wsText = files.includes("pnpm-workspace.yaml") ? smallFile(join(root, "pnpm-workspace.yaml")) ?? "\t" : null;
+  if (wsText !== null && !pnpmWorkspaceAllowed(wsText, ctx)) return false; // guard:pnpm-ws
+  const wsKeys = wsText === null ? [] : Object.keys(pnpmParse(wsText) ?? {});
+  // M188: the root package.json may hold a vetted `pnpm` field (pnpm reads it from the root only); every other
+  // package.json must be free of one
+  for (const f of files) if (posix.basename(f) === "package.json" && !pnpmFieldOk(root, f, files, ctx.lock, wsKeys)) return false; // guard:pnpm-field
   return true;
 }
 
@@ -861,7 +1088,7 @@ export function depsSourceProblem(root: string, p: LockPick): "DEPS_PM_CONFIG" |
   if (!tree.complete) return "DEPS_PM_CONFIG"; // guard:pm-tree
   if (tree.files.some((f) => f.includes("/") && (NESTED_LOCKFILES as readonly string[]).includes(posix.basename(f)))) return "DEPS_PM_CONFIG"; // guard:pm-nested-lock
   if (!tree.files.every((f) => posix.basename(f) !== "package.json" || managerFieldsOk(join(root, f), f === "package.json"))) return "DEPS_PM_CONFIG"; // guard:pm-manager
-  if (p.pm === "pnpm" && !pnpmConfigAllowed(root, tree.files)) return "DEPS_PM_CONFIG"; // guard:pm-pnpm
+  if (p.pm === "pnpm" && !pnpmConfigAllowed(root, tree.files, p.lockfile)) return "DEPS_PM_CONFIG"; // guard:pm-pnpm
   if (p.pm === "yarn" && !yarnManifestsAllowed(root, tree.files)) return "DEPS_PM_CONFIG"; // guard:pm-yarn
   return rootLockfilesAllowed(root, p) ? null : "DEPS_NONREGISTRY";
 }
@@ -948,10 +1175,14 @@ export function installDeps(copyDir: string, cand: CandUid, cache: DepsCache, o:
   if (problem) return { refuse: problem }; // guard:deps-nonregistry
   const files = listed(copyDir);
   const manifests = files.filter((f) => posix.basename(f) === "package.json" || f === "pnpm-workspace.yaml").sort();
-  const key = sha256([lock.pm, lock.version ?? "", ...presentLockfiles(copyDir).map(([f]) => `${f}\0${sha256(readFileSync(join(copyDir, f)))}`), ...manifests.map((f) => `${f}\0${sha256(readFileSync(join(copyDir, f)))}`)].join("\n"));
+  // M188: the carried .npmrc settings and every patch file are part of what the install depends on
+  const npmrc = npmrcCarry(files.includes(".npmrc") ? smallFile(join(copyDir, ".npmrc")) : null);
+  const patches = files.filter((f) => /\.(?:patch|diff)$/.test(f)).sort();
+  let key = sha256([lock.pm, lock.version ?? "", ...presentLockfiles(copyDir).map(([f]) => `${f}\0${sha256(readFileSync(join(copyDir, f)))}`), ...manifests.map((f) => `${f}\0${sha256(readFileSync(join(copyDir, f)))}`)].join("\n"));
+  key = sha256([key, ...patches.map((f) => `${f}\0${sha256(readFileSync(join(copyDir, f)))}`), `.npmrc\0${sha256(npmrc)}`].join("\n")); // m188-guard:key-carry
   let hit = cache.entries.get(key);
   if (!hit) {
-    hit = install(copyDir, files, lock, cand, cache, key, o);
+    hit = install(copyDir, files, lock, cand, cache, key, o, npmrc);
     cache.entries.set(key, hit);
     // keep the newest MAX_CACHED installs only (disk / inodes); an evicted install is removed, never reused
     for (const [k, v] of [...cache.entries].slice(0, Math.max(0, cache.entries.size - MAX_CACHED))) {
@@ -982,7 +1213,7 @@ export function killCand(cand: CandUid): boolean {
   return false;
 }
 
-function install(copyDir: string, files: readonly string[], lock: LockPick, cand: CandUid, cache: DepsCache, key: string, o: DepsOptions): { staging: string } | DepsRefusal {
+function install(copyDir: string, files: readonly string[], lock: LockPick, cand: CandUid, cache: DepsCache, key: string, o: DepsOptions, npmrc = ""): { staging: string } | DepsRefusal {
   o.onInstall?.(key);
   const staging = join(cache.dir, `deps-${key.slice(0, 16)}`);
   const home = join(cache.dir, `home-${key.slice(0, 16)}`);
@@ -997,6 +1228,9 @@ function install(copyDir: string, files: readonly string[], lock: LockPick, cand
     writeFileSync(join(staging, f), readFileSync(src));
   }
   for (const f of files) if ((PM_CONFIG_FILES as readonly string[]).includes(posix.basename(f))) rmSync(join(staging, f), { force: true }); // guard:deps-config
+  // M188: only the vetted layout / peer settings of the root .npmrc go back in (npmrcCarry; registry, auth, scripts,
+  // proxies and every other key stay dropped)
+  if (npmrc) writeFileSync(join(staging, ".npmrc"), npmrc); // m188-guard:npmrc-write
   const me = `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`;
   if (spawnSync("sudo", ["-n", "chown", "-R", `${cand.name}:`, staging, home], { stdio: "ignore" }).status !== 0) return { refuse: "DEPS_INSTALL_FAILED", fail: "CHOWN_TO_CAND" };
   // M169 pre-flight: the candidate uid must reach (every parent searchable) and write its staging dir and HOME before
@@ -1059,7 +1293,10 @@ export const SHIM_SOURCE = [
   "const cwd = resolve(pkgDir || \".\");",
   "const tmp = process.env.TMPDIR || \"/nonexistent\";",
   "const here = dirname(fileURLToPath(import.meta.url));",
-  "const done = (pass, fail, code) => { process.stdout.write(`\\n# pass ${pass}\\n# fail ${fail}\\n`); process.exit(code); };",
+  "// M190 (batch 24): the line right before the counts is always the shim's own `# failed-names <hex json> | -`: the",
+  "// failed tests' names from the nonce-checked report (vitest / jest reporters only) or `-` (unknown); loop.ts reads it",
+  "// only when it is that line (output before it, code under test's included, can never be the line before `# pass`)",
+  "const done = (pass, fail, code, names = null) => { process.stdout.write(`\\n# failed-names ${names ? Buffer.from(JSON.stringify(names)).toString(\"hex\") : \"-\"}\\n# pass ${pass}\\n# fail ${fail}\\n`); process.exit(code); };",
   "// M173: the shim's own exit codes when it made the counts up (loopdeps.ts SHIM_EXITS): no usable report, a suite that",
   "// failed to load or run, a nonzero exit with no failed test; a real failing test exits 1, all passing 0",
   "const NO_REPORT = 95, SUITE_LOAD = 94, EXIT_ONLY = 93;",
@@ -1132,7 +1369,16 @@ export const SHIM_SOURCE = [
   "let synth = n(j.numRuntimeErrorTestSuites) > 0 || (tested === 0 && fail > 0) ? SUITE_LOAD : 0; // m173-loop-guard:shim-suite-load",
   "if (fail === 0 && (r.status !== 0 || j.success === false)) fail = 1; // guard:shim-exit",
   "if (synth === 0 && tested === 0 && fail > 0) synth = EXIT_ONLY; // m173-loop-guard:shim-exit-only",
-  "done(pass, fail, synth || (fail ? 1 : 0));",
+  "// M190: names only for the runner's own failed tests: no made-up count, exactly one name per failed test, capped",
+  "const NAMES_CAP = 100, NAME_CHARS = 200;",
+  "const failedNames = (() => {",
+  "  const a = j.failedNames;",
+  "  if (synth !== 0 || fail !== tested) return null; // m190-guard:shim-real",
+  "  if (!Array.isArray(a) || a.length !== tested || a.length > NAMES_CAP) return null; // m190-guard:shim-count",
+  "  if (!a.every((x) => typeof x === \"string\")) return null;",
+  "  return a.map((x) => x.replace(/[^\\x20-\\x7e]/g, \"?\").slice(0, NAME_CHARS)); // m190-guard:shim-printable",
+  "})();",
+  "done(pass, fail, synth || (fail ? 1 : 0), failedNames ?? null);",
   "",
 ].join("\n");
 
@@ -1367,7 +1613,10 @@ export const JEST_REPORTER_SOURCE = [
   "    const w = this.write;",
   "    this.write = null;",
   "    if (!w) return;",
-  "    w(JSON.stringify({ numPassedTests: n(r.numPassedTests), numFailedTests: n(r.numFailedTests), numFailedTestSuites: n(r.numFailedTestSuites), numRuntimeErrorTestSuites: n(r.numRuntimeErrorTestSuites), numPendingTests: n(r.numPendingTests), numTodoTests: n(r.numTodoTests), numTotalTests: n(r.numTotalTests), success: n(r.numFailedTests) === 0 && n(r.numRuntimeErrorTestSuites) === 0 && !(r.snapshot && r.snapshot.failure) && !r.runExecError }));",
+  "    // M190: each failed test's name (its describe titles and its own, joined by ' > '); the shim caps and checks them",
+  "    const names = [];",
+  "    for (const f of Array.isArray(r.testResults) ? r.testResults : []) for (const t of f && Array.isArray(f.testResults) ? f.testResults : []) if (t && t.status === \"failed\") names.push([...(Array.isArray(t.ancestorTitles) ? t.ancestorTitles : []), t.title].map(String).join(\" > \")); // m190-guard:jest-names",
+  "    w(JSON.stringify({ failedNames: names, numPassedTests: n(r.numPassedTests), numFailedTests: n(r.numFailedTests), numFailedTestSuites: n(r.numFailedTestSuites), numRuntimeErrorTestSuites: n(r.numRuntimeErrorTestSuites), numPendingTests: n(r.numPendingTests), numTodoTests: n(r.numTodoTests), numTotalTests: n(r.numTotalTests), success: n(r.numFailedTests) === 0 && n(r.numRuntimeErrorTestSuites) === 0 && !(r.snapshot && r.snapshot.failure) && !r.runExecError }));",
   "  }",
   "  getLastError() { return undefined; }",
   "}",
@@ -1392,6 +1641,15 @@ export const VITEST_REPORTER_SOURCE = [
   "  }",
   "  return out;",
   "}",
+  "// M190: each failed test's name (its suite names below the file, and its own, joined by ' > ')",
+  "function failedNames(tasks, path, out) {",
+  "  for (const t of tasks || []) {",
+  "    if (!t || typeof t !== \"object\") continue;",
+  "    if (t.type === \"suite\") failedNames(t.tasks, typeof t.filepath === \"string\" ? path : [...path, String(t.name)], out);",
+  "    else if (t.type === \"test\" && t.result && t.result.state === \"fail\") out.push([...path, String(t.name)].join(\" > \")); // m190-guard:vitest-names",
+  "  }",
+  "  return out;",
+  "}",
   "export default class PeaceAIVitestReporter {",
   "  constructor() {",
   "    this.write = null;",
@@ -1411,7 +1669,7 @@ export const VITEST_REPORTER_SOURCE = [
   "    const numPassedTests = tests.filter((t) => state(t) === \"pass\").length;",
   "    const numPendingTests = tests.filter((t) => t.mode === \"skip\" || t.mode === \"todo\" || state(t) === \"skip\" || state(t) === \"todo\").length;",
   "    const unhandled = Array.isArray(errors) ? errors.length : 0;",
-  "    w(JSON.stringify({ numPassedTests, numFailedTests, numFailedTestSuites, numPendingTests, numTotalTests: tests.length, unhandledErrors: unhandled, success: files.length > 0 && numFailedTestSuites === 0 && numFailedTests === 0 && unhandled === 0 }));",
+  "    w(JSON.stringify({ failedNames: failedNames(files, [], []), numPassedTests, numFailedTests, numFailedTestSuites, numPendingTests, numTotalTests: tests.length, unhandledErrors: unhandled, success: files.length > 0 && numFailedTestSuites === 0 && numFailedTests === 0 && unhandled === 0 }));",
   "  }",
   "  // vitest >= 3 (testModules), older ones (files); vitest 3 calls both: the first one counts",
   "  onTestRunEnd(testModules, errors) { this.report((testModules || []).map((m) => m && m.task), errors); }",

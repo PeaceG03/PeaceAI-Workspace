@@ -38,7 +38,9 @@ export interface LoadDiag { kind: "MISSING_EXPORT" | "MISSING_MODULE"; test: str
 export interface RepairEdit { path: string; content: string }
 export interface RepairFeedback { attempt: number; codes: readonly string[]; failing: readonly string[]; tests?: { total: number; passedByPeaceAI: number } | null }
 export interface RepairInput { files: readonly { path: string; content: string }[]; attempt: number; feedback: readonly RepairFeedback[]; baseline?: { total: number; passing: number; failing: number } | null; loadDiagnostics?: readonly LoadDiag[] }
-export interface PrepareInput { request: string; failing: readonly string[] }
+/** M190: `failing` feeds localisation (node:test names only); `baseFailing` (when given) is the baseline's failing test
+ *  names for the outcome evidence (M178 / M179 / M191), vitest / jest names included. */
+export interface PrepareInput { request: string; failing: readonly string[]; baseFailing?: readonly string[] }
 export type RepairProposal = { edits: RepairEdit[] } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };
 
 export const REPAIR_PROPOSER = "repair-v1";
@@ -1131,6 +1133,7 @@ export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<stri
   const rank = (x: Mutation) => order.indexOf(x.template);
   all.sort((a, b) => rank(a) - rank(b) || a.site - b.site || a.start - b.start || a.end - b.end || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0));
   const queue: Candidate[] = [];
+  if (v2) return reachReserved(all, sites, files, seen); // m189-guard:v2-only
   for (const x of all) {
     if (queue.length >= MAX_CANDIDATES) break; // guard:cap
     const c = candidateFor(files, [x]);
@@ -1140,6 +1143,41 @@ export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<stri
     queue.push(c);
   }
   return queue;
+}
+
+/** M189: the first site tier reached through the code rather than named by the request (M182 class members, M184 /
+ *  M186 barrel and default re-exports). */
+export const REACH_TIER = 4;
+/** M189: candidate slots kept for reach sites (tier >= REACH_TIER) when the located sites alone would fill the cap. */
+export const REACH_RESERVED = 12;
+/**
+ * M189 (repair-v2 only; repair-v1 and model-v1's scoring list are unchanged): the same fixed-order walk as above, but the
+ * cap no longer lets the located sites' many template mutations push every reach-site candidate out (Auditor note,
+ * batch 22). Candidates are collected per side (located: tier < REACH_TIER; reach: the rest), up to MAX_CANDIDATES
+ * each; the reach side keeps what fits after the located side, and at least REACH_RESERVED; the located side keeps the
+ * rest. The kept candidates stay in the walk's order. When the cap does not bind, or there is no reach site, the list
+ * is exactly the plain walk's.
+ */
+function reachReserved(all: readonly Mutation[], sites: readonly Site[], files: ReadonlyMap<string, string>, seen: Set<string>): Candidate[] {
+  const low: { c: Candidate; i: number }[] = [], high: { c: Candidate; i: number }[] = [];
+  const local = new Set<string>();
+  for (let i = 0; i < all.length; i++) {
+    if (low.length >= MAX_CANDIDATES && high.length >= MAX_CANDIDATES) break;
+    const x = all[i]!;
+    const side = (sites[x.site]?.tier ?? 0) >= REACH_TIER ? high : low;
+    if (side.length >= MAX_CANDIDATES) continue;
+    const c = candidateFor(files, [x]);
+    if (!c || seen.has(c.key) || local.has(c.key)) continue;
+    local.add(c.key);
+    side.push({ c, i });
+  }
+  let nHigh = Math.min(high.length, Math.max(0, MAX_CANDIDATES - low.length));
+  nHigh = Math.max(nHigh, Math.min(high.length, REACH_RESERVED)); // m189-guard:reserve
+  const nLow = Math.min(low.length, MAX_CANDIDATES - nHigh);
+  const kept = [...low.slice(0, nLow), ...high.slice(0, nHigh)];
+  kept.sort((a, b) => a.i - b.i); // m189-guard:order
+  for (const k of kept) seen.add(k.c.key);
+  return kept.map((k) => k.c);
 }
 
 // ---- M174: load-repair candidates (repair-v2 only)
@@ -1243,6 +1281,39 @@ export function siteDemotions(tried: readonly Candidate[], feedback: readonly Re
   return out;
 }
 
+// ---- M191 fail-to-pass promotion (repair-v2 only; spec: peaceai/spec/repair-v2-m191.md)
+
+const countNames = (xs: readonly string[]): Map<string, number> => { const m = new Map<string, number>(); for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1); return m; };
+/**
+ * M191: whether one attempt made a baseline-failing test pass (Metallaxis / MUSE-style mutation-based fault
+ * localization: a change that flips a failing test is at the fault): a result with no code but TEST_FAIL, the
+ * baseline's total, failing names known on both sides (one name per failing test: node:test always, vitest / jest when
+ * M190 could read them), and some baseline-failing name failing fewer times than at the baseline. Only counts and
+ * names are read, never a message; a broken passing test does not cancel it (the edit was at the right code, the
+ * wrong way).
+ */
+export function fixEvidence(fb: RepairFeedback | undefined, baseline: RepairInput["baseline"], baseFailing: readonly string[]): boolean {
+  if (fb?.codes.some((c) => c !== "TEST_FAIL")) return false; // m191-guard:fx-clean
+  if (fb?.tests?.total !== baseline?.total) return false; // m191-guard:fx-total (no counts, or no baseline: undefined is not a total)
+  if (baseFailing.length !== baseline?.failing) return false; // m191-guard:fx-base-known
+  if ((fb?.failing ?? []).length !== (fb?.tests?.total ?? 0) - (fb?.tests?.passedByPeaceAI ?? 0)) return false; // m191-guard:fx-known
+  const now = countNames(fb?.failing ?? []);
+  return [...countNames(baseFailing)].some(([n, k]) => (now.get(n) ?? 0) < k);
+}
+/** M191: the located sites (by number) to promote now: a single-site candidate's result is fix evidence, the site not
+ *  promoted already. tried[i] is attempt i + 1. */
+export function fixSites(tried: readonly Candidate[], feedback: readonly RepairFeedback[], baseline: RepairInput["baseline"], baseFailing: readonly string[], already: ReadonlySet<number>): number[] {
+  const out = new Set<number>();
+  tried.forEach((c, i) => {
+    if (!fixEvidence(feedback.find((f) => f.attempt === i + 1), baseline, baseFailing)) return;
+    const at = [...new Set(c.muts.map((m) => m.site))];
+    if (at.length !== 1) return; // m191-guard:fs-single (a combined edit says nothing about which site mattered)
+    if (already.has(at[0]!)) return; // m191-guard:fs-once
+    out.add(at[0]!);
+  });
+  return [...out].sort((a, b) => a - b);
+}
+
 // ---- M179 anchored continuation (repair-v2 only; spec: peaceai/spec/repair-v2-m179.md)
 
 /** M179: the most mutations an anchored (composed) candidate may carry. */
@@ -1300,6 +1371,7 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
   const seen = new Set<string>();
   const combined = new Set<string>();
   const demoted = new Set<number>(); // M178
+  const promoted = new Set<number>(); // M191
   const deferred: Candidate[] = []; // M179: standalone forms of queued candidates tried on an anchor
   let redo: Candidate[] = []; // M179: tried candidates to try again on the current anchor
   let anchorKey: string | null = null;
@@ -1309,7 +1381,7 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
     // M174: repair-v2 only (never repair-v1 or a reranked list such as model-v1's): the loop may then ask it for a
     // suite that does not load, giving only its load diagnostics
     loadRepair: opts.v2 === true && !opts.order, // m174-guard:lr-v2-only
-    prepare(search, input) { sites = locate(search, input, opts.v2 ? CALLEE_DEPTH.v2 : CALLEE_DEPTH.v1); baseFailing = [...input.failing]; },
+    prepare(search, input) { sites = locate(search, { request: input.request, failing: input.failing }, opts.v2 ? CALLEE_DEPTH.v2 : CALLEE_DEPTH.v1); baseFailing = [...(input.baseFailing ?? input.failing)]; },
     next(input) {
       if (input.loadDiagnostics && opts.v2 === true) {
         // a suite that did not load: only load-repair candidates, one per attempt (the other templates have no signal)
@@ -1359,6 +1431,23 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
         const rest = queue.filter((c) => !live.some((x) => x.key === c.key));
         const next = [...live, ...rest];
         if (next.length > MAX_CANDIDATES) next.length = MAX_CANDIDATES; // m178-guard:rb-cap
+        for (const c of next) seen.add(c.key);
+        queue = next;
+      }
+      // M191 (repair-v2 only, like M178): a site where one edit made a baseline-failing test pass is where the fault
+      // most likely is (even when that edit broke another test); its other candidates go to the front of the queue
+      let fixAt = fixSites(tried, input.feedback, input.baseline, baseFailing, promoted);
+      if (opts.v2 !== true || opts.order) fixAt = []; // m191-guard:v2-only
+      if (fixAt.length) {
+        for (const s of fixAt) promoted.add(s);
+        const skipKeys = new Set<string>();
+        for (const c of tried) skipKeys.add(c.key); // m191-guard:pr-tried
+        for (const c of deferred) skipKeys.add(c.key);
+        const others = new Set<number>(sites.map((_, i) => i).filter((i) => !fixAt.includes(i)));
+        const front = repairCandidates(sites, files, skipKeys, true, others);
+        const rest = queue.filter((c) => !front.some((x) => x.key === c.key));
+        const next = [...front, ...rest];
+        if (next.length > MAX_CANDIDATES) next.length = MAX_CANDIDATES; // m191-guard:pr-cap
         for (const c of next) seen.add(c.key);
         queue = next;
       }
