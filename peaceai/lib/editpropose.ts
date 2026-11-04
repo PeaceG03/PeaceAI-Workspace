@@ -333,7 +333,8 @@ const memberHasBody = (m: ts.Node): boolean => (ts.isPropertyDeclaration(m) ? ca
 /**
  * M182 (repair-v2 only): the class members a located class member reaches, one level. Inside a located member of a
  * class, `this.m(...)` (also `this.#m(...)`), a read `this.g` of a get accessor, and `C.m(...)` where C is a top-level
- * class of the same file resolve to the member of that class DECLARED there (no inheritance), with the same static-ness
+ * class of the same file resolve to the member of that class DECLARED there (M183: or, when that class does not declare
+ * the name, in its nearest same-file `extends` ancestor; `super.m` starts at the base), with the same static-ness
  * as the access (`this` in a static member is the class), with a body. `this` inside a nested non-arrow function or a
  * nested class is another `this` and is not followed. The members become tier-4 sites in located-site order, then
  * source order, at most MAX_MEMBER_SITES, after every other site (so the located sites, the const sites and their
@@ -364,11 +365,16 @@ function memberSites(sites: readonly Site[], textOf: (p: string) => string | nul
     walk(self, true);
     for (const { n, own } of refs) {
       const isThis = n.expression.kind === ts.SyntaxKind.ThisKeyword;
-      if (isThis && !own) continue; // m182-guard:mc-rebind
-      const owner = isThis ? self.parent : ts.isIdentifier(n.expression) ? classes.get(n.expression.text) : undefined;
-      if (!owner) continue;
+      const isSuper = n.expression.kind === ts.SyntaxKind.SuperKeyword;
+      if ((isThis || isSuper) && !own) continue; // m182-guard:mc-rebind
+      let from: ts.Node | undefined = isThis ? self.parent : ts.isIdentifier(n.expression) ? classes.get(n.expression.text) : undefined;
+      // M183: `super.m` starts at the class the member's own class extends, never at the own class
+      if (isSuper) from = baseOf(self.parent, classes); // m183-guard:ih-super
       const call = ts.isCallExpression(n.parent) && n.parent.expression === n;
-      const wantStatic = isThis ? isStaticMember(self) : true;
+      const wantStatic = isThis || isSuper ? isStaticMember(self) : true;
+      // M183: the nearest class in the same-file extends chain that declares the name (M182 alone: the start class only)
+      const owner = from ? ownerOf(from, n.name.text, wantStatic, classes) : undefined;
+      if (!owner) continue;
       for (const m of membersOf(owner)) {
         if (nameOf(m) !== n.name.text) continue;
         if (isStaticMember(m) !== wantStatic) continue; // m182-guard:mc-static
@@ -382,6 +388,43 @@ function memberSites(sites: readonly Site[], textOf: (p: string) => string | nul
     }
   }
   return out;
+}
+
+// ---- M183 inherited members (repair-v2 only; spec: peaceai/spec/repair-v2-m183.md)
+
+/** M183: at most this many `extends` steps are followed above the class an access starts at. */
+export const MAX_BASE_DEPTH = 3;
+/** M183: the top-level class of the same file that a class `extends` by a plain name, or undefined (`implements` is
+ *  not inheritance; an imported base, a mixin call or a property-access base is not resolved). */
+function baseOf(c: ts.Node, classes: ReadonlyMap<string, ts.Node>): ts.Node | undefined {
+  if (!ts.isClassLike(c)) return undefined;
+  for (const h of c.heritageClauses ?? []) {
+    if (h.token !== ts.SyntaxKind.ExtendsKeyword) continue; // m183-guard:ih-extends
+    const e = h.types[0]?.expression;
+    return e && ts.isIdentifier(e) ? classes.get(e.text) : undefined;
+  }
+  return undefined;
+}
+/**
+ * M183 (repair-v2 only): the class whose own declaration an access `x.name` starting at class `from` reaches: `from`
+ * itself when it declares `name` with the access's static-ness, else the nearest same-file ancestor that does, at most
+ * MAX_BASE_DEPTH `extends` steps up. The nearest declaration wins even when it is not followable code (a data field or
+ * an abstract member shadows the base's method; M182's mc-kind / mc-body then refuse it). A private `#name` is lexically
+ * scoped to the class that declares it and is never looked up in a base. A cyclic chain (broken code) stops at the
+ * first repeated class.
+ */
+function ownerOf(from: ts.Node, name: string, wantStatic: boolean, classes: ReadonlyMap<string, ts.Node>): ts.Node | undefined {
+  const seen = new Set<ts.Node>();
+  let c: ts.Node | undefined = from;
+  for (let up = 0; c && !seen.has(c); up++) {
+    seen.add(c);
+    const declares = membersOf(c).some((m) => nameOf(m) === name && isStaticMember(m) === wantStatic);
+    if (declares) return c; // m183-guard:ih-nearest
+    if (name.startsWith("#")) return undefined; // m183-guard:ih-private
+    if (up >= MAX_BASE_DEPTH) return undefined; // m183-guard:ih-depth
+    c = baseOf(c, classes);
+  }
+  return undefined;
 }
 
 // ---- templates

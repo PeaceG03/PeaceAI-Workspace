@@ -50,7 +50,7 @@ function load(m: ReadonlyMap<string, string>, path: string): Record<string, unkn
   vm.runInNewContext(js, { module: mod, exports: mod.exports, Math }, { timeout: 1000 });
   return mod.exports;
 }
-type Check = (x: Record<string, any>) => boolean;
+export type Check = (x: Record<string, any>) => boolean;
 const oracle = (path: string, checks: readonly Check[]) => (m: ReadonlyMap<string, string>): number => {
   let x: Record<string, any>;
   try { x = load(m, path); } catch { return 0; }
@@ -66,9 +66,9 @@ function gate(orig: ReadonlyMap<string, string>, edits: readonly Prop.RepairEdit
   const read = (p: string) => orig.get(p) ?? null;
   return loop.editScopeProblem(edits, read, () => false) ?? loop.editScopeOf(edits, read) ?? "none";
 }
-const sitesOf = (l: Libs, ctx: Ctx, files: Record<string, string>, request: string, depth: number = l.prop.CALLEE_DEPTH.v2): Prop.Site[] => l.prop.locate(openRepo(repoDir(ctx, files)), { request, failing: [] }, depth);
+export const sitesOf = (l: Libs, ctx: Ctx, files: Record<string, string>, request: string, depth: number = l.prop.CALLEE_DEPTH.v2): Prop.Site[] => l.prop.locate(openRepo(repoDir(ctx, files)), { request, failing: [] }, depth);
 /** The tier-4 (member-callee) sites as "name@line" (1-based line of the member's start). */
-function members(l: Libs, ctx: Ctx, files: Record<string, string>, request: string): string[] {
+export function members(l: Libs, ctx: Ctx, files: Record<string, string>, request: string): string[] {
   const sites = sitesOf(l, ctx, files, request);
   return sites.filter((s) => s.tier === 4).map((s) => `${s.name}@${files[s.path]!.slice(0, s.start).split("\n").length}`);
 }
@@ -118,7 +118,7 @@ const GRID_CHECKS: Check[] = [(x) => g9(x).at(0, 0) === "a", (x) => g9(x).at(1, 
 
 /** An admit: PASS within MAX_ATTEMPTS, and the passing edit changes only code inside a tier-4 (member) site, outside every
  *  site located before M182, so no candidate of the earlier sites (alone, paired or anchored) can be it. */
-const admit = (id: string, files: Record<string, string>, request: string, path: string, checks: Check[], member: string[], want: RegExp): Case => ({
+export const admit = (id: string, files: Record<string, string>, request: string, path: string, checks: Check[], member: string[], want: RegExp): Case => ({
   id, run(l, ctx) {
     const sites = sitesOf(l, ctx, files, request);
     const mem = sites.filter((s) => s.tier === 4);
@@ -166,14 +166,18 @@ export const CASES: Case[] = [
     },
   },
   {
-    id: "resolution: a static call to another top-level class of the same file is followed; an imported class and an inherited member are not (no cross-file or inheritance resolution)",
+    id: "resolution: a static call to another top-level class of the same file is followed; an imported class is not, nor a member of an imported base (no cross-file resolution; same-file inheritance is M183)",
     run(l, ctx) {
       const units = "export class Units {\n  static toCm(inches: number): number {\n    return inches * 2;\n  }\n}\n";
       const shelf = "export class Shelf {\n  depth: number;\n  constructor(depth: number) {\n    this.depth = depth;\n  }\n  holds(inches: number): boolean {\n    return Units.toCm(inches) < this.depth;\n  }\n}\n";
       assert.deepEqual(members(l, ctx, { "src/shelf.ts": units + shelf }, "`holds` is wrong."), ["toCm@2"]);
       assert.deepEqual(members(l, ctx, { "src/units.ts": units, "src/shelf.ts": 'import { Units } from "./units.ts";\n' + shelf }, "`holds` is wrong."), []);
+      // batch 20 (M183): a member inherited from a same-file base class is now followed (m183-cases.ts); one in an
+      // imported base still is not
       const base = "export class Base {\n  helper(): number {\n    return 1;\n  }\n}\nexport class Kid extends Base {\n  run(): number {\n    return this.helper() + 1;\n  }\n}\n";
-      assert.deepEqual(members(l, ctx, { "src/kid.ts": base }, "`run` is wrong."), []);
+      assert.deepEqual(members(l, ctx, { "src/kid.ts": base }, "`run` is wrong."), ["helper@2"]);
+      const kid = 'import { Base } from "./base.ts";\nexport class Kid extends Base {\n  run(): number {\n    return this.helper() + 1;\n  }\n}\n';
+      assert.deepEqual(members(l, ctx, { "src/base.ts": "export class Base {\n  helper(): number {\n    return 1;\n  }\n}\n", "src/kid.ts": kid }, "`run` is wrong."), []);
     },
   },
   // ---- near misses, one per guard
