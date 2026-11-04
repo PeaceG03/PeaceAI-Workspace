@@ -24,10 +24,32 @@ const plan = (m: ReproModule, dir: string, code: string, site?: ThrowSite): Plan
   assert.ok(!("refuse" in p), `expected a plan for ${code}, got ${"refuse" in p ? p.refuse : ""}`);
   return p as Plan;
 };
-const refused = (m: ReproModule, dir: string, code: string, want: Repro.ReproRefusal, site?: ThrowSite) => {
+const refused = (m: ReproModule, dir: string, code: string, want: Repro.ReproRefusal, site?: ThrowSite, detail?: string) => {
   const p = m.planRepro(openRepo(dir), code, site ?? siteOf(dir, code));
   assert.deepEqual("refuse" in p ? p.refuse : "PLANNED", want, code);
+  // Batch 31: a refusal with a precise reason checks the reason too
+  if (detail !== undefined) assert.equal("refuse" in p ? p.detail : undefined, detail, `${code} detail`);
 };
+/** Batch 31: the plan keeps the helper call (awaited, its other arguments as written) and rebuilds its callback from
+ *  the callback's own parameters and setup, with the same injected dependency and check inside. */
+const viaHelper = (m: ReproModule, dir: string, code: string, test: string, outer: RegExp, inner: RegExp) => {
+  const p = plan(m, dir, code);
+  assert.equal(p.existing.path, test);
+  for (const v of ["repro", "probe", "control"] as const) assert.match(p.variants[v], outer, v);
+  assert.match(p.variants.repro, inner);
+  assert.match(p.variants.repro, new RegExp(String.raw`if \(__peaceaiHas\(__peaceaiSeen, "${code}"\)\) throw[^\n]*\n\}\);\n\}\);`), "the check is inside the helper's callback");
+  assert.doesNotMatch(p.variants.control, /__peaceaiArgs\[\d\] = __peaceaiFail/);
+  return p;
+};
+const LEDGER_HELPER = (m: ReproModule, c: CaseCtx) => viaHelper(m, c.ledger, "JOURNAL_APPEND_FAILED", "test/journal.test.ts",
+  /async function withJournal\(run[^]*\ntest\("peaceai-repro \w+: appendEntry with io\.append failing", async \(\) => \{\nconst label = "first";\nawait withJournal\(async \(lines\) => \{\nconst io = \{ append: async \(l: string\) => \{ lines\.push\(l\); \} \};\nconst __peaceaiArgs = \[io, label\];/,
+  /__peaceaiArgs\[0\] = __peaceaiFail\(__peaceaiArgs\[0\], "append", true\);/);
+const SHELF_HELPER = (m: ReproModule, c: CaseCtx) => viaHelper(m, c.shelf, "VAULT_KEY_UNREADABLE", "test/vault.test.ts",
+  /import \{ withKeys \} from "\.\/helpers";[^]*\nit\("peaceai-repro \w+: unlock with keys\.get failing", async \(\) => \{\nawait withKeys\(\{ a: "1" \}, async \(keys\) => \{\nconst __peaceaiArgs = \[keys, "a"\];/,
+  /__peaceaiArgs\[0\] = __peaceaiFail\(__peaceaiArgs\[0\], "get", true\);/);
+const AGENT_HELPER = (m: ReproModule, c: CaseCtx) => viaHelper(m, c.agent, "FETCH_ONE_FAILED", "packages/agent/test/fetch.test.js",
+  /const \{ withApi \} = require\("\.\/support"\);[^]*\ntest\("peaceai-repro \w+: fetchOne with api\.get failing", async \(\) => \{\nawait withApi\(async \(api\) => \{\nconst __peaceaiArgs = \[api, quiet, "a"\];/,
+  /__peaceaiArgs\[0\] = __peaceaiFail\(__peaceaiArgs\[0\], "get", true\);/);
 const R = (exitCode: number, pass: number, fail: number, extra: Partial<Repro.VariantRun> = {}): Repro.VariantRun => ({ exitCode, pass, fail, leftovers: 0, ...extra });
 const FAIL = R(1, 0, 1), PASS = R(0, 1, 0);
 
@@ -104,6 +126,22 @@ export const CASES: ReproCase[] = [
   } },
   { id: "refuse-call-in-try-catch", condition: "existing-plain-path", kind: "refuse", shape: "ledger", run: (m, c) => refused(m, c.ledger, "REFILL_PUMP_STUCK", "REPRO_NO_EXISTING_TEST") },
   { id: "refuse-call-with-spread", condition: "existing-args", kind: "refuse", shape: "ledger", run: (m, c) => refused(m, c.ledger, "STAMP_SIGN_FAILED", "REPRO_NO_EXISTING_TEST") },
+  // ---- Batch 31: the call inside one async callback of a helper the test file defines or imports from the repo
+  { id: "admit-helper-local-fn", condition: "existing-helper-local", kind: "admit", shape: "ledger", run: (m, c) => { LEDGER_HELPER(m, c); } },
+  { id: "admit-helper-relative-import", condition: "existing-helper-local", kind: "admit", shape: "shelf", run: (m, c) => { SHELF_HELPER(m, c); } },
+  { id: "admit-helper-relative-require", condition: "existing-helper-local", kind: "admit", shape: "agent", run: (m, c) => { AGENT_HELPER(m, c); } },
+  { id: "admit-helper-one-level-ledger", condition: "existing-helper-one-level", kind: "admit", shape: "ledger", run: (m, c) => { LEDGER_HELPER(m, c); } },
+  { id: "admit-helper-one-level-shelf", condition: "existing-helper-one-level", kind: "admit", shape: "shelf", run: (m, c) => { SHELF_HELPER(m, c); } },
+  { id: "admit-helper-async-ledger", condition: "existing-helper-async", kind: "admit", shape: "ledger", run: (m, c) => { LEDGER_HELPER(m, c); } },
+  { id: "admit-helper-async-agent", condition: "existing-helper-async", kind: "admit", shape: "agent", run: (m, c) => { AGENT_HELPER(m, c); } },
+  { id: "refuse-helper-from-package", condition: "existing-helper-local", kind: "refuse", shape: "ledger", run: (m, c) => refused(m, c.ledger, "PKG_APPEND_FAILED", "REPRO_NO_EXISTING_TEST", undefined, "unknown-helper") },
+  { id: "refuse-helper-nested", condition: "existing-helper-one-level", kind: "refuse", shape: "ledger", run: (m, c) => refused(m, c.ledger, "NESTED_APPEND_FAILED", "REPRO_NO_EXISTING_TEST", undefined, "nested-callback") },
+  { id: "refuse-helper-in-describe-body", condition: "existing-helper-one-level", kind: "refuse", shape: "ledger", run: (m, c) => refused(m, c.ledger, "SUITE_APPEND_FAILED", "REPRO_NO_EXISTING_TEST", undefined, "nested-callback") },
+  { id: "refuse-helper-sync-callback", condition: "existing-helper-async", kind: "refuse", shape: "ledger", run: (m, c) => refused(m, c.ledger, "SYNC_APPEND_FAILED", "REPRO_NO_EXISTING_TEST", undefined, "sync-callback") },
+  { id: "refuse-test-each-row", condition: "existing-in-test", kind: "refuse", shape: "ledger", run: (m, c) => refused(m, c.ledger, "ROW_APPEND_FAILED", "REPRO_NO_EXISTING_TEST", undefined, "not-in-test") },
+  { id: "refuse-hook-reason", condition: "existing-in-test", kind: "refuse", shape: "ledger", run: (m, c) => refused(m, c.ledger, "ROTATE_FAILED", "REPRO_NO_EXISTING_TEST", undefined, "not-in-test") },
+  { id: "refuse-toplevel-catch-site", condition: "site-not-toplevel", kind: "refuse", shape: "ledger", run: (m, c) =>
+    refused(m, c.ledger, "QUOTA_STORE_DOWN", "REPRO_NO_ENTRY", { ...siteOf(c.ledger, "QUOTA_STORE_DOWN"), shape: "toplevel-catch" }, "toplevel-catch") },
   { id: "refuse-no-candidate-uid", condition: "needs-cand", kind: "refuse", shape: "ledger", run: (m, c) => {
     const r = m.validateRepro(c.ledger, plan(m, c.ledger, "QUOTA_STORE_DOWN"), { env: {}, roots: [] });
     assert.deepEqual([r.code, r.detail], ["REPRO_ISOLATION", "CAND_UID_REQUIRED"]);

@@ -18,7 +18,7 @@ import { privateRoots } from "../lib/loop.ts";
 import * as repro from "../lib/reproduce.ts";
 import type { PlanTaskFile } from "../lib/plan.ts";
 import { CASES, siteOf, type CaseCtx, type ReproModule } from "./m196-cases.ts";
-import { AGENT, LEDGER, LEDGER_TRIGGERS, SHELF, writeRepo } from "./m196-fixtures.ts";
+import { AGENT, LEDGER, LEDGER_HELPERS, LEDGER_TRIGGERS, SHELF, writeRepo } from "./m196-fixtures.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
 const libDir = join(repo, "peaceai/lib");
@@ -28,11 +28,11 @@ const noCand = CAND ? false : "no candidate uid (M196_CAND / M146_CAND): the san
 const scratch = mkdtempSync(join(tmpdir(), "peaceai-m196-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const ctx: CaseCtx = {
-  ledger: writeRepo(join(scratch, "ledger"), { ...LEDGER, ...LEDGER_TRIGGERS }),
+  ledger: writeRepo(join(scratch, "ledger"), { ...LEDGER, ...LEDGER_TRIGGERS, ...LEDGER_HELPERS }),
   shelf: writeRepo(join(scratch, "shelf"), SHELF()),
   agent: writeRepo(join(scratch, "agent"), AGENT),
 };
-const TAGS = ["code-shape", "entry-direct", "entry-exported", "existing-args", "existing-binds", "existing-in-test", "existing-plain-path", "judge-clean", "judge-control", "judge-isolation", "judge-one-fail", "judge-one-pass", "judge-probe", "judge-repro-fails", "needs-cand", "observe-log", "observe-push", "site-source", "throw-caught", "trigger-handled", "trigger-no-inner-try", "trigger-no-nested-fn", "trigger-not-builtin", "trigger-param"];
+const TAGS = ["code-shape", "entry-direct", "entry-exported", "existing-args", "existing-binds", "existing-helper-async", "existing-helper-local", "existing-helper-one-level", "existing-in-test", "existing-plain-path", "judge-clean", "judge-control", "judge-isolation", "judge-one-fail", "judge-one-pass", "judge-probe", "judge-repro-fails", "needs-cand", "observe-log", "observe-push", "site-not-toplevel", "site-source", "throw-caught", "trigger-handled", "trigger-no-inner-try", "trigger-no-nested-fn", "trigger-not-builtin", "trigger-param"];
 
 /** One mutant per guard (removing it, or loosening it where removing leaves nothing to run). `find` occurs once. */
 const MUTANTS: { id: string; find: string; replace: string }[] = [
@@ -50,6 +50,12 @@ const MUTANTS: { id: string; find: string; replace: string }[] = [
   { id: "observe-push", find: 'return id && (paramIdx(id) >= 0 || local(id)) ? { channel: "pushed", logParam: null } : null; // repro-guard:observe-push', replace: 'return { channel: "pushed", logParam: null };' },
   { id: "existing-binds", find: "&& to(st.moduleSpecifier.text) && !st.importClause?.isTypeOnly) { // repro-guard:existing-binds", replace: "&& !st.importClause?.isTypeOnly) {" },
   { id: "existing-in-test", find: 'ts.isCallExpression(tc) && plainCall(tc, ["test", "it"])', replace: "ts.isCallExpression(tc)" },
+  // Batch 31: the helper-callback path (each removed; the cases check the refusal's reason, so a removal that is caught
+  // by a later rule with another reason still fails its case)
+  { id: "existing-helper-local", find: 'if (!helpers.has(hc.expression.text)) return "unknown-helper"; // repro-guard:existing-helper-local', replace: "" },
+  { id: "existing-helper-one-level", find: 'if (!inTestCb(outer)) return "nested-callback"; // repro-guard:existing-helper-one-level', replace: "" },
+  { id: "existing-helper-async", find: 'if (!mods(cb).some((m) => m.kind === ts.SyntaxKind.AsyncKeyword)) return "sync-callback"; // repro-guard:existing-helper-async', replace: "" },
+  { id: "site-not-toplevel", find: 'if (site.shape === "toplevel-catch") return refuse("REPRO_NO_ENTRY", "toplevel-catch"); // repro-guard:site-not-toplevel', replace: "" },
   { id: "existing-plain-path", find: "if (!(t && ts.isTryStatement(t) && t.tryBlock === b && !t.catchClause && !!t.finallyBlock)) return null; // repro-guard:existing-plain-path", replace: "if (!t || !ts.isTryStatement(t)) return null;" },
   { id: "existing-args", find: "&& !n.arguments.some(ts.isSpreadElement); // repro-guard:existing-args", replace: "; // removed" },
   { id: "needs-cand", find: 'if (!cu.ok) return { code: "REPRO_ISOLATION", detail: cu.reason }; // repro-guard:needs-cand', replace: "" },
@@ -106,6 +112,10 @@ test("M196 sandbox (node:test): admit returned and thrown; passes on current cod
   assert.equal(ok.code, "REPRO_OK", JSON.stringify(ok));
   assert.deepEqual(ok.runs, { repro: { exitCode: 1, pass: 0, fail: 1, leftovers: 0 }, probe: { exitCode: 0, pass: 1, fail: 0, leftovers: 0 }, control: { exitCode: 0, pass: 1, fail: 0, leftovers: 0 } });
   assert.equal(run(ctx.ledger, "SWEEP_BIN_STUCK").code, "REPRO_OK", "the call is inside the test's try / finally");
+  // Batch 31: the call is inside the async callback of a helper the test file defines (kept, with its own try / finally)
+  const viaHelper = run(ctx.ledger, "JOURNAL_APPEND_FAILED");
+  assert.equal(viaHelper.code, "REPRO_OK", JSON.stringify(viaHelper));
+  assert.deepEqual(viaHelper.runs, ok.runs);
   assert.equal(run(ctx.ledger, "PROFILE_MISSING").code, "REPRO_NOT_FAILING", "an injected failure the code does not report: the test cannot fail");
   assert.equal(run(ctx.ledger, "THEME_DEFAULTED").code, "REPRO_VACUOUS", "the code is produced with no failure injected");
   const wrong = run(ctx.ledger, "RATES_UNAVAILABLE");
@@ -127,6 +137,9 @@ test("M196 sandbox (flat npm + vitest 4): admit thrown, dependencies installed b
   const r = repro.reproduce(ctx.shelf, "SETTINGS_UNREADABLE", siteOf(ctx.shelf, "SETTINGS_UNREADABLE"), { env: env(), roots: roots() });
   assert.equal(r.code, "REPRO_OK", JSON.stringify(r));
   assert.deepEqual([r.runs!.repro.exitCode, r.runs!.repro.fail, r.runs!.probe.pass, r.runs!.control.pass], [1, 1, 1, 1]);
+  // Batch 31: the call is inside the async callback of a helper imported from ./helpers
+  const h = repro.reproduce(ctx.shelf, "VAULT_KEY_UNREADABLE", siteOf(ctx.shelf, "VAULT_KEY_UNREADABLE"), { env: env(), roots: roots() });
+  assert.equal(h.code, "REPRO_OK", JSON.stringify(h));
 });
 
 test("M196 sandbox (pnpm workspace + jest 29, CommonJS): admit logged through an injected logger", { skip: noCand }, (t) => {
@@ -145,6 +158,9 @@ test("M196 sandbox (pnpm workspace + jest 29, CommonJS): admit logged through an
   const r = repro.reproduce(ctx.agent, "SYNC_PUSH_FAILED", siteOf(ctx.agent, "SYNC_PUSH_FAILED"), { env: env(), roots: roots(), provideDeps });
   assert.equal(r.code, "REPRO_OK", JSON.stringify(r));
   assert.equal(r.plan!.runner.runner, "jest");
+  // Batch 31: the call is inside the async callback of a helper required from ./support
+  const h = repro.reproduce(ctx.agent, "FETCH_ONE_FAILED", siteOf(ctx.agent, "FETCH_ONE_FAILED"), { env: env(), roots: roots(), provideDeps });
+  assert.equal(h.code, "REPRO_OK", JSON.stringify(h));
 });
 
 test("M196 wiring: plan-only; nothing in the loop, its grading, selfpropose or the credit sources imports reproduce.ts", () => {

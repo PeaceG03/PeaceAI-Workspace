@@ -223,8 +223,15 @@ function observeOf(sf: ts.SourceFile, code: string, site: ThrowSite, r: Region, 
   return id && (paramIdx(id) >= 0 || local(id)) ? { channel: "pushed", logParam: null } : null; // repro-guard:observe-push
 }
 
-/** An existing test of the entry: the binding it imports it by, the call it makes inside a plain test callback. */
-interface Existing { path: string; sf: ts.SourceFile; local: string; call: ts.CallExpression; cb: ts.FunctionLikeDeclaration; testCall: ts.CallExpression; describes: ts.CallExpression[]; blocks: ts.Block[] }
+/** An existing test of the entry: the binding it imports it by, the call it makes inside a plain test callback, either
+ *  directly or (Batch 31) inside ONE async callback passed to a helper the test file defines or imports from a relative
+ *  path (`await withX(async (d) => { .. entry(..) .. })`). `blocks` is the path to the call in the innermost body (the
+ *  helper's callback when there is one); `helper.outer` is the path to the helper call in the test body. */
+interface Helper { call: ts.CallExpression; cb: ts.ArrowFunction | ts.FunctionExpression; outer: ts.Block[] }
+interface Existing { path: string; sf: ts.SourceFile; local: string; call: ts.CallExpression; cb: ts.FunctionLikeDeclaration; testCall: ts.CallExpression; describes: ts.CallExpression[]; blocks: ts.Block[]; helper: Helper | null }
+/** Why a call of the entry in a test file is not usable (fixed vocabulary; the REPRO_NO_EXISTING_TEST detail). */
+export const EXISTING_MISSES = ["not-in-test", "args", "path", "unknown-helper", "nested-callback", "sync-callback"] as const;
+export type ExistingMiss = (typeof EXISTING_MISSES)[number];
 /** The blocks from the test callback's body down to the call's statement: the body, then only the try block of a
  *  try / finally (no catch: a catch in the test could swallow the candidate's own throw). The call's statement is
  *  directly in the last block (not under an if, a loop or a nested callback). Null: not such a path. */
@@ -266,34 +273,94 @@ function bindingOf(sf: ts.SourceFile, testPath: string, entry: { name: string; p
   return null;
 }
 const plainCall = (c: ts.CallExpression, names: readonly string[]) => ts.isIdentifier(c.expression) && names.includes(c.expression.text);
-function existingCall(sf: ts.SourceFile, local: string, need: number): Omit<Existing, "path" | "sf" | "local"> | null {
-  let out: Omit<Existing, "path" | "sf" | "local"> | null = null;
+const isRelative = (spec: string) => spec.startsWith("./") || spec.startsWith("../");
+/** Names a test file can call as a helper: its own top-level functions (declarations, const arrows / function
+ *  expressions) and bindings it imports or destructures from a RELATIVE path (a file of the same repo). A name from a
+ *  package (`vitest`, `node:test`, a test-utils library) or a global is not a helper. */
+function helpersOf(sf: ts.SourceFile, entryLocal: string): Set<string> {
+  const out = new Set<string>();
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name && st.body) out.add(st.name.text);
+    if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier) && isRelative(st.moduleSpecifier.text) && !st.importClause?.isTypeOnly) {
+      const ic = st.importClause;
+      if (ic?.name) out.add(ic.name.text);
+      if (ic?.namedBindings && ts.isNamedImports(ic.namedBindings)) for (const el of ic.namedBindings.elements) if (!el.isTypeOnly) out.add(el.name.text);
+    }
+    if (ts.isVariableStatement(st)) for (const d of st.declarationList.declarations) {
+      const init = d.initializer;
+      if (!init) continue;
+      if (ts.isIdentifier(d.name) && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))) out.add(d.name.text);
+      if (ts.isObjectBindingPattern(d.name) && ts.isCallExpression(init) && ts.isIdentifier(init.expression) && init.expression.text === "require" && init.arguments[0] && ts.isStringLiteral(init.arguments[0]) && isRelative(init.arguments[0].text)) {
+        for (const el of d.name.elements) if (ts.isIdentifier(el.name)) out.add(el.name.text);
+      }
+    }
+  }
+  out.delete(entryLocal);
+  for (const t of TESTISH) out.delete(t);
+  return out;
+}
+type Found = Omit<Existing, "path" | "sf" | "local">;
+/** The callback is the last argument of a plain test("..", fn) / it("..", fn) call. */
+const inTestCb = (cb: ts.Node | undefined): boolean => {
+  const tc = cb?.parent;
+  return !!cb && (ts.isArrowFunction(cb) || ts.isFunctionExpression(cb)) && !!tc && ts.isCallExpression(tc) && plainCall(tc, ["test", "it"]) && tc.arguments[tc.arguments.length - 1] === cb; // repro-guard:existing-in-test
+};
+/** The describe("..", fn) bodies between the test call and the file, or null when anything else is in between. */
+function describesOf(tc: ts.CallExpression): ts.CallExpression[] | null {
+  const describes: ts.CallExpression[] = [];
+  if (!ts.isExpressionStatement(tc.parent) || !tc.parent.parent) return null;
+  for (let s: ts.Node | undefined = tc.parent.parent; s && !ts.isSourceFile(s); ) {
+    const fnb: ts.Node | undefined = s.parent;
+    const d: ts.Node | undefined = fnb?.parent;
+    if (ts.isBlock(s) && fnb && (ts.isArrowFunction(fnb) || ts.isFunctionExpression(fnb)) && d && ts.isCallExpression(d) && plainCall(d, ["describe", "suite"]) && ts.isExpressionStatement(d.parent)) { describes.unshift(d); s = d.parent.parent; }
+    else return null;
+  }
+  return describes;
+}
+/** One call of the entry: usable (directly in a plain test, or in one async callback of a local helper inside one), or
+ *  why not. */
+function usable(n: ts.CallExpression, need: number, helpers: ReadonlySet<string>): Found | ExistingMiss {
+  const argsOk = n.arguments.length >= need && !n.arguments.some(ts.isSpreadElement); // repro-guard:existing-args
+  if (!argsOk) return "args";
+  const cb = ts.findAncestor(n.parent, ts.isFunctionLike) as ts.FunctionLikeDeclaration | undefined;
+  if (!cb) return "not-in-test";
+  if (inTestCb(cb)) {
+    const blocks = cb.body && ts.isBlock(cb.body) ? blocksTo(n, cb.body) : [];
+    if (!blocks) return "path";
+    const describes = describesOf(cb.parent as ts.CallExpression);
+    return describes ? { call: n, cb, testCall: cb.parent as ts.CallExpression, describes, blocks, helper: null } : "not-in-test";
+  }
+  // Batch 31: the call is in a callback passed to a helper call
+  const hc = cb.parent;
+  const outer: ts.Node | undefined = ts.findAncestor(cb.parent, ts.isFunctionLike);
+  // a hook / fixture (beforeEach(..)), a test.each(..)(..) row or a module-level callback is not in a test
+  if (!outer) return "not-in-test";
+  if (!(ts.isArrowFunction(cb) || ts.isFunctionExpression(cb)) || !hc || !ts.isCallExpression(hc) || !hc.arguments.some((a) => a === cb) || !ts.isIdentifier(hc.expression)) return "unknown-helper";
+  if (!helpers.has(hc.expression.text)) return "unknown-helper"; // repro-guard:existing-helper-local
+  if (!inTestCb(outer)) return "nested-callback"; // repro-guard:existing-helper-one-level
+  const tcb = outer as ts.ArrowFunction | ts.FunctionExpression;
+  if (!mods(cb).some((m) => m.kind === ts.SyntaxKind.AsyncKeyword)) return "sync-callback"; // repro-guard:existing-helper-async
+  const outerBlocks = ts.isBlock(tcb.body) ? blocksTo(hc, tcb.body) : null;
+  const blocks = ts.isBlock(cb.body) ? blocksTo(n, cb.body) : null;
+  if (!outerBlocks || !blocks) return "path";
+  const describes = describesOf(tcb.parent as ts.CallExpression);
+  return describes ? { call: n, cb: tcb, testCall: tcb.parent as ts.CallExpression, describes, blocks, helper: { call: hc, cb, outer: outerBlocks } } : "not-in-test";
+}
+function existingCall(sf: ts.SourceFile, local: string, need: number): Found | ExistingMiss | null {
+  let out: Found | null = null;
+  let miss: ExistingMiss | null = null;
+  const helpers = helpersOf(sf, local);
   const visit = (n: ts.Node): void => {
     if (out) return;
     if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === local) {
-      const cb = ts.findAncestor(n.parent, ts.isFunctionLike) as ts.FunctionLikeDeclaration | undefined;
-      const tc = cb?.parent;
-      // the call is directly in a plain test("..", fn) / it("..", fn) callback (not in a helper, a hook or a nested callback)
-      const inTest = !!cb && (ts.isArrowFunction(cb) || ts.isFunctionExpression(cb)) && !!tc && ts.isCallExpression(tc) && plainCall(tc, ["test", "it"]) && tc.arguments[tc.arguments.length - 1] === cb; // repro-guard:existing-in-test
-      const argsOk = n.arguments.length >= need && !n.arguments.some(ts.isSpreadElement); // repro-guard:existing-args
-      const blocks = inTest && cb!.body && ts.isBlock(cb!.body) ? blocksTo(n, cb!.body) : inTest ? [] : null;
-      if (inTest && argsOk && blocks) {
-        const describes: ts.CallExpression[] = [];
-        let ok = ts.isExpressionStatement(tc!.parent) && !!tc!.parent.parent;
-        for (let s: ts.Node | undefined = tc!.parent.parent; ok && s && !ts.isSourceFile(s); ) {
-          // only describe("..", fn) bodies between the test and the file
-          const fnb: ts.Node | undefined = s.parent;
-          const d: ts.Node | undefined = fnb?.parent;
-          if (ts.isBlock(s) && fnb && (ts.isArrowFunction(fnb) || ts.isFunctionExpression(fnb)) && d && ts.isCallExpression(d) && plainCall(d, ["describe", "suite"]) && ts.isExpressionStatement(d.parent)) { describes.unshift(d); s = d.parent.parent; }
-          else ok = false;
-        }
-        if (ok) { out = { call: n, cb: cb!, testCall: tc as ts.CallExpression, describes, blocks }; return; }
-      }
+      const r = usable(n, need, helpers);
+      if (typeof r === "string") miss ??= r;
+      else { out = r; return; }
     }
     ts.forEachChild(n, visit);
   };
   visit(sf);
-  return out;
+  return out ?? miss;
 }
 
 /** The candidate test's three variants, from the existing test's own statements. */
@@ -301,30 +368,41 @@ function variantsOf(ex: Existing, plan: Omit<ReproPlan, "variants">, keepParams:
   const sf = ex.sf;
   const txt = (n: ts.Node) => n.getText(sf);
   const keep = (sts: readonly ts.Statement[]) => sts.filter((s) => !isTestish(s)).map(txt);
-  // the statements before the call at each block level; an inner level is the try block of a try / finally, kept
-  // with its finally (the test's own cleanup)
-  const prefix: string[] = [];
-  const suffix: string[] = [];
-  ex.blocks.forEach((b, i) => {
-    if (i > 0) prefix.push("try {");
-    const at = b.statements.findIndex((s) => s.pos <= ex.call.pos && s.end >= ex.call.end);
-    prefix.push(...b.statements.slice(0, Math.max(0, at)).map(txt));
-    if (i > 0) suffix.unshift(`} finally ${txt((b.parent as ts.TryStatement).finallyBlock!)}`);
-  });
+  // the statements before `anchor` at each block level; an inner level is the try block of a try / finally, kept
+  // with its finally (the test's own cleanup); `middle` goes where `anchor`'s statement was
+  const around = (blocks: readonly ts.Block[], anchor: ts.Node, middle: readonly string[]): string[] => {
+    const prefix: string[] = [];
+    const suffix: string[] = [];
+    blocks.forEach((b, i) => {
+      if (i > 0) prefix.push("try {");
+      const at = b.statements.findIndex((s) => s.pos <= anchor.pos && s.end >= anchor.end);
+      prefix.push(...b.statements.slice(0, Math.max(0, at)).map(txt));
+      if (i > 0) suffix.unshift(`} finally ${txt((b.parent as ts.TryStatement).finallyBlock!)}`);
+    });
+    return [...prefix, ...middle, ...suffix];
+  };
   const params = keepParams ? ex.cb.parameters.map(txt).join(", ") : "";
   const testName = (v: Variant) => `peaceai-repro ${v}: ${plan.entry.name} with ${plan.trigger.callee} failing`;
   const T = (ex.testCall.expression as ts.Identifier).text;
   const one = (v: Variant): string => {
     const lines: string[] = [];
     lines.push(`${T}(${JSON.stringify(testName(v))}, async (${params}) => {`);
-    for (const p of prefix) lines.push(p);
-    lines.push(`const __peaceaiArgs = [${ex.call.arguments.map(txt).join(", ")}];`);
-    if (v !== "control") lines.push(`__peaceaiArgs[${plan.trigger.param}] = __peaceaiFail(__peaceaiArgs[${plan.trigger.param}], ${JSON.stringify(plan.trigger.prop)}, ${plan.trigger.reject});`);
-    lines.push(`const __peaceaiSeen = await __peaceaiObserve(${JSON.stringify(plan.channel)}, ${plan.logParam ?? -1}, __peaceaiArgs, () => ${ex.local}(...__peaceaiArgs));`);
-    lines.push(v === "probe"
+    const core: string[] = [];
+    core.push(`const __peaceaiArgs = [${ex.call.arguments.map(txt).join(", ")}];`);
+    if (v !== "control") core.push(`__peaceaiArgs[${plan.trigger.param}] = __peaceaiFail(__peaceaiArgs[${plan.trigger.param}], ${JSON.stringify(plan.trigger.prop)}, ${plan.trigger.reject});`);
+    core.push(`const __peaceaiSeen = await __peaceaiObserve(${JSON.stringify(plan.channel)}, ${plan.logParam ?? -1}, __peaceaiArgs, () => ${ex.local}(...__peaceaiArgs));`);
+    core.push(v === "probe"
       ? `if (!__peaceaiHas(__peaceaiSeen, ${JSON.stringify(plan.code)})) throw new Error("peaceai-repro probe: the reported failure was not observed");`
       : `if (__peaceaiHas(__peaceaiSeen, ${JSON.stringify(plan.code)})) throw new Error("peaceai-repro: the reported failure was produced");`);
-    for (const x of suffix) lines.push(x);
+    const h = ex.helper;
+    if (!h) lines.push(...around(ex.blocks, ex.call, core));
+    else {
+      // the helper call kept (awaited, its other arguments as written), its callback rebuilt from the callback's own
+      // parameters and the statements before the call, with the same injected dependency and check inside
+      const cbText = [`async (${h.cb.parameters.map(txt).join(", ")}) => {`, ...around(ex.blocks, ex.call, core), "}"].join("\n");
+      const call = `await ${txt(h.call.expression)}(${h.call.arguments.map((a) => (a === h.cb ? cbText : txt(a))).join(", ")});`;
+      lines.push(...around(h.outer, h.call, [call]));
+    }
     lines.push("});");
     let inner = lines.join("\n");
     for (let i = ex.describes.length - 1; i >= 0; i--) {
@@ -404,6 +482,9 @@ export function planRepro(code: CodeRepo, errCode: string, site: ThrowSite): Pla
   const refuse = (r: ReproRefusal, detail?: string): PlanResult => (detail ? { refuse: r, detail } : { refuse: r });
   if (!CODE_SHAPE.test(errCode)) return refuse("REPRO_NO_DIAGNOSIS"); // repro-guard:code-shape
   if (!isSourceFile(site.path) || isTestPath(site.path) || isGeneratedPath(site.path)) return refuse("REPRO_TEST_TARGET"); // repro-guard:site-source
+  // a top-level `main().catch(..)` site (plan5 Batch 31) names the called function, not a try / chain around a
+  // dependency call of an exported entry: v1 has no trigger to inject there
+  if (site.shape === "toplevel-catch") return refuse("REPRO_NO_ENTRY", "toplevel-catch"); // repro-guard:site-not-toplevel
   const root = code.root;
   const text = readSmall(root, site.path);
   if (text === null) return refuse("REPRO_NO_DIAGNOSIS");
@@ -425,6 +506,7 @@ export function planRepro(code: CodeRepo, errCode: string, site: ThrowSite): Pla
   const order = [...new Set([...related, ...all.filter(isBehaviorTest).sort()])].filter(isBehaviorTest).slice(0, MAX_TESTS_SCANNED);
   const need = Math.max(trigger.param, obs.logParam ?? -1) + 1;
   let ex: Existing | null = null;
+  let miss: ExistingMiss | null = null;
   for (const p of order) {
     const t = readSmall(root, p);
     if (t === null || !t.includes(entry.name)) continue;
@@ -432,9 +514,10 @@ export function planRepro(code: CodeRepo, errCode: string, site: ThrowSite): Pla
     const local = bindingOf(tsf, p, entry, known);
     if (!local) continue;
     const c = existingCall(tsf, local, need);
-    if (c) { ex = { path: p, sf: tsf, local, ...c }; break; }
+    if (typeof c === "string") miss ??= c;
+    else if (c) { ex = { path: p, sf: tsf, local, ...c }; break; }
   }
-  if (!ex) return refuse("REPRO_NO_EXISTING_TEST");
+  if (!ex) return refuse("REPRO_NO_EXISTING_TEST", miss ?? undefined);
   const testPath = ex.path.replace(/(\.(?:test|spec))?(\.[cm]?[jt]sx?)$/, ".peaceai-repro$1$2");
   const det = detectRunner(root, [testPath]);
   if ("refuse" in det) return refuse("REPRO_RUNNER", det.refuse);
