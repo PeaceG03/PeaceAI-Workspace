@@ -42,6 +42,8 @@ const dir = (ctx: Ctx, name: string) => join(ctx.base, "m172", `${name}-${n++}`)
  * reporter is constructed inside it and the runner emits `pass` / `fail` / `pending` / `test end` / `end`.
  * M172_STUB_MOCHA=pending adds a pending test, =pending-noend a pending event with no `test end`, =mismatch a test that ends neither way. Its lib/ has the mocha classes
  * PeaceAI's guard needs (runnable.js, pending.js, runner.js, suite.js, test.js, hook.js, context.js, mocha.js).
+ * (M193, batch 26) Like mocha, it adds each test to the root suite with Suite#addTest, emits `start` then `test`, runs
+ * the test through Runnable#run, and passes the test object with each event (the m193 guards pin and plan on them).
  * Exit code: the failure count. */
 export const STUB_MOCHA_CLI = [
   'import { writeFileSync } from "node:fs";',
@@ -61,7 +63,7 @@ export const STUB_MOCHA_CLI = [
   "const own = createRequire(import.meta.url);",
   'const Mocha = own("../lib/mocha.js");',
   "const tests = [];",
-  "globalThis.it = globalThis.test = (name, fn) => tests.push(fn);",
+  "globalThis.it = globalThis.test = (name, fn) => tests.push([name, fn]);",
   "globalThis.describe = globalThis.suite = (name, fn) => fn();",
   "for (const r of requires) await import(r.startsWith(\"./\") ? pathToFileURL(resolve(r)).href : pathToFileURL(createRequire(join(process.cwd(), \"x.js\")).resolve(r)).href);",
   "const mocha = new Mocha();",
@@ -72,13 +74,19 @@ export const STUB_MOCHA_CLI = [
   "  all.push(...tests.splice(0));",
   "}",
   'const mode = process.env.M172_STUB_MOCHA;',
+  'const Test = own("../lib/test.js");',
+  "const made = all.map(([name, fn]) => new Test(name, fn));",
+  'const extra = mode === "pending" || mode === "pending-noend" || mode === "mismatch" ? new Test("extra") : null;',
+  "// pending-noend: a pending event with no `test end` and no planned test, so only the shim's pending check sees it",
+  'for (const t of extra && mode !== "pending-noend" ? [...made, extra] : made) mocha.suite.addTest(t);',
   "mocha.run(async (runner) => {",
   "  let failures = loadFailures;",
+  '  runner.emit("start");',
   '  for (let k = 0; k < loadFailures; k++) runner.emit("fail", {}, new Error("load"));',
-  '  for (const fn of all) { try { await fn(); runner.emit("pass", {}); } catch (e) { failures++; runner.emit("fail", {}, e); } runner.emit("test end", {}); }',
-  '  if (mode === "pending") { runner.emit("pending", {}); runner.emit("test end", {}); }',
-  '  if (mode === "pending-noend") runner.emit("pending", {});',
-  '  if (mode === "mismatch") runner.emit("test end", {});',
+  '  for (const t of made) { runner.emit("test", t); const e = await new Promise((res) => t.run(res)); if (e) { failures++; runner.emit("fail", t, e); } else runner.emit("pass", t); runner.emit("test end", t); }',
+  '  if (mode === "pending") { runner.emit("pending", extra); runner.emit("test end", extra); }',
+  '  if (mode === "pending-noend") runner.emit("pending", extra);',
+  '  if (mode === "mismatch") runner.emit("test end", extra);',
   '  runner.emit("end");',
   "  process.exit(failures);",
   "});",
@@ -86,14 +94,14 @@ export const STUB_MOCHA_CLI = [
 ].join("\n");
 
 const STUB_MOCHA_LIB: Record<string, string> = {
-  "runnable.js": "function Runnable() {}\nRunnable.prototype.run = function (fn) { fn(); };\nmodule.exports = Runnable;\n",
+  "runnable.js": "function Runnable(title, fn) { this.title = title; this.fn = fn; }\nRunnable.prototype.run = function (cb) { let r; try { r = this.fn(); } catch (e) { return cb(e); } if (r && typeof r.then === \"function\") return r.then(() => cb(), (e) => cb(e || new Error(\"rejected\"))); cb(); };\nmodule.exports = Runnable;\n",
   "pending.js": "function Pending(m) { this.message = m; }\nmodule.exports = Pending;\n",
-  "runner.js": 'const EventEmitter = require("node:events");\nclass Runner extends EventEmitter {}\nmodule.exports = Runner;\n',
-  "suite.js": "function Suite() {}\nmodule.exports = Suite;\n",
-  "test.js": "function Test() {}\nmodule.exports = Test;\n",
+  "runner.js": 'const EventEmitter = require("node:events");\nclass Runner extends EventEmitter { constructor(suite) { super(); this.suite = suite; } grepTotal(s) { return s.tests.length; } }\nmodule.exports = Runner;\n',
+  "suite.js": "function Suite() { this.tests = []; this.suites = []; this._beforeAll = []; this._beforeEach = []; this._afterEach = []; this._afterAll = []; }\nSuite.prototype.addTest = function (t) { this.tests.push(t); return this; };\nSuite.prototype._createHook = function (title, fn) { return { title, fn }; };\nmodule.exports = Suite;\n",
+  "test.js": 'const Runnable = require("./runnable.js");\nfunction Test(title, fn) { Runnable.call(this, title, fn); }\nTest.prototype = Object.create(Runnable.prototype);\nTest.prototype.constructor = Test;\nTest.prototype.clone = function () { return new Test(this.title, this.fn); };\nmodule.exports = Test;\n',
   "hook.js": "function Hook() {}\nmodule.exports = Hook;\n",
   "context.js": "function Context() {}\nmodule.exports = Context;\n",
-  "mocha.js": 'const Runner = require("./runner.js");\nfunction Mocha() {}\nMocha.prototype.run = function (exec) { const runner = new Runner(); if (typeof this.Reporter === "function") new this.Reporter(runner); return exec(runner); };\nmodule.exports = Mocha;\n',
+  "mocha.js": 'const Runner = require("./runner.js");\nconst Suite = require("./suite.js");\nfunction Mocha() { this.suite = new Suite(); }\nMocha.prototype.run = function (exec) { const runner = new Runner(this.suite); if (typeof this.Reporter === "function") new this.Reporter(runner); return exec(runner); };\nmodule.exports = Mocha;\n',
 };
 
 export function stubMocha(at: string, version = "10.2.0"): string {
