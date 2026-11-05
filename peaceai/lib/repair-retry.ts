@@ -162,7 +162,8 @@ export function retrySourceClass(orig: string, next: string): "rr-in-function" |
     if (topNames.has(h.name.text)) return "rr-helper-name"; // m203-guard:class-helper-name
     helper = h;
     bb = [...b.slice(0, pick), ...b.slice(pick + 1)];
-  } else if (b.length !== a.length) return "rr-top-level-count"; // m203-guard:class-count
+  }
+  if (bb.length !== a.length) return "rr-top-level-count"; // m203-guard:class-count
   const diffs: number[] = [];
   for (let i = 0; i < a.length; i++) if (text(a[i]!, sa) !== text(bb[i]!, sb)) diffs.push(i);
   if (diffs.length > 1) return "rr-two-functions"; // m203-guard:class-one-fn
@@ -258,7 +259,7 @@ export function fitTransform(ev: RetryEvidence): { transform: Transform; fn: str
       if (c.fn !== fn) continue; // other functions are not touched by the edit
       if (!c.expect.ok) { fits = false; break; }
       const from = c.pass ? { ok: true as const, value: c.expect.value } : c.got;
-      if (!from || !from.ok) { fits = false; break; } // m203-guard:fit-no-error
+      if (!from || !from.ok) { fits = false; break; }
       const out = t.f(from.value);
       if (!out.ok || !valuesEqual(out.v, c.expect.value)) { fits = false; break; } // m203-guard:fit-all
     }
