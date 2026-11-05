@@ -953,7 +953,13 @@ export function loopSha256(root: string = ROOT): string {
   const files = ["lib/loop.ts", "lib/looprow.ts", "lib/loopdeps.ts"];
   files.push("lib/editpropose.ts"); // m152-guard:sha-proposer
   files.push("lib/modelpropose.ts"); // m167-guard:sha-model
-  return sha256(files.map((f) => readFileSync(join(root, "peaceai", f), "utf8")).join("\0"));
+  // M204 (batch 40): the repair-retry-v1 proposer and the verifier-v1 files (library, candidate harness, third-uid
+  // judge) decide what an oop-v1 / repair-retry-v1 row means, so they are bound like the other proposers. Not a
+  // pinned digest: loopSha256 is recorded per row and changes with any loop file; the v4 planner digest is separate.
+  files.push("lib/repair-retry.ts"); // m204-guard:sha-repair-retry
+  files.push("lib/verifier.ts", "lib/verifier-harness.cjs", "lib/verifier-judge.cjs"); // m204-guard:sha-verifier
+  // an absent file hashes as a fixed marker (distinct from any content), so a partial copy still gets a digest
+  return sha256(files.map((f) => { try { return readFileSync(join(root, "peaceai", f), "utf8"); } catch { return "\0absent:" + f; } }).join("\0"));
 }
 
 /** Runs the loop on one task. Never throws: every outcome is a row with a fixed code. */

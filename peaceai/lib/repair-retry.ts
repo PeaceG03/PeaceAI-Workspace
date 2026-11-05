@@ -257,7 +257,7 @@ export function fitTransform(ev: RetryEvidence): { transform: Transform; fn: str
     let fits = true;
     for (const c of ev.cases) {
       if (c.fn !== fn) continue; // other functions are not touched by the edit
-      if (!c.expect.ok) { fits = false; break; }
+      if (!c.expect.ok || c.expect.negate || c.expect.any) { fits = false; break; } // M204: only value expectations fit
       const from = c.pass ? { ok: true as const, value: c.expect.value } : c.got;
       if (!from || !from.ok) { fits = false; break; }
       const out = t.f(from.value);
