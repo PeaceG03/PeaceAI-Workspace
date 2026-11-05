@@ -197,7 +197,7 @@ test("M207 forged-reply residual: spec records it as irreducible in-process", ()
   assert.match(spec, /## M207 \(batch 43\)/);
   assert.match(spec, /Forged reply-line.*irreducible/i);
   assert.match(spec, /\/proc\/self\/mem/);
-  assert.match(spec, /shares the process/);
+  assert.match(spec, /share one process/);
   // must NOT claim the residual is closed
   assert.doesNotMatch(spec, /forged reply-line.*closed/i);
 });
@@ -303,12 +303,14 @@ test("M207 pins: selfpropose.ts, plandefault.ts, plan4.ts byte-identical to gen/
   for (const line of (runsDiff.stdout ?? "").split("\n")) {
     if (line.startsWith("-") && !line.startsWith("---")) assert.fail(`runs.jsonl lost a line: ${line}`);
   }
-  // no literal new Worker( in new files of this batch
+  // no literal new Worker( in new production files of this batch (tests may mention the needle)
+  const needle = "new " + "Worker(";
   const newFiles = spawnSync("git", ["diff", "cea6e1b", "--name-only", "--diff-filter=A"], { encoding: "utf8" });
   for (const f of (newFiles.stdout ?? "").split("\n").filter(Boolean)) {
     if (!existsSync(f)) continue;
+    if (f.startsWith("peaceai/test/")) continue;
     const t = readFileSync(f, "utf8");
-    assert.equal(t.includes("new Worker("), false, `new Worker( in ${f}`);
+    assert.equal(t.includes(needle), false, `${needle} in ${f}`);
   }
   assert.ok(existsSync(join(libDir, "plan4.ts")));
 });

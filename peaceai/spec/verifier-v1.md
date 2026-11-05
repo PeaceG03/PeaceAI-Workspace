@@ -309,7 +309,7 @@ records an honest bound on the third:
 1. **ACL-aware write check (closed).** Before any candidate run, every guarded path (work dir, harness, judge, their
    sources, lib, spec, verdict dir) is checked with `candAclWrite` in addition to `candMayWrite`. `candAclWrite` reads
    the POSIX access ACL via `getfacl` (named `user:` / `group:` entries; base owner/group/other stay in the mode-bit
-   check). Effective rights apply the ACL mask. A named entry that grants the candidate uid, or any of its groups
+   check). Effective rights apply the ACL mask (getfacl's `#effective:` annotations are stripped before parsing). A named entry that grants the candidate uid, or any of its groups
    (primary and supplementary, by name or gid), write permission is a refusal `OOP_VERIFIER_ACL`. If `getfacl` fails,
    times out, or returns an unparseable ACL (including named entries with no mask), the check refuses fail-closed as
    `OOP_VERIFIER_ACL` (`unknown`). Default ACL entries are ignored for the write-to-this-inode question. Mode-bit

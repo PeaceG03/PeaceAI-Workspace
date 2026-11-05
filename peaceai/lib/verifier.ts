@@ -1201,7 +1201,11 @@ export function candAclWrite(
 ): AclWrite {
   const r = reader ? reader(path) : spawnSync("getfacl", ["-c", "--absolute-names", "--", path], { encoding: "utf8", timeout: 10_000 });
   if (r.error || r.status === null || r.status !== 0) return "unknown"; // m207-guard:acl-unknown
-  const lines = (r.stdout ?? "").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+  const lines = (r.stdout ?? "").split("\n").map((l) => {
+    // getfacl may append "\t#effective:..." on the same line when the mask reduces rights
+    const hash = l.indexOf("#");
+    return (hash >= 0 ? l.slice(0, hash) : l).trim();
+  }).filter((l) => l && !l.startsWith("#"));
   let mask: string | null = null;
   type Ent = { kind: "user" | "group"; id: string; perms: string };
   const named: Ent[] = [];
