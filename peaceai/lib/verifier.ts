@@ -328,7 +328,12 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
       return;
     }
     const lib = libKind(mod);
-    if (!lib) { otherBound.add(local); return; } // m205-guard:unused-import (non-lib imports are fine when unused; a use is nonliteral / stmt)
+    if (!lib) {
+      otherBound.add(local);
+      if (true) return; // m205-guard:unused-import (without this return, unused non-lib imports refuse as import-other)
+      refuse("OOP_CASES_UNSUPPORTED_TEST", "import-other");
+      return;
+    }
     bindLib(lib, imported ?? local, local, whole);
   };
 
@@ -486,6 +491,12 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
       const call = stmt.expression;
       const callee = call.expression;
 
+      // M205: test.each`...`(name, cb) tagged-template form — refused (not an exact table lit)
+      if (ts.isTaggedTemplateExpression(callee) && ts.isPropertyAccessExpression(callee.tag) && callee.tag.name.text === "each"
+        && ts.isIdentifier(callee.tag.expression) && (isTestName(callee.tag.expression.text) || isSuiteName(callee.tag.expression.text))) {
+        refuse("OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each");
+        return;
+      }
       // M205: test.each(table)(name, cb) / it.each(table)(name, cb) — literal table only
       if (ts.isCallExpression(callee) && ts.isPropertyAccessExpression(callee.expression) && callee.expression.name.text === "each"
         && ts.isIdentifier(callee.expression.expression) && isTestName(callee.expression.expression.text)
