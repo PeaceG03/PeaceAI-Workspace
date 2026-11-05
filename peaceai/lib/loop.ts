@@ -42,7 +42,8 @@ import { plannerSha256 } from "./planrun.ts";
 import { committedLog, isLocked, taskKey } from "./plangrade.ts";
 import { ATTEMPT_CODES, SHIM_SYNTH_CODES, EDIT_SCOPE_CLASSES, LOOP_ISOLATION_FAILS, LOOP_LOG, LOOP_MODEL_PROPOSERS, LOOP_SCHEMA_V4, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type EditScopeClass, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
 import { candCan, detectRunner, installDeps, installShim, openDepsCache, openWorkDir, SHIM_EXITS, shimArgs, type WorkDir, type DepsCache, type DepsFail, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
-import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
+import { guardedRun, STAGE2_CAND_ENV, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
+import { DEFAULT_VERDICT_MODE, extractCasesFromSource, selectVerdictMode, verify, type DataCase, type VerdictMode } from "./verifier.ts";
 import { MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
 
 export const ROOT = join(import.meta.dirname, "../..");
@@ -324,6 +325,47 @@ function runTests(c: Copy, cand: CandUid, runMs: number, pick: RunnerPick, testF
   if (failing.length && !codes.has("TEST_FAIL")) codes.add("TEST_FAIL");
   if (passed > total) passed = total;
   return { codes: [...codes].sort() as AttemptCode[], failing, tests: { total, passedByPeaceAI: codes.size ? Math.min(passed, total) : total, filledByTeam: total - (codes.size ? Math.min(passed, total) : total) }, isolation, isoFail, synth, executed: synth === "NO_REPORT" ? 0 : whole.pass + whole.fail };
+}
+
+
+/** M202: run the team's tests as data-only cases through verifier-v1 (candidate uid answers calls; this process judges). */
+function runTestsOop(c: Copy, cand: CandUid, runMs: number, testFiles: readonly string[], env: Record<string, string | undefined>): RunOutcome | { refuse: "VERDICT_OOP_CASES" | "VERDICT_OOP_REFUSED" } {
+  const files = [...testFiles].sort();
+  const cases: DataCase[] = [];
+  let modRel: string | null = null;
+  for (const f of files) {
+    let text = c.teamTests.get(f);
+    if (text === undefined) { try { text = readFileSync(join(c.dir, f), "utf8"); } catch { return { refuse: "VERDICT_OOP_CASES" }; } }
+    const ex = extractCasesFromSource(text, f);
+    if (!ex.ok || !ex.moduleHint) return { refuse: "VERDICT_OOP_CASES" }; // m202-guard:loop-cases
+    const abs = resolve(c.dir, dirname(f), ex.moduleHint);
+    const rel = relative(c.dir, abs);
+    if (!rel || rel.startsWith("..") || isAbsolute(rel)) return { refuse: "VERDICT_OOP_CASES" };
+    if (modRel === null) modRel = rel.split(sep).join("/");
+    else if (modRel !== rel.split(sep).join("/")) return { refuse: "VERDICT_OOP_CASES" };
+    for (const x of ex.cases) cases.push(x);
+  }
+  if (!modRel || cases.length === 0) return { refuse: "VERDICT_OOP_CASES" };
+  const r = verify({ root: c.dir, module: modRel, cases, env: { ...env, [STAGE2_CAND_ENV]: cand.name }, sessionMs: runMs, callMs: Math.min(runMs, 15_000) });
+  if (r.code !== "OOP_OK") {
+    if (r.code === "OOP_CASES_EMPTY" || r.code === "OOP_CASES_NONLITERAL" || r.code === "OOP_MODULE") return { refuse: "VERDICT_OOP_CASES" };
+    return { refuse: "VERDICT_OOP_REFUSED" }; // m202-guard:loop-refused
+  }
+  const codes = new Set<AttemptCode>();
+  if (r.leftovers > 0) codes.add("LEFTOVERS");
+  if (r.fail > 0) codes.add("TEST_FAIL");
+  if (r.pass + r.fail === 0) codes.add("NO_TESTS_RAN");
+  const total = r.pass + r.fail;
+  const passed = r.pass;
+  return {
+    codes: [...codes].sort() as AttemptCode[],
+    failing: r.results.filter((x) => !x.pass).map((x) => x.id),
+    tests: { total, passedByPeaceAI: codes.size ? Math.min(passed, total) : total, filledByTeam: total - (codes.size ? Math.min(passed, total) : total) },
+    isolation: true,
+    isoFail: null,
+    synth: null,
+    executed: total,
+  };
 }
 
 // ---- the planner (M162)
@@ -738,9 +780,13 @@ export const INPROC_BOUNDED_SCOPE: readonly string[] = Object.freeze(["export-ke
 /** M199 refusal codes (LoopCode): TERMINAL, proven not closable for the runner (vitest, jest; M200: node:test;
  *  M201: mocha); UNPROBED, not proven safe under a wider scope (any other runner name). */
 export const INPROC_VERDICT_CODES = ["INPROC_VERDICT_TERMINAL", "INPROC_VERDICT_UNPROBED"] as const;
+export { DEFAULT_VERDICT_MODE, selectVerdictMode, type VerdictMode } from "./verifier.ts";
 /** Why the runner's verdict cannot be credited for edits of these scope classes (null: every class is inside the M175
  *  bound). Fail-closed: a runner without its own line gets the UNPROBED default. */
-export function inprocScopeProblem(runner: string, classes: readonly string[]): (typeof INPROC_VERDICT_CODES)[number] | null {
+export function inprocScopeProblem(runner: string, classes: readonly string[], verdictMode: VerdictMode = DEFAULT_VERDICT_MODE): (typeof INPROC_VERDICT_CODES)[number] | null {
+  // M202: under VERDICT_MODE oop-v1 the verdict is produced by verifier-v1 (separate uid), so the in-process TERMINAL
+  // / UNPROBED gate does not apply. Default remains inproc; EDIT_SCOPE_POLICY is not widened here.
+  if (verdictMode === "oop-v1") return null; // m202-guard:oop-skip
   if (classes.every((c) => INPROC_BOUNDED_SCOPE.includes(c))) return null; // m199-guard:bounded
   if (runner === "vitest") return "INPROC_VERDICT_TERMINAL"; // m199-guard:vitest
   if (runner === "jest") return "INPROC_VERDICT_TERMINAL"; // m199-guard:jest
@@ -881,6 +927,9 @@ export interface LoopOptions {
   privateRoots?: string[];
   /** M175, tests only: the diagnostics compile bounds (default LOAD_DIAG_CAPS). */
   loadCaps?: LoadDiagCaps;
+  /** M202: how the team's tests are judged. Default inproc (the detected runner). "oop-v1" is experimental:
+   *  verifier-v1 produces the verdict; inprocScopeProblem TERMINAL does not apply. EDIT_SCOPE_POLICY unchanged. */
+  verdictMode?: VerdictMode;
 }
 export interface AttemptRecord { attempt: number; edits: string[]; codes: AttemptCode[]; failing: string[]; tests: LoopTests }
 export interface LoopResult { row: LoopRow; plan: LoopPlan | null; attempts: AttemptRecord[]; context: string[] }
@@ -895,8 +944,9 @@ export function loopSha256(root: string = ROOT): string {
 }
 
 /** Runs the loop on one task. Never throws: every outcome is a row with a fixed code. */
-export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training" | "deps" | "depsCache" | "depsDir" | "makeProposer" | "plannerFlag" | "workBase" | "privateRoots" | "loadCaps">> & { training: Set<string>; deps?: DepsOptions; depsCache?: DepsCache; planner?: PlannerName; workBase?: string; privateRoots?: string[]; loadCaps?: LoadDiagCaps }): LoopResult {
+export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training" | "deps" | "depsCache" | "depsDir" | "makeProposer" | "plannerFlag" | "workBase" | "privateRoots" | "loadCaps" | "verdictMode">> & { training: Set<string>; deps?: DepsOptions; depsCache?: DepsCache; planner?: PlannerName; workBase?: string; privateRoots?: string[]; loadCaps?: LoadDiagCaps; verdictMode?: VerdictMode }): LoopResult {
   const maxAttempts = Math.min(MAX_ATTEMPTS, Math.max(1, Math.floor(o.maxAttempts)));
+  const verdictMode: VerdictMode = selectVerdictMode(o.verdictMode) ?? DEFAULT_VERDICT_MODE; // m202-guard:mode-select
   const workspace = (() => { try { return git(o.root, "rev-parse", "HEAD"); } catch { return "0".repeat(40); } })();
   const names = set === "public" ? { repo: task.repo, commit: task.commit } : {};
   const records: AttemptRecord[] = [];
@@ -985,7 +1035,17 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     putTeamTests();
     const iso = isolationProblem(c, work.dir, cand, roots, true);
     if (iso) return done("ISOLATION_UNAVAILABLE", undefined, iso); // m171-guard:loop-iso
-    const base = runTests(c, cand, o.runMs, det, [...c.teamTests.keys()]);
+    const runTeam = (files: readonly string[]) => {
+      if (verdictMode === "oop-v1") { // m202-guard:loop-oop
+        const x = runTestsOop(c!, cand, o.runMs, files, o.env);
+        if ("refuse" in x) return x;
+        return x;
+      }
+      return runTests(c!, cand, o.runMs, det, files);
+    };
+    const base0 = runTeam([...c.teamTests.keys()]);
+    if ("refuse" in base0) return done(base0.refuse);
+    const base = base0;
     if (!base.isolation) return done("ISOLATION_UNAVAILABLE", undefined, base.isoFail);
     const bp = base.codes.length ? base.tests.passedByPeaceAI : base.tests.total;
     baseline = { total: base.tests.total, passing: bp, failing: base.tests.total - bp };
@@ -1030,15 +1090,17 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       if (loadDiags && loadEditProblem(p.edits, readPinned) !== null) return done("PROPOSER_FAILED"); // m174-guard:scope-gate
       if (!loadDiags && editScopeProblem(p.edits, readPinned, (f) => safeEditPath(c!.dir, f) === null || c!.teamTests.has(posix.normalize(f)), "edit") !== null) return done("EDIT_SCOPE"); // m175-guard:scope-gate
       // M199: inert while EDIT_SCOPE_POLICY stays inside INPROC_BOUNDED_SCOPE; a widened policy is refused per runner here
-      if (!loadDiags) { const wide = inprocScopeProblem(det.runner, p.edits.filter((e) => !(safeEditPath(c!.dir, e.path) === null || c!.teamTests.has(posix.normalize(e.path)))).map((e) => editClass(e.path, e.content, readPinned))); if (wide) return done(wide); } // m199-guard:loop-wide
+      if (!loadDiags) { const wide = inprocScopeProblem(det.runner, p.edits.filter((e) => !(safeEditPath(c!.dir, e.path) === null || c!.teamTests.has(posix.normalize(e.path)))).map((e) => editClass(e.path, e.content, readPinned)), verdictMode); if (wide) return done(wide); } // m199-guard:loop-wide
       putTeamTests();
       const bad = applyEdits(c, p.edits);
       if (bad) return done(bad);
       // 5. run, 6. read codes + names
-      const r = runTests(c, cand, o.runMs, det, [...c.teamTests.keys()]);
+      const r0 = runTeam([...c.teamTests.keys()]);
+      if ("refuse" in r0) return done(r0.refuse);
+      const r = r0;
       if (!r.isolation) return done("ISOLATION_UNAVAILABLE", undefined, r.isoFail);
       // the team's tests pass: the tests the search tools relate to the edited files (testsFor) must not regress
-      if (r.codes.length === 0) {
+      if (r.codes.length === 0 && verdictMode !== "oop-v1") {
         const related = relatedTests(c, det, p.edits.map((e) => e.path)); // per attempt: each edit touches its own files
         if (related.length) {
           const after = runTests(c, cand, o.runMs, det, related);

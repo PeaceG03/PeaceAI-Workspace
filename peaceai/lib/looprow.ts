@@ -52,8 +52,11 @@ export const LOOP_CODES = [
   // v2 only (M175): a candidate edit was outside the pinned edit-scope policy (editScopeProblem), refused before any run
   "EDIT_SCOPE",
   // v2 only (M199): an edit scope wider than the M175 bound on a runner whose in-process verdict that bound protects
-  // (vitest / jest, M200 node:test: terminal; mocha: not proven under a wider scope), refused before any run
+  // (vitest / jest, M200 node:test, M201 mocha: terminal), refused before any run. Under VERDICT_MODE oop-v1 the
+  // gate is skipped because verdicts come from verifier-v1 (M202), not the in-process runner.
   "INPROC_VERDICT_TERMINAL", "INPROC_VERDICT_UNPROBED",
+  // v2 only (M202): opt-in VERDICT_MODE oop-v1 could not derive data-only cases, or the verifier refused the protocol
+  "VERDICT_OOP_CASES", "VERDICT_OOP_REFUSED",
   // v4 only (M175): the load diagnostics compile (load-repair mode) exceeded its file / byte / wall-time bound; refused
   // fail-closed before any edit (attempts 0), only the code is kept (never which bound)
   "LOAD_DIAG_LIMIT",
@@ -64,7 +67,7 @@ export const LOOP_CODES = [
 ] as const;
 /** M173: the task codes of a baseline that ran but proved nothing (attempts 0; a public row keeps its baseline). */
 export const BASELINE_UNRUN_CODES = ["NO_TESTS_RAN", "BASELINE_NO_REPORT", "BASELINE_SUITE_LOAD", "BASELINE_EXIT_ONLY"] as const;
-const V2_ONLY_CODES: readonly string[] = ["TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_PM_CONFIG", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE", "RELATED_FAIL", "PROPOSER_FAILED", "EDIT_SCOPE", "LOAD_DIAG_LIMIT", "INPROC_VERDICT_TERMINAL", "INPROC_VERDICT_UNPROBED"];
+const V2_ONLY_CODES: readonly string[] = ["TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_PM_CONFIG", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE", "RELATED_FAIL", "PROPOSER_FAILED", "EDIT_SCOPE", "LOAD_DIAG_LIMIT", "INPROC_VERDICT_TERMINAL", "INPROC_VERDICT_UNPROBED", "VERDICT_OOP_CASES", "VERDICT_OOP_REFUSED"];
 export type LoopCode = (typeof LOOP_CODES)[number];
 /** Per-attempt failure codes (filtered: what kind of failure, never its text). */
 export const ATTEMPT_CODES = ["TEST_FAIL", "TIMEOUT", "LEFTOVERS", "TAMPERED", "NO_TESTS_RAN", "RELATED_FAIL", "NO_REPORT", "SUITE_LOAD", "EXIT_ONLY"] as const;
