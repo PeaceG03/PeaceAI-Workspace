@@ -6,6 +6,9 @@
 // M205 (batch 41): extractor admits describe/suite nesting (names concatenated), const-of-JSON-literal bindings
 // (resolved by value; shadowing/reassignment refused), test.each/it.each with a literal table, and unused imports
 // of other modules (only used relative target modules matter). Still static extraction only; never evaluates tests.
+// M206 (batch 42): let/var of JSON literals when never reassigned/mutated/captured; each tables bound to a
+// const/safe identifier; describe.each/suite.each with literal tables; tagged-template each when every cell is a
+// literal and the header is a plain identifier list; simple destructuring const of a literal object/array.
 // Status: EXPERIMENTAL, opt-in via VERDICT_MODE "oop-v1". EDIT_SCOPE_POLICY and the in-process default are unchanged.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -206,7 +209,7 @@ function word(s: string): string {
 }
 
 /** A TypeScript/JS literal the extractor accepts: JSON values written as literals (no -0, no __proto__ key).
- *  M205: when `scope` is set, a const-bound JSON identifier (or `obj.prop` of one) resolves to its value. */
+ *  M205/M206: when `scope` is set, a bound JSON identifier (or `obj.prop` of one) resolves to its value. */
 type LitScope = Map<string, unknown>;
 function litFromNode(node: any, scope?: LitScope): { ok: true; value: unknown } | { ok: false } {
   if (!node) return { ok: false };
@@ -275,12 +278,15 @@ const kindWord = (n: any): string => {
 };
 
 /**
- * Fail-closed extraction (M204 + M205). The file must be: imports (test / assert / expect libraries; relative target
- * modules; unused other modules are ignored), const bindings of JSON literals, and test(name, () => ...) / it(...) /
- * test.each(literalTable)(name, (params) => ...) blocks, optionally inside describe / suite (names concatenated into
- * case ids). Each test body must be ONLY assertion statements and const-of-JSON-literal bindings; each assertion must
- * be an admitted matcher on a call of a target export with literal / const-resolved arguments. Anything not exactly
- * reproducible is refused by name. One refusal refuses the whole file.
+ * Fail-closed extraction (M204 + M205 + M206). The file must be: imports (test / assert / expect libraries; relative
+ * target modules; unused other modules are ignored), const/let/var bindings of JSON literals (let/var only when never
+ * reassigned, mutated, or captured), simple destructuring const of a literal object/array, and test(name, () => ...) /
+ * it(...) / test.each(table)(name, (params) => ...) / describe.each(table)(name, (params) => ...) blocks (table = array
+ * literal or a safe identifier bound to one; tagged-template each when every cell is a literal and the header is a
+ * plain identifier list), optionally inside describe / suite (names concatenated into case ids). Each test body must be
+ * ONLY assertion statements and JSON-literal bindings; each assertion must be an admitted matcher on a call of a target
+ * export with literal / bound-resolved arguments. Anything not exactly reproducible is refused by name. One refusal
+ * refuses the whole file.
  */
 export function extractCasesWithStats(source: string, filePath = "test.ts"): { result: ExtractResult; stats: ExtractStats } {
   const kind = filePath.endsWith(".tsx") ? ts.ScriptKind.TSX : filePath.endsWith(".js") || filePath.endsWith(".cjs") || filePath.endsWith(".mjs")
@@ -340,46 +346,122 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
   const requireOf = (e: any): string | null => (e && ts.isCallExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === "require"
     && e.arguments.length === 1 && ts.isStringLiteral(e.arguments[0]) ? e.arguments[0].text : null);
 
-  /** M205: bind `const name = <JSON lit>` into scope; refuse shadowing / non-const / non-lit / destructuring. */
-  function bindLitConst(stmt: any, scope: LitScope, where: string): boolean {
-    if (!(stmt.declarationList.flags & ts.NodeFlags.Const)) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":var"); return false; } // m205-guard:const-kind
-    for (const d of stmt.declarationList.declarations) {
-      if (!ts.isIdentifier(d.name) || !d.initializer) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-shape"); return false; } // m205-guard:const-shape
-      if (scope.has(d.name.text)) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-shadow"); return false; } // m205-guard:const-shadow
-      const v = litFromNode(d.initializer, scope);
-      if (!v.ok) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":var"); return false; }
-      scope.set(d.name.text, v.value);
+  /** M205/M206: bind a JSON-literal declaration into scope.
+   *  - const / let / var of a simple identifier = JSON lit (M206: let/var tracked in `mutable`)
+   *  - const destructuring of a literal object/array: simple, non-computed, no defaults (M206)
+   *  Shadowing / non-lit / non-simple forms refused. */
+  function bindObjectPattern(pat: any, value: unknown, scope: LitScope, where: string): boolean {
+    if (value === null || typeof value !== "object" || P.isArray(value)) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-shape"); return false; }
+    const obj = value as Record<string, unknown>;
+    for (const el of pat.elements) {
+      if (el.dotDotDotToken || el.initializer) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-destructure"); return false; } // m206-guard:const-destructure-default
+      if (!ts.isIdentifier(el.name) || (el.propertyName && !ts.isIdentifier(el.propertyName))) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-destructure"); return false; }
+      const key = el.propertyName ? (el.propertyName as any).text as string : el.name.text;
+      if (!Object.prototype.hasOwnProperty.call(obj, key)) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-destructure"); return false; }
+      if (scope.has(el.name.text)) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-shadow"); return false; }
+      scope.set(el.name.text, obj[key]); // m206-guard:const-destructure
     }
     return true;
   }
-  /** M205: any assignment / update of a scoped const name is a refusal (reassignment). */
+  function bindArrayPattern(pat: any, value: unknown, scope: LitScope, where: string): boolean {
+    if (!P.isArray(value)) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-shape"); return false; }
+    const arr = value as unknown[];
+    if (pat.elements.length !== arr.length) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-destructure"); return false; }
+    for (let i = 0; i < pat.elements.length; i++) {
+      const el = pat.elements[i];
+      if (!el || ts.isOmittedExpression(el)) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-destructure"); return false; }
+      if (el.dotDotDotToken || el.initializer || !ts.isIdentifier(el.name)) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-destructure"); return false; }
+      if (scope.has(el.name.text)) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-shadow"); return false; }
+      scope.set(el.name.text, arr[i]); // m206-guard:const-destructure-array
+    }
+    return true;
+  }
+  function bindLitConst(stmt: any, scope: LitScope, where: string, mutable: Set<string>): boolean {
+    const flags = stmt.declarationList.flags;
+    const isConst = !!(flags & ts.NodeFlags.Const);
+    const isLet = !!(flags & ts.NodeFlags.Let);
+    // M206: bare let/var of a JSON lit is admitted; non-literal initializers still refuse as ":var".
+    for (const d of stmt.declarationList.declarations) {
+      if (ts.isIdentifier(d.name)) {
+        if (!d.initializer) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-shape"); return false; }
+        if (scope.has(d.name.text)) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-shadow"); return false; } // m205-guard:const-shadow
+        const v = litFromNode(d.initializer, scope);
+        if (!v.ok) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":var"); return false; } // m205-guard:const-kind
+        scope.set(d.name.text, v.value); // m205-guard:const-bind
+        if (!isConst) mutable.add(d.name.text); // m206-guard:var-bind
+        continue;
+      }
+      // destructuring: const only (M206)
+      if (!isConst || isLet) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-shape"); return false; } // m205-guard:const-shape
+      if (!d.initializer) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-shape"); return false; }
+      const v = litFromNode(d.initializer, scope);
+      if (!v.ok) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":var"); return false; }
+      if (ts.isObjectBindingPattern(d.name)) { if (!bindObjectPattern(d.name, v.value, scope, where)) return false; continue; }
+      if (ts.isArrayBindingPattern(d.name)) { if (!bindArrayPattern(d.name, v.value, scope, where)) return false; continue; }
+      refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-shape"); return false;
+    }
+    return true;
+  }
+  /** M205/M206: reassignment of any scoped name, or mutation / nested capture of a let/var name, is a refusal. */
   function findsReassign(node: any, scope: LitScope): boolean {
-    let hit = false;
-    (function walk(n: any) {
+    return findsBindingUnsafe(node, scope, new Set()) !== null;
+  }
+  function findsBindingUnsafe(node: any, scope: LitScope, mutable: Set<string>): string | null {
+    let hit: string | null = null;
+    const assignOps = new Set([
+      ts.SyntaxKind.EqualsToken, ts.SyntaxKind.PlusEqualsToken, ts.SyntaxKind.MinusEqualsToken,
+      ts.SyntaxKind.AsteriskEqualsToken, ts.SyntaxKind.SlashEqualsToken, ts.SyntaxKind.PercentEqualsToken,
+    ]);
+    const rootObj = (n: any): string | null => {
+      let cur = n;
+      while (ts.isPropertyAccessExpression(cur) || ts.isElementAccessExpression(cur)) cur = cur.expression;
+      return ts.isIdentifier(cur) && scope.has(cur.text) ? cur.text : null;
+    };
+    (function walk(n: any, nested: boolean) {
       if (hit || !n) return;
-      if (ts.isBinaryExpression(n) && n.operatorToken && (
-        n.operatorToken.kind === ts.SyntaxKind.EqualsToken ||
-        n.operatorToken.kind === ts.SyntaxKind.PlusEqualsToken ||
-        n.operatorToken.kind === ts.SyntaxKind.MinusEqualsToken ||
-        n.operatorToken.kind === ts.SyntaxKind.AsteriskEqualsToken ||
-        n.operatorToken.kind === ts.SyntaxKind.SlashEqualsToken ||
-        n.operatorToken.kind === ts.SyntaxKind.PercentEqualsToken
-      ) && ts.isIdentifier(n.left) && scope.has(n.left.text)) { hit = true; return; }
+      if (ts.isArrowFunction(n) || ts.isFunctionExpression(n) || ts.isFunctionDeclaration(n)) {
+        // Nested function: any reference to a mutable binding is a capture that could mutate.
+        ts.forEachChild(n, (c) => walk(c, true));
+        return;
+      }
+      if (ts.isBinaryExpression(n) && n.operatorToken && assignOps.has(n.operatorToken.kind)) {
+        if (ts.isIdentifier(n.left) && scope.has(n.left.text)) { hit = mutable.has(n.left.text) ? "var-reassign" : "const-reassign"; return; } // m206-guard:var-reassign
+        const o = rootObj(n.left);
+        if (o !== null) { hit = mutable.has(o) ? "var-mutate" : "const-reassign"; return; } // m206-guard:var-mutate (property write)
+      }
       if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) &&
-        (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken) &&
-        ts.isIdentifier(n.operand) && scope.has(n.operand.text)) { hit = true; return; }
-      ts.forEachChild(n, walk);
-    })(node);
+        (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken)) {
+        const op = ts.isIdentifier(n.operand) ? n.operand.text : rootObj(n.operand);
+        if (op !== null && scope.has(op)) { hit = mutable.has(op) ? "var-reassign" : "const-reassign"; return; }
+      }
+      if (ts.isCallExpression(n) && (ts.isPropertyAccessExpression(n.expression) || ts.isElementAccessExpression(n.expression))) {
+        const o = rootObj(n.expression);
+        if (o !== null && mutable.has(o)) { hit = "var-mutate"; return; } // method call on a let/var
+      }
+      if (nested && ts.isIdentifier(n) && mutable.has(n.text) && scope.has(n.text)) {
+        // Value reference inside a nested function (property-name identifiers are BindingName / PropertyAssignment keys —
+        // those sit where parent is a PropertyAssignment.name etc.; a free identifier use has Expression parent).
+        const p = n.parent;
+        if (p && !(ts.isPropertyAssignment(p) && p.name === n) && !(ts.isPropertyAccessExpression(p) && p.name === n)
+          && !(ts.isBindingElement(p) && (p.name === n || p.propertyName === n))
+          && !ts.isTypeReferenceNode(p) && !(p as any).typeName) {
+          hit = "var-capture"; // m206-guard:var-capture
+          return;
+        }
+      }
+      ts.forEachChild(n, (c) => walk(c, nested));
+    })((ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)) ? node.body ?? node : node, false);
     return hit;
   }
 
   type EachRow = { values: unknown[]; paramNames: string[] };
-  type TestEntry = { cb: any; path: string[]; name: string; scope: LitScope; each?: EachRow[] };
-  type SuiteEntry = { cb: any; path: string[]; scope: LitScope };
+  type TestEntry = { cb: any; path: string[]; name: string; scope: LitScope; mutable: Set<string>; each?: EachRow[] };
+  type SuiteEntry = { cb: any; path: string[]; scope: LitScope; mutable: Set<string> };
 
   const suiteQueue: SuiteEntry[] = [];
   const testBodies: TestEntry[] = [];
   const rootScope: LitScope = new Map();
+  const rootMutable: Set<string> = new Set();
 
   function isTestName(name: string): boolean {
     return testLocal.get(name) === "test" || (TEST_FNS.has(name) && !target.has(name) && !otherBound.has(name) && !assertNs.has(name) && !assertFn.has(name) && !expectLocal.has(name));
@@ -391,9 +473,9 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
     return testLocal.get(name) === "hook" || (HOOK_FNS.has(name) && !target.has(name) && !otherBound.has(name));
   }
 
-  /** Parse a literal test.each table into rows of values + the callback's param names. */
-  function parseEachTable(tableNode: any, cb: any): EachRow[] | null {
-    const table = litFromNode(tableNode);
+  /** Parse a literal (or scope-resolved) test.each / describe.each table into rows + param names. */
+  function parseEachTable(tableNode: any, cb: any, scope?: LitScope): EachRow[] | null {
+    const table = litFromNode(tableNode, scope); // m206-guard:each-const-table (identifier resolves via scope)
     if (!table.ok || !P.isArray(table.value) || table.value.length === 0) return null; // m205-guard:each-table
     const rows = table.value as unknown[];
     const params = cb.parameters as readonly any[];
@@ -440,8 +522,78 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
     return null;
   }
 
+  /** M206: tagged-template each — header = plain identifier list; every ${cell} a JSON literal. */
+  function parseTaggedEachTable(tagged: any, cb: any, scope?: LitScope): EachRow[] | null {
+    if (!ts.isTemplateExpression(tagged.template)) return null; // no ${...} cells
+    const head = tagged.template.head.text as string;
+    const lines = head.split(/\r?\n/).map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+    if (lines.length !== 1) return null; // m206-guard:each-tagged-header
+    const header = lines[0]!.split("|").map((s: string) => s.trim());
+    if (header.length === 0 || !header.every((h: string) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(h))) return null; // m206-guard:each-tagged-header
+    const spans: any[] = tagged.template.templateSpans;
+    if (spans.length === 0 || spans.length % header.length !== 0) return null;
+    // Between cells, quasis must be "|" (with whitespace / newlines between rows only)
+    for (let i = 0; i < spans.length; i++) {
+      const raw = spans[i].literal.text as string;
+      const atEnd = i === spans.length - 1;
+      const atRowEnd = (i + 1) % header.length === 0;
+      if (atRowEnd) {
+        const t = raw.trim();
+        if (!atEnd && t !== "" && t !== "|") return null;
+        if (atEnd && t !== "") return null;
+      } else {
+        if (raw.trim() !== "|") return null;
+      }
+    }
+    const values: unknown[] = [];
+    for (const sp of spans) {
+      const v = litFromNode(sp.expression, scope);
+      if (!v.ok) return null; // m206-guard:each-tagged-cell
+      values.push(v.value);
+    }
+    const rowCount = values.length / header.length;
+    const rowsVals: unknown[][] = [];
+    for (let r = 0; r < rowCount; r++) rowsVals.push(values.slice(r * header.length, (r + 1) * header.length));
+    const params = cb.parameters as readonly any[];
+    // positional params
+    if (params.length === header.length && params.every((p: any) => ts.isIdentifier(p.name) && !p.dotDotDotToken && !p.initializer && !p.questionToken)) {
+      const names = params.map((p: any) => p.name.text as string);
+      return rowsVals.map((vals) => ({ values: vals, paramNames: names }));
+    }
+    // one object param or object-binding of header keys
+    if (params.length === 1) {
+      const p = params[0]!;
+      const objs = rowsVals.map((vals) => {
+        const o: Record<string, unknown> = {};
+        for (let i = 0; i < header.length; i++) o[header[i]!] = vals[i];
+        return o;
+      });
+      if (ts.isIdentifier(p.name) && !p.dotDotDotToken && !p.initializer && !p.questionToken) {
+        return objs.map((o) => ({ values: [o], paramNames: [p.name.text] }));
+      }
+      if (ts.isObjectBindingPattern(p.name) && !p.dotDotDotToken && !p.initializer && !p.questionToken) {
+        const keys: string[] = [];
+        const locals: string[] = [];
+        for (const el of p.name.elements) {
+          if (el.dotDotDotToken || el.initializer || !ts.isIdentifier(el.name) || (el.propertyName && !ts.isIdentifier(el.propertyName))) return null;
+          keys.push(el.propertyName ? (el.propertyName as any).text : el.name.text);
+          locals.push(el.name.text);
+        }
+        if (keys.length === 0 || !keys.every((k) => header.includes(k))) return null;
+        return objs.map((o) => ({ values: keys.map((k) => o[k]), paramNames: locals }));
+      }
+    }
+    return null;
+  }
+
+  function tableIdUnsafe(tableNode: any, scope: LitScope): boolean {
+    if (!ts.isIdentifier(tableNode) || !scope.has(tableNode.text)) return false;
+    // Treat the table binding as mutable so property / method mutation is caught even for const arrays.
+    return findsBindingUnsafe(sf, scope, new Set([tableNode.text])) !== null;
+  }
+
   // ---- top level (and describe bodies): declarative statements only
-  function topStatement(stmt: any, path: string[], scope: LitScope, inSuite: boolean) {
+  function topStatement(stmt: any, path: string[], scope: LitScope, mutable: Set<string>, inSuite: boolean) {
     if (ts.isImportDeclaration(stmt)) {
       if (inSuite) { refuse("OOP_CASES_UNSUPPORTED_TEST", "import-in-suite"); return; }
       const mod = ts.isStringLiteral(stmt.moduleSpecifier) ? stmt.moduleSpecifier.text : "";
@@ -461,6 +613,7 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
     if (ts.isExpressionStatement(stmt) && ts.isStringLiteral(stmt.expression) && stmt.expression.text === "use strict") return;
     if (ts.isVariableStatement(stmt)) {
       let sawRequire = false;
+      let sawLit = false;
       for (const d of stmt.declarationList.declarations) {
         const req = requireOf(d.initializer) ?? (d.initializer && ts.isPropertyAccessExpression(d.initializer) && d.initializer.name.text === "strict" ? requireOf(d.initializer.expression) : null);
         if (req !== null && !inSuite) {
@@ -476,13 +629,12 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
           continue;
         }
         if (req !== null && inSuite) { refuse("OOP_CASES_UNSUPPORTED_TEST", "suite-stmt:var"); return; }
-        // lit const (possibly mixed into the same statement as a require — rare; handle per decl)
-        if (!(stmt.declarationList.flags & ts.NodeFlags.Const)) { refuse("OOP_CASES_UNSUPPORTED_TEST", inSuite ? "suite-stmt:var" : "top-level:var"); return; }
-        if (!ts.isIdentifier(d.name) || !d.initializer) { refuse("OOP_CASES_UNSUPPORTED_TEST", inSuite ? "suite-stmt:var" : "top-level:var"); return; }
-        if (scope.has(d.name.text)) { refuse("OOP_CASES_UNSUPPORTED_TEST", (inSuite ? "suite-stmt" : "top-level") + ":const-shadow"); return; }
-        const v = litFromNode(d.initializer, scope);
-        if (!v.ok) { refuse("OOP_CASES_UNSUPPORTED_TEST", inSuite ? "suite-stmt:var" : "top-level:var"); return; }
-        scope.set(d.name.text, v.value); // m205-guard:const-bind
+        sawLit = true;
+      }
+      if (sawLit) {
+        if (sawRequire) { refuse("OOP_CASES_UNSUPPORTED_TEST", inSuite ? "suite-stmt:var" : "top-level:var"); return; }
+        // M205/M206: JSON-literal bindings (const/let/var + const destructure) via bindLitConst
+        if (!bindLitConst(stmt, scope, inSuite ? "suite-stmt" : "top-level", mutable)) return;
       }
       void sawRequire;
       return;
@@ -491,13 +643,33 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
       const call = stmt.expression;
       const callee = call.expression;
 
-      // M205: test.each`...`(name, cb) tagged-template form — refused (not an exact table lit)
+      // M206: test.each`...`(name, cb) / describe.each`...`(name, cb) tagged-template form — literal cells only
       if (ts.isTaggedTemplateExpression(callee) && ts.isPropertyAccessExpression(callee.tag) && callee.tag.name.text === "each"
         && ts.isIdentifier(callee.tag.expression) && (isTestName(callee.tag.expression.text) || isSuiteName(callee.tag.expression.text))) {
-        refuse("OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each");
+        const isSuiteEach = isSuiteName(callee.tag.expression.text);
+        const nameOk = call.arguments.length === 2 && (ts.isStringLiteral(call.arguments[0]) || ts.isNoSubstitutionTemplateLiteral(call.arguments[0]));
+        const cb = call.arguments.length === 2 ? call.arguments[1] : null;
+        if (!nameOk || !cb || !(ts.isArrowFunction(cb) || ts.isFunctionExpression(cb))) { refuse("OOP_CASES_UNSUPPORTED_TEST", "each-shape"); return; }
+        if (cb.asteriskToken || (cb.modifiers ?? []).some((m: any) => m.kind === ts.SyntaxKind.AsyncKeyword)) { refuse("OOP_CASES_UNSUPPORTED_TEST", "each-async"); return; }
+        const rows = parseTaggedEachTable(callee, cb, scope); // m206-guard:each-tagged
+        if (!rows) { refuse("OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each"); return; }
+        for (const r of rows) for (const n of r.paramNames) if (scope.has(n)) { refuse("OOP_CASES_UNSUPPORTED_TEST", "each-shadow"); return; }
+        const title = (call.arguments[0] as any).text as string;
+        if (isSuiteEach) {
+          for (let i = 0; i < rows.length; i++) {
+            const row = rows[i]!;
+            const sc: LitScope = new Map(scope);
+            const mu = new Set(mutable);
+            for (let j = 0; j < row.paramNames.length; j++) { sc.set(row.paramNames[j]!, row.values[j]); }
+            suiteQueue.push({ cb, path: path.concat([title, `@${i}`]), scope: sc, mutable: mu }); // m206-guard:suite-each
+          }
+          return;
+        }
+        tests++;
+        testBodies.push({ cb, path: path.slice(), name: title, scope: new Map(scope), mutable: new Set(mutable), each: rows });
         return;
       }
-      // M205: test.each(table)(name, cb) / it.each(table)(name, cb) — literal table only
+      // M205/M206: test.each(table)(name, cb) / it.each(table)(name, cb) — literal table or safe bound identifier
       if (ts.isCallExpression(callee) && ts.isPropertyAccessExpression(callee.expression) && callee.expression.name.text === "each"
         && ts.isIdentifier(callee.expression.expression) && isTestName(callee.expression.expression.text)
         && callee.arguments.length === 1) {
@@ -505,11 +677,34 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
         const cb = call.arguments.length === 2 ? call.arguments[1] : null;
         if (!nameOk || !cb || !(ts.isArrowFunction(cb) || ts.isFunctionExpression(cb))) { refuse("OOP_CASES_UNSUPPORTED_TEST", "each-shape"); return; } // m205-guard:each-shape
         if (cb.asteriskToken || (cb.modifiers ?? []).some((m: any) => m.kind === ts.SyntaxKind.AsyncKeyword)) { refuse("OOP_CASES_UNSUPPORTED_TEST", "each-async"); return; }
-        const rows = parseEachTable(callee.arguments[0], cb);
+        if (tableIdUnsafe(callee.arguments[0], scope)) { refuse("OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each"); return; }
+        const rows = parseEachTable(callee.arguments[0], cb, scope);
         if (!rows) { refuse("OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each"); return; }
         for (const r of rows) for (const n of r.paramNames) if (scope.has(n)) { refuse("OOP_CASES_UNSUPPORTED_TEST", "each-shadow"); return; } // m205-guard:each-shadow
         tests++;
-        testBodies.push({ cb, path: path.slice(), name: (call.arguments[0] as any).text, scope: new Map(scope), each: rows });
+        testBodies.push({ cb, path: path.slice(), name: (call.arguments[0] as any).text, scope: new Map(scope), mutable: new Set(mutable), each: rows });
+        return;
+      }
+      // M206: describe.each(table)(name, cb) / suite.each(table)(name, cb)
+      if (ts.isCallExpression(callee) && ts.isPropertyAccessExpression(callee.expression) && callee.expression.name.text === "each"
+        && ts.isIdentifier(callee.expression.expression) && isSuiteName(callee.expression.expression.text)
+        && callee.arguments.length === 1) {
+        const nameOk = call.arguments.length === 2 && (ts.isStringLiteral(call.arguments[0]) || ts.isNoSubstitutionTemplateLiteral(call.arguments[0]));
+        const cb = call.arguments.length === 2 ? call.arguments[1] : null;
+        if (!nameOk || !cb || !(ts.isArrowFunction(cb) || ts.isFunctionExpression(cb))) { refuse("OOP_CASES_UNSUPPORTED_TEST", "each-shape"); return; }
+        if (cb.asteriskToken || (cb.modifiers ?? []).some((m: any) => m.kind === ts.SyntaxKind.AsyncKeyword)) { refuse("OOP_CASES_UNSUPPORTED_TEST", "each-async"); return; }
+        if (tableIdUnsafe(callee.arguments[0], scope)) { refuse("OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each"); return; }
+        const rows = parseEachTable(callee.arguments[0], cb, scope);
+        if (!rows) { refuse("OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each"); return; }
+        for (const r of rows) for (const n of r.paramNames) if (scope.has(n)) { refuse("OOP_CASES_UNSUPPORTED_TEST", "each-shadow"); return; }
+        const title = (call.arguments[0] as any).text as string;
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i]!;
+          const sc: LitScope = new Map(scope);
+          const mu = new Set(mutable);
+          for (let j = 0; j < row.paramNames.length; j++) sc.set(row.paramNames[j]!, row.values[j]);
+          suiteQueue.push({ cb, path: path.concat([title, `@${i}`]), scope: sc, mutable: mu }); // m206-guard:suite-each-expand
+        }
         return;
       }
 
@@ -535,23 +730,24 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
         if (cb.asteriskToken) { refuse("OOP_CASES_UNSUPPORTED_TEST", role + "-generator"); return; }
         const title = (call.arguments[0] as any).text as string;
         if (role === "suite") {
-          suiteQueue.push({ cb, path: path.concat([title]), scope: new Map(scope) }); // m205-guard:suite-nest
+          suiteQueue.push({ cb, path: path.concat([title]), scope: new Map(scope), mutable: new Set(mutable) }); // m205-guard:suite-nest
           return;
         }
         tests++;
-        testBodies.push({ cb, path: path.slice(), name: title, scope: new Map(scope) });
+        testBodies.push({ cb, path: path.slice(), name: title, scope: new Map(scope), mutable: new Set(mutable) });
         return;
       }
     }
-    if (ts.isExpressionStatement(stmt) && findsReassign(stmt, scope)) { refuse("OOP_CASES_UNSUPPORTED_TEST", (inSuite ? "suite-stmt" : "top-level") + ":const-reassign"); return; } // m205-guard:const-reassign
+    const unsafeTop = ts.isExpressionStatement(stmt) ? findsBindingUnsafe(stmt, scope, mutable) : null;
+    if (unsafeTop) { refuse("OOP_CASES_UNSUPPORTED_TEST", (inSuite ? "suite-stmt" : "top-level") + ":" + (unsafeTop.startsWith("var-") ? unsafeTop : "const-reassign")); return; } // m205-guard:const-reassign
     refuse("OOP_CASES_UNSUPPORTED_TEST", (inSuite ? "suite-stmt:" : "top-level:") + kindWord(stmt)); // m204-guard:top-level
   }
   // imports first (bindings), then the rest in order
-  for (const stmt of sf.statements) if (ts.isImportDeclaration(stmt) || (ts.isVariableStatement(stmt) && stmt.declarationList.declarations.some((d) => requireOf(d.initializer) !== null || (d.initializer && ts.isPropertyAccessExpression(d.initializer) && requireOf(d.initializer.expression) !== null)))) topStatement(stmt, [], rootScope, false);
-  for (const stmt of sf.statements) if (!(ts.isImportDeclaration(stmt) || (ts.isVariableStatement(stmt) && stmt.declarationList.declarations.some((d) => requireOf(d.initializer) !== null || (d.initializer && ts.isPropertyAccessExpression(d.initializer) && requireOf(d.initializer.expression) !== null))))) topStatement(stmt, [], rootScope, false);
+  for (const stmt of sf.statements) if (ts.isImportDeclaration(stmt) || (ts.isVariableStatement(stmt) && stmt.declarationList.declarations.some((d) => requireOf(d.initializer) !== null || (d.initializer && ts.isPropertyAccessExpression(d.initializer) && requireOf(d.initializer.expression) !== null)))) topStatement(stmt, [], rootScope, rootMutable, false);
+  for (const stmt of sf.statements) if (!(ts.isImportDeclaration(stmt) || (ts.isVariableStatement(stmt) && stmt.declarationList.declarations.some((d) => requireOf(d.initializer) !== null || (d.initializer && ts.isPropertyAccessExpression(d.initializer) && requireOf(d.initializer.expression) !== null))))) topStatement(stmt, [], rootScope, rootMutable, false);
   for (let i = 0; i < suiteQueue.length; i++) {
     const s = suiteQueue[i]!;
-    if (ts.isBlock(s.cb.body)) for (const st of s.cb.body.statements) topStatement(st, s.path, s.scope, true);
+    if (ts.isBlock(s.cb.body)) for (const st of s.cb.body.statements) topStatement(st, s.path, s.scope, s.mutable, true);
     else refuse("OOP_CASES_UNSUPPORTED_TEST", "suite-shape");
   }
 
@@ -749,24 +945,29 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
 
   let extracted = 0;
   let coveredAssertions = 0; // AST assertions that belong to a fully-walked test (each counts once, not per row)
-  function runTestBody(cb: any, scope: LitScope, prefix: string): number {
+  function runTestBody(cb: any, scope: LitScope, mutable: Set<string>, prefix: string): number {
     activeScope = scope;
     currentPrefix = prefix; // m205-guard:suite-id
-    if (findsReassign(cb, scope)) { refuse("OOP_CASES_UNSUPPORTED_TEST", "stmt:const-reassign"); return 0; } // covered by m205-guard:const-reassign
+    const unsafe = findsBindingUnsafe(cb, scope, mutable);
+    if (unsafe) { refuse("OOP_CASES_UNSUPPORTED_TEST", "stmt:" + (unsafe === "const-reassign" ? "const-reassign" : unsafe)); return 0; } // covered by m205-guard:const-reassign / m206-guard:var-*
     const body = cb.body;
     const stmts: any[] = ts.isBlock(body) ? [...body.statements] : [ts.factory.createExpressionStatement(body)];
     let recognised = 0;
     for (const s of stmts) {
       if (ts.isEmptyStatement(s)) continue;
       if (ts.isVariableStatement(s)) {
-        bindLitConst(s, scope, "stmt"); // m205-guard:const-in-test
+        bindLitConst(s, scope, "stmt", mutable); // m205-guard:const-in-test
         continue;
       }
       let e: any = ts.isExpressionStatement(s) ? s.expression : null;
       let awaited = false;
       while (e && (ts.isAwaitExpression(e) || ts.isParenthesizedExpression(e))) { if (ts.isAwaitExpression(e)) awaited = true; e = e.expression; }
       const a = e ? assertionOf(e) : null;
-      if (!a) { refuse("OOP_CASES_UNSUPPORTED_TEST", "stmt:" + kindWord(s)); continue; } // m204-guard:test-stmt
+      if (!a) {
+        const u = findsBindingUnsafe(s, scope, mutable);
+        if (u) { refuse("OOP_CASES_UNSUPPORTED_TEST", "stmt:" + (u === "const-reassign" ? "const-reassign" : u)); continue; }
+        refuse("OOP_CASES_UNSUPPORTED_TEST", "stmt:" + kindWord(s)); continue;
+      } // m204-guard:test-stmt
       recognised++;
       if (awaited) { refuse("OOP_CASES_UNSUPPORTED_ASSERT", "await:" + (a.style === "assert" ? a.method : a.path)); continue; }
       const before = cases.length;
@@ -774,6 +975,9 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
       extracted += cases.length - before;
     }
     if (recognised === 0) refuse("OOP_CASES_NO_ASSERT", "test"); // m204-guard:no-assert
+    // Re-check after body bindings so let/var declared in the test are covered too.
+    const unsafeAfter = findsBindingUnsafe(cb, scope, mutable);
+    if (unsafeAfter) refuse("OOP_CASES_UNSUPPORTED_TEST", "stmt:" + (unsafeAfter === "const-reassign" ? "const-reassign" : unsafeAfter));
     return recognised;
   }
 
@@ -784,12 +988,13 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
       for (let i = 0; i < t.each.length; i++) {
         const row = t.each[i]!;
         const scope: LitScope = new Map(t.scope);
+        const mu = new Set(t.mutable);
         for (let j = 0; j < row.paramNames.length; j++) scope.set(row.paramNames[j]!, row.values[j]);
-        rec = runTestBody(t.cb, scope, `${pathPrefix}@${i}/`); // m205-guard:each-expand
+        rec = runTestBody(t.cb, scope, mu, `${pathPrefix}@${i}/`); // m205-guard:each-expand
       }
       coveredAssertions += rec; // one AST pass worth, not per row
     } else {
-      coveredAssertions += runTestBody(t.cb, new Map(t.scope), pathPrefix);
+      coveredAssertions += runTestBody(t.cb, new Map(t.scope), new Set(t.mutable), pathPrefix);
     }
   }
   if (usedMods.size > 1) refuse("OOP_CASES_UNSUPPORTED_TEST", "multi-module"); // m204-guard:multi-module

@@ -260,18 +260,23 @@ test("g", () => assert.strictEqual(grade(80), "pass"));
 // ============================================================================
 const NEAR: readonly [string, string, string, string][] = [
   // suite / describe
-  ["describe.each", `import { describe, it, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ndescribe.each([[1]])("s", (n) => { it("t", () => expect(grade(n)).toBe("pass")); });\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each"],
+  // M206 admits plain describe.each; residual near miss: describe.only.each
+  ["describe.only.each", `import { describe, it, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ndescribe.only.each([[1]])("s", (n) => { it("t", () => expect(grade(n)).toBe("pass")); });\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-modifier:only"],
   ["suite with params", `import { suite, test } from "node:test";\nimport assert from "node:assert/strict";\nimport { grade } from "../src/score.mjs";\nsuite("s", (t) => { test("t", () => assert.strictEqual(grade(1), "fail")); });\n`, "OOP_CASES_UNSUPPORTED_TEST", "suite-params"],
   // const bindings
   ["const shadow top", `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { grade } from "../src/score.mjs";\nconst X = 1;\nconst X = 2;\ntest("t", () => assert.strictEqual(grade(X), "fail"));\n`, "OOP_CASES_UNSUPPORTED_TEST", "top-level:const-shadow"],
   ["const shadow in test", `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\nconst X = 1;\ntest("t", () => { const X = 2; expect(grade(X)).toBe("fail"); });\n`, "OOP_CASES_UNSUPPORTED_TEST", "stmt:const-shadow"],
   ["const reassign", `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\nconst X = 1;\ntest("t", () => { X = 2; expect(grade(X)).toBe("fail"); });\n`, "OOP_CASES_UNSUPPORTED_TEST", "stmt:const-reassign"],
-  ["let binding", `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ntest("t", () => { let X = 1; expect(grade(X)).toBe("fail"); });\n`, "OOP_CASES_UNSUPPORTED_TEST", "stmt:var"],
+  // M206 admits safe let-of-JSON-lit; residual near miss: let that is reassigned
+  ["let reassign", `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ntest("t", () => { let X = 1; X = 2; expect(grade(X)).toBe("fail"); });\n`, "OOP_CASES_UNSUPPORTED_TEST", "stmt:var-reassign"],
   ["const non-literal", `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ntest("t", () => { const X = grade(1); expect(X).toBe("fail"); });\n`, "OOP_CASES_UNSUPPORTED_TEST", "stmt:var"],
-  ["const destructure", `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ntest("t", () => { const { a } = { a: 1 }; expect(grade(a)).toBe("fail"); });\n`, "OOP_CASES_UNSUPPORTED_TEST", "stmt:const-shape"],
+  // M206 admits simple destructuring const; residual: default with an expression
+  ["const destructure default", `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ntest("t", () => { const { a = grade(1) } = {}; expect(grade(a)).toBe("fail"); });\n`, "OOP_CASES_UNSUPPORTED_TEST", "stmt:const-destructure"],
   // each
-  ["each non-literal table", `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\nconst rows = [[80, "pass"]];\ntest.each(rows)("e", (n, w) => expect(grade(n)).toBe(w));\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each"],
-  ["each tagged template", `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ntest.each\`n | w\\n80 | pass\`("e", ({ n, w }) => expect(grade(n)).toBe(w));\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each"],
+  // M206 admits const-bound each tables; residual: non-literal initializer
+  ["each non-literal table", `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\nconst rows = [[80, "pass"], ...[]];\ntest.each(rows)("e", (n, w) => expect(grade(n)).toBe(w));\n`, "OOP_CASES_UNSUPPORTED_TEST", "top-level:var"],
+  // M206 admits tagged-template each with literal cells; residual: non-literal cell
+  ["each tagged nonliteral cell", `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ntest.each\`n | w\n\${Date.now()} | \${"pass"}\`("e", ({ n, w }) => expect(grade(n)).toBe(w));\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each"],
   ["each skip", `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ntest.skip.each([[80, "pass"]])("e", (n, w) => expect(grade(n)).toBe(w));\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-modifier:skip"],
   ["each mismatched arity", `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ntest.each([[80, "pass"]])("e", (n) => expect(grade(n)).toBe("pass"));\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each"],
   ["each empty table", `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ntest.each([])("e", (n) => expect(grade(n)).toBe("pass"));\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each"],
@@ -369,8 +374,8 @@ const GUARD: Record<string, (m: VT) => void> = {
     admitted(X(m, src));
   },
   "unused-import": (m) => admitted(X(m, UNUSED_PKG)),
-  "const-kind": (m) => refusedAs(X(m, `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ntest("t", () => { let X = 1; expect(grade(X)).toBe("fail"); });\n`), "OOP_CASES_UNSUPPORTED_TEST", "stmt:var"),
-  "const-shape": (m) => refusedAs(X(m, `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ntest("t", () => { const { a } = { a: 1 }; expect(grade(a)).toBe("fail"); });\n`), "OOP_CASES_UNSUPPORTED_TEST", "stmt:const-shape"),
+  "const-kind": (m) => refusedAs(X(m, `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ntest("t", () => { let X = grade(1); expect(grade(X)).toBe("fail"); });\n`), "OOP_CASES_UNSUPPORTED_TEST", "stmt:var"),
+  "const-shape": (m) => refusedAs(X(m, `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\ntest("t", () => { let { a } = { a: 1 }; expect(grade(a)).toBe("fail"); });\n`), "OOP_CASES_UNSUPPORTED_TEST", "stmt:const-shape"),
   "const-shadow": (m) => refusedAs(X(m, `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\nconst X = 1;\ntest("t", () => { const X = 2; expect(grade(X)).toBe("fail"); });\n`), "OOP_CASES_UNSUPPORTED_TEST", "stmt:const-shadow"),
   "const-bind": (m) => admitted(X(m, CONST_TOP)),
   "const-reassign": (m) => refusedAs(X(m, `import { test, expect } from "vitest";\nimport { grade } from "../src/score.mjs";\nconst X = 1;\nX = 2;\ntest("t", () => expect(grade(X)).toBe("fail"));\n`), "OOP_CASES_UNSUPPORTED_TEST", "top-level:const-reassign"),
