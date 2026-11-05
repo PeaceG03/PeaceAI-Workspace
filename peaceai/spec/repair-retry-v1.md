@@ -33,6 +33,8 @@ verifier-v1 run and retried:
   `RETRY_INPROC_REFUSED` before anything runs (attempts 0). The M199-M201 terminal decisions stand.
 - Only through `runLoopTask` options. `runLoopFile` never sets it, so no committed loop log row is produced by it.
 - Its rows carry `repairRetry: "repair-retry-v1"` and proposer `rr1-<base>`, so they never read as the default's.
+- Under oop-v1 they also carry `verdictMode: "oop-v1"` (M212). A repair-retry request refused as `RETRY_INPROC_REFUSED`
+  still carries `repairRetry` but omits `verdictMode` (effective mode was inproc). See `verifier-v1.md` M212.
 
 ## The opt-in edit class: RETRY_SCOPE_POLICY `rr-in-function-v1` (pinned, frozen)
 

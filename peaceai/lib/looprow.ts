@@ -84,6 +84,10 @@ export const LOOP_BASELINE_LOADS = ["MISSING_EXPORT"] as const;
  *  (loop.ts EDIT_SCOPE_POLICY) admits today, so a future wider-scope PASS records a class not in this set and stands out. */
 export const EDIT_SCOPE_CLASSES = ["export-keyword", "in-body"] as const;
 export type EditScopeClass = (typeof EDIT_SCOPE_CLASSES)[number];
+/** M212: non-inproc verdict modes that a loop row may tag. Default inproc is represented by omitting the key
+ *  (backward compatible with every row written before M212). Explicit "inproc" on the field is refused. */
+export const LOOP_VERDICT_MODES_TAGGED = ["oop-v1"] as const;
+export type LoopVerdictModeTagged = (typeof LOOP_VERDICT_MODES_TAGGED)[number];
 /** M174: the task codes a load-repair row can end with (after the baseline: the proposer, an attempt, or a crash). */
 export const LOAD_REPAIR_CODES = ["PASS", "ATTEMPT_LIMIT", "NO_EDIT", "NO_MORE_EDITS", "PROPOSER_FAILED", "EDIT_OUTSIDE_COPY", "TEAM_TEST_EDIT", "ISOLATION_UNAVAILABLE", "FETCH_FAILED"] as const;
 /** M173: a row whose task reached the team's tests: a baseline ran with at least one executed test and a real report. */
@@ -146,6 +150,9 @@ export interface LoopRow {
   editScope?: EditScopeClass;
   /** M203 (optional): the row came from the experimental, opt-in repair-retry-v1 (never the default, never credit). */
   repairRetry?: "repair-retry-v1";
+  /** M212 (optional, v4): non-inproc verdict mode used for this row. Omitted for the default inproc path so existing
+   *  digests/pins and pre-M212 rows stay valid. Present only when the loop ran under a tagged mode (today: oop-v1). */
+  verdictMode?: LoopVerdictModeTagged;
 }
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
@@ -155,7 +162,7 @@ const KEYS = ["schema", "at", "set", "taskFileSha256", "taskKey", "repo", "commi
 const KEYS_V2 = [...KEYS, "runner", "deps", "baseline"];
 const KEYS_V3 = [...KEYS_V2, "planner", "plannerSha256"];
 const KEYS_V4 = [...KEYS_V3, "modelManifestSha256"];
-const OPTIONAL_V4 = ["depsFail", "isolationFail", "baselineLoad", "editScope", "repairRetry"]; // M169 / M171 / M174: optional, so rows written before them still validate
+const OPTIONAL_V4 = ["depsFail", "isolationFail", "baselineLoad", "editScope", "repairRetry", "verdictMode"]; // M169 / M171 / M174 / M203 / M212: optional, so rows written before them still validate
 const nat = (v: unknown, max = 1_000_000): boolean => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max;
 
 /** Validates one loop row (null = fine). */
@@ -250,6 +257,11 @@ export function loopRowProblem(o: unknown): string | null {
     if (r.set === "public" && r.baseline === null) return "baseline_presence"; // m174-guard:row-load-baseline
   }
   if ("repairRetry" in r && r.repairRetry !== "repair-retry-v1") return "repair_retry"; // M203
+  if ("verdictMode" in r) {
+    // only tagged non-inproc modes (today: oop-v1); explicit "inproc", unknown strings, and wrong types are refused.
+    // Default inproc is the absent key (backward compatible).
+    if (!(LOOP_VERDICT_MODES_TAGGED as readonly string[]).includes(r.verdictMode)) return "verdict_mode"; // m212-guard:row-tag-value
+  }
   if ("editScope" in r) {
     if (!(EDIT_SCOPE_CLASSES as readonly string[]).includes(r.editScope)) return "edit_scope"; // m175-guard:row-scope-value
     if (r.code !== "PASS") return "edit_scope_code"; // m175-guard:row-scope-pass
@@ -278,4 +290,11 @@ export function loopAddOnlyProblem(older: string, newer: string): string | null 
   if (!newer.startsWith(older)) return "rewritten";
   const p = parseLoopLog(newer);
   return "problem" in p ? `row:${p.problem}` : null;
+}
+
+/** M212: effective verdict mode of a row. Absent key means the default inproc; a tagged value is returned as-is.
+ *  Never invents oop-v1. For-credit analysis must refuse any row whose effective mode is not inproc (and must not
+ *  silently treat a tagged oop-v1 row as inproc). This helper does not enable for-credit. */
+export function rowVerdictMode(row: Pick<LoopRow, "verdictMode">): "inproc" | LoopVerdictModeTagged {
+  return row.verdictMode ?? "inproc"; // m212-guard:row-effective
 }

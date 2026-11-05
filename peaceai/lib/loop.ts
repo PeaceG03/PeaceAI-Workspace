@@ -1000,6 +1000,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       ...(loadDiags ? { baselineLoad: "MISSING_EXPORT" as const } : {}), // m174-guard:loop-row-load
       ...(editScope ? { editScope } : {}), // m175-guard:loop-row-scope
       ...(rr ? { repairRetry: "repair-retry-v1" as const } : {}), // M203: an experimental row, never the default's
+      ...(verdictMode === "oop-v1" ? { verdictMode: "oop-v1" as const } : {}), // non-inproc only; inproc omits // m212-guard:loop-tag
     },
     plan, attempts: records, context,
   });

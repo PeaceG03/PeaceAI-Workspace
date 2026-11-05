@@ -349,3 +349,49 @@ malformed getfacl output is `unknown` (fail-closed), not "none".
   silently skip the check.
 - **Default ACLs** on a directory are not treated as write grants to the directory inode (they affect children).
 - **`recv: "module"` `this`** residual from M204 unchanged.
+
+## M212 (batch 48): tag non-inproc verdictMode on loop rows
+
+Status: SCHEMA ADD-ONLY, NOT FOR CREDIT. Does not enable for-credit, stage-2, SELF_TARGET, or widen
+`EDIT_SCOPE_POLICY`. Code: `peaceai/lib/looprow.ts` (`verdictMode` optional field, `rowVerdictMode`,
+`LOOP_VERDICT_MODES_TAGGED`), `peaceai/lib/loop.ts` (`done()` writer), tests
+`peaceai/test/m212-verdict-mode-tag.test.ts`.
+
+### Why
+
+Auditor #701 non-blocker: "Tag non-inproc verdictMode on loop rows before any for-credit talk." Without an
+explicit tag, a later for-credit consumer could treat an oop-v1 row as an inproc row. The tag closes that silence.
+
+### Design
+
+1. **Optional field on v4 rows.** `verdictMode?: "oop-v1"` (from `LOOP_VERDICT_MODES_TAGGED`). Present only when
+   the loop's selected mode is a tagged non-inproc mode. Default `inproc` **omits** the key so every pre-M212 row
+   and every inproc row keeps validating (add-only; no pin/digest of plan-only v4 content changes).
+2. **Fail-closed validation.** A present `verdictMode` that is not in `LOOP_VERDICT_MODES_TAGGED` (including an
+   explicit `"inproc"`, unknown strings, wrong types) is `verdict_mode`. Inproc is absence, never a stored value.
+3. **Writer.** `runLoopTask`'s `done()` spreads `{ verdictMode: "oop-v1" }` when `verdictMode === "oop-v1"`, and
+   omits otherwise (including default / explicit inproc).
+4. **Effective mode helper.** `rowVerdictMode(row)` returns the tagged value or `"inproc"` when absent. It never
+   invents `oop-v1`. For-credit talk (not enabled here) must refuse any row whose effective mode is not inproc.
+
+### Soundness note
+
+The tag is a record of how the loop judged the team's tests. It does not itself credit a pass. Credit still
+requires the M202/M204 verifier-owned `OOP_OK` path under oop-v1, and the default remains inproc. Omitting the
+key for inproc is intentional backward compatibility: absence means inproc, presence of `oop-v1` means oop-v1;
+there is no silent third state. A forged log line that drops the tag would parse as inproc and therefore must
+not be taken as oop credit — that is the fail-closed reading this batch requires of any future for-credit
+consumer.
+
+### Guards (m212-guard; m212 deletes each line in a mutant and runs that guard's own case)
+
+- `row-tag-value` — `loopRowProblem` refuses a `verdictMode` not in `LOOP_VERDICT_MODES_TAGGED`.
+- `loop-tag` — `done()` writes `verdictMode: "oop-v1"` under oop-v1.
+- `row-effective` — `rowVerdictMode` returns `"inproc"` when the key is absent, else the tagged value.
+
+### Admitted / refused (M212)
+
+Admitted: a v4 row with `verdictMode: "oop-v1"`; a v4 row that omits the key (inproc / pre-M212); a writer run
+under `verdictMode: "oop-v1"` that early-refuses still tags the row; a writer under default/inproc omits the tag.
+Refused near misses: `verdictMode: "inproc"` as a stored value; unknown mode strings; wrong types; a v3/v2/v1 row
+carrying the key (`loop_keys`).
