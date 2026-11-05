@@ -79,6 +79,9 @@ Batch 35 (M199, `loop-runners-inproc-m199.md`): probed whether the residual can 
 refused by name, `INPROC_VERDICT_TERMINAL` on vitest / jest and `INPROC_VERDICT_UNPROBED` elsewhere.
 Batch 36 (M200, `loop-runners-inproc-m200.md`): node:test probed; not closable (its child forges the parent's
 channel; in-process, the M173 report channel is reachable), so `INPROC_VERDICT_TERMINAL` on node:test too.
+Batch 37 (M201, `loop-runners-inproc-m201.md`): mocha probed under this route; the m193 guards hold against
+mocha-internal rewrites, but code under test reaches the report channel (fs binding, inspector, a worker, a child)
+and mocha's Runnable through an Object.prototype setter, so mocha is `INPROC_VERDICT_TERMINAL` under a wider scope.
 
 ## Tests (`peaceai/test/m193-inproc-forge.test.ts`)
 

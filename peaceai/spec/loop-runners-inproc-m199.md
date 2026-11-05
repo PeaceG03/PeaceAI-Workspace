@@ -57,6 +57,9 @@ Out-of-process routes considered for a close, each probed on the real runner:
   file uses is not frozen.
 - node:test: probed in M200 (`loop-runners-inproc-m200.md`): NOT closable, `INPROC_VERDICT_TERMINAL` under a wider
   scope (`m200-guard:node-test`).
+- mocha (superseded, M201, `loop-runners-inproc-m201.md`): probed under the M193 route; report-channel attacks and an
+  in-heap Object.prototype attack are credited, so mocha is `INPROC_VERDICT_TERMINAL` under a wider scope
+  (`m201-guard:mocha`).
 - anything else: `INPROC_VERDICT_UNPROBED` under a wider scope (not probed).
 
 ## Mechanism (`peaceai/lib/loop.ts`)
@@ -104,7 +107,8 @@ credit on those runners, and widening it needs a new probe-backed batch, not a p
 ## Residuals (honest)
 
 - vitest / jest under today's scope: the M193 note stands (a syntactic bound, not unreachability).
-- mocha with a third-party assertion library: not probed, refused under a wider scope as UNPROBED.
+- mocha with a third-party assertion library: not probed, refused under a wider scope as UNPROBED. Superseded by
+  M201 (`loop-runners-inproc-m201.md`): mocha is TERMINAL under a wider scope.
 - node:test: superseded by M200 (`loop-runners-inproc-m200.md`): probed, terminal, refused under a wider scope as
   `INPROC_VERDICT_TERMINAL`. M200 also shows the M173 report channel itself is reachable from in-process code (fs
   binding, inspector), which bears on any future mocha widening.

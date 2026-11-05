@@ -73,6 +73,8 @@ version-dependent) and `process.kill(process.ppid)` (kills the harness; refused)
 - vitest / jest stay TERMINAL; mocha stays as M193 / M199 left it (M193 guards unchanged; UNPROBED under a wider
   scope). Note for a future mocha widening: the two Path B channel attacks are against launch.cjs, not node:test, so
   they apply to mocha's in-process verdict too.
+  Batch 37 (M201, `loop-runners-inproc-m201.md`) did that probe: they do apply (plus a worker, a child over SIGUSR1,
+  and an in-heap Object.prototype attack no channel guard reaches), so mocha is TERMINAL under a wider scope too.
 
 ## Mechanism (`peaceai/lib/loop.ts`)
 
@@ -119,4 +121,5 @@ every runner.
 - The Path B channel attacks (fs binding, inspector) are a property of any in-process verdict on the M173 channel;
   they are not reachable inside the bound (both need `process` or an import), and are recorded here for the mocha
   widening question, which M200 does not change.
+  Followed up in M201 (`loop-runners-inproc-m201.md`): mocha is TERMINAL under a wider scope.
 - Probed on node 22.23.4 and 24.22.1 only; a later node that adds an authenticated child channel would reopen path A.
