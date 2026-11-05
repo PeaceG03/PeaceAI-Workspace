@@ -52,8 +52,14 @@ export const LOOP_CODES = [
   // v2 only (M175): a candidate edit was outside the pinned edit-scope policy (editScopeProblem), refused before any run
   "EDIT_SCOPE",
   // v2 only (M199): an edit scope wider than the M175 bound on a runner whose in-process verdict that bound protects
-  // (vitest / jest, M200 node:test: terminal; mocha: not proven under a wider scope), refused before any run
+  // (vitest / jest, M200 node:test, M201 mocha: terminal), refused before any run. Under VERDICT_MODE oop-v1 the
+  // gate is skipped because verdicts come from verifier-v1 (M202), not the in-process runner.
   "INPROC_VERDICT_TERMINAL", "INPROC_VERDICT_UNPROBED",
+  // v2 only (M202): opt-in VERDICT_MODE oop-v1 could not derive data-only cases, or the verifier refused the protocol
+  "VERDICT_OOP_CASES", "VERDICT_OOP_REFUSED",
+  // v2 only (M203, experimental repair-retry-v1): asked for outside VERDICT_MODE oop-v1 (refused before anything ran);
+  // a pass without this attempt's own verifier-v1 verdict, with another run's verdict, or with evidence mixing runs
+  "RETRY_INPROC_REFUSED", "RETRY_NO_VERDICT", "RETRY_VERDICT_FOREIGN", "RETRY_EVIDENCE_COMBINED",
   // v4 only (M175): the load diagnostics compile (load-repair mode) exceeded its file / byte / wall-time bound; refused
   // fail-closed before any edit (attempts 0), only the code is kept (never which bound)
   "LOAD_DIAG_LIMIT",
@@ -64,7 +70,7 @@ export const LOOP_CODES = [
 ] as const;
 /** M173: the task codes of a baseline that ran but proved nothing (attempts 0; a public row keeps its baseline). */
 export const BASELINE_UNRUN_CODES = ["NO_TESTS_RAN", "BASELINE_NO_REPORT", "BASELINE_SUITE_LOAD", "BASELINE_EXIT_ONLY"] as const;
-const V2_ONLY_CODES: readonly string[] = ["TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_PM_CONFIG", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE", "RELATED_FAIL", "PROPOSER_FAILED", "EDIT_SCOPE", "LOAD_DIAG_LIMIT", "INPROC_VERDICT_TERMINAL", "INPROC_VERDICT_UNPROBED"];
+const V2_ONLY_CODES: readonly string[] = ["TEST_NEEDS_SERVICE", "DEPS_NO_LOCKFILE", "DEPS_PM_UNSUPPORTED", "DEPS_NONREGISTRY", "DEPS_PM_CONFIG", "DEPS_INSTALL_FAILED", "DEPS_TIMEOUT", "DEPS_TOO_LARGE", "RELATED_FAIL", "PROPOSER_FAILED", "EDIT_SCOPE", "LOAD_DIAG_LIMIT", "INPROC_VERDICT_TERMINAL", "INPROC_VERDICT_UNPROBED", "VERDICT_OOP_CASES", "VERDICT_OOP_REFUSED", "RETRY_INPROC_REFUSED", "RETRY_NO_VERDICT", "RETRY_VERDICT_FOREIGN", "RETRY_EVIDENCE_COMBINED"];
 export type LoopCode = (typeof LOOP_CODES)[number];
 /** Per-attempt failure codes (filtered: what kind of failure, never its text). */
 export const ATTEMPT_CODES = ["TEST_FAIL", "TIMEOUT", "LEFTOVERS", "TAMPERED", "NO_TESTS_RAN", "RELATED_FAIL", "NO_REPORT", "SUITE_LOAD", "EXIT_ONLY"] as const;
@@ -138,6 +144,8 @@ export interface LoopRow {
   baselineLoad?: (typeof LOOP_BASELINE_LOADS)[number];
   /** M175, v4 edit-mode PASS rows only (optional): the edit-scope class the passing edit ran under (EDIT_SCOPE_CLASSES). */
   editScope?: EditScopeClass;
+  /** M203 (optional): the row came from the experimental, opt-in repair-retry-v1 (never the default, never credit). */
+  repairRetry?: "repair-retry-v1";
 }
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
@@ -147,7 +155,7 @@ const KEYS = ["schema", "at", "set", "taskFileSha256", "taskKey", "repo", "commi
 const KEYS_V2 = [...KEYS, "runner", "deps", "baseline"];
 const KEYS_V3 = [...KEYS_V2, "planner", "plannerSha256"];
 const KEYS_V4 = [...KEYS_V3, "modelManifestSha256"];
-const OPTIONAL_V4 = ["depsFail", "isolationFail", "baselineLoad", "editScope"]; // M169 / M171 / M174: optional, so rows written before them still validate
+const OPTIONAL_V4 = ["depsFail", "isolationFail", "baselineLoad", "editScope", "repairRetry"]; // M169 / M171 / M174: optional, so rows written before them still validate
 const nat = (v: unknown, max = 1_000_000): boolean => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max;
 
 /** Validates one loop row (null = fine). */
@@ -241,6 +249,7 @@ export function loopRowProblem(o: unknown): string | null {
     if (!(LOAD_REPAIR_CODES as readonly string[]).includes(r.code)) return "baseline_load_code"; // m174-guard:row-load-code
     if (r.set === "public" && r.baseline === null) return "baseline_presence"; // m174-guard:row-load-baseline
   }
+  if ("repairRetry" in r && r.repairRetry !== "repair-retry-v1") return "repair_retry"; // M203
   if ("editScope" in r) {
     if (!(EDIT_SCOPE_CLASSES as readonly string[]).includes(r.editScope)) return "edit_scope"; // m175-guard:row-scope-value
     if (r.code !== "PASS") return "edit_scope_code"; // m175-guard:row-scope-pass

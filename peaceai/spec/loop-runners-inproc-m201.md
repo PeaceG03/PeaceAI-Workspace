@@ -128,4 +128,5 @@ kernel's:
   inside the bound as before.
 - Probed on mocha 10.8.2, node 22.23.3 and 24.22.1 only; H1 depends on `Runnable#run` assigning `this.callback`, but
   the decision does not: A1-A6 apply to any in-process verdict on the M173 channel.
-- The out-of-process design above is not built; the box also lacks yama ptrace hardening (unchanged from M173).
+- The out-of-process design above is built as experimental verifier-v1 (M202, `peaceai/spec/verifier-v1.md`); not default.
+  The box also lacks yama ptrace hardening (unchanged from M173); M202 re-checks that cand3 cannot ptrace the verifier uid.
