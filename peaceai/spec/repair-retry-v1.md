@@ -111,8 +111,8 @@ one private helper. It is narrower in one: one function (and one file) per attem
 
 - ~~The proposer never writes a helper.~~ Closed by M208 (below): it writes one bounded private helper when an ordered
   pair of pinned transforms fits and no single one does. Helpers for other kinds of shared logic are still not written.
-- Transforms wrap returned values only. Wrong arguments are left to repair-v2. Wrong constants and a bounded class of
-  wrong branches are closed by M209 (below).
+- Transforms wrap returned values only. Wrong constants and a bounded class of wrong branches are closed by M209
+  (below). Wrong literal arguments to a same-file select helper are closed by M210 (below).
 - Dev split (informational, no credit, no tuning):
   - Under oop-v1, 11 of the 12 public dev tasks' team tests yield no data-only cases: 7 OOP_CASES_EMPTY and 4
     OOP_CASES_NONLITERAL. repair-retry-v1 would refuse VERDICT_OOP_CASES at the baseline, before any attempt.
@@ -219,6 +219,60 @@ Code: `fitConstant`, `applyConstant`, `fitBranch`, `applyBranch`, `litText`, `li
   body, head unchanged, size bound, no new dangerous word, no global write, no foreign word). No new edit-class tag. The
   gate is defence in depth. The verdict's soundness is verifier-v1's (M202, M207).
 - Order is pinned and documented (single, constant, pair, branch); attempts never chain past the cap of 3.
-- Residuals: wrong arguments and other shared-logic helpers are still not synthesised; string constant replacements that
-  introduce a new word are refused by the class (so only word-free replacements, or words already in the file, admit);
-  still EXPERIMENTAL, opt-in, not the default and not for credit.
+- Residuals closed by M210 (below) for wrong literal arguments to a same-file select helper; other shared-logic helpers
+  and non-select callees are still not synthesised; string constant replacements that introduce a new word are refused
+  by the class (so only word-free replacements, or words already in the file, admit); still EXPERIMENTAL, opt-in, not
+  the default and not for credit.
+
+## M210 (batch 46): wrong-argument call-site fix
+
+Code: `selectHelpers`, `wrongArgCalls`, `fitWrongArg`, `applyWrongArg` in `peaceai/lib/repair-retry.ts`. Tests:
+`peaceai/test/m210-retry-arg.test.ts`.
+
+- **When.** For an attempt k >= 2, on ONE run's evidence (same order as before: the last attempt's own run, else the
+  baseline), only when every earlier form refuses (`fitTransform` / `fitConstant` / `fitPair` / `fitBranch`). The
+  proposer then tries **wrong-arg (M210):** `fitWrongArg`.
+- **What counts as a select helper.** A top-level same-file `function h(...)` (export allowed; no other modifier, no
+  generator) whose body is exactly one `return <one of its parameters>` (optionally parenthesised). No other statements.
+  The model predicts a call's return as the value passed at that parameter position, without running code.
+- **What.** Inside the changed function's own body, a call to such a helper whose argument at the returned position is a
+  number / string / boolean literal L. Replace that literal with one of the outer function's own parameter identifiers
+  so that, for EVERY case of the run on that function, the predicted return equals the expected value; and under the
+  current call the predicted return already matches what each case returned (the select model agrees with the evidence).
+  The edit must change at least one case's prediction.
+- **Bound.** Offered only if `retrySourceClass` admits the edit as `rr-in-function` (frozen rr-in-function-v1; no new
+  edit-class, EDIT_SCOPE_POLICY unchanged). The replacement is a parameter name already in the function head, so it
+  does not invent string words (Batch 45's refuse of new-word string constants stands). A non-select helper, a helper
+  with another modifier, a call with no literal at the returned position, a stale span, a model that disagrees with the
+  evidence, or an edit the class would refuse: nothing is offered.
+- **Why last.** Earlier forms only wrap returned values, replace a return-equal literal, or add a pair-helper. Wrong-arg
+  rewrites a call argument under an identity/select-helper assumption (a stronger structural claim), so it is tried only
+  when those refuse.
+- Unchanged: oop-v1 only, `RETRY_MAX_ATTEMPTS = 3`, credit only from the attempt's own verifier-v1 verdict written by the
+  verifier uid, EDIT_SCOPE_POLICY and the default mode.
+
+### Evidence (m210)
+
+- Two self-made fixtures (nothing from PeaceSTOCKS, the dev tasks, the scanner or reference diffs): a numeric `take` /
+  `prefer` select (literal `0` should have been the outer parameter) and a string `head` / `label` select (literal `"?"`
+  should have been the outer parameter). Attempt 1 (repair-v2) fails; no earlier form fits; attempt 2 replaces the
+  call-site literal with the parameter and passes on its own oop-v1 verdict. Controls: repair-v2 alone with 3 attempts
+  ends without PASS in the default mode and under oop-v1.
+- Refused near misses: a non-select helper (body is not `return <param>`); a helper with a non-export modifier; no
+  call-site literal at the returned position; evidence the select model disagrees with; a foreign / stale span; a
+  replacement that would introduce a new word (class refuse).
+- Each `m210-guard` line has a case of its own that fails on a mutant with that line deleted.
+
+### Soundness note (M210)
+
+- The call-site edit is a search output, not evidence. Whether it is right is decided only by the attempt's own
+  verifier-v1 verdict (verifier uid, out of process). The select-helper model is a syntactic restriction used only to
+  predict from literal evidence without running the candidate; a helper that is not a pure select is refused, and a
+  model that disagrees with the observed returns is refused. Fitting the visible cases of one run is not generalisation.
+- The form does not widen what an edit may do: it stays inside the frozen rr-in-function-v1 class (one file, one function
+  body, head unchanged, size bound, no new dangerous word, no global write, no foreign word). No new edit-class tag. The
+  gate is defence in depth. The verdict's soundness is verifier-v1's (M202, M207).
+- Order is pinned and documented (single, constant, pair, branch, wrong-arg); attempts never chain past the cap of 3.
+- Residuals: non-select callees, wrong arguments that are not literals, and other shared-logic helpers are still not
+  synthesised; string constant replacements that introduce a new word are still refused by the class; still EXPERIMENTAL,
+  opt-in, not the default and not for credit.

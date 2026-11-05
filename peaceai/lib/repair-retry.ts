@@ -1,4 +1,4 @@
-// repair-retry-v1 (M203, batch 39; M208 batch 44; M209 batch 45; spec/repair-retry-v1.md). EXPERIMENTAL, opt-in, NOT the
+// repair-retry-v1 (M203, batch 39; M208 batch 44; M209 batch 45; M210 batch 46; spec/repair-retry-v1.md). EXPERIMENTAL, opt-in, NOT the
 // default, NOT for credit. When the loop's first attempt fails verification, the next attempt may be proposed from
 // verifier-v1's per-case evidence (expected vs the value the candidate returned, or its error name) of ONE run, and
 // retried, up to RETRY_MAX_ATTEMPTS attempts in all. Allowed only under VERDICT_MODE oop-v1 (refused in any in-process
@@ -594,6 +594,172 @@ export function applyBranch(src: string, fn: string, pred: RetryPred, tThen: Tra
   return out;
 }
 
+
+// ---- M210 (batch 46): wrong-argument call-site fix (after single / constant / pair / branch)
+
+interface SelectHelper { name: string; retIdx: number; paramCount: number }
+/**
+ * Top-level same-file select helpers: `function h(a, b, ...) { return <one of a,b,...>; }` (optionally parenthesised).
+ * No other statements, no modifiers. Used only to predict a call's return from its arguments without running code.
+ */
+export function selectHelpers(src: string): SelectHelper[] {
+  const sf = parse(src);
+  if (!sf) return [];
+  const out: SelectHelper[] = [];
+  for (const st of sf.statements) {
+    if (!ts.isFunctionDeclaration(st) || !st.name || !st.body) continue;
+    if (st.asteriskToken) continue;
+    const mods = ts.getModifiers(st) ?? [];
+    if (mods.some((m) => m.kind !== ts.SyntaxKind.ExportKeyword)) continue; // m210-guard:helper-plain
+    const params: string[] = [];
+    let ok = true;
+    for (const p of st.parameters) {
+      if (!ts.isIdentifier(p.name)) { ok = false; break; }
+      params.push(p.name.text);
+    }
+    if (!ok || params.length === 0) continue;
+    const stmts = st.body.statements;
+    if (stmts.length !== 1) continue; // m210-guard:helper-select
+    if (!ts.isReturnStatement(stmts[0]!) || !stmts[0]!.expression) continue;
+    let expr: ts.Expression = stmts[0]!.expression;
+    while (ts.isParenthesizedExpression(expr)) expr = expr.expression;
+    if (!ts.isIdentifier(expr)) continue;
+    const retIdx = params.indexOf(expr.text);
+    if (retIdx < 0) continue;
+    out.push({ name: st.name.text, retIdx, paramCount: params.length });
+  }
+  return out;
+}
+interface CallHit {
+  helper: string; retIdx: number; callStart: number; argStart: number; argEnd: number; litValue: unknown; argIdx: number;
+  /** For each argument: a literal value, an outer-param index, or null if unpredictable. */
+  args: readonly ({ kind: "lit"; value: unknown } | { kind: "param"; index: number } | { kind: "other" })[];
+}
+/** Calls inside function `fn`'s own body to a select helper, with the returned-position argument a literal. */
+export function wrongArgCalls(src: string, fn: string): CallHit[] | null {
+  const sf = parse(src);
+  if (!sf) return null;
+  let shape: FnShape | null = null;
+  for (const st of sf.statements) { const s = fnShape(st, sf); if (s && s.name === fn) { shape = s; break; } }
+  if (!shape) return null;
+  const helpers = new Map(selectHelpers(src).map((h) => [h.name, h] as const));
+  if (helpers.size === 0) return [];
+  const outer = paramsOf(src, fn) ?? [];
+  const out: CallHit[] = [];
+  const visit = (x: ts.Node): void => {
+    if (ts.isFunctionLike(x) && x !== shape!.body && x !== shape!.node) return; // nested functions keep their own calls
+    if (ts.isCallExpression(x) && ts.isIdentifier(x.expression) && !x.questionDotToken) {
+      const h = helpers.get(x.expression.text);
+      if (h && x.arguments.length === h.paramCount) {
+        const args: CallHit["args"][number][] = [];
+        for (const a of x.arguments) {
+          if (ts.isNumericLiteral(a)) {
+            const value = Number(a.getText(sf));
+            args.push(Number.isFinite(value) ? { kind: "lit", value } : { kind: "other" });
+          } else if (ts.isStringLiteral(a) || ts.isNoSubstitutionTemplateLiteral(a)) {
+            args.push({ kind: "lit", value: a.text });
+          } else if (a.kind === ts.SyntaxKind.TrueKeyword) args.push({ kind: "lit", value: true });
+          else if (a.kind === ts.SyntaxKind.FalseKeyword) args.push({ kind: "lit", value: false });
+          else if (ts.isIdentifier(a)) {
+            const i = outer.indexOf(a.text);
+            args.push(i >= 0 ? { kind: "param", index: i } : { kind: "other" });
+          } else args.push({ kind: "other" });
+        }
+        const ret = args[h.retIdx];
+        if (ret && ret.kind === "lit") {
+          const argNode = x.arguments[h.retIdx]!;
+          out.push({
+            helper: h.name, retIdx: h.retIdx, callStart: x.getStart(sf),
+            argStart: argNode.getStart(sf), argEnd: argNode.end, litValue: ret.value, argIdx: h.retIdx, args,
+          });
+        }
+      }
+    }
+    ts.forEachChild(x, visit);
+  };
+  visit(shape.body);
+  return out;
+}
+function predictSelect(args: CallHit["args"], retIdx: number, caseArgs: readonly unknown[]): unknown | undefined {
+  const slot = args[retIdx];
+  if (!slot) return undefined;
+  if (slot.kind === "lit") return slot.value;
+  if (slot.kind === "param") return caseArgs[slot.index];
+  return undefined;
+}
+/**
+ * Which one call-site literal argument of a same-file select helper to replace with one of the function's own
+ * parameters so EVERY case of this one run fits, when no earlier form (single / constant / pair / branch) is being
+ * asked here (the proposer tries those first). Evidence rule (no execution): the helper's body is `return <param>`;
+ * the call's argument at that position is a number/string/boolean literal L; replacing L with outer parameter p makes
+ * the predicted return (the value passed at that position) equal every case's expected value; and under the current
+ * call the predicted return matches what each case returned (so the select model agrees with the evidence). A
+ * prediction, never a verdict.
+ */
+export function fitWrongArg(ev: RetryEvidence, src: string): { fn: string; helper: string; callStart: number; argStart: number; argEnd: number; param: string } | { refuse: string } {
+  const one = fitTransform(ev);
+  if (!("refuse" in one)) return { refuse: "single-fits" }; // m210-guard:arg-single-first
+  if (one.refuse !== "no-fit") return { refuse: one.refuse }; // m210-guard:arg-one-run
+  const failing = ev.cases.filter((c) => !c.pass);
+  const fn = failing[0]!.fn;
+  const onFn = ev.cases.filter((c) => c.fn === fn);
+  for (const c of onFn) {
+    if (!c.expect.ok || c.expect.negate || c.expect.any) return { refuse: "no-fit" };
+    if (!c.pass && (!c.got || !c.got.ok)) return { refuse: "no-fit" };
+  }
+  const outer = paramsOf(src, fn);
+  if (!outer || outer.length === 0) return { refuse: "no-fit" };
+  const calls = wrongArgCalls(src, fn);
+  if (!calls) return { refuse: "no-fit" };
+  if (calls.length === 0) return { refuse: "no-call" }; // m210-guard:arg-call
+  for (const call of calls) {
+    // current predictions must match evidence (select model agrees)
+    let modelOk = true;
+    for (const c of onFn) {
+      const pred = predictSelect(call.args, call.retIdx, c.args);
+      if (pred === undefined) { modelOk = false; break; }
+      const want = c.pass ? (c.expect as { ok: true; value?: unknown }).value : (c.got as { ok: true; value: unknown }).value;
+      if (!valuesEqual(pred, want)) { modelOk = false; break; } // m210-guard:arg-model
+    }
+    if (!modelOk) continue;
+    for (let j = 0; j < outer.length; j++) {
+      const param = outer[j]!;
+      // replacing the returned-position literal with outer param j
+      const nextArgs = call.args.map((a, i) => (i === call.retIdx ? { kind: "param" as const, index: j } : a));
+      let fits = true;
+      for (const c of onFn) {
+        const pred = predictSelect(nextArgs, call.retIdx, c.args);
+        if (pred === undefined || !valuesEqual(pred, (c.expect as { ok: true; value?: unknown }).value)) { fits = false; break; } // m210-guard:arg-all
+      }
+      if (!fits) continue;
+      // must actually change something: at least one case's predicted value moves
+      let changed = false;
+      for (const c of onFn) {
+        const before = predictSelect(call.args, call.retIdx, c.args);
+        const after = predictSelect(nextArgs, call.retIdx, c.args);
+        if (!valuesEqual(before, after)) { changed = true; break; }
+      }
+      if (!changed) continue;
+      return { fn, helper: call.helper, callStart: call.callStart, argStart: call.argStart, argEnd: call.argEnd, param };
+    }
+  }
+  return { refuse: "no-fit" };
+}
+/**
+ * `src` with the call-site argument span [argStart, argEnd) replaced by the identifier `param`. Emitted only if the
+ * result is inside rr-in-function-v1 as "rr-in-function" (else null). Does not invent string words: the replacement is
+ * a parameter name already in the function head.
+ */
+export function applyWrongArg(src: string, fn: string, callStart: number, argStart: number, argEnd: number, param: string): string | null {
+  if (argStart < 0 || argEnd <= argStart || argEnd > src.length || callStart > argStart) return null;
+  // the span must still be a literal of the named function's call (defence: refuse stale spans)
+  const calls = wrongArgCalls(src, fn);
+  if (!calls || !calls.some((c) => c.argStart === argStart && c.argEnd === argEnd && c.callStart === callStart)) return null; // m210-guard:arg-span
+  const out = src.slice(0, argStart) + param + src.slice(argEnd);
+  if (retrySourceClass(src, out) !== "rr-in-function") return null; // m210-guard:arg-class
+  return out;
+}
+
 /** ProposeInput as the loop gives it under repair-retry-v1: each feedback entry carries its own run's evidence. */
 export type RetryFeedback = Feedback & { evidence?: RetryEvidence };
 export type RetryProposeInput = ProposeInput & { feedback: readonly RetryFeedback[]; retryBaseline?: RetryEvidence | null };
@@ -601,9 +767,10 @@ export type RetryProposeInput = ProposeInput & { feedback: readonly RetryFeedbac
 /**
  * repair-retry-v1's proposer: attempt 1 is `base` (e.g. repair-v2) unchanged. A later attempt first tries, on ONE run's
  * evidence (the last attempt's own run on that attempt's code; else the baseline on the original), in this pinned order:
- * a single output transform; a one-literal constant fix (M209); a pair helper (M208); a guarded branch (M209). Never a
- * mix of runs. If none fits it asks `base` again, which sees only its own attempts (renumbered), as if run alone. Stops
- * on a tampered or leftover run. Its predictions are never a verdict. Cap RETRY_MAX_ATTEMPTS = 3.
+ * a single output transform; a one-literal constant fix (M209); a pair helper (M208); a guarded branch (M209); a
+ * wrong-argument call-site fix (M210). Never a mix of runs. If none fits it asks `base` again, which sees only its own
+ * attempts (renumbered), as if run alone. Stops on a tampered or leftover run. Its predictions are never a verdict. Cap
+ * RETRY_MAX_ATTEMPTS = 3.
  */
 export function retryProposer(base: Proposer): Proposer & { readonly transforms: string[] } {
   const mine = new Map<number, Edit[]>(); // attempt -> edits proposed
@@ -638,7 +805,7 @@ export function retryProposer(base: Proposer): Proposer & { readonly transforms:
         let next: string | null = null, what = "";
         if (!("refuse" in fit)) { next = applyTransform(src, fit.fn, fit.transform); what = fit.transform.name; }
         else {
-          // M209 pinned order after a single transform refuses: constant, then pair (M208), then guarded branch.
+          // pinned order after a single transform refuses: constant, pair (M208), guarded branch (M209), wrong-arg (M210).
           const cf = fitConstant(r.ev, src);
           if (!("refuse" in cf)) { next = applyConstant(src, cf.fn, cf.from, cf.to); what = `const(${JSON.stringify(cf.from)}->${JSON.stringify(cf.to)})`; }
           else {
@@ -646,8 +813,14 @@ export function retryProposer(base: Proposer): Proposer & { readonly transforms:
             if (!("refuse" in pf)) { next = applyHelper(src, pf.fn, pf.pair); what = `helper(${pf.pair[0].name}+${pf.pair[1].name})`; }
             else {
               const bf = fitBranch(r.ev, src);
-              if ("refuse" in bf) continue;
-              next = applyBranch(src, bf.fn, bf.pred, bf.tThen, bf.tElse); what = `branch(${bf.pred.kind}:${bf.tThen.name}/${bf.tElse.name})`; // m209-guard:prop-order
+              if (!("refuse" in bf)) {
+                next = applyBranch(src, bf.fn, bf.pred, bf.tThen, bf.tElse); what = `branch(${bf.pred.kind}:${bf.tThen.name}/${bf.tElse.name})`; // m209-guard:prop-order
+              } else {
+                const wf = fitWrongArg(r.ev, src);
+                if (!("refuse" in wf)) {
+                  next = applyWrongArg(src, wf.fn, wf.callStart, wf.argStart, wf.argEnd, wf.param); what = `arg(${wf.helper}:${wf.param})`; // m210-guard:prop-order
+                }
+              }
             }
           }
         }
