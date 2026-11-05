@@ -86,6 +86,8 @@ assertions. The decision is to refuse, not to ship a weak guard.
   Batch 26 (M193, `peaceai/spec/loop-runners-inproc-m193.md`) probed all three: mocha is made sound against the
   class (PeaceAI's reporter pins and plans the run); vitest and jest are terminal at the runner and the attacks,
   including source code reaching `__vitest_worker__` (Auditor, #687), are killed by the M175 edit gate.
+  Batch 35 (M199, `peaceai/spec/loop-runners-inproc-m199.md`): not closable on vitest / jest; refused by name
+  (`INPROC_VERDICT_TERMINAL`) under any edit scope wider than the M175 bound.
 - In the loop's own threat model, the code that runs is team test files (edits refused, `TEAM_TEST_EDIT`) plus
   candidate source edits bounded by M175 (in-body template edits, no new imports or words, no global writes).
   That model does not give the candidate an obvious way to reach `ctx.task` or a runner channel. But M175 is a
