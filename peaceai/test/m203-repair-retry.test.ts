@@ -241,11 +241,13 @@ for (const [label, file, src, team] of [["percentage", "src/share.ts", SHARE, SH
     assert.equal(r.row.proposer, "rr1-repair-v2");
     assert.ok(p.transforms.length >= 1, "the passing attempt was evidence-driven");
     console.log(`M203-ADMIT ${label} ${JSON.stringify({ ...summary(r), transforms: p.transforms })}`);
-    // control: the default (no repairRetry, inproc) is not changed by this skill: one repair-v2 attempt, no PASS
-    const d = go(LoopReal, file, src, team, repairProposer({ v2: true }), { verdictMode: undefined, repairRetry: undefined }, 1);
-    assert.notEqual(d.row.code, "PASS");
-    console.log(`M203-DEFAULT ${label} ${JSON.stringify(summary(d))}`);
-    assert.equal("repairRetry" in d.row, false);
+    // controls: repair-v2 alone with the same 3 attempts does not pass, in the default mode or under oop-v1
+    for (const vm of [undefined, "oop-v1"]) {
+      const d = go(LoopReal, file, src, team, repairProposer({ v2: true }), { verdictMode: vm, repairRetry: undefined }, 3);
+      assert.notEqual(d.row.code, "PASS", `${vm ?? "default"}: ${JSON.stringify(summary(d))}`);
+      console.log(`M203-CONTROL ${label} ${vm ?? "default"} ${JSON.stringify(summary(d))}`);
+      assert.equal("repairRetry" in d.row, false);
+    }
   });
 }
 test("M203 refuse (in-process mode): repair-retry-v1 without oop-v1 is refused before anything runs", { skip: skipCand }, async () => {
