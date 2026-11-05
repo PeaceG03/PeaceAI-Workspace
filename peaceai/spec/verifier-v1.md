@@ -285,8 +285,10 @@ M205 admit still hold.
 
 ### Dev census (informational; same 13 public-dev team test files; no tuning)
 
-Recorded after the code was final. See the commit that adds the census numbers; no fixture was tuned against these
-files.
+M205 baseline: 0 admitted / 0 extracted (380 assertions seen, 11 supported-form). M206 re-run (no tuning): still 0
+admitted / 0 extracted (380 seen, 11 supported). First refusals unchanged in aggregate
+(`top-level:var` 2, `stmt:var` 3, `test-modifier:each` 1, suite/top-level other 5, `expect-nonliteral` 2). The new
+forms do not yet cover these team files; that is expected and not a target.
 
 ### M206 residuals (honest)
 
