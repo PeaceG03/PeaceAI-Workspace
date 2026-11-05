@@ -117,7 +117,7 @@ one private helper. It is narrower in one: one function (and one file) per attem
     coverage residual.
   - The module hint is a directory (`../src`). It was not run.
 - Default unchanged on the dev split (public tasks-public-v1, 12 tasks, informational): plan-only-v4 mean devScore
-  0.764, runTests 0.833 (same before and after this change); plan-only-v5 mean devScore 0.764, runTests 0.833. The run
-  records were not committed to runs.jsonl.
+  0.764, runTests 0.833 (same before and after this change); plan-only-v5 mean devScore 0.764, runTests 0.833. The
+  plan-only-v4 run's 12 records are appended to runs.jsonl (add-only, M144); the v5 run's records were not kept.
 - Controls in m203: on each admit shape, repair-v2 alone with the same 3 attempts does not pass, in the default mode or
   under oop-v1. The admit pass is the retry fit, judged by its own run.
