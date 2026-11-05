@@ -735,8 +735,8 @@ export function editScopeProblem(edits: readonly Edit[], original: (p: string) =
 /** PINNED (M199): the edit-scope classes under which the M193 in-process residual is killed by the M175 gate. Pinned
  *  apart from EDIT_SCOPE_POLICY on purpose: widening that policy does not widen this; a wider class is refused below. */
 export const INPROC_BOUNDED_SCOPE: readonly string[] = Object.freeze(["export-keyword", "in-body"]);
-/** M199 refusal codes (LoopCode): TERMINAL, proven not closable for the runner (vitest, jest); UNPROBED, not proven
- *  safe under a wider scope (mocha: assertion libraries other than node:assert; node:test; anything else). */
+/** M199 refusal codes (LoopCode): TERMINAL, proven not closable for the runner (vitest, jest; M200: node:test);
+ *  UNPROBED, not proven safe under a wider scope (mocha: assertion libraries other than node:assert; anything else). */
 export const INPROC_VERDICT_CODES = ["INPROC_VERDICT_TERMINAL", "INPROC_VERDICT_UNPROBED"] as const;
 /** Why the runner's verdict cannot be credited for edits of these scope classes (null: every class is inside the M175
  *  bound). Fail-closed: a runner without its own line gets the UNPROBED default. */
@@ -744,6 +744,11 @@ export function inprocScopeProblem(runner: string, classes: readonly string[]): 
   if (classes.every((c) => INPROC_BOUNDED_SCOPE.includes(c))) return null; // m199-guard:bounded
   if (runner === "vitest") return "INPROC_VERDICT_TERMINAL"; // m199-guard:vitest
   if (runner === "jest") return "INPROC_VERDICT_TERMINAL"; // m199-guard:jest
+  // M200 (batch 36, spec/loop-runners-inproc-m200.md): node:test probed on real node 22 / 24. As the loop runs it
+  // (`node --test`, a child per file) the verdict is the child's own stdout, v8-serialized frames the parent never
+  // authenticates, plus its exit code: code under test forges both. Run in-process under the M173 nonce channel
+  // instead, the node:test internals can be locked, but that channel itself is reachable (the fs binding, inspector).
+  if (runner === "node-test") return "INPROC_VERDICT_TERMINAL"; // m200-guard:node-test
   return "INPROC_VERDICT_UNPROBED"; // m199-guard:unprobed
 }
 /** The widest scope class a (non-refused) proposal ran under, for the PASS row, or null if there is nothing to record. */

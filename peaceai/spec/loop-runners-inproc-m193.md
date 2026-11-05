@@ -77,6 +77,8 @@ needs a reach argument for the wider class, not a runner fix; this batch does no
 Batch 35 (M199, `loop-runners-inproc-m199.md`): probed whether the residual can be closed (it cannot on vitest
 4.x / jest 29.x: the assertion and the result live in the worker); any edit class wider than the bound is now
 refused by name, `INPROC_VERDICT_TERMINAL` on vitest / jest and `INPROC_VERDICT_UNPROBED` elsewhere.
+Batch 36 (M200, `loop-runners-inproc-m200.md`): node:test probed; not closable (its child forges the parent's
+channel; in-process, the M173 report channel is reachable), so `INPROC_VERDICT_TERMINAL` on node:test too.
 
 ## Tests (`peaceai/test/m193-inproc-forge.test.ts`)
 

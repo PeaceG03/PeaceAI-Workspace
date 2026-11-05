@@ -52,7 +52,7 @@ export const LOOP_CODES = [
   // v2 only (M175): a candidate edit was outside the pinned edit-scope policy (editScopeProblem), refused before any run
   "EDIT_SCOPE",
   // v2 only (M199): an edit scope wider than the M175 bound on a runner whose in-process verdict that bound protects
-  // (vitest / jest: terminal; mocha, node:test: not proven under a wider scope), refused before any run
+  // (vitest / jest, M200 node:test: terminal; mocha: not proven under a wider scope), refused before any run
   "INPROC_VERDICT_TERMINAL", "INPROC_VERDICT_UNPROBED",
   // v4 only (M175): the load diagnostics compile (load-repair mode) exceeded its file / byte / wall-time bound; refused
   // fail-closed before any edit (attempts 0), only the code is kept (never which bound)
