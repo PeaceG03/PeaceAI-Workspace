@@ -134,8 +134,9 @@ function judge(req) {
     if (parsed.id !== i + 1) return { code: "OOP_PROTOCOL", detail: "id-mismatch", results };
     if (expectHolds(parsed, c.expect)) { results.push({ id: c.id, pass: true }); continue; }
     const reason = parsed.resultOk ? (parsed.sync !== true ? "async" : parsed.exact !== true ? "inexact" : "value") : "error";
+    // evidence (`got`) only when it is what the candidate returned: an inexact or async value's JSON copy is not
     results.push({ id: c.id, pass: false, reason,
-      got: parsed.resultOk ? { ok: true, value: parsed.value } : { ok: false, name: String(parsed.error.name).slice(0, 80) } });
+      ...(reason === "value" ? { got: { ok: true, value: parsed.value } } : reason === "error" ? { got: { ok: false, name: String(parsed.error.name).slice(0, 80) } } : {}) });
   }
   if (req.runs.length !== req.cases.length) return { code: "OOP_PROTOCOL", detail: "runs", results };
   return { code: "OOP_OK", ...counts(), results, leftovers: 0 }; // m202-guard:ok

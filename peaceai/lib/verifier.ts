@@ -373,9 +373,15 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
       const name = ts.isIdentifier(callee) ? callee.text : null;
       const role = name === null ? null : testLocal.get(name) ?? (target.has(name) || assertNs.has(name) || assertFn.has(name) || expectLocal.has(name) || otherBound.has(name) ? null
         : TEST_FNS.has(name) ? "test" : SUITE_FNS.has(name) ? "suite" : HOOK_FNS.has(name) ? "hook" : null);
-      if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression)
-        && (testLocal.has(callee.expression.text) || TEST_FNS.has(callee.expression.text) || SUITE_FNS.has(callee.expression.text))) {
-        refuse("OOP_CASES_UNSUPPORTED_TEST", "test-modifier:" + callee.name.text); // m204-guard:test-modifier (skip / only / each / todo / concurrent)
+      // test.skip(...), test.each(table)(...), describe.only(...), it.concurrent.each(...)(...): the root is a test name
+      let root: any = callee, firstProp: string | null = null;
+      while (ts.isPropertyAccessExpression(root) || ts.isCallExpression(root) || ts.isElementAccessExpression(root)) {
+        if (ts.isPropertyAccessExpression(root)) firstProp = root.name.text;
+        root = root.expression;
+      }
+      const rootName = ts.isIdentifier(root) && root !== callee ? root.text : null;
+      if (rootName !== null && (testLocal.has(rootName) || ((TEST_FNS.has(rootName) || SUITE_FNS.has(rootName)) && !target.has(rootName) && !otherBound.has(rootName)))) {
+        refuse("OOP_CASES_UNSUPPORTED_TEST", "test-modifier:" + (firstProp ?? "call")); // m204-guard:test-modifier (skip / only / each / todo / concurrent)
         return;
       }
       if (role === "hook") { refuse("OOP_CASES_UNSUPPORTED_TEST", "hook:" + name); return; } // m204-guard:hook
