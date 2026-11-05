@@ -60,7 +60,7 @@ const ranked = (m: ReproModule, dir: string, code: string): Plan[] => {
   assert.ok(!("refuse" in r), `expected plans for ${code}`);
   return (r as { plans: Plan[] }).plans;
 };
-const order = (ps: Plan[]) => ps.map((p) => [p.existing.path, p.existing.line, p.rank.namesDependency, p.rank.ownFile, p.rank.found]);
+const order = (ps: Plan[]) => ps.map((p) => [p.existing.path, p.existing.line, p.rank.setupInjectsFailure, p.rank.namesDependency, p.rank.ownFile, p.rank.found]);
 /** A fake sandbox: the runs given per candidate index (and a log of what was run); each verdict is the judge's. */
 const fakeRun = (m: ReproModule, plans: Plan[], runs: (Record<Repro.Variant, Repro.VariantRun> | Repro.ReproResult)[]) => {
   const log: number[] = [];
@@ -185,11 +185,11 @@ export const CASES: ReproCase[] = [
   // ---- Batch 32: ranked base tests, at most three attempts, each judged on its own runs
   { id: "admit-rank-names-dependency-ledger", condition: "rank-names-dependency", kind: "admit", shape: "ledger", run: (m, c) => {
     // found first: the test passing null (mode "off"); ranked first: the test whose setup provides `read`
-    assert.deepEqual(order(ranked(m, c.ledger, "GAUGE_READ_FAILED")), [["test/gauge.test.ts", 9, true, true, 1], ["test/gauge.test.ts", 5, false, true, 0]]);
+    assert.deepEqual(order(ranked(m, c.ledger, "GAUGE_READ_FAILED")), [["test/gauge.test.ts", 9, false, true, true, 1], ["test/gauge.test.ts", 5, false, false, true, 0]]);
     assert.equal(plan(m, c.ledger, "GAUGE_READ_FAILED").existing.line, 9, "planRepro is the first-ranked candidate");
   } },
   { id: "admit-rank-names-dependency-shelf", condition: "rank-names-dependency", kind: "admit", shape: "shelf", run: (m, c) => {
-    assert.deepEqual(order(ranked(m, c.shelf, "FEED_FETCH_FAILED")), [["test/feed.test.ts", 8, true, true, 1], ["test/feed.test.ts", 4, false, true, 0]]);
+    assert.deepEqual(order(ranked(m, c.shelf, "FEED_FETCH_FAILED")), [["test/feed.test.ts", 8, false, true, true, 1], ["test/feed.test.ts", 4, false, false, true, 0]]);
   } },
   { id: "refuse-rank-unnamed-base-not-first", condition: "rank-names-dependency", kind: "refuse", shape: "ledger", run: (m, c) => {
     // a base whose setup neither provides nor names the dependency (null at its position) is tried after one that does
@@ -198,7 +198,7 @@ export const CASES: ReproCase[] = [
     assert.deepEqual([ps[1]!.rank.namesDependency, ps[1]!.rank.found], [false, 0]);
   } },
   { id: "admit-rank-own-file-ledger", condition: "rank-own-file", kind: "admit", shape: "ledger", run: (m, c) => {
-    assert.deepEqual(order(ranked(m, c.ledger, "TALLY_COUNT_FAILED")), [["test/tally.test.ts", 6, true, true, 1], ["test/board.test.ts", 8, true, false, 0]]);
+    assert.deepEqual(order(ranked(m, c.ledger, "TALLY_COUNT_FAILED")), [["test/tally.test.ts", 6, false, true, true, 1], ["test/board.test.ts", 8, false, true, false, 0]]);
   } },
   { id: "refuse-rank-other-file-not-first", condition: "rank-own-file", kind: "refuse", shape: "ledger", run: (m, c) => {
     // found first (it also imports two modules that import the site's file), but not the module's own test file
@@ -207,7 +207,7 @@ export const CASES: ReproCase[] = [
   } },
   { id: "admit-rank-found-order-shelf", condition: "rank-own-file", kind: "admit", shape: "shelf", run: (m, c) => {
     // both provide `post` (the describe's setup) and both are the own file: discovery order decides
-    assert.deepEqual(order(ranked(m, c.shelf, "BEACON_POST_FAILED")), [["test/beacon.test.ts", 7, true, true, 0], ["test/beacon.test.ts", 10, true, true, 1]]);
+    assert.deepEqual(order(ranked(m, c.shelf, "BEACON_POST_FAILED")), [["test/beacon.test.ts", 7, false, true, true, 0], ["test/beacon.test.ts", 10, false, true, true, 1]]);
   } },
   { id: "admit-later-attempt-ok", condition: "attempt-stop-ok", kind: "admit", shape: "judge", run: (m, c) => {
     const ps = ranked(m, c.ledger, "METER_SAMPLE_FAILED");
@@ -269,5 +269,33 @@ export const CASES: ReproCase[] = [
     const ps = pumpPlans(m, c);
     const f = fakeRun(m, ps, [WRONG3, VACUOUS3, OK3]);
     assert.deepEqual([m.attemptAll(ps, f.run).code, f.log], ["REPRO_OK", [0, 1, 2]]);
+  } },
+  // ---- Batch 33: demote a base whose setup already injects the failing dependency (predicted REPRO_VACUOUS)
+  { id: "admit-rank-setup-injects-failure-ledger", condition: "rank-setup-injects-failure", kind: "admit", shape: "ledger", run: (m, c) => {
+    // found first: the stubbing (throw) test; ranked first: the healthy heater
+    assert.deepEqual(order(ranked(m, c.ledger, "KILN_HEAT_FAILED")), [
+      ["test/kiln.test.ts", 10, false, true, true, 1],
+      ["test/kiln.test.ts", 14, false, true, true, 2],
+      ["test/kiln.test.ts", 6, true, true, true, 0],
+    ]);
+    assert.equal(plan(m, c.ledger, "KILN_HEAT_FAILED").rank.setupInjectsFailure, false);
+  } },
+  { id: "admit-rank-setup-injects-failure-shelf", condition: "rank-setup-injects-failure", kind: "admit", shape: "shelf", run: (m, c) => {
+    assert.deepEqual(order(ranked(m, c.shelf, "RELAY_SEND_FAILED")), [
+      ["test/relay.test.ts", 10, false, true, true, 1],
+      ["test/relay.test.ts", 5, true, true, true, 0],
+    ]);
+  } },
+  { id: "refuse-rank-setup-injects-failure-demoted", condition: "rank-setup-injects-failure", kind: "refuse", shape: "ledger", run: (m, c) => {
+    // the stubbing base is tried after every base that does not inject the failure
+    const ps = ranked(m, c.ledger, "KILN_HEAT_FAILED");
+    assert.equal(ps[ps.length - 1]!.rank.setupInjectsFailure, true);
+    assert.ok(ps.slice(0, -1).every((p) => !p.rank.setupInjectsFailure));
+  } },
+  { id: "refuse-rank-other-method-throw-not-demoted", condition: "rank-setup-injects-failure", kind: "refuse", shape: "ledger", run: (m, c) => {
+    // near miss: a throw on a method that is not the trigger stays not demoted (conservative)
+    const ps = ranked(m, c.ledger, "KILN_HEAT_FAILED");
+    const other = ps.find((p) => p.existing.line === 14)!;
+    assert.equal(other.rank.setupInjectsFailure, false, "cool throws but the trigger is heat");
   } },
 ];

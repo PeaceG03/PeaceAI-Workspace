@@ -19,7 +19,7 @@ import { privateRoots } from "../lib/loop.ts";
 import * as repro from "../lib/reproduce.ts";
 import type { PlanTaskFile } from "../lib/plan.ts";
 import { CASES, siteOf, type CaseCtx, type ReproModule } from "./m196-cases.ts";
-import { AGENT, LEDGER, LEDGER_BASES, LEDGER_HELPERS, LEDGER_TRIGGERS, SHELF, SHELF_BASES, writeRepo } from "./m196-fixtures.ts";
+import { AGENT, LEDGER, LEDGER_BASES, LEDGER_HELPERS, LEDGER_TRIGGERS, LEDGER_VACUOUS, SHELF, SHELF_BASES, SHELF_VACUOUS, writeRepo } from "./m196-fixtures.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
 const libDir = join(repo, "peaceai/lib");
@@ -29,11 +29,11 @@ const noCand = CAND ? false : "no candidate uid (M196_CAND / M146_CAND): the san
 const scratch = mkdtempSync(join(tmpdir(), "peaceai-m196-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const ctx: CaseCtx = {
-  ledger: writeRepo(join(scratch, "ledger"), { ...LEDGER, ...LEDGER_TRIGGERS, ...LEDGER_HELPERS, ...LEDGER_BASES }),
-  shelf: writeRepo(join(scratch, "shelf"), { ...SHELF(), ...SHELF_BASES }),
+  ledger: writeRepo(join(scratch, "ledger"), { ...LEDGER, ...LEDGER_TRIGGERS, ...LEDGER_HELPERS, ...LEDGER_BASES, ...LEDGER_VACUOUS }),
+  shelf: writeRepo(join(scratch, "shelf"), { ...SHELF(), ...SHELF_BASES, ...SHELF_VACUOUS }),
   agent: writeRepo(join(scratch, "agent"), AGENT),
 };
-const TAGS = ["attempt-own-runs", "attempt-stop-env", "attempt-stop-ok", "attempts-best-ranked", "attempts-cap", "code-shape", "entry-direct", "entry-exported", "existing-args", "existing-binds", "existing-helper-async", "existing-helper-local", "existing-helper-one-level", "existing-in-test", "existing-plain-path", "judge-clean", "judge-control", "judge-isolation", "judge-one-fail", "judge-one-pass", "judge-probe", "judge-repro-fails", "needs-cand", "observe-log", "observe-push", "rank-names-dependency", "rank-own-file", "site-not-toplevel", "site-source", "throw-caught", "trigger-handled", "trigger-no-inner-try", "trigger-no-nested-fn", "trigger-not-builtin", "trigger-param"];
+const TAGS = ["attempt-own-runs", "attempt-stop-env", "attempt-stop-ok", "attempts-best-ranked", "attempts-cap", "code-shape", "entry-direct", "entry-exported", "existing-args", "existing-binds", "existing-helper-async", "existing-helper-local", "existing-helper-one-level", "existing-in-test", "existing-plain-path", "judge-clean", "judge-control", "judge-isolation", "judge-one-fail", "judge-one-pass", "judge-probe", "judge-repro-fails", "needs-cand", "observe-log", "observe-push", "rank-names-dependency", "rank-own-file", "rank-setup-injects-failure", "site-not-toplevel", "site-source", "throw-caught", "trigger-handled", "trigger-no-inner-try", "trigger-no-nested-fn", "trigger-not-builtin", "trigger-param"];
 
 /** One mutant per guard (removing it, or loosening it where removing leaves nothing to run). `find` occurs once. */
 const MUTANTS: { id: string; find: string; replace: string }[] = [
@@ -62,6 +62,7 @@ const MUTANTS: { id: string; find: string; replace: string }[] = [
   // Batch 32: ranking, the cap, stop at the first REPRO_OK, the verdict from one attempt's own runs, the best-ranked reason
   { id: "rank-names-dependency", find: 'const namesDependency = trigger.prop !== null ? word(trigger.prop.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")).test(text) : !NO_VALUE(arg); // repro-guard:rank-names-dependency', replace: "const namesDependency = false;" },
   { id: "rank-own-file", find: "const ownFile = norm(fileStem(ex.path)) === norm(fileStem(sitePath)); // repro-guard:rank-own-file", replace: "const ownFile = false;" },
+  { id: "rank-setup-injects-failure", find: "return exprInjectsFailure(arg, trigger.prop, setupLocals(ex)); // repro-guard:rank-setup-injects-failure", replace: "return false;" },
   { id: "attempts-cap", find: "const tried = plans.slice(0, MAX_ATTEMPTS); // repro-guard:attempts-cap", replace: "const tried = plans;" },
   { id: "attempt-stop-ok", find: 'if (code === "REPRO_OK") return { code, runs: r.runs!, plan: p, attempts, untried: plans.length - attempts.length }; // repro-guard:attempt-stop-ok', replace: "" },
   { id: "attempt-stop-env", find: "if (!BASE_REASONS.has(code)) break; // repro-guard:attempt-stop-env", replace: "" },
@@ -218,6 +219,24 @@ test("M196 sandbox (flat npm + vitest 4, Batch 32): ranked base test kept; attem
   const b = repro.reproduce(ctx.shelf, "BEACON_POST_FAILED", siteOf(ctx.shelf, "BEACON_POST_FAILED"), o);
   assert.equal(b.code, "REPRO_OK", JSON.stringify(b));
   assert.deepEqual(codes(b), ["test/beacon.test.ts:7 REPRO_NOT_FAILING", "test/beacon.test.ts:10 REPRO_OK"]);
+});
+
+
+test("M196 sandbox (node:test + vitest, Batch 33): a setup that injects the failure is demoted; the healthy base is REPRO_OK", { skip: noCand }, (t) => {
+  assert.equal(busy(), 0, "the candidate uid must be idle (tests run one at a time)");
+  const o = { env: env(), roots: roots() };
+  const k = repro.reproduce(ctx.ledger, "KILN_HEAT_FAILED", siteOf(ctx.ledger, "KILN_HEAT_FAILED"), o);
+  assert.equal(k.code, "REPRO_OK", JSON.stringify(k));
+  assert.equal(k.plan!.rank.setupInjectsFailure, false);
+  assert.deepEqual(codes(k), ["test/kiln.test.ts:10 REPRO_OK"]);
+  // the demoted (throwing stub) base alone is REPRO_VACUOUS
+  const demoted = planned(ctx.ledger, "KILN_HEAT_FAILED").find((p) => p.rank.setupInjectsFailure)!;
+  assert.equal(repro.validateRepro(ctx.ledger, demoted, o).code, "REPRO_VACUOUS", "the stubbing base is vacuous alone");
+  if (!process.env.CI && !online()) { t.skip("offline (vitest shape)"); return; }
+  const r = repro.reproduce(ctx.shelf, "RELAY_SEND_FAILED", siteOf(ctx.shelf, "RELAY_SEND_FAILED"), o);
+  assert.equal(r.code, "REPRO_OK", JSON.stringify(r));
+  assert.equal(r.plan!.rank.setupInjectsFailure, false);
+  assert.deepEqual(codes(r), ["test/relay.test.ts:10 REPRO_OK"]);
 });
 
 test("M196 wiring: plan-only; nothing in the loop, its grading, selfpropose or the credit sources imports reproduce.ts", () => {

@@ -24,7 +24,8 @@ import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { installShim, MOCHA_GUARD_PATH, MOCHA_GUARD_SOURCE, SHIM_PATH } from "../lib/loopdeps.ts";
+import { pathToFileURL } from "node:url";
+import { detectRunner, installShim, mochaMajorOf, MOCHA_GUARD_PATH, MOCHA_GUARD_SOURCE, MOCHA_SUPPORTED_MAJORS, SHIM_PATH } from "../lib/loopdeps.ts";
 import { editScopeProblem, type Edit } from "../lib/loop.ts";
 
 const base = mkdtempSync(join(tmpdir(), "peaceai-m193-inproc-"));
@@ -270,3 +271,67 @@ test("M193 gate: every placement of an in-process rewrite is refused by the M175
 test("M193 hygiene: no process outlives the file's runs (checked last)", { skip: !existsSync("/proc/self") && "no /proc" }, () => {
   assert.deepEqual(survivors(base), []);
 });
+
+
+// ---- Batch 33: refuse mocha majors the M193 guards were not probed on (probe table: 10.8.2 only)
+const LOOPDEPS = readFileSync(resolve(import.meta.dirname, "../lib/loopdeps.ts"), "utf8");
+function mochaRepo(devDeps: Record<string, string>, installed?: string): string {
+  const d = mkdtempSync(join(base, "mocha-maj-"));
+  writeFileSync(join(d, "package.json"), JSON.stringify({ name: "m", private: true, scripts: { test: "mocha test" }, devDependencies: devDeps }));
+  mkdirSync(join(d, "test"), { recursive: true });
+  writeFileSync(join(d, "test/a.test.js"), "it('x', () => {});");
+  if (installed) {
+    mkdirSync(join(d, "node_modules/mocha"), { recursive: true });
+    writeFileSync(join(d, "node_modules/mocha/package.json"), JSON.stringify({ name: "mocha", version: installed }));
+  }
+  return d;
+}
+const mochaVerdict = (d: string) => { const r = detectRunner(d, ["test/a.test.js"]); return "refuse" in r ? r.refuse : `admit:${r.runner}`; };
+test("M193 mocha major: only probed majors are admitted; near misses stay admitted", () => {
+  assert.deepEqual([...MOCHA_SUPPORTED_MAJORS], [10]);
+  assert.equal(mochaMajorOf("10.8.2"), 10);
+  assert.equal(mochaMajorOf("^10.8.2"), 10);
+  assert.equal(mochaMajorOf("~10.0.0"), 10);
+  assert.equal(mochaMajorOf("11.0.0"), 11);
+  assert.equal(mochaMajorOf("^11.0.0"), 11);
+  assert.equal(mochaMajorOf("9.2.0"), 9);
+  assert.equal(mochaMajorOf("*"), null);
+  assert.equal(mochaMajorOf(">=9 <12"), null);
+  // admit: declared 10.x (two shapes: caret and exact)
+  assert.equal(mochaVerdict(mochaRepo({ mocha: "^10.8.2" })), "admit:mocha");
+  assert.equal(mochaVerdict(mochaRepo({ mocha: "10.2.0" })), "admit:mocha");
+  // admit: installed 10.x wins even if the range looked like 11 (installed is authoritative)
+  assert.equal(mochaVerdict(mochaRepo({ mocha: "^11.0.0" }, "10.8.2")), "admit:mocha");
+  // refuse: declared major 11 / 9 (neither probed)
+  assert.equal(mochaVerdict(mochaRepo({ mocha: "^11.0.0" })), "TEST_RUNNER_UNSUPPORTED");
+  assert.equal(mochaVerdict(mochaRepo({ mocha: "9.2.2" })), "TEST_RUNNER_UNSUPPORTED");
+  // refuse: installed major 11
+  assert.equal(mochaVerdict(mochaRepo({ mocha: "^10.0.0" }, "11.0.0")), "TEST_RUNNER_UNSUPPORTED");
+  // near miss: another package at major 11 does not refuse mocha 10
+  assert.equal(mochaVerdict(mochaRepo({ mocha: "^10.8.2", "mocha-junit-reporter": "11.0.0" })), "admit:mocha");
+  // unsure range is not refused at detect (runtime guard still checks the installed major)
+  assert.equal(mochaVerdict(mochaRepo({ mocha: ">=9 <12" })), "admit:mocha");
+  // the runtime guard refuses unsupported majors with an explicit message (not the internals throw)
+  assert.match(MOCHA_GUARD_SOURCE, /mocha major " \+ __peaceaiMochaMaj \+ " is not supported \(M193 guards cover 10\.x only\)/);
+  const majLine = MOCHA_GUARD_SOURCE.split("\n").find((l) => l.includes("mocha major") && l.includes("throw new Error"));
+  assert.ok(majLine, "runtime major refusal throw exists");
+  assert.doesNotMatch(majLine!, /internals not found/);
+});
+let majN = 0;
+async function mutantDetect(guard: string) {
+  const ls = LOOPDEPS.split("\n"), hits = ls.flatMap((l, i) => (l.endsWith(`// ${guard}`) ? [i] : []));
+  assert.equal(hits.length, 1, `one line holds ${guard}`);
+  const text = ls.filter((_, i) => i !== hits[0]).join("\n").replace(/from "\.\/([a-z0-9-]+\.ts)"/g, (_m, f: string) => `from ${JSON.stringify(pathToFileURL(resolve(import.meta.dirname, "../lib", f)).href)}`);
+  const file = join(base, `mutant-maj-${majN++}.ts`);
+  writeFileSync(file, text);
+  return ((await import(pathToFileURL(file).href)) as { detectRunner: typeof detectRunner }).detectRunner;
+}
+test("M193 mocha major mutation: deleting m193-guard:mocha-major admits a refused near-miss", async () => {
+  const tags = LOOPDEPS.split("\n").flatMap((l) => { const m = /\/\/ m193-guard:([a-z0-9-]+)$/.exec(l); return m ? [m[1]!] : []; });
+  assert.deepEqual(tags, ["mocha-major"]);
+  const det = await mutantDetect("m193-guard:mocha-major");
+  const v = (d: string) => { const r = det(d, ["test/a.test.js"]); return "refuse" in r ? r.refuse : `admit:${r.runner}`; };
+  assert.equal(v(mochaRepo({ mocha: "^11.0.0" })), "admit:mocha", "declared 11 admitted without the guard");
+  assert.equal(v(mochaRepo({ mocha: "^10.0.0" }, "11.0.0")), "admit:mocha", "installed 11 admitted without the guard");
+});
+

@@ -19,6 +19,9 @@
 // ranks them statically (setup naming the failing dependency, then the module's own test file, then discovery
 // order); reproduce tries at most MAX_ATTEMPTS of them in that order, each with the full three-variant judge on its
 // own three runs, and stops at the first REPRO_OK. Every attempt is recorded; evidence is never pooled across attempts.
+// Batch 33: a base whose own setup already makes the failing dependency throw or reject (the test itself injects the
+// failure) is ranked BELOW the others: the control variant would then also see the code, so the candidate is predicted
+// REPRO_VACUOUS. Ranking still never decides a result; detection is static and conservative (when unsure, do not demote).
 // Nothing here names a repository, task, task set or file of any task set.
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -43,8 +46,10 @@ export const VARIANTS = ["repro", "probe", "control"] as const;
 export type Variant = (typeof VARIANTS)[number];
 
 export interface Trigger { param: number; prop: string | null; reject: boolean; callee: string }
-/** Batch 32: why a base test is ranked where it is (static; it never decides a result, the judge does). */
+/** Batch 32/33: why a base test is ranked where it is (static; it never decides a result, the judge does). */
 export interface BaseRank {
+  /** Batch 33: its own setup already makes the failing dependency throw or reject (predicted REPRO_VACUOUS). Ranked below others. */
+  setupInjectsFailure: boolean;
   /** Its setup provides or names the failing dependency (the trigger's property, or a non-null argument for a called parameter). */
   namesDependency: boolean;
   /** It is the module's own test file (same file stem as the site's file). */
@@ -402,14 +407,89 @@ function setupOf(ex: Existing, trigger: Trigger): { text: string; arg: ts.Expres
 }
 const NO_VALUE = (e: ts.Expression | undefined) => !e || e.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(e) && e.text === "undefined") || ts.isVoidExpression(e);
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+/** `Promise.reject(...)` as a call expression (possibly awaited). */
+const isPromiseReject = (e: ts.Expression): boolean => {
+  let x: ts.Expression = e;
+  if (ts.isAwaitExpression(x)) x = x.expression;
+  return ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) && ts.isIdentifier(x.expression.expression) && x.expression.expression.text === "Promise" && x.expression.name.text === "reject";
+};
+/** A function whose body clearly only throws or returns Promise.reject (conservative: a single such statement). */
+function functionInjectsFailure(n: ts.Node): boolean {
+  const fn = ts.isArrowFunction(n) || ts.isFunctionExpression(n) || ts.isMethodDeclaration(n) || ts.isFunctionDeclaration(n) ? n : null;
+  if (!fn || !fn.body) return false;
+  if (!ts.isBlock(fn.body)) return isPromiseReject(fn.body as ts.Expression);
+  const sts = fn.body.statements.filter((s) => !ts.isEmptyStatement(s) && !ts.isDebuggerStatement(s));
+  if (sts.length !== 1) return false;
+  const s = sts[0]!;
+  if (ts.isThrowStatement(s)) return true;
+  if (ts.isReturnStatement(s) && s.expression && isPromiseReject(s.expression)) return true;
+  if (ts.isExpressionStatement(s) && isPromiseReject(s.expression)) return true;
+  return false;
+}
+const propName = (p: ts.ObjectLiteralElementLike): string | null => {
+  if (ts.isPropertyAssignment(p) || ts.isMethodDeclaration(p) || ts.isShorthandPropertyAssignment(p) || ts.isGetAccessorDeclaration(p) || ts.isSetAccessorDeclaration(p)) {
+    if (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) || ts.isNumericLiteral(p.name)) return p.name.text;
+  }
+  return null;
+};
+/** Locals bound in the base test's own setup (file top-level, describe setup, statements before the call). */
+function setupLocals(ex: Existing): Map<string, ts.Expression> {
+  const out = new Map<string, ts.Expression>();
+  const take = (sts: readonly ts.Statement[]) => {
+    for (const st of sts) {
+      if (!ts.isVariableStatement(st)) continue;
+      for (const d of st.declarationList.declarations) {
+        if (ts.isIdentifier(d.name) && d.initializer) out.set(d.name.text, d.initializer);
+      }
+    }
+  };
+  take(ex.sf.statements.filter((s) => !ts.isImportDeclaration(s) && !isTestish(s)));
+  for (const d of ex.describes) {
+    const f = d.arguments[d.arguments.length - 1];
+    if (f && (ts.isArrowFunction(f) || ts.isFunctionExpression(f)) && ts.isBlock(f.body)) take(f.body.statements.filter((s) => !isTestish(s)));
+  }
+  if (ex.helper) for (const b of ex.helper.outer) take(b.statements.filter((s) => s.end <= ex.helper!.call.pos));
+  for (const b of ex.blocks) take(b.statements.filter((s) => s.end <= ex.call.pos));
+  return out;
+}
+/** Resolve an expression through setup locals (one hop). */
+const resolveLocal = (e: ts.Expression, locals: ReadonlyMap<string, ts.Expression>): ts.Expression =>
+  ts.isIdentifier(e) && locals.has(e.text) ? locals.get(e.text)! : e;
+/** True when the expression at the trigger clearly is (or holds) a function that throws / rejects. Conservative. */
+function exprInjectsFailure(e: ts.Expression | undefined, prop: string | null, locals: ReadonlyMap<string, ts.Expression>): boolean {
+  if (!e) return false;
+  const x = resolveLocal(e, locals);
+  if (prop === null) return functionInjectsFailure(x);
+  if (!ts.isObjectLiteralExpression(x)) return false;
+  for (const p of x.properties) {
+    if (propName(p) !== prop) continue;
+    if (ts.isMethodDeclaration(p)) return functionInjectsFailure(p);
+    if (ts.isPropertyAssignment(p)) {
+      const init = resolveLocal(p.initializer, locals);
+      return functionInjectsFailure(init);
+    }
+    if (ts.isShorthandPropertyAssignment(p)) {
+      const init = locals.get(p.name.text);
+      return init ? functionInjectsFailure(init) : false;
+    }
+    return false;
+  }
+  return false;
+}
+/** Batch 33: the base test's own setup already makes the failing dependency throw or reject. */
+function setupInjectsFailureOf(ex: Existing, trigger: Trigger): boolean {
+  const arg = ex.call.arguments[trigger.param];
+  return exprInjectsFailure(arg, trigger.prop, setupLocals(ex)); // repro-guard:rank-setup-injects-failure
+}
 function rankOf(ex: Existing, trigger: Trigger, sitePath: string, found: number): BaseRank {
   const { text, arg } = setupOf(ex, trigger);
+  const setupInjectsFailure = setupInjectsFailureOf(ex, trigger);
   const namesDependency = trigger.prop !== null ? word(trigger.prop.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).test(text) : !NO_VALUE(arg); // repro-guard:rank-names-dependency
   const ownFile = norm(fileStem(ex.path)) === norm(fileStem(sitePath)); // repro-guard:rank-own-file
-  return { namesDependency, ownFile, found };
+  return { setupInjectsFailure, namesDependency, ownFile, found };
 }
-/** Pure: the base tests in the order they are tried (setup naming the dependency, then own file, then found). */
-export const byRank = (a: BaseRank, b: BaseRank): number => Number(b.namesDependency) - Number(a.namesDependency) || Number(b.ownFile) - Number(a.ownFile) || a.found - b.found;
+/** Pure: demote a setup that injects the failure, then prefer naming the dependency, own file, then found. */
+export const byRank = (a: BaseRank, b: BaseRank): number => Number(a.setupInjectsFailure) - Number(b.setupInjectsFailure) || Number(b.namesDependency) - Number(a.namesDependency) || Number(b.ownFile) - Number(a.ownFile) || a.found - b.found;
 
 /** The candidate test's three variants, from the existing test's own statements. */
 function variantsOf(ex: Existing, plan: Omit<ReproPlan, "variants">, keepParams: boolean): Record<Variant, string> {

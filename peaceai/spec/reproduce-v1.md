@@ -222,6 +222,42 @@ pure cases on recorded runs (all fail with mixed reasons, the cap, stop at the f
 runs, combined evidence, a sandbox refusal). Each new guard has a mutant caught by a case of its own condition; the
 own-runs guard has two (removed: the claimed code trusted; loosened: variants pooled across attempts).
 
+
+## Batch 33: demote a base that already injects the failing dependency
+
+A base test whose own setup already makes the target dependency throw or reject (it stubs the trigger to fail, so
+the test covers the error path) is predicted REPRO_VACUOUS: the control variant leaves that stub in place, so the
+reported code is produced with no PeaceAI injection and the control fails. Ranking demotes such a base below every
+base that does not inject the failure (`repro-guard:rank-setup-injects-failure`), then applies the Batch 32 order
+(names the dependency, own file, found). Detection is static and conservative:
+
+- the call's argument at the trigger's position (or a setup local it names) is inspected;
+- for a property trigger, that argument must be an object literal whose trigger property is a function whose body is
+  a single `throw` or `return Promise.reject(...)` (or an expression-bodied `Promise.reject(...)`);
+- for a callable parameter, the argument itself must be such a function;
+- a throw on a different property, a multi-statement body, a mock library call, or anything unsure is NOT demoted.
+
+The ranking still never decides a result: the three-variant judge, the cap of 3 and the own-runs rule are exactly as
+in Batch 32. A demoted base that somehow still passed the judge would be kept; demotion only spends attempts on bases
+more likely to reach a non-vacuous control first.
+
+### Soundness note (Batch 33)
+
+- Demotion is an ORDER only. REPRO_OK still means one attempt's own three runs passed the judge, unchanged from v1.
+- Conservatism: missing a stubbing base costs an attempt (it may come back VACUOUS); wrongly demoting a healthy base
+  also costs an attempt, never soundness. Prefer false negatives over false positives on the demotion bit.
+- A test that asserts the error path by stubbing the dependency is a real existing test of the module; using it as the
+  candidate would make the control fail for the same reason the probe passes. Demoting it is what the predicted
+  REPRO_VACUOUS says; the judge remains the authority.
+- Generated tests stay a CANDIDATE: never a grading test, never for credit.
+
+### Tests (Batch 33)
+
+LEDGER_VACUOUS (node:test, kiln / KILN_HEAT_FAILED) and SHELF_VACUOUS (vitest 4, relay / RELAY_SEND_FAILED): the
+first-found base stubs the trigger to throw or reject; the healthy base is ranked first and is REPRO_OK; the demoted
+base alone is REPRO_VACUOUS. Near miss: a throw on a method that is not the trigger is not demoted. Mutation: removing
+`rank-setup-injects-failure` lets the stubbing base rank first.
+
 ## Refusal codes
 
 `REPRO_NO_DIAGNOSIS`, `REPRO_TEST_TARGET`, `REPRO_NO_ENTRY`, `REPRO_NO_TRIGGER`, `REPRO_NO_OBSERVE`,

@@ -800,3 +800,65 @@ export const SHELF_BASES: Files = {
     "});",
   ),
 };
+
+
+/** Batch 33: a base whose own setup already makes the failing dependency throw / reject is demoted (predicted
+ *  REPRO_VACUOUS). Fresh shapes (kiln / relay); nothing from a task repo, a Peace project or a reference diff.
+ *    src/kiln.ts   the first-found test stubs `heat` to throw (error-path coverage); the second provides a working
+ *                  heater: demoted base is tried after the healthy one.
+ *    Near miss:    a test whose unrelated `cool` method throws (the trigger is `heat`) is NOT demoted. */
+export const LEDGER_VACUOUS: Files = {
+  "src/kiln.ts": lines(
+    "export async function fireKiln(heater: { heat(): Promise<number>; cool?(): Promise<void> }, opts: { idle: boolean }): Promise<{ ok: boolean; temp?: number; code?: string }> {",
+    "  if (opts.idle) return { ok: true };",
+    "  try {",
+    "    return { ok: true, temp: await heater.heat() };",
+    "  } catch {",
+    '    return { ok: false, code: "KILN_HEAT_FAILED" };',
+    "  }",
+    "}",
+  ),
+  "test/kiln.test.ts": nodeTest + 'import { fireKiln } from "../src/kiln.ts";\n' + lines(
+    'test("a kiln reports a heater that already throws", async () => {',
+    "  const heater = { heat: async () => { throw new Error(\"stub\"); } };",
+    '  assert.deepEqual(await fireKiln(heater, { idle: false }), { ok: false, code: "KILN_HEAT_FAILED" });',
+    "});",
+    'test("a kiln fires its heater", async () => {',
+    "  const heater = { heat: async () => 900 };",
+    "  assert.deepEqual(await fireKiln(heater, { idle: false }), { ok: true, temp: 900 });",
+    "});",
+    'test("a kiln whose cool throws is still heated (near miss: other method)", async () => {',
+    "  const heater = { heat: async () => 800, cool: async () => { throw new Error(\"unused\"); } };",
+    "  assert.deepEqual(await fireKiln(heater, { idle: false }), { ok: true, temp: 800 });",
+    "});",
+  ),
+};
+
+/** Batch 33 (vitest 4): src/relay.ts — the first-found test stubs `send` to reject; the healthy one is ranked first. */
+export const SHELF_VACUOUS: Files = {
+  "src/relay.ts": lines(
+    "export async function pingRelay(net: { send(msg: string): Promise<void> }, opts: { quiet: boolean }): Promise<{ ok: boolean; code?: string }> {",
+    "  if (opts.quiet) return { ok: true };",
+    "  try {",
+    '    await net.send("ping");',
+    "    return { ok: true };",
+    "  } catch {",
+    '    return { ok: false, code: "RELAY_SEND_FAILED" };',
+    "  }",
+    "}",
+  ),
+  "test/relay.test.ts": lines(
+    'import { expect, it } from "vitest";',
+    'import { pingRelay } from "../src/relay";',
+    'it("a relay reports a sender that already rejects", async () => {',
+    "  const net = { send: async () => { return Promise.reject(new Error(\"stub\")); } };",
+    '  expect(await pingRelay(net, { quiet: false })).toEqual({ ok: false, code: "RELAY_SEND_FAILED" });',
+    "});",
+    'it("a relay pings its net", async () => {',
+    "  const sent: string[] = [];",
+    "  const net = { send: async (m: string) => { sent.push(m); } };",
+    "  expect(await pingRelay(net, { quiet: false })).toEqual({ ok: true });",
+    '  expect(sent).toEqual(["ping"]);',
+    "});",
+  ),
+};

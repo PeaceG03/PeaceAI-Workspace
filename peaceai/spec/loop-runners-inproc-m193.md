@@ -88,3 +88,23 @@ needs a reach argument for the wider class, not a runner fix; this batch does no
   temperature factor) and a neighbour using only the file's own words admitted.
 - Shapes: leap years, roman numerals, a temperature conversion; none from PeaceSTOCKS, none from a dev task or a
   reference diff. No new fixture (reuses m172-real-mocha10, m173-forge-vitest4, m173-forge-jest29).
+
+## Batch 33: refuse unsupported mocha majors in the detect path
+
+The M193 mocha guards were probed on mocha 10.8.2 only (see the probe table above; 11 was not probed). Before this
+batch, an unsupported major could surface as `PeaceAI loop: mocha internals not found` when the API no longer matched
+what the guard requires. The detect path now refuses those majors with an explicit code:
+
+- `MOCHA_SUPPORTED_MAJORS = [10]` (only majors actually proven in the probe table).
+- `detectRunner` (mocha branch): reads the installed `node_modules/mocha/package.json` version when present, else the
+  declared `mocha` dependency when its major is clear (`^10.8.2`, `10.2.0`, `~10.0.0`). A clear major outside the
+  supported list is `TEST_RUNNER_UNSUPPORTED` (`m193-guard:mocha-major`). Unsure ranges (`*`, `>=9 <12`) are not
+  refused here.
+- `MOCHA_GUARD_SOURCE` (runtime): after loading mocha's `lib/`, reads `../package.json` and throws
+  `PeaceAI loop: mocha major N is not supported (M193 guards cover 10.x only)` when the installed major is not 10,
+  instead of relying on the internals check.
+
+Soundness note: this is a fail-closed version gate over the probed major, not a proof that every 10.x build is safe.
+A new major needs its own probe table row and an update to `MOCHA_SUPPORTED_MAJORS` before it is admitted. Mutation:
+deleting `m193-guard:mocha-major` admits a declared or installed mocha 11 near-miss.
+
