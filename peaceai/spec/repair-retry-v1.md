@@ -219,10 +219,11 @@ Code: `fitConstant`, `applyConstant`, `fitBranch`, `applyBranch`, `litText`, `li
   body, head unchanged, size bound, no new dangerous word, no global write, no foreign word). No new edit-class tag. The
   gate is defence in depth. The verdict's soundness is verifier-v1's (M202, M207).
 - Order is pinned and documented (single, constant, pair, branch); attempts never chain past the cap of 3.
-- Residuals closed by M210 (below) for wrong literal arguments to a same-file select helper; other shared-logic helpers
-  and non-select callees are still not synthesised; string constant replacements that introduce a new word are refused
-  by the class (so only word-free replacements, or words already in the file, admit); still EXPERIMENTAL, opt-in, not
-  the default and not for credit.
+- Residuals closed by M210 (below) for wrong literal arguments to a same-file select helper, and in part by M211 for
+  catalog-transform projection helpers; arbitrary non-select bodies, non-literal wrong args, and other shared-logic
+  helpers are still not synthesised; string constant replacements that introduce a new word are refused by the class
+  (so only word-free replacements, or words already in the file, admit); still EXPERIMENTAL, opt-in, not the default and
+  not for credit.
 
 ## M210 (batch 46): wrong-argument call-site fix
 
@@ -273,6 +274,66 @@ Code: `selectHelpers`, `wrongArgCalls`, `fitWrongArg`, `applyWrongArg` in `peace
   body, head unchanged, size bound, no new dangerous word, no global write, no foreign word). No new edit-class tag. The
   gate is defence in depth. The verdict's soundness is verifier-v1's (M202, M207).
 - Order is pinned and documented (single, constant, pair, branch, wrong-arg); attempts never chain past the cap of 3.
-- Residuals: non-select callees, wrong arguments that are not literals, and other shared-logic helpers are still not
-  synthesised; string constant replacements that introduce a new word are still refused by the class; still EXPERIMENTAL,
-  opt-in, not the default and not for credit.
+- Residuals closed in part by M211 (below) for non-select callees whose body is exactly one closed-catalog unary
+  transform of a parameter; wrong arguments that are not literals, arbitrary non-select bodies, and other shared-logic
+  helpers are still not synthesised; string constant replacements that introduce a new word are still refused by the
+  class; still EXPERIMENTAL, opt-in, not the default and not for credit.
+
+## M211 (batch 47): wrong-argument for catalog-transform helpers
+
+Code: `argHelpers`, `matchParamTransform` / `catalogTransform`, `predictArg` (generalising M210's select prediction) in
+`peaceai/lib/repair-retry.ts`. Tests: `peaceai/test/m211-retry-argxform.test.ts`.
+
+- **When.** Same slot as M210: attempt k >= 2, one run's evidence, only after single / constant / pair / branch refuse.
+  `fitWrongArg` now also admits calls to a same-file **projection helper** whose body is exactly one closed-catalog
+  unary transform of a parameter (not only `return <param>`).
+- **What counts as a projection helper.** A top-level same-file `function h(...)` (export allowed; no other modifier, no
+  generator) whose body is exactly one `return` of either (a) one of its parameters (M210 select / identity), or (b) a
+  RETRY_TRANSFORMS wrap of one parameter: `Math.round|floor|ceil|trunc(param)`, `(param).trim|toLowerCase|toUpperCase()`,
+  or `!(param)`. No other statements, no other callees, no free identifiers. The model predicts a call's return by
+  applying that transform's pure `f` to the value at that parameter position, without running candidate code.
+- **What.** Same call-site edit as M210: replace the returned-position number/string/boolean literal with one of the
+  outer function's own parameters so every case of the run fits, the current call's prediction matches the observed
+  returns, and at least one case's prediction changes. Bound still `rr-in-function` (no EDIT_SCOPE_POLICY widen).
+- **Why this and not arbitrary non-select.** An arbitrary helper body has no closed pure predictor: fitting it would
+  require executing the candidate (forbidden for search) or inventing semantics. Non-literal wrong arguments are left
+  residual (higher risk: the edit is no longer "evidence uniquely determines which literal to replace with a param").
+  Arrow / const select forms are left residual this batch (declaration-form only; same model as M210, deferred).
+- Unchanged: oop-v1 only, cap 3, credit only from the attempt's own verifier-v1 verdict, order (single, constant, pair,
+  branch, wrong-arg), default mode, EDIT_SCOPE_POLICY.
+
+### Evidence (m211)
+
+- Two self-made fixtures (nothing from PeaceSTOCKS, the dev tasks, the scanner or reference diffs): a numeric `scale` /
+  `units` floor helper (literal `0` should have been the outer parameter) and a string `norm` / `key` lower helper
+  (literal `"X"` should have been the outer parameter). Attempt 1 (repair-v2) fails; no earlier form fits; attempt 2
+  replaces the call-site literal with the parameter and passes on its own oop-v1 verdict. Controls: repair-v2 alone
+  with 3 attempts ends without PASS in the default mode and under oop-v1. M210 select fixtures still admit via the same
+  path (regression).
+- Refused near misses: an arbitrary non-select body (`return a + 1`, `Math.abs`, unknown callee); a helper with a
+  non-export modifier; no literal at the returned position; evidence the projection model disagrees with; a foreign /
+  stale span; a new-word class refuse; earlier form (constant) still wins over wrong-arg.
+- Each `m211-guard` line has a case of its own that fails on a mutant with that line deleted.
+
+### Soundness note (M211)
+
+- The call-site edit is a search output, not evidence. Whether it is right is decided only by the attempt's own
+  verifier-v1 verdict (verifier uid, out of process). The projection model is a syntactic restriction over the closed
+  RETRY_TRANSFORMS catalog (plus identity) used only to predict from literal evidence without running the candidate; a
+  helper whose body is not exactly one catalog wrap of a parameter is refused, and a model that disagrees with the
+  observed returns is refused. Fitting the visible cases of one run is not generalisation.
+- The form does not widen what an edit may do: it stays inside the frozen rr-in-function-v1 class. No new edit-class
+  tag. The gate is defence in depth. The verdict's soundness is verifier-v1's (M202, M207).
+- Order is pinned and documented (single, constant, pair, branch, wrong-arg); attempts never chain past the cap of 3.
+- Residuals: wrong arguments that are not literals; arbitrary non-select helper bodies (no closed pure model); other
+  shared-logic helpers; arrow/const declaration forms of the same projection shape; string constant replacements that
+  introduce a new word (class refuse); still EXPERIMENTAL, opt-in, not the default and not for credit.
+
+### Terminality (arbitrary non-select / non-literal)
+
+- **Arbitrary non-select body:** without a closed pure predictor, the search cannot uniquely determine the call's
+  return from arguments without executing candidate code. Execution is out of scope for the proposer (predictions are
+  never a verdict; verifier-v1 alone runs the candidate). Therefore this residual is closed only for the catalog-
+  transform subset above; the rest stays refused.
+- **Non-literal wrong args:** replacing a non-literal argument is not "evidence uniquely determines the literal"; it
+  needs a second model of the current expression. Left residual rather than widen.
