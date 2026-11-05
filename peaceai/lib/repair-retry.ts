@@ -160,6 +160,7 @@ export function retrySourceClass(orig: string, next: string): "rr-in-function" |
     const topNames = new Set<string>();
     for (const s of a) { if ((ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s)) && s.name) topNames.add(s.name.text); if (ts.isVariableStatement(s)) for (const d of s.declarationList.declarations) if (ts.isIdentifier(d.name)) topNames.add(d.name.text); }
     if (topNames.has(h.name.text)) return "rr-helper-name"; // m203-guard:class-helper-name
+    if (counts(orig).has(h.name.text)) return "rr-helper-shadow"; // m208-guard:class-helper-shadow
     helper = h;
     bb = [...b.slice(0, pick), ...b.slice(pick + 1)];
   }
@@ -290,6 +291,63 @@ export function applyTransform(src: string, fn: string, t: Transform): string | 
   return out;
 }
 
+// ---- M208 (batch 44): a bounded private helper, when the fix is logic shared by every return of the function
+
+/** The pinned transform kinds, by the TS type of the value they read and write (for the helper's signature). */
+const KIND: Readonly<Record<string, string>> = Object.freeze({ round: "number", floor: "number", ceil: "number", trunc: "number", trim: "string", lower: "string", upper: "string", not: "boolean" });
+/**
+ * Which ordered pair of two different pinned transforms (first t1, then t2) maps EVERY case of this one run on the
+ * function to its expected value, when no single transform does. Same rules as fitTransform: one run, at least one
+ * failing case, no error, failing cases on one function, value expectations only. A prediction, never a verdict.
+ */
+export function fitPair(ev: RetryEvidence): { pair: readonly [Transform, Transform]; fn: string } | { refuse: string } {
+  const one = fitTransform(ev);
+  if (!("refuse" in one)) return { refuse: "single-fits" }; // m208-guard:pair-single-first
+  if (one.refuse !== "no-fit") return { refuse: one.refuse }; // m208-guard:pair-one-run
+  const fn = ev.cases.find((c) => !c.pass)!.fn;
+  for (const t1 of RETRY_TRANSFORMS) for (const t2 of RETRY_TRANSFORMS) {
+    if (t1 === t2 || KIND[t1.name] !== KIND[t2.name]) continue;
+    let fits = true;
+    for (const c of ev.cases) {
+      if (c.fn !== fn) continue;
+      const from = c.pass ? { ok: true as const, value: c.expect.value } : c.got;
+      if (!from || !from.ok || !c.expect.ok) { fits = false; break; }
+      const a = t1.f(from.value);
+      const b = a.ok ? t2.f(a.v) : a;
+      if (!b.ok || !valuesEqual(b.v, c.expect.value)) { fits = false; break; } // m208-guard:pair-all
+    }
+    if (fits) return { pair: [t1, t2] as const, fn };
+  }
+  return { refuse: "no-fit" };
+}
+/** A helper name that no word of `src` already uses (so it shadows nothing, top-level or inner). */
+export function freshHelperName(src: string): string {
+  const used = counts(src);
+  let n = "rrShared", k = 1;
+  while (used.has(n)) n = `rrShared${++k}`; // m208-guard:helper-fresh
+  return n;
+}
+/**
+ * `src` with ONE added private helper `function rrShared(v: T): T { return t2(t1(v)); }` placed right after function
+ * `fn`, and every value `fn` returns (its own returns only) passed through it. Emitted only if the result is inside
+ * rr-in-function-v1 as class "rr-helper" (else null): the proposer never offers an edit its own gate would refuse.
+ */
+export function applyHelper(src: string, fn: string, pair: readonly [Transform, Transform]): string | null {
+  const sf = parse(src);
+  if (!sf) return null;
+  let shape: FnShape | null = null;
+  for (const st of sf.statements) { const s = fnShape(st, sf); if (s && s.name === fn) { shape = s; break; } }
+  if (!shape) return null;
+  const name = freshHelperName(src), ty = KIND[pair[0].name]!;
+  const call: Transform = { name: "helper", wrap: (e: string) => `${name}(${e})`, f: () => ({ ok: false }) };
+  const wrapped = applyTransform(src, fn, call);
+  if (wrapped === null) return null;
+  const end = shape.node.end + (wrapped.length - src.length); // the function grew by the wraps; it ends there now
+  const out = wrapped.slice(0, end) + `\n\nfunction ${name}(v: ${ty}): ${ty} {\n  return ${pair[1].wrap(pair[0].wrap("v"))};\n}` + wrapped.slice(end);
+  if (retrySourceClass(src, out) !== "rr-helper") return null; // m208-guard:helper-class
+  return out;
+}
+
 /** ProposeInput as the loop gives it under repair-retry-v1: each feedback entry carries its own run's evidence. */
 export type RetryFeedback = Feedback & { evidence?: RetryEvidence };
 export type RetryProposeInput = ProposeInput & { feedback: readonly RetryFeedback[]; retryBaseline?: RetryEvidence | null };
@@ -328,17 +386,22 @@ export function retryProposer(base: Proposer): Proposer & { readonly transforms:
       for (const r of runs) {
         if (!r.ev) continue;
         const fit = fitTransform(r.ev);
-        if ("refuse" in fit) continue;
         const src = r.code(r.ev.module);
         if (src === undefined) continue;
-        const next = applyTransform(src, fit.fn, fit.transform);
+        let next: string | null, what: string;
+        if (!("refuse" in fit)) { next = applyTransform(src, fit.fn, fit.transform); what = fit.transform.name; }
+        else {
+          const pf = fitPair(r.ev); // M208: no single transform fits -> one bounded private helper, if a pair fits
+          if ("refuse" in pf) continue;
+          next = applyHelper(src, pf.fn, pf.pair); what = `helper(${pf.pair[0].name}+${pf.pair[1].name})`;
+        }
         if (next === null || next === src) continue;
         const edits = [{ path: r.ev.module, content: next }];
         const key = retryRunLabel(0, edits);
         if (tried.has(key)) continue;
         tried.add(key);
         mine.set(input.attempt, edits);
-        transforms.push(`${input.attempt}:${fit.transform.name}@${r.ev.run.split(":")[0]}`);
+        transforms.push(`${input.attempt}:${what}@${r.ev.run.split(":")[0]}`);
         return { edits };
       }
       return askBase();
