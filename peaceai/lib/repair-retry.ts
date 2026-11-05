@@ -147,18 +147,23 @@ export function retrySourceClass(orig: string, next: string): "rr-in-function" |
   if (b.length === a.length + 1) {
     // the one added statement: the first index whose removal leaves at most one statement differing from the original
     const aText = new Set(a.map((s) => text(s, sa)));
-    let pick = -1;
-    for (let k = 0; k < b.length && pick < 0; k++) {
+    const topNames = new Set<string>();
+    for (const s of a) { if ((ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s)) && s.name) topNames.add(s.name.text); if (ts.isVariableStatement(s)) for (const d of s.declarationList.declarations) if (ts.isIdentifier(d.name)) topNames.add(d.name.text); }
+    const valid: number[] = [];
+    for (let k = 0; k < b.length; k++) {
       if (aText.has(text(b[k]!, sb))) continue;
       const rest = [...b.slice(0, k), ...b.slice(k + 1)];
-      if (rest.filter((s, i) => text(s, sb) !== text(a[i]!, sa)).length <= 1) pick = k;
+      if (rest.filter((s, i) => text(s, sb) !== text(a[i]!, sa)).length <= 1) valid.push(k);
     }
-    if (pick < 0) return "rr-top-level-count";
+    if (valid.length === 0) return "rr-top-level-count";
+    // M208: when the changed function and the helper are adjacent either placement is a valid "added" statement; the
+    // added one is the function declaration with a NEW top-level name (the changed function keeps its existing name)
+    let pick = valid[0]!;
+    const fresh = valid.find((k) => { const x = b[k]!; return ts.isFunctionDeclaration(x) && !!x.name && !topNames.has(x.name.text); });
+    if (fresh !== undefined) pick = fresh; // m208-guard:class-helper-pick
     const h = b[pick]!;
     if (!ts.isFunctionDeclaration(h) || !h.name || !h.body) return "rr-helper-shape"; // m203-guard:class-helper-fn
     if ((ts.getModifiers(h) ?? []).length || (ts.canHaveDecorators(h) && (ts.getDecorators(h)?.length ?? 0) > 0) || h.asteriskToken) return "rr-helper-modifier"; // m203-guard:class-helper-private
-    const topNames = new Set<string>();
-    for (const s of a) { if ((ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s)) && s.name) topNames.add(s.name.text); if (ts.isVariableStatement(s)) for (const d of s.declarationList.declarations) if (ts.isIdentifier(d.name)) topNames.add(d.name.text); }
     if (topNames.has(h.name.text)) return "rr-helper-name"; // m203-guard:class-helper-name
     if (counts(orig).has(h.name.text)) return "rr-helper-shadow"; // m208-guard:class-helper-shadow
     helper = h;

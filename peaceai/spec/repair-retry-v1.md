@@ -109,8 +109,8 @@ one private helper. It is narrower in one: one function (and one file) per attem
 
 ## Not done / residuals
 
-- The proposer never writes a helper. The class admits one, as an opt-in for a later proposer, and it is tested only by
-  pure class cases.
+- ~~The proposer never writes a helper.~~ Closed by M208 (below): it writes one bounded private helper when an ordered
+  pair of pinned transforms fits and no single one does. Helpers for other kinds of shared logic are still not written.
 - Transforms wrap returned values only. Wrong arguments, wrong branches or constants are left to repair-v2.
 - Dev split (informational, no credit, no tuning):
   - Under oop-v1, 11 of the 12 public dev tasks' team tests yield no data-only cases: 7 OOP_CASES_EMPTY and 4
@@ -123,3 +123,49 @@ one private helper. It is narrower in one: one function (and one file) per attem
   plan-only-v4 run's 12 records are appended to runs.jsonl (add-only, M144); the v5 run's records were not kept.
 - Controls in m203: on each admit shape, repair-v2 alone with the same 3 attempts does not pass, in the default mode or
   under oop-v1. The admit pass is the retry fit, judged by its own run.
+
+## M208 (batch 44): a bounded private helper
+
+Code: `fitPair`, `freshHelperName`, `applyHelper` in `peaceai/lib/repair-retry.ts`. Tests: `peaceai/test/m208-retry-helper.test.ts`.
+
+- **When.** For an attempt k >= 2, on ONE run's evidence (same order as before: the last attempt's own run, else the
+  baseline), only when `fitTransform` refuses `no-fit`. `fitPair` then looks for an ordered pair of two different
+  pinned transforms of the same kind (number / string / boolean), first t1 then t2, that maps EVERY case of that run on
+  the function to its expected value, with the same rules as the single fit (one run, at least one failing case, no
+  error, failing cases on one function, value expectations only). A single fit always wins (`single-fits`).
+- **What.** `applyHelper` routes every value the function returns (its own returns only) through ONE added top-level
+  `function rrShared(v: T): T { return t2(t1(v)); }`, placed right after the function. The name is the first of
+  `rrShared`, `rrShared2`, ... that no word of the file already uses, so it shadows nothing, top-level or inner.
+- **Bound.** The edit is offered only if `retrySourceClass` admits it as `rr-helper` (the frozen rr-in-function-v1
+  class: one file, one function body changed with its head unchanged, one helper with no modifier, at most 600 added
+  characters, no new dangerous word or global write, no foreign word). Otherwise nothing is offered and the base
+  proposer is asked, as before.
+- **Class fixes (still rr-in-function-v1, narrower or equal, never wider):**
+  - `class-helper-pick`: with the helper right after the changed function, either statement could be read as the
+    added one. The added one is now the function declaration with a NEW top-level name. Before, a helper after the
+    function was misread and refused (`rr-helper-modifier`), which is why no helper could ever be admitted there.
+  - `class-helper-shadow`: a helper whose name is any word of the original file (a parameter, an inner local, a method
+    name) is refused `rr-helper-shadow`. Before, only top-level names were refused.
+- Unchanged: oop-v1 only (`RETRY_INPROC_REFUSED` otherwise), `RETRY_MAX_ATTEMPTS = 3`, credit only from the attempt's own
+  verifier-v1 verdict written by the verifier uid (`retryCreditProblem`), EDIT_SCOPE_POLICY and the default mode.
+
+### Evidence (m208)
+
+- Two self-made fixtures (a tag key, a region code; nothing from PeaceSTOCKS, the dev tasks, the scanner or reference
+  diffs): attempt 1 (repair-v2) fails, no single transform fits, attempt 2 adds the helper (trim+lower, trim+upper) and
+  passes on its own oop-v1 verdict. Controls: repair-v2 alone with 3 attempts ends ATTEMPT_LIMIT in the default mode
+  and under oop-v1.
+- Refused end to end as EDIT_SCOPE before the attempt runs: a helper over the 600-character bound, an exported helper,
+  a helper in another (new) file, a helper shadowing a name of the file. The cap: a helper fix offered at attempt 4 when
+  10 are asked never runs (ATTEMPT_LIMIT at 3).
+- Each `m208-guard` line has a case of its own that fails on a mutant with that line deleted.
+
+### Soundness note (M208)
+
+- The helper is a search output, not evidence. Whether it is right is decided only by the attempt's own verifier-v1
+  verdict (verifier uid, out of process). The pair fit predicts from one run's literal cases and can be wrong elsewhere.
+- The helper cannot widen what an edit may do: it is code inside the same frozen class (no modifier, no export, no new
+  dangerous word, no global write, the size bound), and the class change only narrows it (shadowing) or reads the
+  existing rule correctly (pick). The gate is defence in depth. The verdict's soundness is verifier-v1's (M202, M207).
+- Residuals: only transform pairs are synthesised (no branches, constants or argument fixes); a pair is tried only when
+  no single transform fits; still EXPERIMENTAL, opt-in, not the default and not for credit.
