@@ -215,9 +215,15 @@ let ctxShared: { m151: ReturnType<typeof setup151>; scratch: string } | null = n
 const ctx = () => { if (!ctxShared) { const m151 = setup151(); ctxShared = { m151, scratch: mkdtempSync(join(base, "e2e-")) }; } return ctxShared; };
 after(() => { if (ctxShared) teardown151(ctxShared.m151); });
 let nTask = 0;
+const REQUESTS: Record<string, string> = {
+  "src/share.ts": "sharePercent returns 28.999999999999996 for 29 of 100; it should give the whole percentage 29.",
+  "src/mid.ts": "midIndex returns 2.5 for the span 0 to 5; it should give the index 2.",
+  "src/line.ts": "firstLine keeps a trailing carriage return or space on CRLF text; it should give the title alone.",
+};
 function go(l: L, file: string, src: string, team: string, proposer: unknown, extra: Record<string, unknown> = {}, max = 3) {
   const c = ctx();
-  return l.runLoopTask(e2eTask(c, `m203-${nTask++}`, { [file]: src }, team) as never, "public", "a".repeat(64),
+  const task = e2eTask(c, `m203-${nTask++}`, { [file]: src }, team);
+  return l.runLoopTask({ ...task, request: REQUESTS[file] ?? task.request } as never, "public", "a".repeat(64),
     { ...opts174(c, proposer as never, max), env: { ...c.m151.env, [STAGE2_CAND_ENV]: M203_CAND }, verdictMode: "oop-v1", repairRetry: "repair-retry-v1", ...extra } as never);
 }
 const rv2 = () => RR.retryProposer(repairProposer({ v2: true }) as never);
@@ -234,9 +240,11 @@ for (const [label, file, src, team] of [["percentage", "src/share.ts", SHARE, SH
     assert.equal(r.row.repairRetry, "repair-retry-v1");
     assert.equal(r.row.proposer, "rr1-repair-v2");
     assert.ok(p.transforms.length >= 1, "the passing attempt was evidence-driven");
+    console.log(`M203-ADMIT ${label} ${JSON.stringify({ ...summary(r), transforms: p.transforms })}`);
     // control: the default (no repairRetry, inproc) is not changed by this skill: one repair-v2 attempt, no PASS
     const d = go(LoopReal, file, src, team, repairProposer({ v2: true }), { verdictMode: undefined, repairRetry: undefined }, 1);
     assert.notEqual(d.row.code, "PASS");
+    console.log(`M203-DEFAULT ${label} ${JSON.stringify(summary(d))}`);
     assert.equal("repairRetry" in d.row, false);
   });
 }

@@ -959,7 +959,8 @@ export function loopSha256(root: string = ROOT): string {
 /** Runs the loop on one task. Never throws: every outcome is a row with a fixed code. */
 export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training" | "deps" | "depsCache" | "depsDir" | "makeProposer" | "plannerFlag" | "workBase" | "privateRoots" | "loadCaps" | "verdictMode" | "repairRetry">> & { training: Set<string>; deps?: DepsOptions; depsCache?: DepsCache; planner?: PlannerName; workBase?: string; privateRoots?: string[]; loadCaps?: LoadDiagCaps; verdictMode?: VerdictMode; repairRetry?: RepairRetryMode }): LoopResult {
   const rr = o.repairRetry !== undefined; // M203: repair-retry-v1 asked for (refused below unless oop-v1)
-  const maxAttempts = Math.min(MAX_ATTEMPTS, Math.max(1, Math.floor(o.maxAttempts)), rr ? RETRY_MAX_ATTEMPTS : MAX_ATTEMPTS); // m203-guard:loop-cap
+  let maxAttempts = Math.min(MAX_ATTEMPTS, Math.max(1, Math.floor(o.maxAttempts)));
+  if (rr) maxAttempts = Math.min(maxAttempts, RETRY_MAX_ATTEMPTS); // m203-guard:loop-cap
   const verdictMode: VerdictMode = selectVerdictMode(o.verdictMode) ?? DEFAULT_VERDICT_MODE; // m202-guard:mode-select
   const workspace = (() => { try { return git(o.root, "rev-parse", "HEAD"); } catch { return "0".repeat(40); } })();
   const names = set === "public" ? { repo: task.repo, commit: task.commit } : {};
