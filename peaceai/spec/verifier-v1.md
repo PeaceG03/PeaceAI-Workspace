@@ -2,8 +2,9 @@
 
 Status: EXPERIMENTAL, NOT DEFAULT, NOT FOR CREDIT. Code: `peaceai/lib/verifier.ts`, harness
 `peaceai/lib/verifier-harness.cjs`, judge `peaceai/lib/verifier-judge.cjs` (M204), CLI `peaceai/bin/verifier-v1.ts`,
-tests `peaceai/test/m202-verifier.test.ts`, `peaceai/test/m204-verifier-cases.test.ts`. Batch 40 (M204) changes are
-in the "M204" section below; where it and the M202 text differ, M204 wins.
+tests `peaceai/test/m202-verifier.test.ts`, `peaceai/test/m204-verifier-cases.test.ts`,
+`peaceai/test/m205-verifier-forms.test.ts`. Batch 40 (M204) / Batch 41 (M205) changes are in the sections below;
+where they and the M202 text differ, the later section wins.
 Loop opt-in: `LoopOptions.verdictMode = "oop-v1"` (or `selectVerdictMode("oop-v1")`). Default remains `inproc`.
 `EDIT_SCOPE_POLICY`, `selfpropose.ts`, `plandefault.ts` and the v4 digest are unchanged.
 
@@ -205,3 +206,48 @@ extracted 0. Batch 39 extractor on the same files: 1 admitted (unjs/destr, 1 cas
 - **Conservative fails:** toEqual requires exactness; thrown non-objects and truncated messages are not credited.
 - **Unreachable backstops:** the `uncounted` seen != extracted check and the other-assert fallthrough are untagged
   (deleting either is unobservable by construction).
+
+## M205 (batch 41): more general admitted test shapes (still fail-closed)
+
+### Soundness note
+
+The M204 claim still holds: **when verifier-v1 credits a file, every assertion in it was extracted as a case, each case
+means exactly what the assertion means on a JSON value, and each case held.** M205 only adds shapes the extractor can
+reproduce *exactly* by static inspection. Anything not exactly reproducible stays refused by name. The extractor never
+evaluates test code (no `eval`, no running the file, no executing callbacks).
+
+New forms, each with two or more admitted shapes unrelated to PeaceSTOCKS / the public-dev tasks / reference diffs, a
+refused near miss for every condition, and tagged guards whose mutants are caught by a case of that guard:
+
+| form | what is admitted | refused near misses |
+|---|---|---|
+| **describe / suite nesting** | Pure grouping. Nested `describe` / `suite` with string titles and zero-param callbacks. Suite names concatenate into case ids (`outer/inner/cN:fn`). | `describe.each`, suite callbacks with params, generators |
+| **const-of-JSON-literal** | `const name = <JSON lit>` at top level, in a suite, or in a test body. Identifiers (and `obj.prop` of a bound object) resolve to that value in arguments / expectations. | `let`/`var`, shadowing, reassignment (`=`, `+=`, `++`), non-literal initializers, destructuring |
+| **test.each / it.each** | `test.each(<array lit>)(<string>, (params) => ...)` where the table is an array of equal-length arrays of JSON lits, an array of JSON primitives, or an array of plain JSON objects (one object param or a simple object-binding pattern). One case per row; params bind as consts. | non-literal table (including a const binding of the table), tagged-template `each`, `test.skip.each` / `only.each`, arity mismatch, empty table, param shadowing an outer const, `describe.each` |
+| **unused imports** | A non-lib / second relative import that no extracted case uses is ignored. The module under test is the single relative module that appears in extracted calls. | a *used* package import, two *used* relative modules (`multi-module`), side-effect imports |
+
+`assertionsSeen` counts AST assertion calls once; `test.each` expands one AST assertion into N cases, so the fail-closed
+check compares covered AST assertions (not expanded case count) to `assertionsSeen`. Mixed / unsupported assertions still
+refuse the whole file with `extracted = 0`. The Batch 40 silent-skip regression still refuses.
+
+### Guards (m205-guard; m205 deletes each line in a mutant and runs that guard's own case)
+
+`const-resolve`, `const-prop`, `const-bind`, `const-in-test`, `const-kind`, `const-shape`, `const-shadow`,
+`const-reassign`, `suite-nest`, `suite-id`, `each-table`, `each-params`, `each-shape`, `each-shadow`, `each-expand`,
+`unused-import`.
+
+### Dev census (informational; same 13 public-dev team test files; no tuning)
+
+Re-run after the code is final. M204 baseline: 0 admitted / 0 extracted. M205 numbers are recorded in the PR body; any
+gain is incidental to the exact forms above, not a target.
+
+### M205 residuals (honest)
+
+- **Const tables for each.** `const rows = [[1]]; test.each(rows)(...)` is refused: the table argument must be a
+  literal. Resolving a const into the table would be sound for a pure JSON const, but is left refused so the admitted
+  form stays the common inline one.
+- **describe.each** is not admitted (suite expansion).
+- **Tagged-template `test.each\`...\``** is not admitted.
+- **Property access** on a const object is admitted (`row.s`); computed keys and methods are not.
+- **Unused import side effects** of a named/default import are not reproduced (same class of residual as type-only
+  imports already were). Side-effect-only `import "./x"` stays refused.

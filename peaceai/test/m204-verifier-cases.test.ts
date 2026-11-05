@@ -187,7 +187,7 @@ const NEAR: readonly [string, string, string, string][] = [
   ["legacy assert.deepEqual", AT_("  assert.deepEqual(f(1), [1]);", "assert"), "OOP_CASES_UNSUPPORTED_ASSERT", "deepEqual:loose"],
   // test forms
   ["test.skip", VT_("") + `test.skip("s", () => expect(f(1)).toBe(1));\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-modifier:skip"],
-  ["test.each", VT_("") + `test.each([[1]])("e", (x) => expect(f(x)).toBe(1));\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each"],
+  ["test.each non-literal table", VT_("") + `const rows = [[1]];\ntest.each(rows)("e", (x) => expect(f(x)).toBe(1));\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each"],
   ["hook", VT_("", "import { beforeEach } from \"vitest\";\n") + `beforeEach(() => {});\n`, "OOP_CASES_UNSUPPORTED_TEST", "hook:beforeEach"],
   ["test params", `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { f } from "../src/m.js";\ntest("t", (t) => { assert.strictEqual(f(1), 1); });\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-params"],
   ["test options", `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { f } from "../src/m.js";\ntest("t", { timeout: 5 }, () => { assert.strictEqual(f(1), 1); });\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-shape"],
@@ -196,10 +196,10 @@ const NEAR: readonly [string, string, string, string][] = [
   ["mock call", VT_("  vi.useFakeTimers();", "import { vi } from \"vitest\";\n"), "OOP_CASES_UNSUPPORTED_TEST", "stmt:expr"],
   ["top-level code", VT_("") + "if (process.env.X) process.exit(1);\n", "OOP_CASES_UNSUPPORTED_TEST", "top-level:if"],
   ["top-level let", VT_("") + "let y = 2;\n", "OOP_CASES_UNSUPPORTED_TEST", "top-level:var"],
-  ["other import", VT_("", "import { other } from \"lodash\";\n"), "OOP_CASES_UNSUPPORTED_TEST", "import-other"],
+  ["used other import", VT_("  expect(other(1)).toBe(1);", "import { other } from \"lodash\";\n"), "OOP_CASES_NONLITERAL", "expect-nonliteral"],
   ["side-effect import", VT_("", "import \"./setup.js\";\n"), "OOP_CASES_UNSUPPORTED_TEST", "side-effect-import"],
   ["two target modules", VT_("  expect(g(1)).toBe(1);", "import { g } from \"../src/n.js\";\n"), "OOP_CASES_UNSUPPORTED_TEST", "multi-module"],
-  ["unused second relative import", VT_("", "import { h } from \"./helpers.js\";\n"), "OOP_CASES_UNSUPPORTED_TEST", "import-other-relative"],
+  ["used helper as a bare call", VT_("  h(1);", "import { h } from \"./helpers.js\";\n"), "OOP_CASES_UNSUPPORTED_TEST", "stmt:expr"],
   ["no assertion", VT_("") + `test("empty", () => {});\n`, "OOP_CASES_NO_ASSERT", "test"],
   // literals / calls
   ["non-literal argument", VT_("  expect(f(Date.now())).toBe(1);"), "OOP_CASES_NONLITERAL", "expect-nonliteral"],
