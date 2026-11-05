@@ -238,8 +238,10 @@ refuse the whole file with `extracted = 0`. The Batch 40 silent-skip regression 
 
 ### Dev census (informational; same 13 public-dev team test files; no tuning)
 
-Re-run after the code is final. M204 baseline: 0 admitted / 0 extracted. M205 numbers are recorded in the PR body; any
-gain is incidental to the exact forms above, not a target.
+M204 baseline: 0 admitted / 0 extracted (380 assertions seen, 11 supported-form). M205 re-run (no tuning): still 0
+admitted / 0 extracted (380 seen, 11 supported). First refusals moved off `import-other` for several files (unused
+imports now ignored) onto later blockers (`stmt:var`, unequal-length `test.each` tables, `toMatchObject`, suite
+loops). The exact forms above do not yet cover these team files; that is expected and not a target.
 
 ### M205 residuals (honest)
 
