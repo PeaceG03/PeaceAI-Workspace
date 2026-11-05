@@ -51,11 +51,11 @@ function survivors(dir: string): number[] {
 const PORT = "export function defaultPort(): number {\n  return 8080;\n}\n";
 const PORT_TEAM = 'import assert from "node:assert/strict";\nimport { defaultPort } from "../src/port.ts";\n\ntest("web default", () => assert.equal(defaultPort(), 3000));\ntest("same port again", () => assert.equal(defaultPort(), 3000));\n';
 const MARK = 'export function blankMark(): string {\n  return "?";\n}\n';
-const MARK_TEAM = 'import assert from "node:assert/strict";\nimport { blankMark } from "../src/mark.ts";\n\ntest("empty cell", () => assert.equal(blankMark(), "n/a"));\ntest("placeholder", () => assert.equal(blankMark(), "n/a"));\n';
+const MARK_TEAM = 'import assert from "node:assert/strict";\nimport { blankMark } from "../src/mark.ts";\n\ntest("empty cell", () => assert.equal(blankMark(), ""));\ntest("placeholder", () => assert.equal(blankMark(), ""));\n';
 const TIDY = "export function tidy(v: unknown): unknown {\n  return v;\n}\n";
 const TIDY_TEAM = 'import assert from "node:assert/strict";\nimport { tidy } from "../src/tidy.ts";\n\ntest("trim spaces", () => assert.equal(tidy("  ok "), "ok"));\ntest("trim one", () => assert.equal(tidy(" x"), "x"));\ntest("floor high", () => assert.equal(tidy(2.9), 2));\ntest("floor low", () => assert.equal(tidy(3.1), 3));\n';
 const BAND = "export function band(n: number): number {\n  return n;\n}\n";
-const BAND_TEAM = 'import assert from "node:assert/strict";\nimport { band } from "../src/band.ts";\n\ntest("above", () => assert.equal(band(3.7), 4));\ntest("at hinge", () => assert.equal(band(2), 2));\ntest("below", () => assert.equal(band(1.2), 1));\n';
+const BAND_TEAM = 'import assert from "node:assert/strict";\nimport { band } from "../src/band.ts";\n\ntest("above", () => assert.equal(band(3.2), 4));\ntest("at hinge", () => assert.equal(band(2), 2));\ntest("below", () => assert.equal(band(1.8), 1));\n';
 
 const PORT_FIX = "export function defaultPort(): number {\n  return 3000;\n}\n";
 const MARK_FIX = 'export function blankMark(): string {\n  return "";\n}\n';
@@ -275,7 +275,12 @@ test("M209 near misses (pure): two literals, three-way, two-arg need, foreign li
   ], "src/band.ts");
   // Foreign lit 10 must never appear; only args' literals are tried:
   const f = RR.fitBranch(only, BAND);
-  if (!("refuse" in f) && f.pred.kind !== "typeof") assert.ok([3.2, 1.8].some((x) => Object.is(x, f.pred.lit) || x === f.pred.lit), JSON.stringify(f.pred));
+  if (!("refuse" in f)) {
+    const pred = f.pred;
+    if (pred.kind === "eq" || pred.kind === "lt" || pred.kind === "gt") {
+      assert.ok([3.2, 1.8].some((x) => Object.is(x, pred.lit) || x === pred.lit), JSON.stringify(pred));
+    }
+  }
   // over the size bound (constant path uses class; branch apply null on huge)
   const many = "export function tidy(v: unknown): unknown {\n" + Array.from({ length: 50 }, (_, i) => `  if (v === ${i}) return v;\n`).join("") + "  return v;\n}\n";
   const bf = RR.fitBranch(tidyEv(), TIDY);
@@ -290,6 +295,24 @@ const vOk = cand !== null && cand.ok && V.verifierUid({ [V.VERIFIER_UID_ENV]: VE
 const skipE2e = !vOk && "needs M209_CAND / M146_CAND = peaceai-cand3 and PEACEAI_VERIFIER_UID = peaceai-verify";
 type Edits = { path: string; content: string }[];
 const scripted = (name: string, seq: (Edits | null)[]) => ({ name, next: (i: { attempt: number }) => { const e = seq[i.attempt - 1]; return e ? { edits: e } : { refuse: "NO_MORE_EDITS" as const }; } });
+/** Attempt 1 must run and fail so attempt 2 can read evidence: repair-v2 has no candidate on these shapes, so seed one wrong edit, then fall through to repair-v2. */
+const PORT_WRONG = PORT.replace("8080", "8079");
+const MARK_WRONG = MARK.replace("?", "!");
+const TIDY_WRONG = TIDY.replace("return v;", "return (v);");
+const BAND_WRONG = BAND.replace("return n;", "return (n);");
+function seedBase(file: string, wrong: string) {
+  const inner = repairProposer({ v2: true }) as { name: string; loadRepair?: boolean; prepare?: Function; next: Function };
+  let seeded = false;
+  return {
+    name: inner.name,
+    loadRepair: true as const,
+    prepare: inner.prepare ? (search: unknown, input: unknown) => inner.prepare!(search, input) : undefined,
+    next: (i: { attempt: number }) => {
+      if (!seeded) { seeded = true; return { edits: [{ path: file, content: wrong }] }; }
+      return inner.next(i);
+    },
+  };
+}
 let ctxShared: { m151: ReturnType<typeof setup151>; scratch: string } | null = null;
 const ctx = () => { if (!ctxShared) { const m151 = setup151(); ctxShared = { m151, scratch: mkdtempSync(join(base, "e2e-")) }; } return ctxShared; };
 after(() => { if (ctxShared) teardown151(ctxShared.m151); });
@@ -313,7 +336,8 @@ for (const [label, file, src, team, needle] of [
   ["blank mark", "src/mark.ts", MARK, MARK_TEAM, ":const("],
 ] as const) {
   test(`M209 admit constant (${label}): attempt 1 fails, only the constant form passes on its own oop-v1 verdict`, { skip: skipE2e }, () => {
-    const p = RR.retryProposer(repairProposer({ v2: true }) as never);
+    const wrong = label === "default port" ? PORT_WRONG : MARK_WRONG;
+    const p = RR.retryProposer(seedBase(file, wrong) as never);
     const r = go(file, src, team, p);
     assert.equal(RowReal.loopRowProblem(r.row), null, String(RowReal.loopRowProblem(r.row)));
     assert.equal(r.row.code, "PASS", JSON.stringify({ ...summary(r), t: p.transforms }));
@@ -335,7 +359,8 @@ for (const [label, file, src, team] of [
   ["band number", "src/band.ts", BAND, BAND_TEAM],
 ] as const) {
   test(`M209 admit branch (${label}): attempt 1 fails, only the branch form passes on its own oop-v1 verdict`, { skip: skipE2e }, () => {
-    const p = RR.retryProposer(repairProposer({ v2: true }) as never);
+    const wrong = label === "tidy value" ? TIDY_WRONG : BAND_WRONG;
+    const p = RR.retryProposer(seedBase(file, wrong) as never);
     const r = go(file, src, team, p);
     assert.equal(RowReal.loopRowProblem(r.row), null, String(RowReal.loopRowProblem(r.row)));
     assert.equal(r.row.code, "PASS", JSON.stringify({ ...summary(r), t: p.transforms }));
