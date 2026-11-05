@@ -50,9 +50,12 @@ export interface CaseFile {
   readonly cases: readonly DataCase[];
 }
 
+/** M203 (repair-retry-v1 evidence): what a failing case returned, as the candidate serialized it (a JSON value or an
+ *  error name only). Evidence for proposing the next edit, never for a verdict: the verdict is `pass` alone. */
+export type CaseGot = { readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly name: string };
 export type CaseResult =
   | { readonly id: string; readonly pass: true }
-  | { readonly id: string; readonly pass: false; readonly reason: string };
+  | { readonly id: string; readonly pass: false; readonly reason: string; readonly got?: CaseGot };
 
 export interface VerifyOk {
   readonly code: "OOP_OK";
@@ -540,7 +543,8 @@ function verifyByCase(
         cleanup(work, home, cand);
         return { code: "OOP_PROTOCOL", detail: "id-mismatch", results, leftovers };
       }
-      results.push(expectHolds(parsed, c.expect) ? { id: c.id, pass: true } : { id: c.id, pass: false, reason: parsed.resultOk ? "value" : "error" });
+      results.push(expectHolds(parsed, c.expect) ? { id: c.id, pass: true } : { id: c.id, pass: false, reason: parsed.resultOk ? "value" : "error",
+        got: parsed.resultOk ? { ok: true, value: parsed.value } : { ok: false, name: parsed.error.name.slice(0, 80) } });
     }
     const pass = results.filter((x) => x.pass).length;
     const fail = results.length - pass;

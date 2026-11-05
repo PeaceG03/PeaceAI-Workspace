@@ -45,6 +45,7 @@ import { candCan, detectRunner, installDeps, installShim, openDepsCache, openWor
 import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
 import { DEFAULT_VERDICT_MODE, extractCasesFromSource, selectVerdictMode, verify, type DataCase, type VerdictMode } from "./verifier.ts";
 import { MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
+import { retryCreditProblem, retryModeProblem, retryRunLabel, retryScopeProblem, RETRY_MAX_ATTEMPTS, type RepairRetryMode, type RetryEvidence, type RetryVerdict } from "./repair-retry.ts";
 
 export const ROOT = join(import.meta.dirname, "../..");
 export const MAX_ATTEMPTS = 20;
@@ -234,7 +235,9 @@ export function testNames(content: string): string[] {
   return out.slice(0, 200);
 }
 
-export interface RunOutcome { codes: AttemptCode[]; failing: string[]; tests: LoopTests; isolation: boolean; isoFail: IsolationFail | null; synth: ShimSynth | null; executed: number }
+export interface RunOutcome { codes: AttemptCode[]; failing: string[]; tests: LoopTests; isolation: boolean; isoFail: IsolationFail | null; synth: ShimSynth | null; executed: number;
+  /** M203: verifier-v1 runs only: this run's own per-case evidence and verdict, labelled with the run. */
+  rr?: { evidence: RetryEvidence; verdict: RetryVerdict } }
 /** M173: which made-up count the runner shim reported through its own exit code (null: real counts, or node:test). */
 export type ShimSynth = (typeof SHIM_SYNTH_CODES)[number];
 export function shimSynth(json: boolean, exitCode: number): ShimSynth | null {
@@ -329,7 +332,7 @@ function runTests(c: Copy, cand: CandUid, runMs: number, pick: RunnerPick, testF
 
 
 /** M202: run the team's tests as data-only cases through verifier-v1 (candidate uid answers calls; this process judges). */
-function runTestsOop(c: Copy, cand: CandUid, runMs: number, testFiles: readonly string[], env: Record<string, string | undefined>): RunOutcome | { refuse: "VERDICT_OOP_CASES" | "VERDICT_OOP_REFUSED" } {
+function runTestsOop(c: Copy, cand: CandUid, runMs: number, testFiles: readonly string[], env: Record<string, string | undefined>, run = "baseline"): RunOutcome | { refuse: "VERDICT_OOP_CASES" | "VERDICT_OOP_REFUSED" } {
   const files = [...testFiles].sort();
   const cases: DataCase[] = [];
   let modRel: string | null = null;
@@ -365,6 +368,10 @@ function runTestsOop(c: Copy, cand: CandUid, runMs: number, testFiles: readonly 
     isoFail: null,
     synth: null,
     executed: total,
+    rr: { // M203: this run's evidence and verdict only, every case tagged with this run's label
+      evidence: { run, module: modRel, cases: cases.map((x, i) => { const res = r.results[i]; return { id: x.id, fn: x.fn, args: x.args, expect: x.expect, pass: res?.id === x.id && res.pass === true, ...(res && !res.pass && res.got ? { got: res.got } : {}), run }; }) },
+      verdict: { mode: "oop-v1", run, code: r.code, pass: r.pass, fail: r.fail, results: r.results.map((x) => ({ id: x.id, pass: x.pass, run })) },
+    },
   };
 }
 
@@ -674,6 +681,8 @@ function editVocab(s: string, code: boolean): Set<string> {
   leaf(sf);
   return out;
 }
+/** M203: the M175 lexical helpers, read (never changed) by repair-retry-v1's separate opt-in class. */
+export { editGlobalWrites as editGlobalWriteCount, editVocab as editVocabOf };
 /** How many writes (an assignment, ++ / --, delete) the text makes to a target rooted at an identifier the file never
  *  declares (a global or built-in such as `Object.is` or `Math`), or null if it does not parse. */
 function editGlobalWrites(s: string): number | null {
@@ -930,6 +939,10 @@ export interface LoopOptions {
   /** M202: how the team's tests are judged. Default inproc (the detected runner). "oop-v1" is experimental:
    *  verifier-v1 produces the verdict; inprocScopeProblem TERMINAL does not apply. EDIT_SCOPE_POLICY unchanged. */
   verdictMode?: VerdictMode;
+  /** M203 (EXPERIMENTAL, not the default, not for credit): "repair-retry-v1" lets attempts after the first be proposed
+   *  from verifier-v1's per-case evidence under RETRY_SCOPE_POLICY, at most RETRY_MAX_ATTEMPTS in all. Only with
+   *  verdictMode oop-v1 (any other mode: RETRY_INPROC_REFUSED). runLoopTask only; runLoopFile never sets it. */
+  repairRetry?: RepairRetryMode;
 }
 export interface AttemptRecord { attempt: number; edits: string[]; codes: AttemptCode[]; failing: string[]; tests: LoopTests }
 export interface LoopResult { row: LoopRow; plan: LoopPlan | null; attempts: AttemptRecord[]; context: string[] }
@@ -944,8 +957,9 @@ export function loopSha256(root: string = ROOT): string {
 }
 
 /** Runs the loop on one task. Never throws: every outcome is a row with a fixed code. */
-export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training" | "deps" | "depsCache" | "depsDir" | "makeProposer" | "plannerFlag" | "workBase" | "privateRoots" | "loadCaps" | "verdictMode">> & { training: Set<string>; deps?: DepsOptions; depsCache?: DepsCache; planner?: PlannerName; workBase?: string; privateRoots?: string[]; loadCaps?: LoadDiagCaps; verdictMode?: VerdictMode }): LoopResult {
-  const maxAttempts = Math.min(MAX_ATTEMPTS, Math.max(1, Math.floor(o.maxAttempts)));
+export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: string, o: Required<Omit<LoopOptions, "committed" | "outDir" | "training" | "deps" | "depsCache" | "depsDir" | "makeProposer" | "plannerFlag" | "workBase" | "privateRoots" | "loadCaps" | "verdictMode" | "repairRetry">> & { training: Set<string>; deps?: DepsOptions; depsCache?: DepsCache; planner?: PlannerName; workBase?: string; privateRoots?: string[]; loadCaps?: LoadDiagCaps; verdictMode?: VerdictMode; repairRetry?: RepairRetryMode }): LoopResult {
+  const rr = o.repairRetry !== undefined; // M203: repair-retry-v1 asked for (refused below unless oop-v1)
+  const maxAttempts = Math.min(MAX_ATTEMPTS, Math.max(1, Math.floor(o.maxAttempts)), rr ? RETRY_MAX_ATTEMPTS : MAX_ATTEMPTS); // m203-guard:loop-cap
   const verdictMode: VerdictMode = selectVerdictMode(o.verdictMode) ?? DEFAULT_VERDICT_MODE; // m202-guard:mode-select
   const workspace = (() => { try { return git(o.root, "rev-parse", "HEAD"); } catch { return "0".repeat(40); } })();
   const names = set === "public" ? { repo: task.repo, commit: task.commit } : {};
@@ -978,9 +992,12 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       // M174: the baseline suite did not load; the task went on in load-repair mode (both sets: a fixed code)
       ...(loadDiags ? { baselineLoad: "MISSING_EXPORT" as const } : {}), // m174-guard:loop-row-load
       ...(editScope ? { editScope } : {}), // m175-guard:loop-row-scope
+      ...(rr ? { repairRetry: "repair-retry-v1" as const } : {}), // M203: an experimental row, never the default's
     },
     plan, attempts: records, context,
   });
+  const rrMode = retryModeProblem(o.repairRetry, verdictMode);
+  if (rrMode) return done(rrMode); // m203-guard:loop-inproc (repair-retry-v1 only under oop-v1; M199-M201 stand)
   if (taskProblem(task)) return done("TASK_INVALID");
   if (!(PLAN_LICENSES as readonly string[]).includes(task.license)) return done("LICENSE_NOT_ALLOWED");
   if (o.training.has(task.repo.toLowerCase())) return done("TRAINING_OVERLAP");
@@ -1035,9 +1052,9 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     putTeamTests();
     const iso = isolationProblem(c, work.dir, cand, roots, true);
     if (iso) return done("ISOLATION_UNAVAILABLE", undefined, iso); // m171-guard:loop-iso
-    const runTeam = (files: readonly string[]) => {
+    const runTeam = (files: readonly string[], run = "baseline") => {
       if (verdictMode === "oop-v1") { // m202-guard:loop-oop
-        const x = runTestsOop(c!, cand, o.runMs, files, o.env);
+        const x = runTestsOop(c!, cand, o.runMs, files, o.env, run);
         if ("refuse" in x) return x;
         return x;
       }
@@ -1074,7 +1091,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
     // proposal that neither refuses nor carries a valid `edits` array (e.g. [] or {}), which would throw in applyEdits
     const feedback: Feedback[] = [];
     const ask = (attempt: number): ReturnType<Proposer["next"]> | null => {
-      try { return o.proposer.next({ ...(loadDiags ? { loadDiagnostics: loadDiags } : {}), request: task.request, repo: task.repo, plan: plan!, files, context, attempt, feedback, baseline }); } catch { return null; }
+      try { return o.proposer.next({ ...(loadDiags ? { loadDiagnostics: loadDiags } : {}), ...(rr ? { retryBaseline: base.rr?.evidence ?? null } : {}), request: task.request, repo: task.repo, plan: plan!, files, context, attempt, feedback, baseline } as ProposeInput); } catch { return null; }
     };
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const p = ask(attempt);
@@ -1088,14 +1105,17 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       // refused here, before anything runs (a wider edit could patch the runner's assertions in process)
       const readPinned = (f: string): string | null => { const full = safeEditPath(c!.dir, f); try { return full && lstatSync(full).isFile() ? readFileSync(full, "utf8") : null; } catch { return null; } };
       if (loadDiags && loadEditProblem(p.edits, readPinned) !== null) return done("PROPOSER_FAILED"); // m174-guard:scope-gate
-      if (!loadDiags && editScopeProblem(p.edits, readPinned, (f) => safeEditPath(c!.dir, f) === null || c!.teamTests.has(posix.normalize(f)), "edit") !== null) return done("EDIT_SCOPE"); // m175-guard:scope-gate
+      // M203: under repair-retry-v1 an attempt after the first is gated by RETRY_SCOPE_POLICY instead (oop-v1 only)
+      const rrWide = rr && attempt > 1 && !loadDiags;
+      if (rrWide && retryScopeProblem(p.edits, readPinned, (f) => safeEditPath(c!.dir, f) === null || c!.teamTests.has(posix.normalize(f))) !== null) return done("EDIT_SCOPE"); // m203-guard:loop-gate
+      if (!loadDiags && !rrWide && editScopeProblem(p.edits, readPinned, (f) => safeEditPath(c!.dir, f) === null || c!.teamTests.has(posix.normalize(f)), "edit") !== null) return done("EDIT_SCOPE"); // m175-guard:scope-gate
       // M199: inert while EDIT_SCOPE_POLICY stays inside INPROC_BOUNDED_SCOPE; a widened policy is refused per runner here
       if (!loadDiags) { const wide = inprocScopeProblem(det.runner, p.edits.filter((e) => !(safeEditPath(c!.dir, e.path) === null || c!.teamTests.has(posix.normalize(e.path)))).map((e) => editClass(e.path, e.content, readPinned)), verdictMode); if (wide) return done(wide); } // m199-guard:loop-wide
       putTeamTests();
       const bad = applyEdits(c, p.edits);
       if (bad) return done(bad);
       // 5. run, 6. read codes + names
-      const r0 = runTeam([...c.teamTests.keys()]);
+      const r0 = runTeam([...c.teamTests.keys()], retryRunLabel(attempt, p.edits));
       if ("refuse" in r0) return done(r0.refuse);
       const r = r0;
       if (!r.isolation) return done("ISOLATION_UNAVAILABLE", undefined, r.isoFail);
@@ -1112,9 +1132,11 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
           }
         }
       }
+      // M203: a repair-retry-v1 pass is credited only on this attempt's own verifier-v1 verdict
+      if (rr && r.codes.length === 0) { const why = retryCreditProblem(r.rr?.verdict, attempt, p.edits); if (why) return done(why); } // m203-guard:loop-credit
       records.push({ attempt, edits: p.edits.map((e) => e.path), codes: r.codes, failing: r.failing, tests: r.tests });
       if (r.codes.length === 0) { if (!loadDiags) editScope = editScopeOf(p.edits, readPinned); return done("PASS"); }
-      feedback.push({ attempt, codes: r.codes, failing: r.failing, tests: r.tests }); // 7. revise
+      feedback.push({ attempt, codes: r.codes, failing: r.failing, tests: r.tests, ...(rr && r.rr ? { evidence: r.rr.evidence } : {}) } as Feedback); // 7. revise (M203: this attempt's own evidence only)
     }
     return done("ATTEMPT_LIMIT");
   } catch (e) {
