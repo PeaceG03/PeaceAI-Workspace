@@ -42,7 +42,7 @@ import { plannerSha256 } from "./planrun.ts";
 import { committedLog, isLocked, taskKey } from "./plangrade.ts";
 import { ATTEMPT_CODES, SHIM_SYNTH_CODES, EDIT_SCOPE_CLASSES, LOOP_ISOLATION_FAILS, LOOP_LOG, LOOP_MODEL_PROPOSERS, LOOP_SCHEMA_V4, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type EditScopeClass, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
 import { candCan, detectRunner, installDeps, installShim, openDepsCache, openWorkDir, SHIM_EXITS, shimArgs, type WorkDir, type DepsCache, type DepsFail, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
-import { guardedRun, STAGE2_CAND_ENV, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
+import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
 import { DEFAULT_VERDICT_MODE, extractCasesFromSource, selectVerdictMode, verify, type DataCase, type VerdictMode } from "./verifier.ts";
 import { MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
 
@@ -346,7 +346,7 @@ function runTestsOop(c: Copy, cand: CandUid, runMs: number, testFiles: readonly 
     for (const x of ex.cases) cases.push(x);
   }
   if (!modRel || cases.length === 0) return { refuse: "VERDICT_OOP_CASES" };
-  const r = verify({ root: c.dir, module: modRel, cases, env: { ...env, [STAGE2_CAND_ENV]: cand.name }, sessionMs: runMs, callMs: Math.min(runMs, 15_000) });
+  const r = verify({ root: c.dir, module: modRel, cases, env: { ...env, ["PEACEAI_STAGE2_CAND"]: cand.name }, sessionMs: runMs, callMs: Math.min(runMs, 15_000) });
   if (r.code !== "OOP_OK") {
     if (r.code === "OOP_CASES_EMPTY" || r.code === "OOP_CASES_NONLITERAL" || r.code === "OOP_MODULE") return { refuse: "VERDICT_OOP_CASES" };
     return { refuse: "VERDICT_OOP_REFUSED" }; // m202-guard:loop-refused
