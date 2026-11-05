@@ -20,7 +20,7 @@ while (argv.length) {
 }
 if (!opt.module || !!opt.cases === !!opt["from-test"]) usage();
 
-const { VERIFIER_VERSION, extractCasesFromSource, loadCaseFile, verify } = await import("../lib/verifier.ts");
+const { VERIFIER_VERSION, extractCasesWithStats, loadCaseFile, verify } = await import("../lib/verifier.ts");
 const root = resolve(dir!);
 const modulePath = opt.module;
 let cases;
@@ -30,8 +30,11 @@ if (opt.cases) {
   cases = loaded.cases;
 } else {
   const text = readFileSync(resolve(root, opt["from-test"]!), "utf8");
-  const ex = extractCasesFromSource(text, opt["from-test"]!);
-  if (!ex.ok) { console.log(`${VERIFIER_VERSION} refused ${ex.code}${ex.detail ? ` detail=${ex.detail}` : ""}`); process.exit(1); }
+  const { result: ex, stats } = extractCasesWithStats(text, opt["from-test"]!);
+  // M204: assertions seen vs extracted (fixed words only; refusal details never carry test text)
+  const counts = `tests=${stats.tests} assertions=${stats.assertionsSeen} extracted=${stats.extracted}`;
+  if (!ex.ok) { console.log(`${VERIFIER_VERSION} refused ${ex.code}${ex.detail ? ` detail=${ex.detail}` : ""} ${counts}`); process.exit(1); }
+  console.log(`${VERIFIER_VERSION} extract ${counts}`);
   cases = ex.cases;
 }
 const r = verify({ root, module: modulePath, cases, env: process.env });

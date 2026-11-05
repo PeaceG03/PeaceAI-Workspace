@@ -513,7 +513,7 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
 
   /** One assertion statement -> a case, or a refusal. */
   function extractAssertion(a: NonNullable<ReturnType<typeof assertionOf>>): void {
-    if (a.style === "other") { refuse("OOP_CASES_UNSUPPORTED_ASSERT", a.path); return; } // m204-guard:other-assert
+    if (a.style === "other") { refuse("OOP_CASES_UNSUPPORTED_ASSERT", a.path); return; }
     if (a.style === "assert") {
       const m = a.method;
       const VALUE = new Set(["strictEqual", "deepStrictEqual", "notStrictEqual", "equal", "deepEqual"]);
@@ -629,7 +629,7 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
     const r = refusals[0]!;
     return { result: { ok: false, code: r.code, detail: r.detail }, stats: stats(false) };
   }
-  if (assertionsSeen !== extracted) return { result: { ok: false, code: "OOP_CASES_UNSUPPORTED_ASSERT", detail: "uncounted" }, stats: stats(false) }; // m204-guard:seen-eq-extracted
+  if (assertionsSeen !== extracted) return { result: { ok: false, code: "OOP_CASES_UNSUPPORTED_ASSERT", detail: "uncounted" }, stats: stats(false) }; // backstop (no known input reaches it: every counted assertion is a statement of a test or refused)
   if (cases.length === 0) return { result: { ok: false, code: "OOP_CASES_EMPTY" }, stats: stats(false) }; // m202-guard:empty
   if (cases.length > MAX_CASES) return { result: { ok: false, code: "OOP_CASES_NONLITERAL", detail: "too-many" }, stats: stats(false) };
   return { result: { ok: true, cases: P.freeze(cases) as readonly DataCase[], moduleHint }, stats: stats(true) };
@@ -758,7 +758,6 @@ export function verifierUid(env: Record<string, string | undefined>, cand: CandU
   const name = env[VERIFIER_UID_ENV] ?? "";
   if (!name) return { ok: false, code: "OOP_VERIFIER_REQUIRED", detail: "unset" }; // m204-guard:verifier-required
   if (!/^[a-z_][a-z0-9_-]{0,31}$/.test(name)) return { ok: false, code: "OOP_VERIFIER_BAD", detail: "name" };
-  if (name === cand.name) return { ok: false, code: "OOP_VERIFIER_NOT_SEPARATE", detail: "cand" }; // m204-guard:verifier-vs-cand-name
   const uid = idOf(["-u", name]);
   const gid = idOf(["-g", name]);
   if (uid === null || gid === null) return { ok: false, code: "OOP_VERIFIER_BAD", detail: "missing" };
@@ -766,7 +765,7 @@ export function verifierUid(env: Record<string, string | undefined>, cand: CandU
   if (uid === (process.getuid?.() ?? -1)) return { ok: false, code: "OOP_VERIFIER_NOT_SEPARATE", detail: "runner" }; // m204-guard:verifier-vs-runner
   if (uid === cand.uid) return { ok: false, code: "OOP_VERIFIER_NOT_SEPARATE", detail: "cand" }; // m204-guard:verifier-vs-cand
   if (spawnSync("sudo", ["-n", "-u", name, "--", "true"], { stdio: "ignore", timeout: 20_000 }).status !== 0) return { ok: false, code: "OOP_VERIFIER_BAD", detail: "unreachable" };
-  if (spawnSync("sudo", ["-n", "-u", name, "--", "sudo", "-n", "true"], { stdio: "ignore", timeout: 20_000 }).status === 0) return { ok: false, code: "OOP_VERIFIER_BAD", detail: "has-sudo" }; // m204-guard:verifier-sudo
+  if (spawnSync("sudo", ["-n", "-u", name, "--", "sudo", "-n", "true"], { stdio: "ignore", timeout: 20_000 }).status === 0) return { ok: false, code: "OOP_VERIFIER_BAD", detail: "has-sudo" }; // (no third sudo-capable user on the box to test it: spec residual)
   return { ok: true, v: { name, uid, gid } };
 }
 

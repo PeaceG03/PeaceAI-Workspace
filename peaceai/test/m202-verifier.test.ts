@@ -243,6 +243,7 @@ test("M202 mutation: deleting each m202-guard tag fails a case of its own guard"
   const files = [
     join(import.meta.dirname, "../lib/verifier.ts"),
     join(import.meta.dirname, "../lib/loop.ts"),
+    join(import.meta.dirname, "../lib/verifier-judge.cjs"), // M204: parse / compare guards moved to the third-uid judge
   ];
   const tags = new Map<string, string>();
   for (const f of files) {
