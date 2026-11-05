@@ -258,6 +258,27 @@ first-found base stubs the trigger to throw or reject; the healthy base is ranke
 base alone is REPRO_VACUOUS. Near miss: a throw on a method that is not the trigger is not demoted. Mutation: removing
 `rank-setup-injects-failure` lets the stubbing base rank first.
 
+### Batch 33 follow-up: an assignment override of the trigger
+
+The object-literal rule above misses the other common way a test stubs a dependency to fail: it builds the real
+object, then overrides the trigger method by a plain assignment statement before the call
+(`obj.m = function () { throw ... }`, `obj["m"] = () => Promise.reject(...)`). Such a base is demoted too
+(`repro-guard:rank-setup-assigns-failure`). Conservative:
+
+- the call's argument at the trigger's position is a plain identifier, and the trigger is a property;
+- only top-level expression statements of the base's own setup (the same scopes as the setup locals, before the call)
+  count, and the LAST such write of `obj.m` decides; its value (or the setup local it names) must be a function
+  whose body is a single throw / Promise.reject, as above;
+- any other write of `obj.m` in the setup (inside a branch, a loop, a callback, a compound or chained assignment, a
+  computed key) or any reassignment of `obj` itself makes it unsure: not demoted.
+
+Tests: LEDGER_ASSIGNS (node:test, loom / LOOM_DRAW_FAILED, sync, a function expression assigned by property access)
+and SHELF_ASSIGNS (vitest 4, beam / BEAM_GLOW_FAILED, a class instance, element access, concise Promise.reject).
+Near misses, none demoted: the throwing override lands on another object; a throwing override is replaced by a
+working one before the call; a working override only on one branch (unsure). Mutants: removing the check, and
+dropping the unsure rule. Sandbox: the healthy base is REPRO_OK; the overriding base alone is REPRO_VACUOUS. The
+soundness note above applies unchanged: an order only, the judge decides.
+
 ## Refusal codes
 
 `REPRO_NO_DIAGNOSIS`, `REPRO_TEST_TARGET`, `REPRO_NO_ENTRY`, `REPRO_NO_TRIGGER`, `REPRO_NO_OBSERVE`,

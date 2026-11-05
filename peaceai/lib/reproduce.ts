@@ -432,24 +432,28 @@ const propName = (p: ts.ObjectLiteralElementLike): string | null => {
   }
   return null;
 };
+/** The base test's own setup statements in run order (file top-level, describe setup, statements before the helper
+ *  call, statements before the call). Nothing from any other test. */
+function setupStatements(ex: Existing): ts.Statement[] {
+  const out: ts.Statement[] = [];
+  out.push(...ex.sf.statements.filter((s) => !ts.isImportDeclaration(s) && !isTestish(s)));
+  for (const d of ex.describes) {
+    const f = d.arguments[d.arguments.length - 1];
+    if (f && (ts.isArrowFunction(f) || ts.isFunctionExpression(f)) && ts.isBlock(f.body)) out.push(...f.body.statements.filter((s) => !isTestish(s)));
+  }
+  if (ex.helper) for (const b of ex.helper.outer) out.push(...b.statements.filter((s) => s.end <= ex.helper!.call.pos));
+  for (const b of ex.blocks) out.push(...b.statements.filter((s) => s.end <= ex.call.pos));
+  return out;
+}
 /** Locals bound in the base test's own setup (file top-level, describe setup, statements before the call). */
 function setupLocals(ex: Existing): Map<string, ts.Expression> {
   const out = new Map<string, ts.Expression>();
-  const take = (sts: readonly ts.Statement[]) => {
-    for (const st of sts) {
-      if (!ts.isVariableStatement(st)) continue;
-      for (const d of st.declarationList.declarations) {
-        if (ts.isIdentifier(d.name) && d.initializer) out.set(d.name.text, d.initializer);
-      }
+  for (const st of setupStatements(ex)) {
+    if (!ts.isVariableStatement(st)) continue;
+    for (const d of st.declarationList.declarations) {
+      if (ts.isIdentifier(d.name) && d.initializer) out.set(d.name.text, d.initializer);
     }
-  };
-  take(ex.sf.statements.filter((s) => !ts.isImportDeclaration(s) && !isTestish(s)));
-  for (const d of ex.describes) {
-    const f = d.arguments[d.arguments.length - 1];
-    if (f && (ts.isArrowFunction(f) || ts.isFunctionExpression(f)) && ts.isBlock(f.body)) take(f.body.statements.filter((s) => !isTestish(s)));
   }
-  if (ex.helper) for (const b of ex.helper.outer) take(b.statements.filter((s) => s.end <= ex.helper!.call.pos));
-  for (const b of ex.blocks) take(b.statements.filter((s) => s.end <= ex.call.pos));
   return out;
 }
 /** Resolve an expression through setup locals (one hop). */
@@ -476,10 +480,52 @@ function exprInjectsFailure(e: ts.Expression | undefined, prop: string | null, l
   }
   return false;
 }
+/** `obj.m = ...` / `obj["m"] = ...` as [object name, member name], else null. */
+const memberAssign = (e: ts.Node): { obj: string; name: string; value: ts.Expression } | null => {
+  if (!ts.isBinaryExpression(e) || e.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return null;
+  const l = e.left;
+  if (ts.isPropertyAccessExpression(l) && ts.isIdentifier(l.expression)) return { obj: l.expression.text, name: l.name.text, value: e.right };
+  if (ts.isElementAccessExpression(l) && ts.isIdentifier(l.expression) && ts.isStringLiteralLike(l.argumentExpression)) return { obj: l.expression.text, name: l.argumentExpression.text, value: e.right };
+  return null;
+};
+/** Batch 33 follow-up: the setup overrides the trigger method on the object it passes, by a plain assignment statement
+ *  (`obj.m = () => { throw ... }`), before the call. Conservative: the argument is a plain identifier; the last such
+ *  statement decides; any other write to `obj.m` (nested in a branch, a loop, a callback, a compound or chained
+ *  assignment) or any reassignment of `obj` in the setup means unsure, so no demotion. */
+function setupAssignsFailure(ex: Existing, trigger: Trigger, locals: ReadonlyMap<string, ts.Expression>): boolean {
+  const arg = ex.call.arguments[trigger.param];
+  if (!arg || !ts.isIdentifier(arg) || trigger.prop === null) return false;
+  const sts = setupStatements(ex);
+  const top = new Set<ts.Node>();
+  let last: ts.Expression | undefined;
+  for (const st of sts) {
+    if (!ts.isExpressionStatement(st)) continue;
+    const a = memberAssign(st.expression);
+    if (a && a.obj === arg.text && a.name === trigger.prop) { top.add(st.expression); last = a.value; }
+  }
+  if (!last) return false;
+  let unsure = false;
+  const visit = (n: ts.Node): void => {
+    if (unsure) return;
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+      if (ts.isIdentifier(n.left) && n.left.text === arg.text) { unsure = true; return; }
+      const a = ts.isPropertyAccessExpression(n.left) || ts.isElementAccessExpression(n.left) ? n.left : null;
+      if (a && ts.isIdentifier(a.expression) && a.expression.text === arg.text && !top.has(n)) {
+        const name = ts.isPropertyAccessExpression(a) ? a.name.text : ts.isStringLiteralLike(a.argumentExpression) ? a.argumentExpression.text : null;
+        if (name === null || name === trigger.prop) { unsure = true; return; }
+      }
+    }
+    ts.forEachChild(n, visit);
+  };
+  for (const st of sts) visit(st);
+  return !unsure && functionInjectsFailure(resolveLocal(last, locals));
+}
 /** Batch 33: the base test's own setup already makes the failing dependency throw or reject. */
 function setupInjectsFailureOf(ex: Existing, trigger: Trigger): boolean {
   const arg = ex.call.arguments[trigger.param];
-  return exprInjectsFailure(arg, trigger.prop, setupLocals(ex)); // repro-guard:rank-setup-injects-failure
+  const locals = setupLocals(ex);
+  if (setupAssignsFailure(ex, trigger, locals)) return true; // repro-guard:rank-setup-assigns-failure
+  return exprInjectsFailure(arg, trigger.prop, locals); // repro-guard:rank-setup-injects-failure
 }
 function rankOf(ex: Existing, trigger: Trigger, sitePath: string, found: number): BaseRank {
   const { text, arg } = setupOf(ex, trigger);

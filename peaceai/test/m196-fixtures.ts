@@ -862,3 +862,81 @@ export const SHELF_VACUOUS: Files = {
     "});",
   ),
 };
+
+/** Batch 33 follow-up: the setup overrides the trigger method on the object it passes, by an assignment statement
+ *  before the call (`obj.m = function () { throw ... }`, `obj["m"] = () => Promise.reject(...)`). Fresh shapes
+ *  (loom / beam); nothing from a task repo, a Peace project or a reference diff.
+ *    src/loom.ts   sync; the first-found test overrides `draw` with a throwing function expression: demoted.
+ *    Near misses:  the throwing override lands on another object (`spare`); a throwing override is replaced by a
+ *                  working one before the call (last write wins); an override inside a branch (unsure). None demoted. */
+export const LEDGER_ASSIGNS: Files = {
+  "src/loom.ts": lines(
+    "export function weaveLoom(spool: { draw(n: number): string }, opts: { dry: boolean }): { ok: boolean; cloth?: string; code?: string } {",
+    "  if (opts.dry) return { ok: true };",
+    "  try {",
+    "    return { ok: true, cloth: spool.draw(3) };",
+    "  } catch {",
+    '    return { ok: false, code: "LOOM_DRAW_FAILED" };',
+    "  }",
+    "}",
+  ),
+  "test/loom.test.ts": nodeTest + 'import { weaveLoom } from "../src/loom.ts";\n' + lines(
+    'function makeSpool() { return { draw: (n: number) => "x".repeat(n) }; }',
+    'test("a loom reports a spool whose draw was replaced by a throw", () => {',
+    "  const spool = makeSpool();",
+    '  spool.draw = function () { throw new Error("snag"); };',
+    '  assert.deepEqual(weaveLoom(spool, { dry: false }), { ok: false, code: "LOOM_DRAW_FAILED" });',
+    "});",
+    'test("a loom weaves from its spool", () => {',
+    "  const spool = makeSpool();",
+    '  assert.deepEqual(weaveLoom(spool, { dry: false }), { ok: true, cloth: "xxx" });',
+    "});",
+    'test("near miss: the throwing draw is on a spare spool", () => {',
+    "  const spool = makeSpool();",
+    "  const spare = makeSpool();",
+    '  spare.draw = function () { throw new Error("spare"); };',
+    '  assert.deepEqual(weaveLoom(spool, { dry: false }), { ok: true, cloth: "xxx" });',
+    "});",
+    'test("near miss: the throwing draw is replaced before weaving", () => {',
+    "  const spool = makeSpool();",
+    '  spool.draw = function () { throw new Error("first"); };',
+    '  spool.draw = (n: number) => "y".repeat(n);',
+    '  assert.deepEqual(weaveLoom(spool, { dry: false }), { ok: true, cloth: "yyy" });',
+    "});",
+    'test("near miss: the draw is replaced only on one branch", () => {',
+    "  const spool = makeSpool();",
+    '  spool.draw = function () { throw new Error("maybe"); };',
+    '  if (spool.draw.length === 0) spool.draw = (n: number) => "z".repeat(n);',
+    '  assert.deepEqual(weaveLoom(spool, { dry: false }), { ok: true, cloth: "zzz" });',
+    "});",
+  ),
+};
+
+/** Batch 33 follow-up (vitest 4): src/beam.ts, a class instance whose `glow` is overridden by element access with a
+ *  concise Promise.reject arrow: demoted below the healthy base. */
+export const SHELF_ASSIGNS: Files = {
+  "src/beam.ts": lines(
+    "export async function sweepBeam(lamp: { glow(level: number): Promise<number> }, opts: { dim: boolean }): Promise<{ ok: boolean; level?: number; code?: string }> {",
+    "  if (opts.dim) return { ok: true };",
+    "  try {",
+    "    return { ok: true, level: await lamp.glow(3) };",
+    "  } catch {",
+    '    return { ok: false, code: "BEAM_GLOW_FAILED" };',
+    "  }",
+    "}",
+  ),
+  "test/beam.test.ts": lines(
+    'import { expect, it } from "vitest";',
+    'import { sweepBeam } from "../src/beam";',
+    "class Lamp { async glow(level: number): Promise<number> { return level * 2; } }",
+    'it("a beam reports a lamp whose glow was replaced by a rejection", async () => {',
+    "  const lamp = new Lamp();",
+    '  lamp["glow"] = () => Promise.reject(new Error("dark"));',
+    '  expect(await sweepBeam(lamp, { dim: false })).toEqual({ ok: false, code: "BEAM_GLOW_FAILED" });',
+    "});",
+    'it("a beam sweeps its lamp", async () => {',
+    "  const lamp = new Lamp();",
+    "  expect(await sweepBeam(lamp, { dim: false })).toEqual({ ok: true, level: 6 });",
+    "});",
+  ),
+};

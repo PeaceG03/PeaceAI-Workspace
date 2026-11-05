@@ -298,4 +298,34 @@ export const CASES: ReproCase[] = [
     const other = ps.find((p) => p.existing.line === 14)!;
     assert.equal(other.rank.setupInjectsFailure, false, "cool throws but the trigger is heat");
   } },
+  // ---- Batch 33 follow-up: the setup overrides the trigger method on the passed object by an assignment statement
+  { id: "admit-rank-setup-assigns-failure-ledger", condition: "rank-setup-assigns-failure", kind: "admit", shape: "ledger", run: (m, c) => {
+    // found first: `spool.draw = function () { throw ... }`; tried last
+    assert.deepEqual(order(ranked(m, c.ledger, "LOOM_DRAW_FAILED")), [
+      ["test/loom.test.ts", 12, false, true, true, 1],
+      ["test/loom.test.ts", 18, false, true, true, 2],
+      ["test/loom.test.ts", 24, false, true, true, 3],
+      ["test/loom.test.ts", 30, false, true, true, 4],
+      ["test/loom.test.ts", 8, true, true, true, 0],
+    ]);
+  } },
+  { id: "admit-rank-setup-assigns-failure-shelf", condition: "rank-setup-assigns-failure", kind: "admit", shape: "shelf", run: (m, c) => {
+    // a class instance, `lamp["glow"] = () => Promise.reject(...)`
+    assert.deepEqual(order(ranked(m, c.shelf, "BEAM_GLOW_FAILED")), [
+      ["test/beam.test.ts", 11, false, true, true, 1],
+      ["test/beam.test.ts", 7, true, true, true, 0],
+    ]);
+  } },
+  { id: "refuse-rank-assign-other-object", condition: "rank-setup-assigns-failure", kind: "refuse", shape: "ledger", run: (m, c) => {
+    const p = ranked(m, c.ledger, "LOOM_DRAW_FAILED").find((x) => x.existing.line === 18)!;
+    assert.equal(p.rank.setupInjectsFailure, false, "the throwing draw is on another object");
+  } },
+  { id: "refuse-rank-assign-replaced", condition: "rank-setup-assigns-failure", kind: "refuse", shape: "ledger", run: (m, c) => {
+    const p = ranked(m, c.ledger, "LOOM_DRAW_FAILED").find((x) => x.existing.line === 24)!;
+    assert.equal(p.rank.setupInjectsFailure, false, "the last write before the call is a working draw");
+  } },
+  { id: "refuse-rank-assign-branch-unsure", condition: "rank-setup-assigns-failure", kind: "refuse", shape: "ledger", run: (m, c) => {
+    const p = ranked(m, c.ledger, "LOOM_DRAW_FAILED").find((x) => x.existing.line === 30)!;
+    assert.equal(p.rank.setupInjectsFailure, false, "a write inside a branch makes it unsure: not demoted");
+  } },
 ];
