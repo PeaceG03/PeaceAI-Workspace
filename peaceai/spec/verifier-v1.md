@@ -3,8 +3,9 @@
 Status: EXPERIMENTAL, NOT DEFAULT, NOT FOR CREDIT. Code: `peaceai/lib/verifier.ts`, harness
 `peaceai/lib/verifier-harness.cjs`, judge `peaceai/lib/verifier-judge.cjs` (M204), CLI `peaceai/bin/verifier-v1.ts`,
 tests `peaceai/test/m202-verifier.test.ts`, `peaceai/test/m204-verifier-cases.test.ts`,
-`peaceai/test/m205-verifier-forms.test.ts`. Batch 40 (M204) / Batch 41 (M205) changes are in the sections below;
-where they and the M202 text differ, the later section wins.
+`peaceai/test/m205-verifier-forms.test.ts`, `peaceai/test/m206-verifier-forms.test.ts`. Batch 40 (M204) /
+Batch 41 (M205) / Batch 42 (M206) changes are in the sections below; where they and the M202 text differ, the later
+section wins.
 Loop opt-in: `LoopOptions.verdictMode = "oop-v1"` (or `selectVerdictMode("oop-v1")`). Default remains `inproc`.
 `EDIT_SCOPE_POLICY`, `selfpropose.ts`, `plandefault.ts` and the v4 digest are unchanged.
 
@@ -245,11 +246,53 @@ loops). The exact forms above do not yet cover these team files; that is expecte
 
 ### M205 residuals (honest)
 
-- **Const tables for each.** `const rows = [[1]]; test.each(rows)(...)` is refused: the table argument must be a
-  literal. Resolving a const into the table would be sound for a pure JSON const, but is left refused so the admitted
-  form stays the common inline one.
-- **describe.each** is not admitted (suite expansion).
-- **Tagged-template `test.each\`...\``** is not admitted.
+- **Const tables for each / describe.each / tagged-template each.** Addressed in M206 (with the safe-binding and
+  literal-cell restrictions documented there).
 - **Property access** on a const object is admitted (`row.s`); computed keys and methods are not.
 - **Unused import side effects** of a named/default import are not reproduced (same class of residual as type-only
   imports already were). Side-effect-only `import "./x"` stays refused.
+
+## M206 (batch 42): more exact-reproducible bindings and each forms (still fail-closed)
+
+### Soundness note
+
+The M204/M205 claim still holds: **when verifier-v1 credits a file, every assertion in it was extracted as a case, each
+case means exactly what the assertion means on a JSON value, and each case held.** M206 only adds shapes the extractor
+can reproduce *exactly* by static inspection. The extractor never evaluates test code. Anything not exactly reproducible
+stays refused by name.
+
+New forms, each with two or more admitted shapes unrelated to PeaceSTOCKS / the public-dev tasks / reference diffs, a
+refused near miss for every condition, and tagged guards whose mutants are caught by a case of that guard:
+
+| form | what is admitted | refused near misses |
+|---|---|---|
+| **let/var of JSON lit** | `let`/`var name = <JSON lit>` at top level, in a suite, or in a test body, when the name is never reassigned (`=` / compound / `++`/`--`), never mutated (property write or method call on it), and never referenced inside a nested function (capture). Resolved by value like const. | reassign, compound, `++`, method call, property write, nested capture, non-literal initializer |
+| **each table identifier** | `test.each(rows)` / `it.each(rows)` where `rows` is a const (or safe let/var) bound to a JSON array lit, and the binding is never mutated. | unbound id, non-literal initializer, mutated table (`.push` etc.) |
+| **describe.each / suite.each** | `describe.each(table)(title, (params) => { it/... })` and `suite.each(...)` with a literal (or safe bound) table. One suite path per row (`title/@i/...`); names concatenate. | non-literal / empty table, `describe.only.each`, arity mismatch |
+| **tagged-template each** | `test.each` / `describe.each` tagged templates when the header is a plain identifier list and every cell expression is a JSON literal. Positional params or object / object-binding of header keys. | non-literal cell, non-identifier header, no `${}` cells (text-only body) |
+| **destructuring const** | `const { a, b } = { a: lit, b: lit }` and `const [x, y] = [lit, lit]` (simple identifiers, non-computed, no defaults, no rest, no holes, no nesting). | defaults (even literal), rest, nested patterns, computed keys, `let`/`var` destructure |
+
+`assertionsSeen` still counts AST assertion calls once; `test.each` / `describe.each` expand one AST assertion into N
+cases, so the fail-closed check compares covered AST assertions (not expanded case count) to `assertionsSeen`. Mixed /
+unsupported assertions still refuse the whole file with `extracted = 0`. The Batch 40 silent-skip regression and every
+M205 admit still hold.
+
+### Guards (m206-guard; m206 deletes each line in a mutant and runs that guard's own case)
+
+`var-bind`, `var-reassign`, `var-mutate`, `var-capture`, `each-const-table`, `suite-each`, `suite-each-expand`,
+`each-tagged`, `each-tagged-header`, `each-tagged-cell`, `const-destructure`, `const-destructure-array`,
+`const-destructure-default`.
+
+### Dev census (informational; same 13 public-dev team test files; no tuning)
+
+Recorded after the code was final. See the commit that adds the census numbers; no fixture was tuned against these
+files.
+
+### M206 residuals (honest)
+
+- **Closure capture is syntactic.** A nested function that mentions a let/var is refused even when the nested function
+  only reads it. Throws-thunks that close over a let/var therefore refuse; use a const for those.
+- **Method-call mutation.** Any `name.method(...)` on a scoped binding is treated as mutation (including
+  `toString` / `valueOf`). Reads via `name.prop` (property access without call) stay allowed.
+- **ACLs / `has-sudo`** residuals from M204 unchanged.
+- **Forged stdout** residual from M204 unchanged.

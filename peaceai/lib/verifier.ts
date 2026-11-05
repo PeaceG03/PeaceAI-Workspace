@@ -387,8 +387,8 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
         if (scope.has(d.name.text)) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-shadow"); return false; } // m205-guard:const-shadow
         const v = litFromNode(d.initializer, scope);
         if (!v.ok) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":var"); return false; } // m205-guard:const-kind
-        scope.set(d.name.text, v.value); // m205-guard:const-bind
-        if (!isConst) mutable.add(d.name.text); // m206-guard:var-bind
+        if (isConst) { scope.set(d.name.text, v.value); } // m205-guard:const-bind
+        else { scope.set(d.name.text, v.value); mutable.add(d.name.text); } // m206-guard:var-bind
         continue;
       }
       // destructuring: const only (M206)
@@ -427,7 +427,7 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
       if (ts.isBinaryExpression(n) && n.operatorToken && assignOps.has(n.operatorToken.kind)) {
         if (ts.isIdentifier(n.left) && scope.has(n.left.text)) { hit = mutable.has(n.left.text) ? "var-reassign" : "const-reassign"; return; } // m206-guard:var-reassign
         const o = rootObj(n.left);
-        if (o !== null) { hit = mutable.has(o) ? "var-mutate" : "const-reassign"; return; } // m206-guard:var-mutate (property write)
+        if (o !== null) { hit = mutable.has(o) ? "var-mutate" : "const-reassign"; return; }
       }
       if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) &&
         (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken)) {
@@ -436,7 +436,7 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
       }
       if (ts.isCallExpression(n) && (ts.isPropertyAccessExpression(n.expression) || ts.isElementAccessExpression(n.expression))) {
         const o = rootObj(n.expression);
-        if (o !== null && mutable.has(o)) { hit = "var-mutate"; return; } // method call on a let/var
+        if (o !== null && scope.has(o)) { hit = mutable.has(o) ? "var-mutate" : "const-reassign"; return; } // m206-guard:var-mutate (method call)
       }
       if (nested && ts.isIdentifier(n) && mutable.has(n.text) && scope.has(n.text)) {
         // Value reference inside a nested function (property-name identifiers are BindingName / PropertyAssignment keys —
@@ -945,6 +945,7 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
 
   let extracted = 0;
   let coveredAssertions = 0; // AST assertions that belong to a fully-walked test (each counts once, not per row)
+  const countedCbs = new Set<any>(); // describe.each reuses the same cb AST across rows
   function runTestBody(cb: any, scope: LitScope, mutable: Set<string>, prefix: string): number {
     activeScope = scope;
     currentPrefix = prefix; // m205-guard:suite-id
@@ -994,7 +995,9 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
       }
       coveredAssertions += rec; // one AST pass worth, not per row
     } else {
-      coveredAssertions += runTestBody(t.cb, new Map(t.scope), new Set(t.mutable), pathPrefix);
+      const rec = runTestBody(t.cb, new Map(t.scope), new Set(t.mutable), pathPrefix);
+      // describe.each / suite.each expand one AST test into N entries; count assertions once.
+      if (!countedCbs.has(t.cb)) { coveredAssertions += rec; countedCbs.add(t.cb); }
     }
   }
   if (usedMods.size > 1) refuse("OOP_CASES_UNSUPPORTED_TEST", "multi-module"); // m204-guard:multi-module
