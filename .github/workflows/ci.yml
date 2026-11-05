@@ -13,8 +13,9 @@ jobs:
   tests:
     name: tests
     runs-on: ubuntu-24.04
-    # about 16 min on main; the mutation suites (m150, m151, m156) grow it, so leave headroom.
-    timeout-minutes: 40
+    # about 16 min on main with parallel files; --test-concurrency=1 (shared peaceai-cand3
+    # oop e2e) stretches wall-clock past 40, so leave headroom for the full serial tools suite.
+    timeout-minutes: 90
     permissions:
       contents: read
     # M202/M204 oop-v1 e2e only (direct verify(), no loop isolation). Do NOT set M146_CAND:
