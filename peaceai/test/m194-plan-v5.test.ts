@@ -93,7 +93,8 @@ test("M194: every M153 case (v3's rules) and every M164 case (v4's named-test ru
 
 test("M194: every diagnose admit case and refused near miss holds; each tagged rule has a mutant, an admit and a near miss", () => {
   for (const c of CASES) c.run(plan5, ctx);
-  const tags = [...new Set([...source.matchAll(/\/\/ rule:([a-z0-9-]+)/g)].map((m) => m[1]!))].sort();
+  // M194/M195 conditions are the `diag-*` tags; Batch 34's `trace-*` tags are checked by m198-plan-v5-trace.test.ts
+  const tags = [...new Set([...source.matchAll(/\/\/ rule:(diag-[a-z0-9-]+)/g)].map((m) => m[1]!))].sort();
   assert.deepEqual(tags, TAGS);
   for (const t of TAGS) {
     assert.ok(MUTANTS.some((m) => m.id === t), `rule ${t} has no mutant`);

@@ -19,6 +19,7 @@
 // that function (`shape: "toplevel-catch"`); every other site is planned as before.
 // Nothing here names a repository, task, task set or file of any task set, and no dev-set wording is matched.
 // Read-only: the checkout is opened through codesearch.openRepo (readdir/stat/readFile only, nothing executed).
+import { posix } from "node:path";
 import ts from "typescript";
 import type { CodeRepo } from "./codesearch.ts";
 import type { Capability, PlanContext, PlanStep } from "./plan.ts";
@@ -30,7 +31,7 @@ export { repoFromFiles };
 export const MAX_CODES_V5 = 8;
 export const MAX_SITE_FILES_PER_CODE = 3;
 /** What a diagnose plan cannot do yet. Fixed vocabulary (a plan never carries free text). */
-export const DIAG_NOT_YET = ["reproduce-reported-failure", "fix-at-throw-site", "fix-at-report-site", "trace-unthrown-codes"] as const;
+export const DIAG_NOT_YET = ["reproduce-reported-failure", "fix-at-throw-site", "fix-at-report-site", "trace-unthrown-codes", "fix-at-probable-cause"] as const;
 export type DiagNotYet = (typeof DIAG_NOT_YET)[number];
 export type DiagRefusal = "NO_FAILURE_REPORT" | "NO_CODES" | "NO_THROW_SITE";
 /** How a site raises the code: thrown (M194), or caught and then reported (M195: logged, pushed into a problems array,
@@ -43,7 +44,8 @@ export const REPORT_VIAS: readonly SiteVia[] = ["catch-log", "catch-push", "catc
 export interface ThrowSite { path: string; line: number; symbol: string | null; via: SiteVia; match: "token" | "template-prefix"; shape?: "toplevel-catch" }
 export interface ReportedCode { code: string; detail: string | null }
 export interface DiagCode extends ReportedCode { status: "thrown" | "reported" | "not-thrown" | "ambiguous"; sites: ThrowSite[] }
-export interface Diagnosis { family: "diagnose-failure-codes" | null; refused: DiagRefusal | null; codes: DiagCode[]; notYet: DiagNotYet[] }
+/** `traces` (Batch 34, M198): one per site of a thrown or reported code, empty when the diagnosis is refused. */
+export interface Diagnosis { family: "diagnose-failure-codes" | null; refused: DiagRefusal | null; codes: DiagCode[]; notYet: DiagNotYet[]; traces: SiteTrace[] }
 export interface PlanV5 extends Omit<PlanV4, "planner"> { planner: typeof PLANNER_V5; diagnosis: Diagnosis }
 
 // ---- reading the request
@@ -212,7 +214,10 @@ export function throwSites(code: CodeRepo, errCode: string): ThrowSite[] | null 
   const add = (sf: ts.SourceFile, n: ts.Node, via: SiteVia, match: ThrowSite["match"]) => {
     const top = REPORT_VIAS.includes(via) && enclosing(n) === null ? toplevelCatch(sf, n) : null;
     const line = top?.line ?? sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
-    if (!sites.some((s) => s.path === sf.fileName && s.line === line)) sites.push({ path: sf.fileName, line, symbol: top?.symbol ?? enclosing(n), via, match, ...(top ? { shape: "toplevel-catch" as const } : {}) });
+    if (sites.some((s) => s.path === sf.fileName && s.line === line)) return;
+    const site: ThrowSite = { path: sf.fileName, line, symbol: top?.symbol ?? enclosing(n), via, match, ...(top ? { shape: "toplevel-catch" as const } : {}) };
+    siteNodes.set(site, { sf, node: n });
+    sites.push(site);
   };
   const parsed = new Map<string, ts.SourceFile | null>();
   const sfOf = (p: string) => { if (!parsed.has(p)) parsed.set(p, parse(code, p)); return parsed.get(p)!; };
@@ -267,7 +272,7 @@ export function throwSites(code: CodeRepo, errCode: string): ThrowSite[] | null 
 
 /** The diagnosis alone (also used by the planner). */
 export function diagnose(code: CodeRepo, request: string): Diagnosis {
-  const refuse = (r: DiagRefusal, codes: DiagCode[] = []): Diagnosis => ({ family: null, refused: r, codes, notYet: [] });
+  const refuse = (r: DiagRefusal, codes: DiagCode[] = []): Diagnosis => ({ family: null, refused: r, codes, notYet: [], traces: [] });
   if (!reportsFailure(request)) return refuse("NO_FAILURE_REPORT");
   const reported = reportedCodes(request);
   if (reported.length === 0) return refuse("NO_CODES");
@@ -283,7 +288,256 @@ export function diagnose(code: CodeRepo, request: string): Diagnosis {
   if (all.some((s) => !REPORT_VIAS.includes(s.via))) notYet.push("fix-at-throw-site");
   if (all.some((s) => REPORT_VIAS.includes(s.via))) notYet.push("fix-at-report-site");
   if (codes.some((c) => c.status !== "thrown" && c.status !== "reported")) notYet.push("trace-unthrown-codes");
-  return { family: "diagnose-failure-codes", refused: null, codes, notYet };
+  const traces = traceDiagnosis(code, { family: "diagnose-failure-codes", refused: null, codes, notYet, traces: [] });
+  if (traces.some((t) => t.causes.length > 0)) notYet.push("fix-at-probable-cause");
+  return { family: "diagnose-failure-codes", refused: null, codes, notYet, traces };
+}
+
+// ---- Batch 34 (M198): symptom-to-cause trace (bounded, static, conservative)
+// A planned site is often only the symptom: it throws or reports because an upstream value was bad or an upstream
+// call failed. For each admitted site the trace looks for ONE producer in the same package: the function whose call
+// result the site's `if` condition reads (`via: "value"`), or the one in-repo function that can fail inside the try
+// block (or promise chain) whose failure the site rethrows or reports with its own code (`via: "caught"`). From that
+// producer it follows plain delegation (every `return` hands back the result of the same in-repo call,
+// `via: "delegate"`) up to MAX_TRACE_HOPS hops in all. Anything it cannot decide is an explicit stop code, never a
+// guess. Causes become ranked `missing` edit-source steps placed above their symptom's step.
+
+/** Most producers one trace follows (the first producer is hop 1). */
+export const MAX_TRACE_HOPS = 2;
+export type TraceStop = "TRACE_NO_CONDITION" | "TRACE_INDEPENDENT" | "TRACE_UNRESOLVED" | "TRACE_AMBIGUOUS" | "TRACE_CROSS_PACKAGE" | "TRACE_ALREADY_PLANNED" | "TRACE_DEPTH";
+export interface TraceCause { path: string; line: number; symbol: string; hop: number; via: "value" | "caught" | "delegate" }
+export interface SiteTrace { code: string; site: { path: string; line: number }; causes: TraceCause[]; stop: TraceStop | null }
+/** The syntax node each site was found at (kept off the plan: a plan carries no syntax). */
+const siteNodes = new WeakMap<ThrowSite, { sf: ts.SourceFile; node: ts.Node }>();
+
+/** A function a call can resolve to: where it is declared, and its body (or expression body). */
+interface Fn { path: string; symbol: string; line: number; body: ts.Node }
+/** One producer a condition or try block depends on: an in-repo function, one in another workspace package, or an
+ *  opaque call (a library, a global, a method on a value) keyed by its callee text. */
+type Producer = { kind: "fn"; fn: Fn } | { kind: "cross"; key: string } | { kind: "opaque"; key: string };
+
+const strip = (e: ts.Expression): ts.Expression => {
+  let x = e;
+  while (ts.isAwaitExpression(x) || ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isNonNullExpression(x) || ts.isSatisfiesExpression(x) || ts.isTypeAssertionExpression(x)) x = x.expression;
+  return x;
+};
+const fnBody = (n: ts.Node): ts.Node | null =>
+  (ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n) || ts.isFunctionExpression(n) || ts.isArrowFunction(n)) && n.body ? n.body : null;
+/** Every node under `n` that is not inside a nested function. */
+function ownNodes(n: ts.Node, f: (x: ts.Node) => void): void {
+  const visit = (x: ts.Node): void => { f(x); if (!ts.isFunctionLike(x)) ts.forEachChild(x, visit); }; // rule:trace-own-body
+  ts.forEachChild(n, visit);
+}
+const lineOf = (sf: ts.SourceFile, n: ts.Node) => sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
+
+/** A top-level function of `sf` named `name`: a function declaration with a body, or a const bound to an arrow or
+ *  function expression. */
+function topLevelFn(sf: ts.SourceFile, name: string): Fn | null {
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name?.text === name && st.body) return { path: sf.fileName, symbol: name, line: lineOf(sf, st), body: st.body };
+    if (ts.isVariableStatement(st)) for (const d of st.declarationList.declarations) {
+      if (ts.isIdentifier(d.name) && d.name.text === name && d.initializer && (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))) return { path: sf.fileName, symbol: name, line: lineOf(sf, st), body: d.initializer.body };
+    }
+  }
+  return null;
+}
+
+/** The repo file a relative specifier names (`./x`, `./x.js` for `x.ts`, `./x/index`), or null. */
+function resolveRelative(all: ReadonlySet<string>, from: string, spec: string): string | null {
+  const base = posix.normalize(posix.join(posix.dirname(from), spec));
+  const stem = base.replace(/\.[cm]?[jt]sx?$/, "");
+  for (const c of [base, ...[".ts", ".tsx", ".js", ".mjs", ".cjs", ".jsx", "/index.ts", "/index.js"].map((x) => stem + x)]) if (all.has(c)) return c;
+  return null;
+}
+
+interface TraceEnv { code: CodeRepo; all: string[]; files: ReadonlySet<string>; pkgNames: string[]; sfOf: (p: string) => ts.SourceFile | null }
+
+/** What `call` calls: a function of the same file, a named import / destructured require of a relative module, or
+ *  `this.m()` on a method of the enclosing class; a bare specifier naming a workspace package is `cross`; anything
+ *  else is `opaque`. */
+function resolveCall(env: TraceEnv, sf: ts.SourceFile, call: ts.CallExpression): Producer {
+  const callee = call.expression;
+  const opaque: Producer = { kind: "opaque", key: callee.getText(sf) };
+  if (ts.isPropertyAccessExpression(callee) && callee.expression.kind === ts.SyntaxKind.ThisKeyword) { // rule:trace-resolve-this
+    const cls = ts.findAncestor(call, ts.isClassLike);
+    const named = cls?.members.find((x) => (ts.isMethodDeclaration(x) || ts.isPropertyDeclaration(x)) && !!x.name && ts.isIdentifier(x.name) && x.name.text === callee.name.text);
+    const body = named && ts.isMethodDeclaration(named) ? named.body : named && ts.isPropertyDeclaration(named) && named.initializer && (ts.isArrowFunction(named.initializer) || ts.isFunctionExpression(named.initializer)) ? named.initializer.body : undefined;
+    return named && body ? { kind: "fn", fn: { path: sf.fileName, symbol: callee.name.text, line: lineOf(sf, named), body } } : opaque;
+  }
+  if (!ts.isIdentifier(callee)) return opaque;
+  const local = topLevelFn(sf, callee.text);
+  if (local) return { kind: "fn", fn: local };
+  // where the name is bound: `import { g as f } from "spec"` or `const { g: f } = require("spec")`
+  let spec: string | null = null;
+  let exported = callee.text;
+  for (const st of sf.statements) {
+    if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier) && !st.importClause?.isTypeOnly) {
+      const nb = st.importClause?.namedBindings;
+      const el = nb && ts.isNamedImports(nb) ? nb.elements.find((e) => e.name.text === callee.text && !e.isTypeOnly) : undefined;
+      if (el) { spec = st.moduleSpecifier.text; exported = el.propertyName?.text ?? el.name.text; }
+    }
+    if (ts.isVariableStatement(st)) for (const d of st.declarationList.declarations) {
+      const init = d.initializer && strip(d.initializer);
+      if (!init || !ts.isCallExpression(init) || !ts.isIdentifier(init.expression) || init.expression.text !== "require" || !init.arguments[0] || !ts.isStringLiteral(init.arguments[0]) || !ts.isObjectBindingPattern(d.name)) continue;
+      const el = d.name.elements.find((e) => ts.isIdentifier(e.name) && e.name.text === callee.text);
+      if (el) { spec = init.arguments[0].text; exported = el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : callee.text; }
+    }
+  }
+  if (spec === null) return opaque;
+  if (!spec.startsWith(".")) return env.pkgNames.some((n) => spec === n || spec!.startsWith(`${n}/`)) ? { kind: "cross", key: spec } : opaque; // rule:trace-workspace-name
+  const target = resolveRelative(env.files, sf.fileName, spec); // rule:trace-resolve-import
+  const tsf = target && isSourceFile(target) ? env.sfOf(target) : null;
+  const fn = tsf ? topLevelFn(tsf, exported) : null;
+  return fn ? { kind: "fn", fn } : opaque;
+}
+
+/** A function whose own body can fail: it throws, rejects, constructs an Error, awaits (a rejection propagates), or
+ *  returns a call (delegation). A function doing none of these (a pure helper) is not a producer of a caught failure. */
+function canFail(fn: Fn): boolean {
+  let yes = !ts.isBlock(fn.body) && ts.isCallExpression(strip(fn.body as ts.Expression));
+  const visit = (x: ts.Node): void => {
+    if (ts.isThrowStatement(x) || ts.isAwaitExpression(x) || (ts.isNewExpression(x) && ERRORISH.test(nameOf(x.expression) ?? "")) || (ts.isCallExpression(x) && nameOf(x.expression) === "reject") || (ts.isReturnStatement(x) && !!x.expression && ts.isCallExpression(strip(x.expression)))) yes = true;
+    ts.forEachChild(x, visit);
+  };
+  visit(fn.body);
+  return yes;
+}
+
+/** The const-bound call whose result `id` holds, in the function around `at` and declared before it (also through
+ *  `const { a } = call()` / `const [a] = call()`); null for a parameter, a `let`, a catch variable or a non-call value. */
+function boundCall(id: ts.Identifier, at: ts.Node): ts.CallExpression | null {
+  const fn = ts.findAncestor(at, ts.isFunctionLike);
+  const scope = fn ? fnBody(fn) : at.getSourceFile();
+  if (!scope) return null;
+  let found: ts.CallExpression | null = null;
+  const binds = (n: ts.BindingName): boolean => ts.isIdentifier(n) ? n.text === id.text : n.elements.some((e) => !ts.isOmittedExpression(e) && binds(e.name));
+  ownNodes(scope, (x) => {
+    if (found || !ts.isVariableDeclaration(x) || x.getStart() >= at.getStart() || !x.initializer) return;
+    if (!(ts.getCombinedNodeFlags(x) & ts.NodeFlags.Const) || !binds(x.name)) return;
+    const init = strip(x.initializer);
+    if (ts.isCallExpression(init)) found = init;
+  });
+  return found;
+}
+
+/** Calls the condition reads a value of: a const-bound call result named in it (also inside a predicate's
+ *  arguments), or a call used as a receiver (`load().length`). A predicate call itself (`isValid(x)`) is not a producer. */
+function conditionCalls(cond: ts.Expression): ts.CallExpression[] {
+  const out: ts.CallExpression[] = [];
+  const visit = (x: ts.Node): void => {
+    if (ts.isIdentifier(x) && !(ts.isPropertyAccessExpression(x.parent) && x.parent.name === x) && !(ts.isCallExpression(x.parent) && x.parent.expression === x)) {
+      const c = boundCall(x, cond);
+      if (c && !out.includes(c)) out.push(c);
+    }
+    if ((ts.isPropertyAccessExpression(x) || ts.isElementAccessExpression(x)) && ts.isCallExpression(strip(x.expression))) out.push(strip(x.expression) as ts.CallExpression);
+    if (!ts.isFunctionLike(x)) ts.forEachChild(x, visit);
+  };
+  visit(cond);
+  return out;
+}
+
+const keyOf = (p: Producer) => (p.kind === "fn" ? `${p.fn.path}#${p.fn.symbol}` : `${p.kind}:${p.key}`);
+
+/** The producers of one site, with the hop-1 via, or a stop. */
+function siteProducers(env: TraceEnv, sf: ts.SourceFile, node: ts.Node, via: SiteVia): { via: "value" | "caught"; producers: Producer[] } | TraceStop {
+  const fromCalls = (v: "value" | "caught", calls: ts.CallExpression[], keep: (p: Producer) => boolean) => {
+    const seen = new Map<string, Producer>();
+    for (const c of calls) { const p = resolveCall(env, sf, c); if (keep(p) && !seen.has(keyOf(p))) seen.set(keyOf(p), p); }
+    return { via: v, producers: [...seen.values()] };
+  };
+  // calls in a try block (or a promise receiver) that can fail: in-repo functions that can fail, other packages'
+  // functions, and awaited opaque calls (I/O); a sync library call is not counted (see the soundness note)
+  const failing = (calls: ts.CallExpression[]) => fromCalls("caught", calls, (p) => p.kind === "cross" || (p.kind === "fn" ? canFail(p.fn) : false)); // rule:trace-can-fail
+  const awaited = (calls: ts.CallExpression[]) => calls.filter((c) => ts.isAwaitExpression(c.parent) || ts.isReturnStatement(c.parent));
+  const tryCalls = (block: ts.Block) => { const cs: ts.CallExpression[] = []; ownNodes(block, (x) => { if (ts.isCallExpression(x)) cs.push(x); }); return cs; };
+  const caughtTrace = (calls: ts.CallExpression[]) => {
+    const r = failing(calls);
+    const io = fromCalls("caught", awaited(calls), (p) => p.kind === "opaque");
+    return { via: "caught" as const, producers: [...r.producers, ...io.producers] };
+  };
+  if (REPORT_VIAS.includes(via)) {
+    if (ts.isTryStatement(node)) return caughtTrace(tryCalls(node.tryBlock)); // rule:trace-caught
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      let recv = strip(node.expression.expression);
+      while (ts.isCallExpression(recv) && ts.isPropertyAccessExpression(recv.expression) && /^(?:then|catch|finally)$/.test(recv.expression.name.text)) recv = strip(recv.expression.expression);
+      const base = ts.isCallExpression(recv) ? recv : ts.isIdentifier(recv) ? boundCall(recv, node) : null;
+      return base ? fromCalls("caught", [base], () => true) : "TRACE_NO_CONDITION";
+    }
+    return "TRACE_NO_CONDITION";
+  }
+  let cond: ts.Expression | null = null;
+  let tryStmt: ts.TryStatement | null = null;
+  for (let cur: ts.Node = node, p = node.parent; p && !ts.isFunctionLike(p) && !ts.isSourceFile(p); cur = p, p = p.parent) {
+    if (!cond && ts.isIfStatement(p) && cur !== p.expression) cond = p.expression; // rule:trace-condition
+    if (!tryStmt && ts.isCatchClause(p)) tryStmt = p.parent; // rule:trace-rethrow
+  }
+  const valued = cond ? fromCalls("value", conditionCalls(cond), () => true) : null;
+  if (valued && valued.producers.length > 0) return valued; // rule:trace-depends
+  if (tryStmt) return caughtTrace(tryCalls(tryStmt.tryBlock));
+  return cond ? "TRACE_INDEPENDENT" : "TRACE_NO_CONDITION";
+}
+
+/** The one in-repo function every `return` of `fn` hands back the result of (`return g(..)`, `return await g(..)`,
+ *  or a const bound to such a call): a delegate. null when some return is not a call result. */
+function delegate(env: TraceEnv, fn: Fn): Producer | "AMBIGUOUS" | null {
+  const sf = env.sfOf(fn.path);
+  if (!sf) return null;
+  const rets: ts.Expression[] = [];
+  if (!ts.isBlock(fn.body)) rets.push(fn.body as ts.Expression);
+  else ownNodes(fn.body, (x) => { if (ts.isReturnStatement(x) && x.expression) rets.push(x.expression); });
+  if (rets.length === 0) return null;
+  const ps = new Map<string, Producer>();
+  for (const r of rets) {
+    const e = strip(r);
+    const call = ts.isCallExpression(e) ? e : ts.isIdentifier(e) ? boundCall(e, r) : null;
+    if (!call) return null; // rule:trace-delegate-all
+    const p = resolveCall(env, sf, call);
+    ps.set(keyOf(p), p);
+  }
+  return ps.size > 1 ? "AMBIGUOUS" : ([...ps.values()][0] ?? null);
+}
+
+/** The trace of one site: causes in rank order (hop 1 first), and why it stopped (null: it ran out of in-repo producers). */
+export function traceSite(env: TraceEnv, code: string, site: ThrowSite, planned: ReadonlySet<string>): SiteTrace {
+  const out: SiteTrace = { code, site: { path: site.path, line: site.line }, causes: [], stop: null };
+  const at = siteNodes.get(site);
+  if (!at) return { ...out, stop: "TRACE_NO_CONDITION" };
+  const first = siteProducers(env, at.sf, at.node, site.via);
+  if (typeof first === "string") return { ...out, stop: first };
+  if (first.producers.length > 1) return { ...out, stop: "TRACE_AMBIGUOUS" }; // rule:trace-unique
+  if (first.producers.length === 0) return { ...out, stop: "TRACE_INDEPENDENT" };
+  const own = packageDirOf(env.all, site.path);
+  let p: Producer = first.producers[0]!;
+  let via: TraceCause["via"] = first.via;
+  for (let hop = 1; ; hop++) {
+    if (p.kind === "opaque") return { ...out, stop: hop === 1 ? "TRACE_UNRESOLVED" : null };
+    if (hop > MAX_TRACE_HOPS) return { ...out, stop: "TRACE_DEPTH" }; // rule:trace-depth
+    if (p.kind === "cross" || packageDirOf(env.all, p.fn.path) !== own) return { ...out, stop: "TRACE_CROSS_PACKAGE" }; // rule:trace-same-package
+    const key = `${p.fn.path}#${p.fn.symbol}`;
+    if (planned.has(key) || out.causes.some((c) => `${c.path}#${c.symbol}` === key)) return { ...out, stop: hop === 1 ? "TRACE_ALREADY_PLANNED" : null }; // rule:trace-not-planned
+    out.causes.push({ path: p.fn.path, line: p.fn.line, symbol: p.fn.symbol, hop, via });
+    const next = delegate(env, p.fn); // rule:trace-delegate
+    if (next === null) return out;
+    if (next === "AMBIGUOUS") return { ...out, stop: "TRACE_AMBIGUOUS" };
+    p = next;
+    via = "delegate";
+  }
+}
+
+/** The traces of every site of every thrown or reported code (empty for a refused diagnosis). */
+export function traceDiagnosis(code: CodeRepo, d: Diagnosis): SiteTrace[] {
+  if (d.family === null) return [];
+  const tree = code.tree();
+  const all = tree.ok ? tree.files : [];
+  const parsed = new Map<string, ts.SourceFile | null>();
+  const pkgNames: string[] = [];
+  for (const f of all.filter((x) => posix.basename(x) === "package.json")) {
+    const r = code.read(f);
+    try { const n = r.ok ? JSON.parse(r.text).name : null; if (typeof n === "string" && n) pkgNames.push(n); } catch { /* not a manifest */ }
+  }
+  const env: TraceEnv = { code, all, files: new Set(all), pkgNames, sfOf: (p) => { if (!parsed.has(p)) parsed.set(p, parse(code, p)); return parsed.get(p)!; } };
+  const planned = new Set(d.codes.flatMap((c) => c.sites.filter((s) => s.symbol).map((s) => `${s.path}#${s.symbol}`)));
+  return d.codes.flatMap((c) => c.sites.map((s) => traceSite(env, c.code, s, planned)));
 }
 
 // ---- the planner
@@ -308,9 +562,23 @@ export function planTaskV5(taskId: string, request: string, ctx: PlanContext, co
     const p = newTestPath(all, s.path);
     if (p && !tests.some((x) => x.path === p)) tests.push({ path: p, add: true, reason: `new test for ${s.path}` });
   }
+  // Batch 34 (M198): each traced cause is a ranked edit-source step above its symptom's step (hop 1 first); a cause in
+  // a new file adds that file (role source) while the source cap allows, a cause already stepped is not repeated.
+  const causeFiles: { path: string; reason: string }[] = [];
+  const stepped = new Set(sources.map((s) => `${s.path}#${s.symbol}`));
+  const causesOf = (path: string) => d.traces.filter((t) => t.site.path === path).flatMap((t) => t.causes.map((c) => ({ c, code: t.code })));
   const steps: PlanStep[] = [];
   const push = (s: Omit<PlanStep, "n">) => steps.push({ n: steps.length + 1, ...s });
-  for (const s of sources) push({ action: "edit-source", file: s.path, symbol: s.symbol, status: "missing", rule: null, objective: null, missing: "edit-existing-function" });
+  for (const s of sources) {
+    for (const { c, code: k } of causesOf(s.path)) { // rule:trace-plan-cause
+      const known = sources.some((x) => x.path === c.path) || causeFiles.some((x) => x.path === c.path);
+      if (stepped.has(`${c.path}#${c.symbol}`) || (!known && sources.length + causeFiles.length >= MAX_SOURCES_V4)) continue;
+      stepped.add(`${c.path}#${c.symbol}`);
+      if (!known) causeFiles.push({ path: c.path, reason: `probable cause of ${k} (${c.via}, hop ${c.hop})` });
+      push({ action: "edit-source", file: c.path, symbol: c.symbol, status: "missing", rule: null, objective: null, missing: "edit-existing-function" });
+    }
+    push({ action: "edit-source", file: s.path, symbol: s.symbol, status: "missing", rule: null, objective: null, missing: "edit-existing-function" });
+  }
   if (tests.length === 0) push({ action: "add-test", file: null, symbol: null, status: "missing", rule: null, objective: null, missing: "add-test-file" });
   for (const t of tests) push({ action: t.add ? "add-test" : "edit-test", file: t.path, symbol: null, status: "missing", rule: null, objective: null, missing: t.add ? "add-test-file" : "extend-existing-test" });
   const { n: _v4n, ...runTests } = base.steps[base.steps.length - 1]!;
@@ -318,8 +586,8 @@ export function planTaskV5(taskId: string, request: string, ctx: PlanContext, co
   const tc = testCommandFor(code, all, sources[0]?.path ?? null, tests.map((t) => t.path));
   return {
     ...base, planner: PLANNER_V5,
-    understanding: { ...base.understanding, kind: "edit", testsOnly: false, scope: { names: d.codes.filter((c) => c.status === "thrown" || c.status === "reported").length, sources: sources.length, tests: tests.length } },
-    files: [...sources.map((s) => ({ path: s.path, role: "source" as const, reason: s.reason })), ...tests.map((t) => ({ path: t.path, role: "test" as const, reason: t.reason }))],
+    understanding: { ...base.understanding, kind: "edit", testsOnly: false, scope: { names: d.codes.filter((c) => c.status === "thrown" || c.status === "reported").length, sources: sources.length + causeFiles.length, tests: tests.length } },
+    files: [...sources.map((s) => ({ path: s.path, role: "source" as const, reason: s.reason })), ...causeFiles.map((s) => ({ path: s.path, role: "source" as const, reason: s.reason })), ...tests.map((t) => ({ path: t.path, role: "test" as const, reason: t.reason }))],
     steps, tests: { files: tests.map((t) => t.path), command: tc.command },
     testCommand: { pm: tc.pm, runner: tc.runner, packageDir: tc.packageDir, form: tc.form },
     missingSkills: [...new Set(steps.map((s) => s.missing).filter((m): m is Capability => m !== null))],

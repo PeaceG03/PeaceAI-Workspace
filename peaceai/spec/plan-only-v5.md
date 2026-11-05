@@ -215,3 +215,84 @@ and loosened); m194 now also requires each M195 mutant to be caught by a case of
   v5 devScore 0.764, runTests 0.833, row-for-row identical (the dev split has no failure-log requests).
 - The motivating real request was re-run as an informational check only (not a test, fixture or score); results are
   in the Batch 31 PR description.
+
+## Batch 34 (M198): symptom-to-cause trace (`fix-at-probable-cause`)
+
+Before Batch 34 every v5 edit-source step named where a failure code surfaces (the throw or report site). When
+that site's condition reads a value from another function of the same package, the real fault is often in that
+producer. M198 adds a bounded, static, conservative trace per diagnosed site (`Diagnosis.traces`) and plans each
+traced producer as a ranked `edit-source` step ("probable cause") above the symptom step. All steps stay `missing`;
+the trace never runs code. v4 stays the default and byte-identical (digest `b667d518...`), v5 stays unselectable,
+`plandefault.ts` and `selfpropose.ts` are unchanged, and a refused diagnosis is still v4's plan exactly
+(`traces: []`).
+
+### What hop 1 reads (one tagged line per condition in plan5.ts)
+
+- `trace-condition` / `trace-depends`: a throw site in a branch of an `if` reads the condition's producers: a
+  `const`-bound call result named in it (also destructured, `const [a] = f()` / `const { a } = f()`, also inside a
+  predicate's arguments), or a call used as a receiver (`load().length`). Not a parameter, a field, a `let`, a
+  catch variable or a predicate call's own result: those give `TRACE_INDEPENDENT`.
+- `trace-rethrow`: a throw inside a `catch` block reads the try block's failing calls (via `caught`); a throw in the
+  try block or a `finally` has no condition (`TRACE_NO_CONDITION`).
+- `trace-caught`: an M195 report site (catch-log, catch-push, catch-result, toplevel-catch) reads its try block's
+  failing calls, or the base call of its `.catch`/`.then` chain.
+- `trace-own-body`: only a function's own calls count; calls inside a nested callback (`forEach((x) => f(x))`) do not.
+- `trace-can-fail`: in a try block an in-repo call counts only when it can fail (its body throws, rejects, builds an
+  `*Error`, awaits, or returns a call); a library call counts only when awaited or returned.
+- `trace-resolve-this` (class style only), `trace-resolve-import`: a call resolves to a method of the enclosing class
+  (`this.m()`), a top-level function of the same file, or a named ESM import / destructured `require` of a relative
+  module's top-level function. Anything else (a field's method, an inherited method, a namespace require, a barrel
+  re-export, a library) is opaque: `TRACE_UNRESOLVED` at hop 1, the end of the trace after it.
+- `trace-workspace-name`, `trace-same-package`: a bare specifier naming a workspace package, or a relative target whose
+  nearest package.json differs from the site's, is `TRACE_CROSS_PACKAGE`; the trace never crosses a package boundary.
+
+### Hops, refusals and planning
+
+- `trace-unique`: more than one producer at hop 1 is `TRACE_AMBIGUOUS` (no cause planned; no guess between them).
+- `trace-delegate` / `trace-delegate-all`: from a producer, hop 2 is the one in-repo function that EVERY `return`
+  hands back the result of (`return g(..)`, `return await g(..)`, or a const bound to such a call). An early
+  literal return ends the trace (no hop 2); two different delegates are `TRACE_AMBIGUOUS` with hop 1 kept.
+- `trace-depth`: at most `MAX_TRACE_HOPS` = 2 causes; a third delegate is `TRACE_DEPTH` and is not planned.
+- `trace-not-planned`: a producer that is itself a diagnosed site (or already in the trace) is not added again
+  (`TRACE_ALREADY_PLANNED` at hop 1).
+- `trace-plan-cause`: each cause is an `edit-source` step placed before the symptom step of its file (hop 1 first);
+  a cause shared by several codes is stepped once; cause files are listed after the symptom sources with reason
+  `probable cause of CODE (via, hop N)` and count against MAX_SOURCES_V4. `notYet` gains `fix-at-probable-cause`
+  when any trace has a cause. Tests are unchanged (chosen from the symptom sources).
+- Stops: `TRACE_NO_CONDITION`, `TRACE_INDEPENDENT`, `TRACE_UNRESOLVED`, `TRACE_AMBIGUOUS`, `TRACE_CROSS_PACKAGE`,
+  `TRACE_ALREADY_PLANNED`, `TRACE_DEPTH`; null when the trace ran out of in-repo producers.
+
+### Soundness note (Batch 34)
+
+- A cause step is a "probable cause", not a proven one: the trace shows only that the site's condition (or caught
+  error) syntactically depends on that function's result, not that the function is wrong. The symptom step is
+  always kept, so a wrong cause adds one step and never removes the right one.
+- Every case the static reading cannot pin to a single in-repo function refuses with an explicit stop rather than
+  guessing: several producers, opaque calls (fields, inherited methods, namespace requires, re-exports, libraries),
+  other packages, and anything past two hops. A refused trace leaves the plan as it was before Batch 34.
+- Known under-approximations (missed causes, never wrong ones): a sync library call in a try block is not counted
+  (it may throw); a predicate call in a condition is not a producer; module-level consts, `let` reassignments,
+  fields and parameters are not followed (no inter-procedural data flow); dynamic dispatch is not resolved.
+- Granularity: edit-source steps are per file for symptoms (as before) and per function for causes; causes are
+  capped with the sources by MAX_SOURCES_V4.
+- The trace adds steps only to plans v5 already diagnoses; it does not change which requests v5 diagnoses or
+  refuses, so it cannot widen what v5 claims to diagnose.
+
+### Tests (Batch 34)
+
+m198-fixtures.ts: `BILLING` (pnpm + jest workspace, TypeScript ESM, class-based service with a sibling package) and
+`ETL` (flat npm + vitest, CommonJS functional pipeline with a nested package). m198-cases.ts: for each of the 16
+`rule:trace-*` lines, admit cases (both shapes, except `trace-resolve-this`, which is class-only) and refused near
+misses, including ambiguous producers, cross-package producers (workspace name and relative path), depth exceeded,
+and a condition not depending on the producer. m198-plan-v5-trace.test.ts runs these with every M194/M195 case,
+checks tag coverage, and runs 22 mutants (one removal per tag plus loosening mutants); each must fail a case of its
+own condition. It also has a generality check on the fixtures and the wiring check (v4 digest, v5 unselectable,
+plandefault.ts hash). Two M195 cases (`mail-site-is-the-try`, `agent-site-is-the-chain`) changed expectations on
+purpose: their fixtures now trace to a cause (`fetchInbox`, `runSteps`). m194's tag check now covers only `diag-*`.
+
+### Scores (Batch 34, honest)
+
+- Public DEV split (12 tasks, plan-grade-v2, no tuning; hidden half not touched): v4 devScore 0.764, runTests 0.833;
+  v5 devScore 0.764, runTests 0.833 (the dev split has no failure-log requests, so the trace never fires there).
+- The motivating real request was re-run as an informational check only (not a test, fixture or score); results are
+  in the Batch 34 PR description.

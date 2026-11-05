@@ -89,15 +89,20 @@ export const CASES_V5_REPORT: ShapedCase[] = [
   { id: "mail-site-is-the-try", shape: "mail", kind: "admit", condition: "diag-report-caught", run: (m, c) => {
     const p = planV5(m, c, MAIL, MAIL_REQ);
     assert.deepEqual(p.diagnosis.codes.map((x) => x.sites[0]?.line), [3, 5, 2], "the try lines, not the log / push / return lines");
-    assert.deepEqual(p.diagnosis.notYet, ["reproduce-reported-failure", "fix-at-report-site"]);
-    assert.deepEqual(shape(p), ["edit-source src/sync.ts missing", "edit-source src/digest.ts missing", "edit-source src/quota.ts missing", "edit-test test/sync.test.ts missing", "edit-test test/digest.test.ts missing", "edit-test test/quota.test.ts missing", "run-tests - missing"]);
+    // Batch 34 (M198, intentional): the try in syncMailbox awaits fetchInbox, which throws, so fetchInbox is traced as
+    // the probable cause and stepped above the symptom (fix-at-probable-cause joins notYet)
+    assert.deepEqual(p.diagnosis.notYet, ["reproduce-reported-failure", "fix-at-report-site", "fix-at-probable-cause"]);
+    assert.deepEqual(shape(p), ["edit-source src/inbox.ts missing", "edit-source src/sync.ts missing", "edit-source src/digest.ts missing", "edit-source src/quota.ts missing", "edit-test test/sync.test.ts missing", "edit-test test/digest.test.ts missing", "edit-test test/quota.test.ts missing", "run-tests - missing"]);
     assert.equal(p.tests.command, "npx vitest run test/sync.test.ts test/digest.test.ts test/quota.test.ts");
-    assert.deepEqual(p.steps.map((s) => s.n), [1, 2, 3, 4, 5, 6, 7], "v4's run-tests step is renumbered, not copied with v4's number");
+    assert.deepEqual(p.steps.map((s) => s.n), [1, 2, 3, 4, 5, 6, 7, 8], "v4's run-tests step is renumbered, not copied with v4's number");
   } },
   { id: "agent-site-is-the-chain", shape: "agent", kind: "admit", condition: "diag-report-caught", run: (m, c) => {
     const p = planV5(m, c, AGENT, AGENT_REQ);
-    assert.deepEqual(p.files.filter((f) => f.role === "source").map((f) => f.path), ["start", "run", "cache", "deps"].map((f) => `${A}/src/${f}.ts`));
-    assert.deepEqual(p.steps.filter((s) => s.action === "edit-source").map((s) => s.symbol), ["start", "run", "save", "resolveDeps"]);
+    // Batch 34 (M198, intentional): the chains' base calls runSteps() and main(argv) are traced as probable causes,
+    // stepped above their symptoms; the symptom sites themselves are unchanged
+    assert.deepEqual(p.files.filter((f) => f.role === "source" && !f.reason.startsWith("probable cause")).map((f) => f.path), ["start", "run", "cache", "deps"].map((f) => `${A}/src/${f}.ts`));
+    assert.deepEqual(p.files.filter((f) => f.reason.startsWith("probable cause")).map((f) => `${f.path} ${f.reason}`), [`${A}/src/steps.ts probable cause of STEP_RUN_FAILED (caught, hop 1)`]);
+    assert.deepEqual(p.steps.filter((s) => s.action === "edit-source").map((s) => s.symbol), ["runSteps", "start", "main", "run", "save", "resolveDeps"]);
     assert.ok(p.steps.every((s) => s.status === "missing"));
     assert.equal(p.tests.command, "cd packages/agent && pnpm jest test/start.test.ts test/run.test.ts test/cache.test.ts test/deps.test.ts");
   } },
