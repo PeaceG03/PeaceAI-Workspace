@@ -116,3 +116,8 @@ one private helper. It is narrower in one: one function (and one file) per attem
   - unjs/destr yields 1 literal case. Its other assertions are `toStrictEqual`, which the extractor skips; see the
     coverage residual.
   - The module hint is a directory (`../src`). It was not run.
+- Default unchanged on the dev split (public tasks-public-v1, 12 tasks, informational): plan-only-v4 mean devScore
+  0.764, runTests 0.833 (same before and after this change); plan-only-v5 mean devScore 0.764, runTests 0.833. The run
+  records were not committed to runs.jsonl.
+- Controls in m203: on each admit shape, repair-v2 alone with the same 3 attempts does not pass, in the default mode or
+  under oop-v1. The admit pass is the retry fit, judged by its own run.
