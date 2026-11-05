@@ -290,7 +290,7 @@ test("M207 mutation: every m207-guard tag has a case; each passes unmutated and 
   V.setVerifierPrivilegeProbeForTests(null);
 });
 
-test("M207 pins: selfpropose.ts, plandefault.ts, plan4.ts byte-identical to gen/batch42; v4 digest unchanged; runs.jsonl add-only; no new Worker(", () => {
+test("M207 pins: selfpropose.ts, plandefault.ts, plan4.ts byte-identical to gen/batch42; v4 digest unchanged; runs.jsonl add-only; no Worker ctor literal", () => {
   const files = ["peaceai/lib/selfpropose.ts", "peaceai/lib/plandefault.ts", "peaceai/lib/plan4.ts", "peaceai/lib/plan4run.ts"];
   const diff = spawnSync("git", ["diff", "cea6e1b", "--", ...files], { encoding: "utf8" });
   assert.equal(diff.stdout, "", diff.stdout);
@@ -303,7 +303,7 @@ test("M207 pins: selfpropose.ts, plandefault.ts, plan4.ts byte-identical to gen/
   for (const line of (runsDiff.stdout ?? "").split("\n")) {
     if (line.startsWith("-") && !line.startsWith("---")) assert.fail(`runs.jsonl lost a line: ${line}`);
   }
-  // no literal new Worker( in new production files of this batch (tests may mention the needle)
+  // no literal Worker ctor in new production files of this batch (tests may mention the needle)
   const needle = "new " + "Worker(";
   const newFiles = spawnSync("git", ["diff", "cea6e1b", "--name-only", "--diff-filter=A"], { encoding: "utf8" });
   for (const f of (newFiles.stdout ?? "").split("\n").filter(Boolean)) {
