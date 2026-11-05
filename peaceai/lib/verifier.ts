@@ -387,8 +387,8 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
         if (scope.has(d.name.text)) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":const-shadow"); return false; } // m205-guard:const-shadow
         const v = litFromNode(d.initializer, scope);
         if (!v.ok) { refuse("OOP_CASES_UNSUPPORTED_TEST", where + ":var"); return false; } // m205-guard:const-kind
-        if (isConst) { scope.set(d.name.text, v.value); } // m205-guard:const-bind
-        else { scope.set(d.name.text, v.value); mutable.add(d.name.text); } // m206-guard:var-bind
+        if (isConst) scope.set(d.name.text, v.value); // m205-guard:const-bind
+        if (!isConst) { scope.set(d.name.text, v.value); mutable.add(d.name.text); } // m206-guard:var-bind
         continue;
       }
       // destructuring: const only (M206)
@@ -967,8 +967,8 @@ export function extractCasesWithStats(source: string, filePath = "test.ts"): { r
       if (!a) {
         const u = findsBindingUnsafe(s, scope, mutable);
         if (u) { refuse("OOP_CASES_UNSUPPORTED_TEST", "stmt:" + (u === "const-reassign" ? "const-reassign" : u)); continue; }
-        refuse("OOP_CASES_UNSUPPORTED_TEST", "stmt:" + kindWord(s)); continue;
-      } // m204-guard:test-stmt
+        refuse("OOP_CASES_UNSUPPORTED_TEST", "stmt:" + kindWord(s)); continue; // m204-guard:test-stmt
+      }
       recognised++;
       if (awaited) { refuse("OOP_CASES_UNSUPPORTED_ASSERT", "await:" + (a.style === "assert" ? a.method : a.path)); continue; }
       const before = cases.length;
