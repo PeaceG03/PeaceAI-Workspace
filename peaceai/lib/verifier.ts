@@ -1371,7 +1371,16 @@ function runJudge(v: VerifierUid, work: string, outDir: string, req: { cases: re
 }
 
 function cleanup(work: string, home: string, cand: CandUid): void {
-  for (const p of candPids(cand.uid)) { try { spawnSync("sudo", ["-n", "kill", "-KILL", String(p)], { stdio: "ignore" }); } catch { /* */ } }
+  // Only kill cand PIDs whose cwd is under this run's work/home. Concurrent tests share the cand uid;
+  // a global kill races them (empty harness replies / leftover PIDs in sibling files).
+  for (const p of candPids(cand.uid)) {
+    try {
+      const cwd = (spawnSync("sudo", ["-n", "readlink", "-f", "--", `/proc/${p}/cwd`], { encoding: "utf8" }).stdout ?? "").trim();
+      if (cwd === work || cwd === home || cwd.startsWith(work + "/") || cwd.startsWith(home + "/")) {
+        spawnSync("sudo", ["-n", "kill", "-KILL", String(p)], { stdio: "ignore" });
+      }
+    } catch { /* */ }
+  }
   spawnSync("sudo", ["-n", "rm", "-rf", "--", home], { stdio: "ignore" });
   spawnSync("sudo", ["-n", "rm", "-rf", "--", join(work, "verdict")], { stdio: "ignore" });
   try { rmSync(home, { recursive: true, force: true }); } catch { /* */ }
