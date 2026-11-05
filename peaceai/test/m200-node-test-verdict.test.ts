@@ -307,12 +307,12 @@ for (const h of HONEST) {
 // ---- the pure gate: the m200 guard with its near misses (replayed against the loop.ts mutant below)
 interface GCase { id: string; guard: string; run: (l: L) => void }
 const GCASES: GCase[] = [
-  { id: "node-test: a wider class (new file, a dangerous word, multi-token, config) is INPROC_VERDICT_TERMINAL; near misses: node-test inside the bound is admitted, mocha with the same class stays UNPROBED", guard: "node-test", run(l) {
+  { id: "node-test: a wider class (new file, a dangerous word, multi-token, config) is INPROC_VERDICT_TERMINAL; near misses: node-test inside the bound is admitted, an unknown runner with the same class stays UNPROBED (M201: mocha is TERMINAL)", guard: "node-test", run(l) {
     for (const c of ["new-file", "dangerous:process", "multi-token", "config", "global-write"]) assert.equal(l.inprocScopeProblem("node-test", [c]), "INPROC_VERDICT_TERMINAL", c);
     assert.equal(l.inprocScopeProblem("node-test", ["in-body", "dangerous:process"]), "INPROC_VERDICT_TERMINAL", "one wider edit is enough");
     assert.equal(l.inprocScopeProblem("node-test", ["in-body"]), null, "near miss: bounded");
     assert.equal(l.inprocScopeProblem("node-test", ["export-keyword", "in-body"]), null, "near miss: bounded");
-    assert.equal(l.inprocScopeProblem("mocha", ["new-file"]), "INPROC_VERDICT_UNPROBED", "near miss: mocha is as M199 left it");
+    assert.equal(l.inprocScopeProblem("ava", ["new-file"]), "INPROC_VERDICT_UNPROBED", "near miss: an unknown runner is as M199 left it");
     assert.equal(l.inprocScopeProblem("node-tests", ["new-file"]), "INPROC_VERDICT_UNPROBED", "near miss: only the exact runner name");
     for (const r of ["vitest", "jest"]) assert.equal(l.inprocScopeProblem(r, ["new-file"]), "INPROC_VERDICT_TERMINAL", r);
   } },

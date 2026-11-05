@@ -258,17 +258,17 @@ const GCASES: GCase[] = [
     }
     assert.equal(l.editSourceClass(ROMAN, ROMAN.replace("% 3", "% 4")), "in-body");
   } },
-  { id: "vitest: a wider class (new file, multi-token, a refusal reason) is INPROC_VERDICT_TERMINAL; near miss: mocha with the same class is not terminal", guard: "vitest", run(l) {
+  { id: "vitest: a wider class (new file, multi-token, a refusal reason) is INPROC_VERDICT_TERMINAL; near miss: an unknown runner with the same class is not terminal (M201: mocha now is, m201-guard:mocha)", guard: "vitest", run(l) {
     for (const c of ["new-file", "multi-token", "dangerous:globalThis", "test-file"]) assert.equal(l.inprocScopeProblem("vitest", [c]), "INPROC_VERDICT_TERMINAL", c);
-    assert.notEqual(l.inprocScopeProblem("mocha", ["new-file"]), "INPROC_VERDICT_TERMINAL");
+    assert.notEqual(l.inprocScopeProblem("tap", ["new-file"]), "INPROC_VERDICT_TERMINAL");
   } },
   { id: "jest: a wider class is INPROC_VERDICT_TERMINAL; near miss: an unknown runner with the same class is not terminal (M200: node:test now is, m200-guard:node-test)", guard: "jest", run(l) {
     for (const c of ["new-file", "multi-token", "global-write", "config"]) assert.equal(l.inprocScopeProblem("jest", [c]), "INPROC_VERDICT_TERMINAL", c);
     assert.notEqual(l.inprocScopeProblem("ava", ["new-file"]), "INPROC_VERDICT_TERMINAL");
   } },
-  { id: "unprobed: mocha and an unknown runner are INPROC_VERDICT_UNPROBED under a wider class (fail closed; M200 moved node:test to TERMINAL); near miss: the bounded class is admitted", guard: "unprobed", run(l) {
-    for (const r of ["mocha", "ava", ""]) assert.equal(l.inprocScopeProblem(r, ["new-file"]), "INPROC_VERDICT_UNPROBED", r);
-    assert.equal(l.inprocScopeProblem("mocha", ["in-body"]), null);
+  { id: "unprobed: an unknown runner is INPROC_VERDICT_UNPROBED under a wider class (fail closed; M200 moved node:test, M201 mocha to TERMINAL); near miss: the bounded class is admitted", guard: "unprobed", run(l) {
+    for (const r of ["ava", "tap", ""]) assert.equal(l.inprocScopeProblem(r, ["new-file"]), "INPROC_VERDICT_UNPROBED", r);
+    assert.equal(l.inprocScopeProblem("ava", ["in-body"]), null);
   } },
   { id: "pins: the bound is pinned apart from the policy, today's policy sits inside it (the gate is inert), the codes are loop codes", guard: "-", run(l, r) {
     assert.deepEqual([...l.INPROC_BOUNDED_SCOPE], ["export-keyword", "in-body"]);

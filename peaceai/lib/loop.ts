@@ -735,8 +735,8 @@ export function editScopeProblem(edits: readonly Edit[], original: (p: string) =
 /** PINNED (M199): the edit-scope classes under which the M193 in-process residual is killed by the M175 gate. Pinned
  *  apart from EDIT_SCOPE_POLICY on purpose: widening that policy does not widen this; a wider class is refused below. */
 export const INPROC_BOUNDED_SCOPE: readonly string[] = Object.freeze(["export-keyword", "in-body"]);
-/** M199 refusal codes (LoopCode): TERMINAL, proven not closable for the runner (vitest, jest; M200: node:test);
- *  UNPROBED, not proven safe under a wider scope (mocha: assertion libraries other than node:assert; anything else). */
+/** M199 refusal codes (LoopCode): TERMINAL, proven not closable for the runner (vitest, jest; M200: node:test;
+ *  M201: mocha); UNPROBED, not proven safe under a wider scope (any other runner name). */
 export const INPROC_VERDICT_CODES = ["INPROC_VERDICT_TERMINAL", "INPROC_VERDICT_UNPROBED"] as const;
 /** Why the runner's verdict cannot be credited for edits of these scope classes (null: every class is inside the M175
  *  bound). Fail-closed: a runner without its own line gets the UNPROBED default. */
@@ -749,6 +749,11 @@ export function inprocScopeProblem(runner: string, classes: readonly string[]): 
   // authenticates, plus its exit code: code under test forges both. Run in-process under the M173 nonce channel
   // instead, the node:test internals can be locked, but that channel itself is reachable (the fs binding, inspector).
   if (runner === "node-test") return "INPROC_VERDICT_TERMINAL"; // m200-guard:node-test
+  // M201 (batch 37, spec/loop-runners-inproc-m201.md): real mocha 10 under the M193 guarded route. The M193 guards hold
+  // against mocha-internal rewrites, but code under test reaches the report channel (the fs binding, the inspector from
+  // the thread, a worker or a child) and, with no channel at all, mocha's own Runnable through an Object.prototype
+  // setter (survives node's permission model too). The verdict shares the heap of the code it judges: TERMINAL.
+  if (runner === "mocha") return "INPROC_VERDICT_TERMINAL"; // m201-guard:mocha
   return "INPROC_VERDICT_UNPROBED"; // m199-guard:unprobed
 }
 /** The widest scope class a (non-refused) proposal ran under, for the PASS row, or null if there is nothing to record. */
