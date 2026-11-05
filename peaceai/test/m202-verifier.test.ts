@@ -42,8 +42,10 @@ function fixture(name: string, files: Record<string, string>): string {
     mkdirSync(join(dir, dirname(f)), { recursive: true });
     writeFileSync(join(dir, f), s);
   }
+  // mkdtemp is 0700; cand must traverse every ancestor to read the module
+  chmodSync(base, 0o755);
   chmodSync(dir, 0o755);
-  spawnSync("chmod", ["-R", "a+rX", dir]);
+  spawnSync("chmod", ["-R", "a+rX", base]);
   return dir;
 }
 
@@ -213,10 +215,13 @@ test("M202 in-process re-check: Object.is / assert patch CREDITED by a naive in-
     const got = mod.isLeap(1900);
     return Object.is(got, false); // honest expect: 1900 is not a leap year
   };
+  const realIs = Object.is;
   // Object.is patch: returns wrong true for 1900 (%4===0) but Object.is always true -> naive judge CREDITS
   assert.equal(runInproc("  Object.is = () => true;\n  return y % 4 === 0;"), true, "inproc Object.is forge credits");
+  Object.is = realIs; // restore: the forge patches the test process too
   // without patch, wrong body fails the naive judge
   assert.equal(runInproc("  return y % 4 === 0;"), false, "inproc wrong body fails");
+  Object.is = realIs;
   // verifier rejects the Object.is forge (1900 still wrong by value)
   const r = v(dir, "src/leap.js", LEAP_CASES, `exports.isLeap = function isLeap(y) {\n  Object.is = () => true;\n  return y % 4 === 0;\n};\n`);
   assert.equal(r.code, "OOP_OK");

@@ -381,6 +381,25 @@ function resolveModule(root: string, mod: string): string | null {
   return abs;
 }
 
+/** Ensure the candidate uid can traverse to `abs` (chmod +x on ancestors we own; +r on the file). */
+function ensureCandReadable(abs: string): boolean {
+  try {
+    const root = resolve("/");
+    let cur = dirname(abs);
+    const chain: string[] = [];
+    while (cur && cur !== root) { chain.push(cur); const parent = dirname(cur); if (parent === cur) break; cur = parent; }
+    for (const d of chain.reverse()) {
+      try { const st = spawnSync("stat", ["-c", "%u %a", d], { encoding: "utf8" });
+        const [uid, mode] = (st.stdout ?? "").trim().split(/\s+/);
+        const modeNum = mode ? parseInt(mode, 8) : NaN;
+        if (Number(uid) === process.getuid!() && Number.isFinite(modeNum) && !(modeNum & 0o001)) chmodSync(d, modeNum | 0o011);
+      } catch { /* best effort */ }
+    }
+    try { chmodSync(abs, 0o644); } catch { /* */ }
+    return true;
+  } catch { return false; }
+}
+
 
 function candPids(uid: number): number[] {
   return (spawnSync("ps", ["-e", "-o", "pid=,uid="], { encoding: "utf8" }).stdout ?? "")
@@ -407,6 +426,8 @@ export function verify(o: VerifyOptions): VerifyResult {
   const cand = cu.cand;
   const modAbs = resolveModule(o.root, o.module);
   if (!modAbs) return { code: "OOP_MODULE", detail: o.module }; // m202-guard:module
+  ensureCandReadable(modAbs);
+  try { chmodSync(resolve(o.root), 0o755); } catch { /* best effort */ }
 
   const callMs = Math.max(100, Math.floor(o.callMs ?? DEFAULT_CALL_MS));
   const sessionMs = Math.max(callMs, Math.floor(o.sessionMs ?? DEFAULT_SESSION_MS));
