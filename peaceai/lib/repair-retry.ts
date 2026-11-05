@@ -589,7 +589,6 @@ export function applyBranch(src: string, fn: string, pred: RetryPred, tThen: Tra
     const expr = out.slice(s, e);
     out = out.slice(0, s) + `(${pred.code} ? ${tThen.wrap(expr)} : ${tElse.wrap(expr)})` + out.slice(e);
   }
-  if (out.length - src.length > RETRY_SCOPE_POLICY.maxAddedChars) return null; // m209-guard:branch-size
   if (retrySourceClass(src, out) !== "rr-in-function") return null; // m209-guard:branch-class
   return out;
 }

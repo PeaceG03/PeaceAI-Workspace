@@ -111,7 +111,8 @@ one private helper. It is narrower in one: one function (and one file) per attem
 
 - ~~The proposer never writes a helper.~~ Closed by M208 (below): it writes one bounded private helper when an ordered
   pair of pinned transforms fits and no single one does. Helpers for other kinds of shared logic are still not written.
-- Transforms wrap returned values only. Wrong arguments, wrong branches or constants are left to repair-v2.
+- Transforms wrap returned values only. Wrong arguments are left to repair-v2. Wrong constants and a bounded class of
+  wrong branches are closed by M209 (below).
 - Dev split (informational, no credit, no tuning):
   - Under oop-v1, 11 of the 12 public dev tasks' team tests yield no data-only cases: 7 OOP_CASES_EMPTY and 4
     OOP_CASES_NONLITERAL. repair-retry-v1 would refuse VERDICT_OOP_CASES at the baseline, before any attempt.
@@ -167,5 +168,56 @@ Code: `fitPair`, `freshHelperName`, `applyHelper` in `peaceai/lib/repair-retry.t
 - The helper cannot widen what an edit may do: it is code inside the same frozen class (no modifier, no export, no new
   dangerous word, no global write, the size bound), and the class change only narrows it (shadowing) or reads the
   existing rule correctly (pick). The gate is defence in depth. The verdict's soundness is verifier-v1's (M202, M207).
-- Residuals: only transform pairs are synthesised (no branches, constants or argument fixes); a pair is tried only when
-  no single transform fits; still EXPERIMENTAL, opt-in, not the default and not for credit.
+- Residuals closed by M209 (below) for constants and guarded branches; argument fixes and other shared-logic helpers
+  are still not synthesised. A pair is tried only when no single transform and no constant fits; still EXPERIMENTAL,
+  opt-in, not the default and not for credit.
+
+## M209 (batch 45): constant and guarded-branch fixes
+
+Code: `fitConstant`, `applyConstant`, `fitBranch`, `applyBranch`, `litText`, `literalsInFn` in
+`peaceai/lib/repair-retry.ts`. Tests: `peaceai/test/m209-retry-forms.test.ts`.
+
+- **When.** For an attempt k >= 2, on ONE run's evidence (same order as before: the last attempt's own run, else the
+  baseline), only when `fitTransform` refuses `no-fit`. The proposer then tries, in this pinned order:
+  1. **constant (M209):** `fitConstant` — every failing case of the function returned the same number/string V and
+     expects the same W ≠ V; no passing case expects V; the function body contains a number/string literal equal to V.
+  2. **pair / helper (M208):** `fitPair` / `applyHelper` as before.
+  3. **guarded branch (M209):** `fitBranch` — the cases split into exactly two non-empty groups by one predicate on a
+     single parameter, and each group fits one transform (pinned transforms, plus identity for an already-correct
+     group). Predicates, per parameter left-to-right: `typeof p === <type observed on that arg in the cases>`; then
+     `p === lit` / `p < lit` / `p > lit` for a literal taken from that argument in the cases.
+- **What.**
+  - Constant: replace every number/string literal equal to V inside the function's own body with the literal form of W.
+  - Branch: wrap every value the function returns (its own returns only) as `(pred ? tThen(e) : tElse(e))`.
+- **Bound.** Offered only if `retrySourceClass` admits the edit as `rr-in-function` (the frozen rr-in-function-v1 class;
+  no new edit-class, EDIT_SCOPE_POLICY unchanged). Over the size bound, a foreign new word, a two-literal failure, a
+  three-way typeof split, a predicate on two arguments, or a predicate literal not present in the cases: refused, and
+  the next form in the order is tried (or the base proposer).
+- Unchanged: oop-v1 only, `RETRY_MAX_ATTEMPTS = 3`, credit only from the attempt's own verifier-v1 verdict written by the
+  verifier uid, EDIT_SCOPE_POLICY and the default mode.
+
+### Evidence (m209)
+
+- Two self-made fixtures per form (nothing from PeaceSTOCKS, the dev tasks, the scanner or reference diffs):
+  - constant: a default port (`8080` -> `3000`) and a blank mark (`"?"` -> `""`); attempt 1 (repair-v2) fails, no single
+    transform fits, attempt 2 applies the one-literal edit and passes on its own oop-v1 verdict. Controls: repair-v2
+    alone with 3 attempts ends without PASS in the default mode and under oop-v1.
+  - branch: a tidy value (`typeof` string trim vs number floor) and a band number (a comparison / equality split with
+    ceil vs floor); same attempt pattern; only the branch form is offered.
+- Refused near misses: two literals wrong; a three-way typeof split; a predicate that would need two arguments; a
+  predicate literal not present in the cases; an edit over the size bound (EDIT_SCOPE end to end).
+- Each `m209-guard` line has a case of its own that fails on a mutant with that line deleted.
+
+### Soundness note (M209)
+
+- The constant and the branch are search outputs, not evidence. Whether either is right is decided only by the attempt's
+  own verifier-v1 verdict (verifier uid, out of process). Fitting the visible cases of one run is not generalisation: a
+  constant or a predicate that matches those cases can still be wrong on inputs the cases do not cover. The feature stays
+  EXPERIMENTAL, opt-in, not the default and not for credit.
+- Neither form widens what an edit may do: both stay inside the frozen rr-in-function-v1 class (one file, one function
+  body, head unchanged, size bound, no new dangerous word, no global write, no foreign word). No new edit-class tag. The
+  gate is defence in depth. The verdict's soundness is verifier-v1's (M202, M207).
+- Order is pinned and documented (single, constant, pair, branch); attempts never chain past the cap of 3.
+- Residuals: wrong arguments and other shared-logic helpers are still not synthesised; string constant replacements that
+  introduce a new word are refused by the class (so only word-free replacements, or words already in the file, admit);
+  still EXPERIMENTAL, opt-in, not the default and not for credit.
