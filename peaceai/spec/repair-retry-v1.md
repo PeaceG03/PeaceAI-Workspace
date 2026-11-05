@@ -96,14 +96,16 @@ one private helper. It is narrower in one: one function (and one file) per attem
 - **The cap.** It bounds how many verdicts one task can ask for.
 - **Search, not proof.** The fit uses only one run's literal evidence, so a fitted transform can still be wrong on
   inputs the cases do not cover. The verdict, not the fit, is what decides. This is a search heuristic, not a proof.
-- **Coverage residual (M202, inherited).**
-  - verifier-v1 judges only the cases `extractCasesFromSource` extracts. It extracts `assert.equal` / `strictEqual` /
-    `deepEqual` / `deepStrictEqual` and `expect(..).toBe` / `.toEqual`.
-  - A test file whose other assertions use matchers it does not recognise is judged on the extracted subset only.
-    Examples are `toStrictEqual`, `toMatchObject` and `toThrow` written as `expect(f(x)).toStrictEqual(y)`.
-  - This matters to any oop-v1 pass, retry or not. It is one more reason the skill is NOT for credit.
-- **Not bound by loopSha256.** loopSha256 does not cover repair-retry.ts. Its rows are marked `repairRetry` and never
-  logged.
+- **Coverage residual (M202; closed by M204).**
+  - Up to Batch 39, verifier-v1 judged only the cases the extractor recognised; a file with other assertions was judged
+    on the extracted subset.
+  - Since M204 the extractor is fail-closed: a file is admitted only if every assertion is extracted, else it refuses
+    by name (see verifier-v1.md, "M204"). The Batch 39 admit cases (percentage, midpoint index, first line) are still
+    admitted and still pass/fail as before. The fit treats only value expectations as fittable (`negate` / `any`
+    cases do not fit).
+  - The skill is still NOT for credit.
+- **Bound by loopSha256 (M204).** loopSha256 now covers repair-retry.ts and the verifier files. Its rows are marked
+  `repairRetry` and never logged.
 
 ## Not done / residuals
 
@@ -113,8 +115,8 @@ one private helper. It is narrower in one: one function (and one file) per attem
 - Dev split (informational, no credit, no tuning):
   - Under oop-v1, 11 of the 12 public dev tasks' team tests yield no data-only cases: 7 OOP_CASES_EMPTY and 4
     OOP_CASES_NONLITERAL. repair-retry-v1 would refuse VERDICT_OOP_CASES at the baseline, before any attempt.
-  - unjs/destr yields 1 literal case. Its other assertions are `toStrictEqual`, which the extractor skips; see the
-    coverage residual.
+  - unjs/destr yielded 1 literal case under the Batch 39 extractor (its other assertions were skipped). Under M204 it
+    refuses (`OOP_CASES_UNSUPPORTED_TEST:stmt:var`); all 13 dev files now refuse.
   - The module hint is a directory (`../src`). It was not run.
 - Default unchanged on the dev split (public tasks-public-v1, 12 tasks, informational): plan-only-v4 mean devScore
   0.764, runTests 0.833 (same before and after this change); plan-only-v5 mean devScore 0.764, runTests 0.833. The
