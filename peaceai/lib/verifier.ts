@@ -9,6 +9,8 @@
 // M206 (batch 42): let/var of JSON literals when never reassigned/mutated/captured; each tables bound to a
 // const/safe identifier; describe.each/suite.each with literal tables; tagged-template each when every cell is a
 // literal and the header is a plain identifier list; simple destructuring const of a literal object/array.
+// M207 (batch 43): ACL-aware write check (fail-closed OOP_VERIFIER_ACL); injectable privilege probe so has-sudo /
+// probe-failure are testable; forged-reply residual documented as irreducible in-process (see spec).
 // Status: EXPERIMENTAL, opt-in via VERDICT_MODE "oop-v1". EDIT_SCOPE_POLICY and the in-process default are unchanged.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -46,6 +48,7 @@ export const VERIFIER_REFUSALS = [
   "OOP_VERIFIER_REQUIRED",
   "OOP_VERIFIER_BAD",
   "OOP_VERIFIER_NOT_SEPARATE",
+  "OOP_VERIFIER_ACL",
   "OOP_JUDGE",
 ] as const;
 export type VerifierRefusal = (typeof VERIFIER_REFUSALS)[number];
@@ -1134,6 +1137,23 @@ const idOf = (args: string[]): number | null => {
   const t = (r.stdout ?? "").trim();
   return r.status === 0 && /^\d+$/.test(t) ? Number(t) : null;
 };
+/** Privilege probe result for the verifier uid (M207). `clean` = no passwordless sudo; `has-sudo` = can sudo;
+ *  `probe-fail` = the check itself failed (timeout / spawn error) and must refuse fail-closed. */
+export type VerifierPrivilegeResult = "clean" | "has-sudo" | "probe-fail";
+export type VerifierPrivilegeProbe = (name: string) => VerifierPrivilegeResult;
+const defaultPrivilegeProbe: VerifierPrivilegeProbe = (name) => {
+  const r = spawnSync("sudo", ["-n", "-u", name, "--", "sudo", "-n", "true"], { stdio: "ignore", timeout: 20_000 });
+  if (r.error || r.status === null) return "probe-fail";
+  if (r.status === 0) return "has-sudo";
+  return "clean";
+};
+let privilegeProbe: VerifierPrivilegeProbe = defaultPrivilegeProbe;
+/** Test-only DI for the privilege probe. Not env-driven and not readable by the candidate process (it runs in a
+ *  different uid / address space and cannot call into the runner module). Pass null to restore the default. */
+export function setVerifierPrivilegeProbeForTests(p: VerifierPrivilegeProbe | null): void {
+  privilegeProbe = p ?? defaultPrivilegeProbe;
+}
+
 /** The uid that runs the judge: named by PEACEAI_VERIFIER_UID, a real non-root user that is neither the runner nor
  *  the candidate, reachable by `sudo -n -u`, and without sudo of its own (so it cannot become either). Fail-closed. */
 export function verifierUid(env: Record<string, string | undefined>, cand: CandUid):
@@ -1148,16 +1168,20 @@ export function verifierUid(env: Record<string, string | undefined>, cand: CandU
   if (uid === (process.getuid?.() ?? -1)) return { ok: false, code: "OOP_VERIFIER_NOT_SEPARATE", detail: "runner" }; // m204-guard:verifier-vs-runner
   if (uid === cand.uid) return { ok: false, code: "OOP_VERIFIER_NOT_SEPARATE", detail: "cand" }; // m204-guard:verifier-vs-cand
   if (spawnSync("sudo", ["-n", "-u", name, "--", "true"], { stdio: "ignore", timeout: 20_000 }).status !== 0) return { ok: false, code: "OOP_VERIFIER_BAD", detail: "unreachable" };
-  if (spawnSync("sudo", ["-n", "-u", name, "--", "sudo", "-n", "true"], { stdio: "ignore", timeout: 20_000 }).status === 0) return { ok: false, code: "OOP_VERIFIER_BAD", detail: "has-sudo" }; // (no third sudo-capable user on the box to test it: spec residual)
+  const priv = privilegeProbe(name);
+  if (priv === "has-sudo") return { ok: false, code: "OOP_VERIFIER_BAD", detail: "has-sudo" }; // m207-guard:has-sudo
+  if (priv === "probe-fail") return { ok: false, code: "OOP_VERIFIER_BAD", detail: "sudo-probe" }; // m207-guard:sudo-probe
   return { ok: true, v: { name, uid, gid } };
 }
 
-/** The candidate uid's groups (for the permission check below). */
-function groupsOf(name: string): Set<number> {
-  const r = spawnSync("id", ["-G", name], { encoding: "utf8" });
-  return new Set((r.stdout ?? "").trim().split(/\s+/).filter((x) => /^\d+$/.test(x)).map(Number));
+/** The candidate uid's groups (gids + names) for mode-bit and ACL checks. Includes supplementary groups. */
+export function groupsOf(name: string): { gids: Set<number>; names: Set<string> } {
+  const gids = new Set((spawnSync("id", ["-G", name], { encoding: "utf8" }).stdout ?? "").trim().split(/\s+/).filter((x) => /^\d+$/.test(x)).map(Number));
+  const names = new Set((spawnSync("id", ["-Gn", name], { encoding: "utf8" }).stdout ?? "").trim().split(/\s+/).filter(Boolean));
+  return { gids, names };
 }
-/** Can `cand` write (or, owning it, chmod) `path`, judged from owner / group / mode bits? (ACLs: spec residual.) */
+/** Can `cand` write (or, owning it, chmod) `path`, judged from owner / group / mode bits? Supplementary groups of
+ *  the candidate count for the group-write bit (`id -G`, including supplementary groups). ACLs: see candAclWrite. */
 export function candMayWrite(path: string, cand: CandUid, candGids: ReadonlySet<number>): boolean {
   let st;
   try { st = statSync(path); } catch { return true; } // unknown: treat as writable (fail-closed)
@@ -1165,6 +1189,47 @@ export function candMayWrite(path: string, cand: CandUid, candGids: ReadonlySet<
   if (st.mode & 0o002) return true; // m204-guard:perm-other
   if ((st.mode & 0o020) && candGids.has(st.gid)) return true; // m204-guard:perm-group
   return false;
+}
+
+/** POSIX ACL write check (M207). Named user/group ACL entries only; base owner/group/other are covered by
+ *  candMayWrite. Effective rights apply the mask. Fail-closed: any unreadable / unparseable ACL state is "unknown". */
+export type AclWrite = "none" | "grant" | "unknown";
+export function candAclWrite(
+  path: string, cand: CandUid, candGids: ReadonlySet<number>, candGroupNames: ReadonlySet<string>,
+  /** Test-only: replace getfacl. Not env-driven. */
+  reader?: (path: string) => { status: number | null; stdout: string; error?: Error },
+): AclWrite {
+  const r = reader ? reader(path) : spawnSync("getfacl", ["-c", "--absolute-names", "--", path], { encoding: "utf8", timeout: 10_000 });
+  if (r.error || r.status === null || r.status !== 0) return "unknown"; // m207-guard:acl-unknown
+  const lines = (r.stdout ?? "").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+  let mask: string | null = null;
+  type Ent = { kind: "user" | "group"; id: string; perms: string };
+  const named: Ent[] = [];
+  for (const line of lines) {
+    // default: entries do not grant write to this inode; skip them.
+    if (line.startsWith("default:")) continue;
+    const m = /^(user|group|mask|other):([^:]*):([rwx-]{3})$/.exec(line);
+    if (!m) return "unknown"; // m207-guard:acl-parse
+    const kind = m[1] as "user" | "group" | "mask" | "other";
+    const id = m[2]!;
+    const perms = m[3]!;
+    if (kind === "mask") { mask = perms; continue; }
+    if (kind === "other" || (kind === "user" && id === "") || (kind === "group" && id === "")) continue; // base; mode bits
+    if (kind === "user" || kind === "group") named.push({ kind, id, perms });
+  }
+  if (named.length === 0) return "none";
+  if (mask === null) return "unknown"; // m207-guard:acl-parse-mask
+  const hasWrite = (perms: string) => perms.includes("w") && mask!.includes("w"); // m207-guard:acl-mask
+  for (const e of named) {
+    if (!hasWrite(e.perms)) continue;
+    if (e.kind === "user") {
+      if (e.id === cand.name || e.id === String(cand.uid)) return "grant"; // m207-guard:acl-user
+    } else {
+      // group: match by name or gid; any of the candidate's groups (incl. supplementary)
+      if (candGroupNames.has(e.id) || (/^\d+$/.test(e.id) && candGids.has(Number(e.id)))) return "grant"; // m207-guard:acl-group
+    }
+  }
+  return "none";
 }
 
 /**
@@ -1210,14 +1275,24 @@ export function verify(o: VerifyOptions): VerifyResult {
   }
   // M204: the candidate must not own or be able to write the harness, the judge, their sources, the spec, or the
   // verdict directory; checked on every run, before the candidate runs.
-  const gids = groupsOf(cand.name);
+  const groups = groupsOf(cand.name);
   const guarded: [string, string][] = [["work", work], ["harness", join(work, "harness.cjs")], ["judge", join(work, "judge.cjs")], ["verdict-dir", outDir],
     ["harness-src", HARNESS_PATH], ["judge-src", JUDGE_PATH], ["lib-src", fileURLToPath(import.meta.url)], ["spec", SPEC_PATH]];
   let writable: string | null = null;
-  for (const [label, p] of guarded) if (writable === null && candMayWrite(p, cand, gids)) writable = label; // m204-guard:perm-check
+  for (const [label, p] of guarded) if (writable === null && candMayWrite(p, cand, groups.gids)) writable = label; // m204-guard:perm-check
   if (writable !== null) {
     cleanup(work, home, cand);
     return { code: "OOP_VERIFIER_BAD", detail: "cand-writable:" + writable };
+  }
+  let aclHit: string | null = null;
+  for (const [label, p] of guarded) {
+    if (aclHit !== null) break;
+    const a = candAclWrite(p, cand, groups.gids, groups.names);
+    if (a === "grant" || a === "unknown") aclHit = label + ":" + a; // m207-guard:acl-check
+  }
+  if (aclHit !== null) {
+    cleanup(work, home, cand);
+    return { code: "OOP_VERIFIER_ACL", detail: aclHit };
   }
   const st = statSync(outDir);
   if (st.uid !== vu.v.uid) { cleanup(work, home, cand); return { code: "OOP_VERIFIER_BAD", detail: "verdict-dir-owner" }; }

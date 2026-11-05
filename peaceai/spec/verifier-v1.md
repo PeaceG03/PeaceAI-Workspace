@@ -3,9 +3,9 @@
 Status: EXPERIMENTAL, NOT DEFAULT, NOT FOR CREDIT. Code: `peaceai/lib/verifier.ts`, harness
 `peaceai/lib/verifier-harness.cjs`, judge `peaceai/lib/verifier-judge.cjs` (M204), CLI `peaceai/bin/verifier-v1.ts`,
 tests `peaceai/test/m202-verifier.test.ts`, `peaceai/test/m204-verifier-cases.test.ts`,
-`peaceai/test/m205-verifier-forms.test.ts`, `peaceai/test/m206-verifier-forms.test.ts`. Batch 40 (M204) /
-Batch 41 (M205) / Batch 42 (M206) changes are in the sections below; where they and the M202 text differ, the later
-section wins.
+`peaceai/test/m205-verifier-forms.test.ts`, `peaceai/test/m206-verifier-forms.test.ts`,
+`peaceai/test/m207-verifier-harden.test.ts`. Batch 40 (M204) / Batch 41 (M205) / Batch 42 (M206) / Batch 43 (M207)
+changes are in the sections below; where they and the M202 text differ, the later section wins.
 Loop opt-in: `LoopOptions.verdictMode = "oop-v1"` (or `selectVerdictMode("oop-v1")`). Default remains `inproc`.
 `EDIT_SCOPE_POLICY`, `selfpropose.ts`, `plandefault.ts` and the v4 digest are unchanged.
 
@@ -200,9 +200,10 @@ extracted 0. Batch 39 extractor on the same files: 1 admitted (unjs/destr, 1 cas
 
 - **Forged stdout (pre-existing).** The candidate owns its stdout and can print any reply line, including an `exact`
   value it never computed. That is an honest pass only if the value is right; the judge compares to the expectation.
-  `isa` / `where` / `sync` flags are candidate-reported too, so a hostile candidate can claim them.
-- **ACLs** are not checked by `candMayWrite` (owner / mode bits only). The box uses none on these paths.
-- **`has-sudo` check untested:** no third sudo-capable user exists on the box to exercise it.
+  `isa` / `where` / `sync` flags are candidate-reported too, so a hostile candidate can claim them. M207 records why a
+  per-run nonce cannot close this in-process.
+- **ACLs** — closed in M207 (`candAclWrite`, `OOP_VERIFIER_ACL`).
+- **`has-sudo` check untested** — closed in M207 (injectable privilege probe).
 - **`recv: "module"` `this`** is a spread copy of the namespace, not the live module namespace.
 - **Conservative fails:** toEqual requires exactness; thrown non-objects and truncated messages are not credited.
 - **Unreachable backstops:** the `uncounted` seen != extracted check and the other-assert fallthrough are untagged
@@ -296,5 +297,55 @@ forms do not yet cover these team files; that is expected and not a target.
   only reads it. Throws-thunks that close over a let/var therefore refuse; use a const for those.
 - **Method-call mutation.** Any `name.method(...)` on a scoped binding is treated as mutation (including
   `toString` / `valueOf`). Reads via `name.prop` (property access without call) stay allowed.
-- **ACLs / `has-sudo`** residuals from M204 unchanged.
-- **Forged stdout** residual from M204 unchanged.
+- **ACLs / `has-sudo` / forged stdout.** Addressed or re-documented in M207.
+
+## M207 (batch 43): ACL write check, testable has-sudo, forged-reply residual
+
+### Soundness note
+
+M204's claim still holds. M207 closes two residuals that can be closed without widening the trust boundary, and
+records an honest bound on the third:
+
+1. **ACL-aware write check (closed).** Before any candidate run, every guarded path (work dir, harness, judge, their
+   sources, lib, spec, verdict dir) is checked with `candAclWrite` in addition to `candMayWrite`. `candAclWrite` reads
+   the POSIX access ACL via `getfacl` (named `user:` / `group:` entries; base owner/group/other stay in the mode-bit
+   check). Effective rights apply the ACL mask. A named entry that grants the candidate uid, or any of its groups
+   (primary and supplementary, by name or gid), write permission is a refusal `OOP_VERIFIER_ACL`. If `getfacl` fails,
+   times out, or returns an unparseable ACL (including named entries with no mask), the check refuses fail-closed as
+   `OOP_VERIFIER_ACL` (`unknown`). Default ACL entries are ignored for the write-to-this-inode question. Mode-bit
+   group write continues to honour supplementary groups via `id -G` (`groupsOf`).
+
+2. **`has-sudo` / probe failure (closed, testable).** The privilege probe that asks whether the verifier uid can
+   `sudo -n` is injectable through `setVerifierPrivilegeProbeForTests` (module state in the runner process; not
+   env-driven; the candidate uid cannot set it). `has-sudo` -> `OOP_VERIFIER_BAD` / `has-sudo`; probe failure
+   (spawn error / timeout) -> `OOP_VERIFIER_BAD` / `sudo-probe`. Both have tagged guards and cases.
+
+3. **Forged reply-line (irreducible in-process).** The candidate owns its stdout and can print any harness reply
+   line, including `exact: true` and any `isa` / `where` / `sync` flags. Binding each reply to a per-run nonce the
+   candidate "cannot read" does **not** close this while the harness and the candidate share one process: the nonce
+   must live in that address space to be checked, and the candidate can read its own memory (`/proc/self/mem`, as in
+   M201 A7), replace `process.stdout.write`, or otherwise observe harness state after load. A private fd closed before
+   `require` / `import` of the candidate module still leaves the nonce in harness JS memory. Closing this would need a
+   separate judge-side channel that never enters the candidate process (out of scope for verifier-v1's one-harness
+   design). **What bounds it:** the judge compares reply values to the case expectations. Forging a reply that equals
+   the expected value *is* producing the expected output — an honest pass under black-box I/O. Forged flags without
+   the right value fail the comparison. This batch does not claim closure.
+
+### Guards (m207-guard; m207 deletes each line in a mutant and runs that guard's own case)
+
+`has-sudo`, `sudo-probe`, `acl-unknown`, `acl-parse`, `acl-parse-mask`, `acl-mask`, `acl-user`, `acl-group`,
+`acl-check`.
+
+### Admitted / refused (M207)
+
+Two honest configurations (range span; string clip) still verify under oop-v1. Refused near misses: a named ACL for a
+*different* user is not a grant; env vars cannot force the privilege probe; a mask that strips write means no grant;
+malformed getfacl output is `unknown` (fail-closed), not "none".
+
+### M207 residuals (honest)
+
+- **Forged reply-line** — irreducible in-process; see soundness note above.
+- **ACL reader is getfacl.** Hosts without getfacl refuse oop-v1 with `OOP_VERIFIER_ACL` (fail-closed), they do not
+  silently skip the check.
+- **Default ACLs** on a directory are not treated as write grants to the directory inode (they affect children).
+- **`recv: "module"` `this`** residual from M204 unchanged.
