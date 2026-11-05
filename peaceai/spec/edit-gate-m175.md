@@ -215,3 +215,10 @@ so the neverzone sets (m59 / m119 / m132), the m96 import closure (no new lib fi
   since `class-test` classes it `test-file` first). Every PeaceAI fixture
   and team repo under repair is TypeScript, so a `.js` edit is outside the source class current proposers produce
   and is refused as `config`. This is strictly narrower than the TS source path; it is never a loosening.
+
+## Note (batch 26, M193)
+
+The gate is also the kill for in-process result rewriting on vitest and jest (terminal at the runner, the M192
+class), including source code that reaches `__vitest_worker__.current` or imports `onTestFailed` (Auditor, #687):
+each placement is refused with its own reason (see `peaceai/spec/loop-runners-inproc-m193.md`). That is why the edit
+scope must not widen past this gate without a reach argument for the wider class.

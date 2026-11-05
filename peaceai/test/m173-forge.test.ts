@@ -102,10 +102,21 @@ function mutant(tag: string): [string, string] {
   const ls = s.split("\n"), i = ls.findIndex((l) => tagRe(tag).test(l));
   return [p, ls.filter((_, j) => j !== i).join("\n")];
 }
-/** Installs the shim into dir (the given tag's line deleted, if any). */
-function install(dir: string, tag?: string): void {
+/** (batch 26) The M193 guards stop some of these attacks independently (a fake runner's pass has no test that ran
+ *  through the guard; a patched Runnable#run never marks the test as run). For those tags the mutant also deletes
+ *  the m193 lines that would stop the attack, so it still shows what the m173 line alone does (m193-inproc-forge
+ *  holds the m193 mutants); the attack refused with only the m173 line deleted is asserted below. */
+const ALSO_M193: Record<string, string[]> = { "mocha-reporter-in-run": ["mocha-ran-here", "mocha-planned-test", "mocha-all-ran"], "mocha-lock": ["mocha-ran-here"] };
+/** Installs the shim into dir (the given tag's line deleted, if any; with `alone`, no m193 line is deleted). */
+function install(dir: string, tag?: string, alone = false): void {
   installShim(dir);
-  if (tag) { const [p, s] = mutant(tag); writeFileSync(join(dir, p), s); }
+  if (tag) {
+    const [p, s0] = mutant(tag);
+    const also = alone ? [] : ALSO_M193[tag] ?? [];
+    const s = s0.split("\n").filter((l) => !also.some((x) => new RegExp(`// m193-guard:${x}( |$)`).test(l))).join("\n");
+    assert.equal(s.split("\n").length, s0.split("\n").length - also.length, `${tag}: each m193 line found once`);
+    writeFileSync(join(dir, p), s);
+  }
 }
 
 test("M173 forging: the guard tags are the expected ones (each is deleted by a mutant below)", () => {
@@ -308,9 +319,9 @@ const ATTACKS: Attack[] = [
 ];
 
 /** Runs one attack (its files written, then removed again) in the runner's fixture with the given shim install. */
-function attack(a: Attack, tag?: string): Run {
+function attack(a: Attack, tag?: string, alone = false): Run {
   const d = FX[a.runner].dir;
-  install(d, tag);
+  install(d, tag, alone);
   for (const [f, c] of Object.entries(a.files)) { mkdirSync(dirname(join(d, f)), { recursive: true }); writeFileSync(join(d, f), c); }
   try { return shim(d, a.runner, a.test); } finally { for (const f of Object.keys(a.files)) rmSync(join(d, f), { force: true }); installShim(d); }
 }
@@ -373,7 +384,8 @@ for (const t of TAGS.filter((x) => !COVERED_ELSEWHERE.has(x))) {
   test(`M173 forging mutation, real runners: deleting m173-forge-guard:${t} makes its attack a credited pass`, { skip }, () => {
     for (const a of ATTACKS.filter((x) => x.tag === t)) {
       const r = attack(a, t);
-      assert.ok(credited(r), `${a.id} with ${t} deleted: credited, got ${JSON.stringify(r.tail)} exit ${r.status}`);
+      assert.ok(credited(r), `${a.id} with ${t} deleted${ALSO_M193[t] ? ` (and m193 ${ALSO_M193[t]!.join(", ")})` : ""}: credited, got ${JSON.stringify(r.tail)} exit ${r.status}`);
+      if (ALSO_M193[t]) { const r2 = attack(a, t, true); assert.ok(refused(r2), `${a.id} with only ${t} deleted: still refused by the m193 guards, got ${JSON.stringify(r2.tail)} exit ${r2.status}`); }
     }
   });
 }

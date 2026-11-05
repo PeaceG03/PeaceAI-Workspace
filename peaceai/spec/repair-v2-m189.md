@@ -32,3 +32,6 @@ late in the template order (which earlier batches would have tried) are replaced
 - `peaceai/test/m189-reach.test.ts`: 3 cases on two synthetic shapes (scoring function + class member; pricing
   function + barrel-resolved rounding helper): reservation, order, unchanged lists. Pure, no candidate uid.
 - `peaceai/test/m189-mutation.test.ts`: guards `v2-only`, `reserve`, `order`; deleting each makes a case fail.
+
+No task fixes were used: the rule and both test shapes are synthetic, and nothing here is modeled on a dev task, a
+task's fix or a reference diff (Auditor's optional item on #687; batch 26).

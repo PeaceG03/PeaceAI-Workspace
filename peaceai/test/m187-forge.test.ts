@@ -203,7 +203,8 @@ test("M192 real ava: through PeaceAI every attack stays refused (detectRunner) a
 // ---- 3. documented residual (not ava; spec "Residuals"): the same in-process class on a supported runner. A really
 // failing vitest 4 test rewrites its own result in onTestFailed; vitest's main process trusts the worker's task
 // state, and the shim credits it. M173 documents in-process framework reach on vitest / jest as not closed; this pins
-// the strongest form found (fail -> pass) so the note stays true. Closing it is out of this batch's scope.
+// the strongest form found (fail -> pass) so the note stays true. Batch 26 (M193, m193-inproc-forge.test.ts): terminal
+// at the runner; killed by the M175 edit gate in test files and in source.
 const VI = fixture("vitest", "m173-forge-vitest4");
 test("M192 residual, vitest 4 (documented, not closed): a failing test that rewrites ctx.task.result is credited today", { skip: skipFor(VI) }, () => {
   assert.ok(VI.ok, `npm ci of the pinned vitest fixture failed: ${VI.err}`);
