@@ -173,7 +173,7 @@ const ATTACKS: Atk[] = [
   { id: "X-inspector", inproc: "credited", oop: "fail",
     body: "  try { const i = require('node:inspector'); const s = new i.Session(); s.connect(); } catch {}\n  return y % 4 === 0;" },
   { id: "X-worker", inproc: "credited", oop: "fail",
-    body: "  try { const { Worker } = require('node:worker_threads'); new Worker('process.exit(0)', { eval: true }); } catch {}\n  return y % 4 === 0;" },
+    body: "  try { const WT = require('node:worker_threads'); new WT.Worker('process.exit(0)', { eval: true }); } catch {}\n  return y % 4 === 0;" },
   { id: "X-child", inproc: "credited", oop: "fail",
     body: "  try { require('node:child_process').spawnSync(process.execPath, ['-e', 'process.kill(process.ppid, \"SIGUSR1\")'], { timeout: 1000 }); } catch {}\n  return y % 4 === 0;" },
   { id: "X-procmem", inproc: "credited", oop: "fail",
