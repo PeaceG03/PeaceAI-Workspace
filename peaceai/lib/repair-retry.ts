@@ -315,8 +315,9 @@ export function fitPair(ev: RetryEvidence): { pair: readonly [Transform, Transfo
     let fits = true;
     for (const c of ev.cases) {
       if (c.fn !== fn) continue;
+      if (!c.expect.ok || c.expect.negate || c.expect.any) { fits = false; break; } // value expectations only (as M204)
       const from = c.pass ? { ok: true as const, value: c.expect.value } : c.got;
-      if (!from || !from.ok || !c.expect.ok) { fits = false; break; }
+      if (!from || !from.ok) { fits = false; break; }
       const a = t1.f(from.value);
       const b = a.ok ? t2.f(a.v) : a;
       if (!b.ok || !valuesEqual(b.v, c.expect.value)) { fits = false; break; } // m208-guard:pair-all

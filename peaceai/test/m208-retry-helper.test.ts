@@ -187,7 +187,7 @@ test("M208 refuse end to end: helper over the bound, exported, in another file, 
   assert.deepEqual([honest.row.code, honest.row.attempts], ["PASS", 2], "control: the in-bound private helper passes on its own verdict");
   for (const [what, second] of [["over the bound", [{ path: "src/tag.ts", content: BIG }]], ["exported", [{ path: "src/tag.ts", content: EXPORTED }]],
     ["another file", [{ path: "src/tag.ts", content: OTHER_MAIN }, { path: "src/shared.ts", content: OTHER_FILE }]], ["shadowing", [{ path: "src/tag.ts", content: SHADOW_INNER }]]] as const) {
-    const r = go("src/tag.ts", TAG, TAG_TEAM, scripted("scripted", [wrong, second as Edits]));
+    const r = go("src/tag.ts", TAG, TAG_TEAM, scripted("scripted", [wrong, second as unknown as Edits]));
     assert.deepEqual([r.row.code, r.row.attempts], ["EDIT_SCOPE", 1], `${what}: ${JSON.stringify(summary(r))}`);
     console.log(`M208-REFUSE ${what} ${JSON.stringify(summary(r))}`);
   }
