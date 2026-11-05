@@ -182,10 +182,11 @@ Code: `fitConstant`, `applyConstant`, `fitBranch`, `applyBranch`, `litText`, `li
   1. **constant (M209):** `fitConstant` — every failing case of the function returned the same number/string V and
      expects the same W ≠ V; no passing case expects V; the function body contains a number/string literal equal to V.
   2. **pair / helper (M208):** `fitPair` / `applyHelper` as before.
-  3. **guarded branch (M209):** `fitBranch` — the cases split into exactly two non-empty groups by one predicate on a
-     single parameter, and each group fits one transform (pinned transforms, plus identity for an already-correct
-     group). Predicates, per parameter left-to-right: `typeof p === <type observed on that arg in the cases>`; then
-     `p === lit` / `p < lit` / `p > lit` for a literal taken from that argument in the cases.
+  3. **guarded branch (M209):** `fitBranch` — the cases split into exactly two groups of at least two cases each by one
+     predicate on a single parameter, and each group fits one transform (pinned transforms, plus identity for an
+     already-correct group). A one-case side is refused (it would only memorise that input). Predicates, per parameter
+     left-to-right: `typeof p === <type observed on that arg in the cases>`; then `p === lit` / `p < lit` / `p > lit`
+     for a literal taken from that argument in the cases.
 - **What.**
   - Constant: replace every number/string literal equal to V inside the function's own body with the literal form of W.
   - Branch: wrap every value the function returns (its own returns only) as `(pred ? tThen(e) : tElse(e))`.

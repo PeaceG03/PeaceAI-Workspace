@@ -515,7 +515,8 @@ export function fitBranch(ev: RetryEvidence, src: string): { pred: RetryPred; tT
     const tryPred = (pred: RetryPred): { pred: RetryPred; tThen: Transform; tElse: Transform; fn: string } | null => {
       const yes = onFn.filter((c) => evalPred(pred, argAt(c, i)));
       const no = onFn.filter((c) => !evalPred(pred, argAt(c, i)));
-      if (yes.length === 0 || no.length === 0) return null;
+      // both sides need at least two cases: a one-case ===/comparison is just memorising that input (m203 leap overfit)
+      if (yes.length < 2 || no.length < 2) return null; // m209-guard:branch-two-each
       for (const tThen of BRANCH_TRANSFORMS) {
         if (!groupFits(yes, tThen)) continue;
         for (const tElse of BRANCH_TRANSFORMS) {

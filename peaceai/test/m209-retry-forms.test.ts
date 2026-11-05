@@ -55,7 +55,7 @@ const MARK_TEAM = 'import assert from "node:assert/strict";\nimport { blankMark 
 const TIDY = "export function tidy(v: unknown): unknown {\n  return v;\n}\n";
 const TIDY_TEAM = 'import assert from "node:assert/strict";\nimport { tidy } from "../src/tidy.ts";\n\ntest("trim spaces", () => assert.equal(tidy("  ok "), "ok"));\ntest("trim one", () => assert.equal(tidy(" x"), "x"));\ntest("floor high", () => assert.equal(tidy(2.9), 2));\ntest("floor low", () => assert.equal(tidy(3.1), 3));\n';
 const BAND = "export function band(n: number): number {\n  return n;\n}\n";
-const BAND_TEAM = 'import assert from "node:assert/strict";\nimport { band } from "../src/band.ts";\n\ntest("above", () => assert.equal(band(3.2), 4));\ntest("at hinge", () => assert.equal(band(2), 2));\ntest("below", () => assert.equal(band(1.8), 1));\n';
+const BAND_TEAM = 'import assert from "node:assert/strict";\nimport { band } from "../src/band.ts";\n\ntest("above a", () => assert.equal(band(3.2), 4));\ntest("above b", () => assert.equal(band(4.1), 5));\ntest("at hinge", () => assert.equal(band(2), 2));\ntest("below a", () => assert.equal(band(1.8), 1));\ntest("below b", () => assert.equal(band(0.5), 0));\n';
 
 const PORT_FIX = "export function defaultPort(): number {\n  return 3000;\n}\n";
 const MARK_FIX = 'export function blankMark(): string {\n  return "";\n}\n';
@@ -74,8 +74,10 @@ const tidyEv = (run = "baseline") => ev(run, [
 ], "src/tidy.ts");
 const bandEv = (run = "baseline") => ev(run, [
   { fn: "band", args: [3.2], got: { ok: true, value: 3.2 }, expect: { ok: true, value: 4 } },
+  { fn: "band", args: [4.1], got: { ok: true, value: 4.1 }, expect: { ok: true, value: 5 } },
   { fn: "band", args: [2], pass: true, expect: { ok: true, value: 2 } },
   { fn: "band", args: [1.8], got: { ok: true, value: 1.8 }, expect: { ok: true, value: 1 } },
+  { fn: "band", args: [0.5], got: { ok: true, value: 0.5 }, expect: { ok: true, value: 0 } },
 ], "src/band.ts");
 
 interface GCase { guard: string; name: string; run(m: RRT): void }
@@ -132,6 +134,16 @@ const GCASES: GCase[] = [
       { fn: "tidy", args: [true], got: { ok: true, value: true }, expect: { ok: true, value: false } },
     ], "src/tidy.ts"), TIDY), { refuse: "three-way" });
   } },
+  { guard: "branch-two-each", name: "a one-case === split (memorising one input) is refused", run: (m) => {
+    const src = "export function isLeap(y: number): boolean {\n  return y % 4 === 0;\n}\n";
+    const e = ev("a", [
+      { fn: "isLeap", args: [2000], pass: true, expect: { ok: true, value: true } },
+      { fn: "isLeap", args: [1900], got: { ok: true, value: true }, expect: { ok: true, value: false } },
+      { fn: "isLeap", args: [2024], got: { ok: true, value: false }, expect: { ok: true, value: true } },
+    ], "src/leap.ts");
+    // === 2000 would "fit" as id/not but has only one case on the yes side
+    assert.deepEqual(m.fitBranch(e, src), { refuse: "no-fit" });
+  } },
   { guard: "branch-typeof", name: "typeof on one argument splits string trim vs number floor", run: (m) => {
     const f = m.fitBranch(tidyEv(), TIDY);
     assert.ok(!("refuse" in f) && f.pred.kind === "typeof" && f.pred.type === "string" && f.tThen.name === "trim" && f.tElse.name === "floor", JSON.stringify(f));
@@ -159,11 +171,11 @@ const GCASES: GCase[] = [
       { fn: "flip", args: [true], got: { ok: true, value: true }, expect: { ok: true, value: false } },
       { fn: "flip", args: [true], got: { ok: true, value: true }, expect: { ok: true, value: false } },
       { fn: "flip", args: [false], pass: true, expect: { ok: true, value: false } },
+      { fn: "flip", args: [false], pass: true, expect: { ok: true, value: false } },
     ], "src/flip.ts");
-    // single "not" fits ALL (true->false, false->false? not false = true ≠ false). So not does not fit all.
-    // typeof won't split (all boolean). === true: yes={true cases} fit "not"; no={false} fit "id".
+    // single "not" does not fit (false -> true ≠ false). typeof won't split. === true: yes fit "not"; no fit "id".
     const f2 = m.fitBranch(e2, src2);
-    assert.ok(!("refuse" in f2) && f2.pred.kind === "eq" && f2.tThen.name === "not", JSON.stringify(f2));
+    assert.ok(!("refuse" in f2) && f2.pred.kind === "eq" && f2.tThen.name === "not" && f2.tElse.name === "id", JSON.stringify(f2));
   } },
   { guard: "branch-cmp", name: "> a literal taken from the cases splits ceil vs floor when === cannot", run: (m) => {
     const src = "export function band(n: number): number {\n  return n;\n}\n";
@@ -222,7 +234,7 @@ async function rrMutant(text: string): Promise<RRT> {
 const drop = (text: string, tag: string) => { const ls = text.split("\n"), hits = ls.filter((l) => l.includes(`// m209-guard:${tag}`)); assert.equal(hits.length, 1, `one line holds ${tag}`); return ls.filter((l) => !l.includes(`// m209-guard:${tag}`)).join("\n"); };
 
 test("M209 tags: the guard lines are the expected ones, each with a case", () => {
-  assert.deepEqual(TAGS, ["lit-text-num", "lit-text-str", "const-single-first", "const-one-run", "const-one-value", "const-pass", "const-lit", "const-class", "branch-single-first", "branch-one-run", "branch-two-groups", "branch-typeof", "branch-eq", "branch-cmp", "branch-class", "prop-order"]);
+  assert.deepEqual(TAGS, ["lit-text-num", "lit-text-str", "const-single-first", "const-one-run", "const-one-value", "const-pass", "const-lit", "const-class", "branch-single-first", "branch-one-run", "branch-two-groups", "branch-two-each", "branch-typeof", "branch-eq", "branch-cmp", "branch-class", "prop-order"]);
   for (const t of TAGS) assert.ok(GCASES.some((c) => c.guard === t), `a case for ${t}`);
 });
 test("M209 pure: every case passes as committed and on an unmutated copy", async () => {
@@ -269,16 +281,13 @@ test("M209 near misses (pure): two literals, three-way, two-arg need, foreign li
   assert.deepEqual(RR.fitConstant(abEv, AB), { refuse: "two-literals" });
   assert.deepEqual(RR.fitBranch(abEv, AB), { refuse: "no-fit" });
   // predicate literal not present in the cases: inventing threshold 10 must not happen; only args' literals are tried
-  const only = ev("a", [
-    { fn: "band", args: [3.2], got: { ok: true, value: 3.2 }, expect: { ok: true, value: 4 } },
-    { fn: "band", args: [1.8], got: { ok: true, value: 1.8 }, expect: { ok: true, value: 1 } },
-  ], "src/band.ts");
+  const only = bandEv("a");
   // Foreign lit 10 must never appear; only args' literals are tried:
   const f = RR.fitBranch(only, BAND);
   if (!("refuse" in f)) {
     const pred = f.pred;
     if (pred.kind === "eq" || pred.kind === "lt" || pred.kind === "gt") {
-      assert.ok([3.2, 1.8].some((x) => Object.is(x, pred.lit) || x === pred.lit), JSON.stringify(pred));
+      assert.ok([3.2, 4.1, 2, 1.8, 0.5].some((x) => Object.is(x, pred.lit) || x === pred.lit), JSON.stringify(pred));
     }
   }
   // over the size bound (constant path uses class; branch apply null on huge)
