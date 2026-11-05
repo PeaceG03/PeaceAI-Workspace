@@ -17,9 +17,12 @@ jobs:
     timeout-minutes: 40
     permissions:
       contents: read
-    # M202-M204 oop-v1 e2e: candidate uid + third verifier uid. Local runs may skip without them; CI must not.
+    # M202/M204 oop-v1 e2e only (direct verify(), no loop isolation). Do NOT set M146_CAND:
+    # that would enable every loop e2e and fail ISOLATION_UNAVAILABLE without the userns wrapper.
+    # M203 e2e stays skipped on CI (needs runLoopTask isolation); its pure/mutation cases still run.
     env:
-      M146_CAND: peaceai-cand3
+      M202_CAND: peaceai-cand3
+      M204_CAND: peaceai-cand3
       PEACEAI_VERIFIER_UID: peaceai-verify
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -34,9 +37,10 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/lm-venv"
           "$RUNNER_TEMP/lm-venv/bin/pip" install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r peaceai/model/requirements.txt
           echo "PEACEAI_PYTHON=$RUNNER_TEMP/lm-venv/bin/python" >> "$GITHUB_ENV"
-      - name: Create peaceai-cand3 and peaceai-verify for oop-v1 e2e (M202-M204)
+      - name: Create peaceai-cand3 and peaceai-verify for oop-v1 e2e (M202/M204)
         run: |
-          # Candidate (stage-2) and a THIRD verifier uid. Verifier has no sudo of its own.
+          # Candidate for verifier.ts sudo -u (not the loop userns path) and a THIRD verifier uid.
+          # Verifier has no sudo of its own.
           sudo useradd --system --no-create-home --shell /usr/sbin/nologin peaceai-cand3
           sudo useradd --system --no-create-home --shell /usr/sbin/nologin peaceai-verify
           # Minimum grants used by verifier.ts for the judge uid (GHA runner already has broader
@@ -47,14 +51,19 @@ jobs:
             | sudo tee /etc/sudoers.d/peaceai-verify >/dev/null
           sudo chmod 440 /etc/sudoers.d/peaceai-verify
           sudo visudo -cf /etc/sudoers.d/peaceai-verify
-      - name: Assert oop-v1 uids are set and reachable (no silent e2e skip in CI)
+      - name: Assert oop-v1 uids are set and reachable (no silent M202/M204 e2e skip in CI)
         run: |
-          test -n "$M146_CAND"
+          test -n "$M202_CAND"
+          test -n "$M204_CAND"
           test -n "$PEACEAI_VERIFIER_UID"
-          test "$M146_CAND" != "$PEACEAI_VERIFIER_UID"
-          id -u "$M146_CAND" >/dev/null
+          test "$M202_CAND" != "$PEACEAI_VERIFIER_UID"
+          test "$M204_CAND" != "$PEACEAI_VERIFIER_UID"
+          # Must not enable the loop-isolation e2e matrix on CI.
+          test -z "${M146_CAND:-}"
+          test -z "${M203_CAND:-}"
+          id -u "$M202_CAND" >/dev/null
           id -u "$PEACEAI_VERIFIER_UID" >/dev/null
-          sudo -n -u "$M146_CAND" -- true
+          sudo -n -u "$M202_CAND" -- true
           sudo -n -u "$PEACEAI_VERIFIER_UID" -- true
           # verifier must not itself have sudo (m204-guard:has-sudo)
           if sudo -n -u "$PEACEAI_VERIFIER_UID" -- sudo -n true 2>/dev/null; then
