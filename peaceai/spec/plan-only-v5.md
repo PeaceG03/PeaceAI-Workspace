@@ -67,7 +67,7 @@ notYet }`. It carries codes the request stated and repo paths, as v4's `anchors`
   counts; a CONSTANT_CASE alias name shared by unrelated modules can add sites (each counted file is bounded by the
   ambiguity cap). Codes built at run time (`${prefix}_FAILED`), errors returned as values (`{ ok: false, code }`),
   codes thrown inside dependencies, files over 2000 lines and non-JS/TS sources are NOT found: those requests fall back
-  to v4 (no worse than v4).
+  to v4 (no worse than v4). (M195 below adds caught-and-reported codes and `PREFIX_${x}` templates; the rest stands.)
 - It never upgrades a step to `can-do`, adds no rule, executes nothing (read-only `codesearch` + TypeScript syntax
   parse, no type checker), and writes nothing. Refusal reasons and log rows are unchanged (m59, m119); the loop does not
   use v5.
@@ -87,3 +87,131 @@ byte-identical, v5 not selectable, own CLI and digest, plan5run.ts = plan4run.ts
 
 Synthetic only (written with the family, so not evidence of generalisation). Not run on the public dev split or the
 hidden half yet; no claim about either. The one real-world motivating request is re-run in Batch 28.
+
+## M195 (Batch 29): caught-and-reported codes, template prefixes, detail trim
+
+Why: the Batch 28 re-run on the motivating real request showed that M194 only finds codes that are THROWN, while the
+most common shape in a real job log is a failure that is CAUGHT AND THEN REPORTED (logged in a catch, pushed into a
+warnings list, returned as a failed result) or a code BUILT AT RUN TIME from a template. M195 adds those shapes,
+generally. As in M194, no code, fixture, name, request wording or reference diff of that project or of any task set was
+used to build or test M195; the fixtures (`m195-fixtures.ts`) are two shapes written for it (`mail`: flat npm + vitest;
+`agent`: pnpm + jest workspace).
+
+New tagged conditions (each with admit cases on BOTH shapes, at least one refused near miss, and two mutants: one
+removing the guard, which fails an admit case, and one loosening it, which fails a near miss):
+- `diag-report-log`: the code (literal, template or CONSTANT_CASE alias) is an argument, possibly inside an object or
+  a concatenation, of a logging call: `console.error|warn|log|info|debug|trace`, `<log|logger|Log|Logger|xLogger>.<level>`
+  (also `this.logger.<level>`), or `process.stderr|stdout.write`. Near misses: an unrelated string in the catch (a
+  metrics key, a map key), a code only in a comment, a code logged only in a test file.
+- `diag-report-push`: an argument of `.push(..)` / `.unshift(..)` on an array named errors / warnings / failures /
+  problems / issues (or camelCase ending in one, e.g. `this.problems`, `writeWarnings`). Near miss: a push into any other
+  array (`retried.push(..)`).
+- `diag-report-result`: a property value of an object literal with `ok|success|succeeded: false` that is returned, is an
+  arrow's result, or is passed to `resolve(..)`. Near misses: `ok: true`, a failed object kept in a variable and not
+  returned, and a failed result returned OUTSIDE a catch (a check's symptom report; see `diag-report-caught`).
+- `diag-report-caught`: each report above counts only inside a catch block, a `.catch(fn)` handler or a `.then(_, fn)`
+  rejection handler; the walk from the sink stops at any other function (a success handler, a forEach callback) and a
+  try block or finally block is not a catch. The SITE is the try statement or the `.catch` / `.then` call (line and
+  enclosing function), where the fix belongs, not the logging line. Near misses: a log in the try block, in a success
+  handler, in a plain callback.
+- `diag-template-prefix`: a reported `A_B_<SEGMENT>` (the last segment plain [A-Z0-9]+) matches a template that builds
+  `A_B_${x}`; the prefix must itself be CONSTANT_CASE with at least two segments and 5+ characters. Near misses:
+  `STATUS_${x}` (one segment), `E_X_${x}` (too short), a reported code with two built segments.
+- `diag-template-boundary`: in the template the prefix starts the code (start of the template or after a non-word
+  character, never glued to letters or right after another hole) and the hole ends it (the next text does not continue
+  the code). Near misses: `MYA_B_${x}`, `A_B_${x}_RETRY`, `${k}A_B_${x}`.
+- `diag-detail-trim` (the Batch 28 parse defect): `CODE:detail.` drops the sentence's trailing full stop(s)
+  (`CODE:24.` -> `24`); inner dots stay (`v2.1`), and a detail that is only dots is no detail.
+
+Deciding and planning (changed lines of existing conditions): a code whose sites are all reports has status
+`reported` (`thrown` when any site throws); `diag-needs-site` admits on `thrown` or `reported`; the 3-file ambiguity
+cap counts every site; step reasons say `catches and reports CODE (catch-log|catch-push|catch-result)` and
+`(template)`; each site in `diagnosis.codes[].sites` carries `via` and `match` (`token` | `template-prefix`), so the
+plan says which shape matched. Reported steps are `missing` (`edit-existing-function`); `notYet` gains
+`fix-at-report-site` (no rule writes the retry / recovery around a caught failure) next to `reproduce-reported-failure`;
+`fix-at-throw-site` is listed only when some site throws; `trace-unthrown-codes` when some code is neither thrown nor
+reported. A refused diagnosis is still v4's plan exactly. Fix (M194 defect found in the Batch 29 informational run): an
+admitted plan's last step (v4's run-tests step) kept v4's step number, so two steps could share a number; it is now
+numbered after the diagnose steps.
+
+### Soundness note (M195)
+
+- What a reported admit claims: only "this file catches a failure and reports the code there"; not that the try or
+  chain is the root cause (the failure may come from a callee; `reproduce-reported-failure` and `fix-at-report-site`
+  stay in `notYet`).
+- False site risks, bounded: a catch that logs a code for a failure it did not catch itself (e.g. logs a stale state
+  code) counts; a problems-named array that is not really a problem list counts; a template prefix shared by two
+  unrelated families counts both (each bounded by the 3-file cap, so a widely shared prefix becomes `ambiguous`).
+- Not found (falls back to v4 or lists the code `not-thrown`, no worse than before): reports outside a catch (a check
+  result is a symptom by design), reports inside a nested callback within a catch, logging through a wrapper not named
+  like a logger, suffix templates (`${x}_FAILED`), prefixes followed by more than one built segment, and everything
+  M194 already excludes.
+- It still never upgrades a step to `can-do`, adds no rule, executes nothing (read-only `codesearch` + syntax parse),
+  writes nothing; refusal reasons and log rows are unchanged (m59, m119); the loop does not use v5; v4's file and digest
+  are unchanged; v5 stays out of `plandefault.ts`; `selfpropose.ts` is untouched.
+
+### Tests (M195)
+
+`peaceai/test/m195-cases.ts` + `m195-fixtures.ts`, run by `m194-plan-v5.test.ts` with M194's cases: 25 M195 cases (14
+admit on the two shapes, 11 near misses); the tag check now covers 22 conditions and requires both shapes and two
+mutants for each M195 condition; the mutation check runs every mutant (15 + 14) against all 55 cases; the generality
+check covers the M195 files; the synthetic grade gains one caught-and-reported task (`mail`, fileRecall v4 0.333 ->
+v5 1).
+
+### Scores (M195, honest)
+
+- Synthetic (written with M195, so not evidence of generalisation): the caught-and-reported task's fileRecall goes from
+  v4 0.333 to v5 1; the four M194 synthetic rows are unchanged.
+- Public DEV split (12 tasks, plan-grade-v2, no tuning; hidden half not touched): v4 devScore 0.764, runTests 0.833;
+  v5 devScore 0.764, runTests 0.833, row-for-row identical. The family admits none of the 12 requests (9
+  NO_FAILURE_REPORT, 3 NO_CODES, decided from the request text before any code search), so every v5 dev plan is v4's
+  plan. The dev split has no failure-log requests; it neither supports nor contradicts M195.
+- The motivating real request was re-run as an informational check only (not a test, fixture or score); results are in
+  the Batch 29 PR description.
+
+## Batch 31: `toplevel-catch` (a module-level `f().catch(..)` on a function of the same file)
+
+A report written by a `.catch` handler hung directly on a top-level call (`main().catch((e) => log("X_FAILED", e))`)
+has no enclosing function, so M195 planned it with symbol null at the `.catch` line: there was nothing to edit. The
+fix belongs in the called function (it is what threw or rejected). v5 now plans that site at the called function's
+declaration, with `shape: "toplevel-catch"` on the site and `(catch-log, toplevel-catch)` in the file reason. Every
+other site, rule and refusal is unchanged; v4 stays the default and byte-identical, v5 stays not selectable.
+
+Three tagged conditions in `toplevelCatch` (plan5.ts), all must hold:
+
+- `rule:diag-toplevel-call`: the handler is the single argument of `.catch` (not `.then(_, fn)`), and the receiver
+  (parens stripped) is a call of a plain identifier (not `obj.main()`, not a stored promise `pending.catch`).
+- `rule:diag-toplevel-module`: the `.catch` is at module level: no function or class encloses it (not inside a
+  `process.on(..)` callback, not a class field initialiser).
+- `rule:diag-toplevel-local`: the called name is declared at the top level of the same file as a function
+  declaration with a body, or a `const` bound directly to an arrow / function expression (not an import, not a
+  factory result `const boot = makeBoot()`).
+
+### Soundness note (Batch 31)
+
+- The rule only re-points a site M195 already admitted (a report-via site with no enclosing symbol); it never adds a
+  code, a site or a file the M195 rules did not find, so it cannot widen what v5 claims to diagnose.
+- The target is the function the `.catch` is attached to, which is exactly the promise whose rejection is reported.
+  When the name might not be that function (a method, an import whose body is elsewhere, a value built at runtime,
+  a nested or class-scoped `.catch`), the rule does not fire and the M195 site is kept as it was (symbol null): an
+  honest "report site only", never a guessed function.
+- It does not claim the rejection originates in that function's own body (it may come from a callee); the plan's
+  edit-source step names where the failure surfaces, as for the other report-via sites. Tracing further is still
+  notYet (`fix-at-report-site`, `trace-unthrown-codes`).
+- reproduce-v1 refuses a `toplevel-catch` site (`REPRO_NO_ENTRY`, detail `toplevel-catch`): such a function is a
+  process entry with no parameter dependency to inject, so v1 has no sound trigger there.
+
+### Tests (Batch 31)
+
+Fixtures `MAIL_CLI` (async function declaration, `main().catch` with console.error) and `AGENT_DAEMON` (const arrow,
+`void (boot()).catch` with a structured logger) in m195-fixtures.ts; two admit shapes per condition and six refused
+near misses (`cli.main().catch`, `.then(undefined, fn)`, `pending.catch`, inside a SIGHUP callback, a class field,
+an imported `main`, a factory-built `boot`), each expecting the unchanged M195 site. Two mutants per condition (removed
+and loosened); m194 now also requires each M195 mutant to be caught by a case of its own condition.
+
+### Scores (Batch 31, honest)
+
+- Public DEV split (12 tasks, plan-grade-v2, no tuning; hidden half not touched): v4 devScore 0.764, runTests 0.833;
+  v5 devScore 0.764, runTests 0.833, row-for-row identical (the dev split has no failure-log requests).
+- The motivating real request was re-run as an informational check only (not a test, fixture or score); results are
+  in the Batch 31 PR description.

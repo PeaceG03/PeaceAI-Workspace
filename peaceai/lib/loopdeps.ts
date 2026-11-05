@@ -159,12 +159,38 @@ function packageDirOf(root: string, file: string): string {
   }
 }
 
+/** M193 (batch 33): mocha majors the in-process guards were probed on (probe table: mocha 10.8.2 only; 11 was not probed). */
+export const MOCHA_SUPPORTED_MAJORS = Object.freeze([10] as const);
+/** The major of an installed or declared mocha version string, or null when unsure (`*`, `latest`, a multi-major range). */
+export function mochaMajorOf(version: string): number | null {
+  const s = String(version).trim();
+  if (!s || s === "*" || s === "latest" || s === "next" || /\|\||\s-\s/.test(s)) return null;
+  // a multi-major range (e.g. ">=9 <12") is unsure: refuse only when a single major is clear
+  if (/>=/.test(s) && /</.test(s)) return null;
+  const m = /^(?:[\^~>=\s]*)(\d+)(?:\.|$|x|\*)/.exec(s);
+  return m ? Number(m[1]) : null;
+}
+/** Installed mocha's package.json version major under the package or repo root; else the declared dep's major when clear. */
+function mochaMajorAt(root: string, pkgDir: string, deps: Record<string, unknown>): number | null {
+  const bases = pkgDir ? [join(root, pkgDir), root] : [root];
+  for (const base of bases) {
+    const v = readJson(join(base, "node_modules", "mocha", "package.json"))?.version;
+    if (typeof v === "string") {
+      const maj = mochaMajorOf(v);
+      if (maj !== null) return maj;
+    }
+  }
+  return typeof deps.mocha === "string" ? mochaMajorOf(deps.mocha) : null;
+}
+
+
 /**
  * Picks the runner for the team's test files. All files must sit in one package. The package's test script decides
  * (vitest / jest / node --test); when it names neither, its dependencies do (exactly one of vitest / jest). A script
  * that names another runner, or both vitest and jest, is refused; so is a repo with a compose file (outside service),
  * which is checked first (TEST_NEEDS_SERVICE wins over TEST_RUNNER_UNSUPPORTED).
  */
+
 export function detectRunner(root: string, testFiles: readonly string[]): RunnerPick | { refuse: RunnerRefusal } {
   if (!testFiles.length) return { refuse: "TEST_RUNNER_UNSUPPORTED" };
   const dirs = [...new Set(testFiles.map((f) => packageDirOf(root, f)))];
@@ -199,6 +225,10 @@ export function detectRunner(root: string, testFiles: readonly string[]): Runner
     if (MOCHA_CONFIG_FILES.some((f) => existsSync(join(root, pkgDir, f)) || existsSync(join(root, f))) || Object.hasOwn(pkg, "mocha") || Object.hasOwn(rootPkg, "mocha")) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // m172-guard:mocha-config
     const options = mochaOptions(root, pkgDir, pkgDir && !pkg.scripts?.test ? rootPkg.scripts : pkg.scripts);
     if (!options) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // m172-guard:mocha-options
+    // M193 (batch 33): only majors the guards were probed on (10.x). Prefer the installed mocha package.json; else the
+    // declared dep when its major is clear. Unsure ranges are not refused here (the runtime guard still checks).
+    const maj = mochaMajorAt(root, pkgDir, deps);
+    if (maj !== null && !(MOCHA_SUPPORTED_MAJORS as readonly number[]).includes(maj)) return { refuse: "TEST_RUNNER_UNSUPPORTED" }; // m193-guard:mocha-major
     return { runner, pkgDir, files: testFiles.map(rel), hasDeps, options };
   }
   return { runner, pkgDir, files: testFiles.map(rel), hasDeps };
@@ -1408,6 +1438,11 @@ export const MOCHA_GUARD_SOURCE = [
   "const Runnable = require(join(lib, \"runnable.js\"));",
   "const Pending = require(join(lib, \"pending.js\"));",
   "if (typeof Runnable !== \"function\" || typeof Runnable.prototype.run !== \"function\" || typeof Pending !== \"function\") throw new Error(\"PeaceAI loop: mocha internals not found\");",
+  "// M193 (batch 33): refuse mocha majors the guards were not probed on (probe table: 10.8.2 only), with an explicit",
+  "// code, instead of falling through to 'internals not found' when a newer major reshapes the API.",
+  "const __peaceaiMochaPkg = require(join(lib, \"..\", \"package.json\"));",
+  "const __peaceaiMochaMaj = parseInt(String(__peaceaiMochaPkg && __peaceaiMochaPkg.version || \"\").split(\".\")[0], 10);",
+  "if (!Number.isFinite(__peaceaiMochaMaj) || __peaceaiMochaMaj !== 10) throw new Error(\"PeaceAI loop: mocha major \" + __peaceaiMochaMaj + \" is not supported (M193 guards cover 10.x only)\");",
   "// M193 (batch 26): a runnable counts only when it runs the function it was defined with, through this wrapper. Each",
   "// test (Suite#addTest, a retry's Test#clone) and hook (Suite#_createHook) is pinned to its function when mocha makes",
   "// it, before any of it runs; one whose fn was swapped later (a hook or the code under test reaching",
