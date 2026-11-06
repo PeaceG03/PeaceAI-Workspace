@@ -1,0 +1,91 @@
+{
+  "schema": "peaceai-self-loop-practice:v1",
+  "experimental": true,
+  "credit": false,
+  "expectedHead": "85bc19789f37bb59dc17e718eceb6f21cea6a352",
+  "at": "2026-11-06T04:34:51.251Z",
+  "proposer": "fault-localize-v1",
+  "shapes": [
+    {
+      "id": "ho-month-literal",
+      "kind": "wrong-literal",
+      "expectUnfixable": false,
+      "loopCode": "ATTEMPT_LIMIT",
+      "result": "fail",
+      "attempts": 20,
+      "proposer": "fault-localize-v1",
+      "gap": "mutation candidates exhausted on wrong-literal without a passing edit"
+    },
+    {
+      "id": "ho-daykey-boundary",
+      "kind": "off-by-one",
+      "expectUnfixable": false,
+      "loopCode": "PASS",
+      "result": "pass",
+      "attempts": 8,
+      "proposer": "fault-localize-v1"
+    },
+    {
+      "id": "ho-minutes-swapped",
+      "kind": "swapped-args",
+      "expectUnfixable": false,
+      "loopCode": "NO_MORE_EDITS",
+      "result": "refused",
+      "attempts": 10,
+      "proposer": "fault-localize-v1",
+      "gap": "fault localization / mutation catalog miss swapped-args (proposer NO_MORE_EDITS)"
+    },
+    {
+      "id": "ho-plural-gt",
+      "kind": "wrong-operator",
+      "expectUnfixable": false,
+      "loopCode": "PASS",
+      "result": "pass",
+      "attempts": 2,
+      "proposer": "fault-localize-v1"
+    },
+    {
+      "id": "ho-truncate-no-return",
+      "kind": "missing-return",
+      "expectUnfixable": false,
+      "loopCode": "PASS",
+      "result": "pass",
+      "attempts": 14,
+      "proposer": "fault-localize-v1"
+    },
+    {
+      "id": "ho-month-branch",
+      "kind": "wrong-branch",
+      "expectUnfixable": false,
+      "loopCode": "PASS",
+      "result": "pass",
+      "attempts": 1,
+      "proposer": "fault-localize-v1"
+    },
+    {
+      "id": "ho-truncate-empty-lit",
+      "kind": "wrong-literal",
+      "expectUnfixable": false,
+      "loopCode": "PASS",
+      "result": "pass",
+      "attempts": 10,
+      "proposer": "fault-localize-v1"
+    },
+    {
+      "id": "ho-plural-oracle",
+      "kind": "oracle-absent",
+      "expectUnfixable": true,
+      "loopCode": "NO_MORE_EDITS",
+      "result": "refused",
+      "attempts": 12,
+      "proposer": "fault-localize-v1"
+    }
+  ],
+  "passCount": 5,
+  "total": 8,
+  "passRate": 0.625,
+  "gaps": [
+    "ho-month-literal: mutation candidates exhausted on wrong-literal without a passing edit",
+    "ho-minutes-swapped: fault localization / mutation catalog miss swapped-args (proposer NO_MORE_EDITS)"
+  ]
+}
