@@ -89,8 +89,9 @@ const GCASES: GCase[] = [
     const e = preferEv("a");
     assert.deepEqual(m.fitWrongArg({ ...e, cases: [...e.cases, { ...e.cases[0]!, id: "c9:f", run: "b" }] }, PREFER), { refuse: "RETRY_EVIDENCE_COMBINED" });
   } },
-  { guard: "arg-call", name: "a wrong-arg fit needs a select-helper call with a literal at the returned position", run: (m) => {
-    const noLit = "function take(a: number, _b: number): number {\n  return a;\n}\nexport function prefer(n: number): number {\n  return take(n, n);\n}\n";
+  { guard: "arg-call", name: "a wrong-arg fit needs a select-helper call with a literal or outer-param at the returned position", run: (m) => {
+    // non-identifier expression at the returned position (M214 admits outer-param ids; n+0 stays "other" / no-call)
+    const noLit = "function take(a: number, _b: number): number {\n  return a;\n}\nexport function prefer(n: number): number {\n  return take(n + 0, n);\n}\n";
     assert.deepEqual(m.fitWrongArg(preferEv(), noLit), { refuse: "no-call" });
     assert.deepEqual(m.fitWrongArg(preferEv(), "export function prefer(n: number): number {\n  return 0;\n}\n"), { refuse: "no-call" });
   } },

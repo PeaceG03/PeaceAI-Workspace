@@ -730,10 +730,14 @@ export function selectHelpers(src: string): SelectHelper[] {
 interface CallHit {
   helper: string; retIdx: number; callStart: number; argStart: number; argEnd: number; litValue: unknown; argIdx: number;
   transform: Transform;
-  /** For each argument: a literal value, an outer-param index, or null if unpredictable. */
+  /** For each argument: a literal value, an outer-param index, or other (unpredictable). */
   args: readonly ({ kind: "lit"; value: unknown } | { kind: "param"; index: number } | { kind: "other" })[];
 }
-/** Calls inside function `fn`'s own body to a projection helper, with the returned-position argument a literal. */
+/**
+ * Calls inside function `fn`'s own body to a projection helper whose returned-position argument is either a
+ * number/string/boolean literal (M210) or an outer-parameter identifier (M214). Other expression shapes stay out
+ * (no closed pure model of the current expression without execution).
+ */
 export function wrongArgCalls(src: string, fn: string): CallHit[] | null {
   const sf = parse(src);
   if (!sf) return null;
@@ -764,11 +768,14 @@ export function wrongArgCalls(src: string, fn: string): CallHit[] | null {
           } else args.push({ kind: "other" });
         }
         const ret = args[h.retIdx];
-        if (ret && ret.kind === "lit") {
+        // M210: literal at returned position. M214: outer-param identifier at returned position (wrong-param form).
+        const retOk = !!(ret && (ret.kind === "lit" || ret.kind === "param")); // m214-guard:arg-param
+        if (retOk && ret) {
           const argNode = x.arguments[h.retIdx]!;
           out.push({
             helper: h.name, retIdx: h.retIdx, callStart: x.getStart(sf),
-            argStart: argNode.getStart(sf), argEnd: argNode.end, litValue: ret.value, argIdx: h.retIdx,
+            argStart: argNode.getStart(sf), argEnd: argNode.end,
+            litValue: ret.kind === "lit" ? ret.value : undefined, argIdx: h.retIdx,
             transform: h.transform, args,
           });
         }
@@ -791,14 +798,15 @@ function predictArg(args: CallHit["args"], retIdx: number, transform: Transform,
   return out.ok ? out.v : undefined; // m211-guard:arg-pred
 }
 /**
- * Which one call-site literal argument of a same-file projection helper (select, or one closed-catalog unary transform
- * of a parameter; function declaration or const/arrow/function-expression form, M213) to replace with one of the
- * function's own parameters so EVERY case of this one run fits, when no earlier form (single / constant / pair /
- * branch) is being asked here (the proposer tries those first). Evidence rule (no execution): the helper's body is
- * `return <param>` or `return <catalog-transform>(param)` (or an arrow expression body of that shape); the call's
- * argument at that position is a number/string/boolean literal L; replacing L with outer parameter p makes the
- * predicted return equal every case's expected value; and under the current call the predicted return matches what
- * each case returned (so the projection model agrees with the evidence). A prediction, never a verdict.
+ * Which one call-site argument of a same-file projection helper (select, or one closed-catalog unary transform of a
+ * parameter; function declaration or const/arrow/function-expression form) to replace with one of the function's own
+ * parameters so EVERY case of this one run fits, when no earlier form (single / constant / pair / branch) is being
+ * asked here (the proposer tries those first). Evidence rule (no execution): the helper's body is `return <param>` or
+ * `return <catalog-transform>(param)` (or an arrow expression body of that shape); the call's argument at that position
+ * is either a number/string/boolean literal L (M210) or an outer-parameter identifier (M214 wrong-param); replacing it
+ * with outer parameter p makes the predicted return equal every case's expected value; and under the current call the
+ * predicted return matches what each case returned (so the projection model agrees with the evidence). A prediction,
+ * never a verdict. Arbitrary non-identifier expressions stay refused (no closed model without execution).
  */
 export function fitWrongArg(ev: RetryEvidence, src: string): { fn: string; helper: string; callStart: number; argStart: number; argEnd: number; param: string } | { refuse: string } {
   const one = fitTransform(ev);
@@ -828,7 +836,9 @@ export function fitWrongArg(ev: RetryEvidence, src: string): { fn: string; helpe
     if (!modelOk) continue;
     for (let j = 0; j < outer.length; j++) {
       const param = outer[j]!;
-      // replacing the returned-position literal with outer param j
+      // replacing the returned-position literal or wrong outer-param with outer param j
+      const cur = call.args[call.retIdx];
+      if (cur && cur.kind === "param" && cur.index === j) continue; // already that param (changed check below also refuses)
       const nextArgs = call.args.map((a, i) => (i === call.retIdx ? { kind: "param" as const, index: j } : a));
       let fits = true;
       for (const c of onFn) {
@@ -852,7 +862,7 @@ export function fitWrongArg(ev: RetryEvidence, src: string): { fn: string; helpe
 /**
  * `src` with the call-site argument span [argStart, argEnd) replaced by the identifier `param`. Emitted only if the
  * result is inside rr-in-function-v1 as "rr-in-function" (else null). Does not invent string words: the replacement is
- * a parameter name already in the function head.
+ * a parameter name already in the function head. The span may be a literal (M210) or an outer-param identifier (M214).
  */
 export function applyWrongArg(src: string, fn: string, callStart: number, argStart: number, argEnd: number, param: string): string | null {
   if (argStart < 0 || argEnd <= argStart || argEnd > src.length || callStart > argStart) return null;
@@ -872,7 +882,7 @@ export type RetryProposeInput = ProposeInput & { feedback: readonly RetryFeedbac
  * repair-retry-v1's proposer: attempt 1 is `base` (e.g. repair-v2) unchanged. A later attempt first tries, on ONE run's
  * evidence (the last attempt's own run on that attempt's code; else the baseline on the original), in this pinned order:
  * a single output transform; a one-literal constant fix (M209); a pair helper (M208); a guarded branch (M209); a
- * wrong-argument call-site fix (M210/M211/M213). Never a mix of runs. If none fits it asks `base` again, which sees only its own
+ * wrong-argument call-site fix (M210/M211/M213/M214). Never a mix of runs. If none fits it asks `base` again, which sees only its own
  * attempts (renumbered), as if run alone. Stops on a tampered or leftover run. Its predictions are never a verdict. Cap
  * RETRY_MAX_ATTEMPTS = 3.
  */
@@ -909,7 +919,7 @@ export function retryProposer(base: Proposer): Proposer & { readonly transforms:
         let next: string | null = null, what = "";
         if (!("refuse" in fit)) { next = applyTransform(src, fit.fn, fit.transform); what = fit.transform.name; }
         else {
-          // pinned order after a single transform refuses: constant, pair (M208), guarded branch (M209), wrong-arg (M210/M211/M213).
+          // pinned order after a single transform refuses: constant, pair (M208), guarded branch (M209), wrong-arg (M210-M214).
           const cf = fitConstant(r.ev, src);
           if (!("refuse" in cf)) { next = applyConstant(src, cf.fn, cf.from, cf.to); what = `const(${JSON.stringify(cf.from)}->${JSON.stringify(cf.to)})`; }
           else {
@@ -922,7 +932,7 @@ export function retryProposer(base: Proposer): Proposer & { readonly transforms:
               } else {
                 const wf = fitWrongArg(r.ev, src);
                 if (!("refuse" in wf)) {
-                  next = applyWrongArg(src, wf.fn, wf.callStart, wf.argStart, wf.argEnd, wf.param); what = `arg(${wf.helper}:${wf.param})`; // m210-guard:prop-order // m211-guard:prop-order // m213-guard:prop-order
+                  next = applyWrongArg(src, wf.fn, wf.callStart, wf.argStart, wf.argEnd, wf.param); what = `arg(${wf.helper}:${wf.param})`; // m210-guard:prop-order // m211-guard:prop-order // m213-guard:prop-order // m214-guard:prop-order
                 }
               }
             }

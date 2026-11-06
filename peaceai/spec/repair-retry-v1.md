@@ -386,15 +386,67 @@ unary transform of a parameter. Tests: `peaceai/test/m213-retry-argdecl.test.ts`
 - The form does not widen what an edit may do: it stays inside the frozen rr-in-function-v1 class. No new edit-class
   tag. The gate is defence in depth. The verdict's soundness is verifier-v1's (M202, M207).
 - Order is pinned and documented (single, constant, pair, branch, wrong-arg); attempts never chain past the cap of 3.
-- Residuals: wrong arguments that are not literals; arbitrary non-select helper bodies (no closed pure model); other
-  shared-logic helpers; string constant replacements that introduce a new word (class refuse); still EXPERIMENTAL,
-  opt-in, not the default and not for credit.
+- Residuals closed in part by M214 (below) for outer-parameter identifiers at the returned position; arbitrary
+  non-identifier expressions, arbitrary non-select helper bodies (no closed pure model), other shared-logic helpers,
+  and string constant replacements that introduce a new word (class refuse) remain; still EXPERIMENTAL, opt-in, not
+  the default and not for credit.
 
-### Terminality (unchanged from M211)
+### Terminality (updated by M214)
 
 - **Arbitrary non-select body:** without a closed pure predictor, the search cannot uniquely determine the call's
   return from arguments without executing candidate code. Execution is out of scope for the proposer (predictions are
   never a verdict; verifier-v1 alone runs the candidate). Therefore this residual stays refused outside the catalog-
   transform subset.
-- **Non-literal wrong args:** replacing a non-literal argument is not "evidence uniquely determines the literal"; it
-  needs a second model of the current expression. Left residual rather than widen.
+- **Non-literal wrong args:** closed for outer-parameter identifiers by M214 (below). Other expression shapes
+  (`n + 0`, nested calls, free identifiers) still need a second model of the current expression and stay refused.
+
+## M214 (batch 50): wrong-argument for outer-parameter call-site args
+
+Code: `wrongArgCalls` / `fitWrongArg` in `peaceai/lib/repair-retry.ts` now also admit a returned-position argument that
+is an outer-parameter identifier (wrong param), not only a number/string/boolean literal. Tests:
+`peaceai/test/m214-retry-argparam.test.ts`.
+
+- **When.** Same slot as M210-M213: attempt k >= 2, one run's evidence, only after single / constant / pair / branch
+  refuse.
+- **What.** Inside the changed function's own body, a call to a same-file projection helper (M210-M213 shapes) whose
+  argument at the returned position is an outer-parameter identifier P. Replace P with a different outer parameter Q
+  so that, for EVERY case of the run on that function, the predicted return equals the expected value; under the
+  current call the predicted return matches what each case returned; and at least one case's prediction changes.
+  Bound still `rr-in-function` (no EDIT_SCOPE_POLICY widen). Literals (M210) stay admitted via the same path.
+- **Why this subset of non-literals.** An outer-parameter identifier has a closed pure meaning in the evidence (the
+  case's argument at that index) without executing candidate code. `n + 0`, nested calls, and free identifiers do not;
+  those stay refused (terminality below).
+- Unchanged: oop-v1 only, cap 3, credit only from the attempt's own verifier-v1 verdict, order, default mode,
+  EDIT_SCOPE_POLICY. Function-declaration and const/arrow helpers stay admitted.
+
+### Evidence (m214)
+
+- Two self-made fixtures (nothing from PeaceSTOCKS, the dev tasks, the scanner or reference diffs): a numeric `take` /
+  `pick` select (wrong outer param `m` should have been `n`) and a string `low` / `tag` const-arrow lower helper
+  (wrong outer param `b` should have been `a`). Attempt 1 (repair-v2) fails; no earlier form fits; attempt 2 replaces
+  the call-site param with the correct outer parameter and passes on its own oop-v1 verdict. Controls: repair-v2 alone
+  with 3 attempts ends without PASS in the default mode and under oop-v1. M210 literal and M213 const-arrow literal
+  fixtures still admit (regression).
+- Refused near misses: a non-identifier expression at the returned position (`n + 0`); already-correct outer param
+  (no prediction change); evidence the projection model disagrees with; a foreign / stale span; a new-word class
+  refuse; earlier form (constant) still wins over wrong-arg.
+- Each `m214-guard` line has a case of its own that fails on a mutant with that line deleted.
+
+### Soundness note (M214)
+
+- The call-site edit is a search output, not evidence. Whether it is right is decided only by the attempt's own
+  verifier-v1 verdict (verifier uid, out of process). The projection model is unchanged from M211/M213; only the
+  returned-position argument kind is widened from literals to outer-parameter identifiers. Fitting the visible cases
+  of one run is not generalisation.
+- The form does not widen what an edit may do: it stays inside the frozen rr-in-function-v1 class. No new edit-class
+  tag. The gate is defence in depth. The verdict's soundness is verifier-v1's (M202, M207).
+- Order is pinned and documented (single, constant, pair, branch, wrong-arg); attempts never chain past the cap of 3.
+- Residuals: non-identifier call-site expressions; arbitrary non-select helper bodies; other shared-logic helpers;
+  string constant replacements that introduce a new word (class refuse); still EXPERIMENTAL, opt-in, not the default
+  and not for credit.
+
+### Terminality (remaining non-literal expressions)
+
+- **Non-identifier expressions** (`n + 0`, nested calls, free names): without a closed pure model of the current
+  expression, evidence does not uniquely determine the replacement. Left residual rather than widen.
+- **Arbitrary non-select body:** unchanged from M211.
