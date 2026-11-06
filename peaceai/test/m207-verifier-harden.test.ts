@@ -315,8 +315,20 @@ test("M207 pins: selfpropose.ts, plandefault.ts, plan4.ts byte-identical to gen/
   assert.ok(existsSync(join(libDir, "plan4.ts")));
 });
 
+function reapUid(uid: number, budgetMs = 3000): void {
+  const t0 = Date.now();
+  while (Date.now() - t0 < budgetMs) {
+    const ps = candPids(uid);
+    if (ps.length === 0) return;
+    for (const p of ps) spawnSync("sudo", ["-n", "kill", "-KILL", String(p)], { stdio: "ignore" });
+    spawnSync("sleep", ["0.05"], { stdio: "ignore" });
+  }
+}
 test("M207 hygiene: no candidate / verifier process outlives the file", { skip: !cand && "needs cand" }, () => {
-  assert.deepEqual(candPids(cand!.uid), []);
+  // Reap stragglers from this file's e2e/mutation, wait until gone, then assert empty (no weaken).
+  reapUid(cand!.uid);
   const vUid = Number((spawnSync("id", ["-u", VERIFIER], { encoding: "utf8" }).stdout ?? "").trim());
+  if (Number.isInteger(vUid)) reapUid(vUid);
+  assert.deepEqual(candPids(cand!.uid), []);
   if (Number.isInteger(vUid)) assert.deepEqual(candPids(vUid), []);
 });

@@ -519,7 +519,7 @@ const GUARD: Record<string, { file: keyof typeof SRC; e2e?: true; run(m: Mods): 
   "h-async": { file: "harness", e2e: true, run: async () => {
     const w = await variant({ verifier: CUR.verifier, harness: CUR.harness });
     const r = w.V.verify({ root: fixture({ "src/a.mjs": "export const later = async () => 3;\n" }), module: "src/a.mjs", cases: [{ id: "l", fn: "later", args: [], expect: { ok: true, value: 3, cmp: "is" } }], env });
-    assert.deepEqual(r.results, [{ id: "l", pass: false, reason: "async" }]);
+    assert.deepEqual(r.results, [{ id: "l", pass: false, reason: "async" }], JSON.stringify(r));
   } },
   // judge
   "sync": { file: "judge", run: (m) => assert.equal(m.J.expectHolds(okR(3, { sync: false }), { ok: true, value: 3, cmp: "is" }), false) },
@@ -586,6 +586,16 @@ test("M204 loopSha256 binds repair-retry.ts and the verifier files (mutants with
   assert.ok(existsSync(join(libDir, "plan4.ts")));
 });
 
+function reapUid(uid: number, budgetMs = 3000): void {
+  const t0 = Date.now();
+  while (Date.now() - t0 < budgetMs) {
+    const ps = candPids(uid);
+    if (ps.length === 0) return;
+    for (const p of ps) spawnSync("sudo", ["-n", "kill", "-KILL", String(p)], { stdio: "ignore" });
+    spawnSync("sleep", ["0.05"], { stdio: "ignore" });
+  }
+}
 test("M204 hygiene: no candidate process outlives the file (checked last)", { skip: !cand && "needs the stage-2 candidate uid" }, () => {
+  reapUid(cand!.uid);
   assert.deepEqual(candPids(cand!.uid), []);
 });

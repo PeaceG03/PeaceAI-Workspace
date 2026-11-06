@@ -37,7 +37,7 @@ test("M152: the template order is fixed and every template is reachable from a c
 
 test("M152: the loop gives the proposer counts in the feedback and calls prepare after resetting the copy", () => {
   const src = readFileSync(join(ROOT, "peaceai/lib/loop.ts"), "utf8");
-  assert.match(src, /feedback\.push\(\{ attempt, codes: r\.codes, failing: r\.failing, tests: r\.tests \}\)/);
+  assert.match(src, /feedback\.push\(\{ attempt, codes: r\.codes, failing: r\.failing, tests: r\.tests/); // M203 may append evidence; counts stay
   const at = src.indexOf("o.proposer.prepare(");
   assert.ok(at > 0 && src.lastIndexOf("resetCopy(c); // m152-guard:prepare-clean", at) > src.lastIndexOf("putTeamTests();", at), "prepare must follow a reset after the baseline");
 });

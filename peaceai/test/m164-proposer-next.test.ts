@@ -37,7 +37,7 @@ for (const c of CASES) test(`M164: ${c.id}`, () => c.run({ prop, loop }, ctx));
 test("M164: every next() goes through one helper whose catch keeps no error (no binding); a null, a non-object or a proposal without a valid edits array is PROPOSER_FAILED", () => {
   const calls = [...loopSource.matchAll(/o\.proposer\.next\(/g)];
   assert.equal(calls.length, 1, "one next() call site");
-  const helper = /const ask = \(attempt: number\)[^\n]*\n\s*try \{ return o\.proposer\.next\(\{[^\n]*\}\); \} catch \{ return null; \}\n/;
+  const helper = /const ask = \(attempt: number\)[^\n]*\n\s*try \{ return o\.proposer\.next\(\{[^\n]*\} as ProposeInput\); \} catch \{ return null; \}\n/;
   assert.match(loopSource, helper, "the next() call is wrapped in a catch with no binding");
   assert.match(loopSource, /const p = ask\(attempt\);\n\s*if \(p === null\) return done\("PROPOSER_FAILED"\); \/\/ m164-guard:next-failed\n\s*if \(typeof p !== "object"\) return done\("PROPOSER_FAILED"\); \/\/ m164-guard:next-empty\n\s*if \(!\("refuse" in p\) && !validEdits\(\(p as \{ edits\?: unknown \}\)\.edits\)\) return done\("PROPOSER_FAILED"\); \/\/ m164-guard:next-malformed\n\s*if \("refuse" in p\)/);
   assert.ok(LOOP_CODES.includes("PROPOSER_FAILED" as never));
@@ -93,7 +93,7 @@ const MUTANTS: [string, string][] = [
   ["empty-edits-refused", swap("Array.isArray(x) && Array.from(x as unknown[]).every((e) =>", "Array.isArray(x) && x.length > 0 && Array.from(x as unknown[]).every((e) =>")],
   ["edit-path-unchecked", swap('e !== null && typeof (e as Edit).path === "string" && typeof', 'e !== null && typeof')],
   ["sparse-holes-skipped", swap("Array.isArray(x) && Array.from(x as unknown[]).every((e) =>", "Array.isArray(x) && x.every((e) =>")],
-  ["catch-rethrows", swap("attempt, feedback, baseline }); } catch { return null; }", "attempt, feedback, baseline }); } catch (e) { throw e; }")],
+  ["catch-rethrows", swap("attempt, feedback, baseline } as ProposeInput); } catch { return null; }", "attempt, feedback, baseline } as ProposeInput); } catch (e) { throw e; }")],
 ];
 for (const [id, text] of MUTANTS) {
   test(`M164 mutation: ${id} makes a case fail`, async (t) => {

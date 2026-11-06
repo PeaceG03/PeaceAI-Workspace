@@ -458,7 +458,7 @@ test("M118: new add-only tests are accepted only under peaceai/self-tests/** and
   assert.match(reasons(c), /an executable change needs at least one new test/);
   // the allowed set mirrors the real scripts
   const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as { scripts: Record<string, string> };
-  assert.equal(pkg.scripts["test:tools"], "tsx --test peaceai/test/*.test.ts");
+  assert.equal(pkg.scripts["test:tools"], "tsx --test --test-concurrency=1 peaceai/test/*.test.ts");
   assert.equal(pkg.scripts["test:self"], "tsx --test $(find peaceai/self-tests -name '*.test.ts' -type f | LC_ALL=C sort)");
 });
 
