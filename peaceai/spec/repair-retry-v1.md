@@ -441,12 +441,65 @@ is an outer-parameter identifier (wrong param), not only a number/string/boolean
 - The form does not widen what an edit may do: it stays inside the frozen rr-in-function-v1 class. No new edit-class
   tag. The gate is defence in depth. The verdict's soundness is verifier-v1's (M202, M207).
 - Order is pinned and documented (single, constant, pair, branch, wrong-arg); attempts never chain past the cap of 3.
-- Residuals: non-identifier call-site expressions; arbitrary non-select helper bodies; other shared-logic helpers;
-  string constant replacements that introduce a new word (class refuse); still EXPERIMENTAL, opt-in, not the default
-  and not for credit.
+- Residuals closed in part by M215 (below) for one closed-catalog unary transform of a literal or outer-param at the
+  call site; non-catalog expressions (`n + 0`, Math.abs, nested free calls), arbitrary non-select helper bodies, other
+  shared-logic helpers, and string constant replacements that introduce a new word (class refuse) remain; still
+  EXPERIMENTAL, opt-in, not the default and not for credit.
 
 ### Terminality (remaining non-literal expressions)
 
-- **Non-identifier expressions** (`n + 0`, nested calls, free names): without a closed pure model of the current
-  expression, evidence does not uniquely determine the replacement. Left residual rather than widen.
+- **Non-identifier expressions:** closed for exactly one RETRY_TRANSFORMS wrap of a literal or outer-param by M215
+  (below). `n + 0`, Math.abs, nested free calls, and other non-catalog shapes still need a model beyond the closed
+  catalog and stay refused.
 - **Arbitrary non-select body:** unchanged from M211.
+
+## M215 (batch 51): wrong-argument for catalog-transform call-site expressions
+
+Code: `parseArgSlot` / `wrongArgCalls` / `predictArg` in `peaceai/lib/repair-retry.ts` now also admit a returned-position
+argument that is exactly one closed-catalog unary transform of a literal or outer-param (`Math.floor(0)`,
+`(" ").trim()`, `!(false)`, ...). Tests: `peaceai/test/m215-retry-argxform-call.test.ts`.
+
+- **When.** Same slot as M210-M214: attempt k >= 2, one run's evidence, only after single / constant / pair / branch
+  refuse.
+- **What.** Inside the changed function's own body, a call to a same-file projection helper whose argument at the
+  returned position is a RETRY_TRANSFORMS wrap of a literal or outer-param. Replace that whole argument span with one
+  of the outer function's own parameters so every case of the run fits, the current call's prediction matches the
+  observed returns (helper transform composed with the call-site transform, no execution), and at least one case's
+  prediction changes. Bound still `rr-in-function`. Literals (M210) and bare outer-params (M214) stay admitted.
+- **Why this subset.** The call-site expression reuses the same closed catalog already used for helper bodies (M211)
+  and single/pair transforms (M203/M208). Predicting it needs no candidate execution. `n + 0`, `Math.abs`, and nested
+  free calls have no closed pure model here and stay refused.
+- Unchanged: oop-v1 only, cap 3, credit only from the attempt's own verifier-v1 verdict, order, default mode,
+  EDIT_SCOPE_POLICY.
+
+### Evidence (m215)
+
+- Two self-made fixtures (nothing from PeaceSTOCKS, the dev tasks, the scanner or reference diffs): a numeric `take` /
+  `pick` select with `Math.floor(0)` at the call site (should have been the outer param) and a string `head` / `label`
+  select with `(" ").trim()` at the call site (should have been the outer param). Attempt 1 (repair-v2) fails; no
+  earlier form fits; attempt 2 replaces the whole argument span with the parameter and passes on its own oop-v1
+  verdict. Controls: repair-v2 alone with 3 attempts ends without PASS in the default mode and under oop-v1. M210
+  literal and M214 wrong-param fixtures still admit (regression). A ceil-helper + floor(0) composed prediction also
+  fits in the pure suite.
+- Refused near misses: `n + 0`; `Math.abs(0)` (non-catalog); model mismatch; foreign / stale span; new-word class
+  refuse; earlier form (constant) still wins over wrong-arg.
+- Each `m215-guard` line has a case of its own that fails on a mutant with that line deleted.
+
+### Soundness note (M215)
+
+- The call-site edit is a search output, not evidence. Whether it is right is decided only by the attempt's own
+  verifier-v1 verdict (verifier uid, out of process). The projection model composes the helper's catalog transform with
+  the call-site catalog transform; both are closed and pure. Fitting the visible cases of one run is not generalisation.
+- The form does not widen what an edit may do: it stays inside the frozen rr-in-function-v1 class. No new edit-class
+  tag. The gate is defence in depth. The verdict's soundness is verifier-v1's (M202, M207).
+- Order is pinned and documented (single, constant, pair, branch, wrong-arg); attempts never chain past the cap of 3.
+- Residuals: non-catalog call-site expressions; arbitrary non-select helper bodies; other shared-logic helpers;
+  string constant replacements that introduce a new word (class refuse); still EXPERIMENTAL, opt-in, not the default
+  and not for credit.
+
+### Terminality (remaining)
+
+- **Non-catalog call-site expressions** (`n + 0`, Math.abs, nested free calls): no closed pure model beyond
+  RETRY_TRANSFORMS. Left residual rather than widen.
+- **Arbitrary non-select body / other shared-logic helpers:** unchanged from M211 (pair-composition helper bodies for
+  wrong-arg recognition remain a possible later closed subset; not claimed here).
