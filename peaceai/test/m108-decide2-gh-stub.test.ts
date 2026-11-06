@@ -258,6 +258,6 @@ test("decide2 via stubbed gh: exact pass + verdict but the flag is OFF at origin
   assert.equal(back.code, 0, `${back.out}\n${back.err}`);
 });
 
-test("the committed stage-2 flag stays OFF", () => {
-  assert.equal(JSON.parse(readFileSync(join(root, "peaceai/self/stage2.json"), "utf8")).enabled, false);
+test("the committed stage-2 flag is ON (Peace flipped it)", () => {
+  assert.equal(JSON.parse(readFileSync(join(root, "peaceai/self/stage2.json"), "utf8")).enabled, true);
 });
