@@ -4,6 +4,8 @@
 //          a wrong edit fails every attempt.
 //   jail:  the team's tests assert the isolation itself: writes outside the copy fail, no network (not even a
 //          loopback server the test host opens), no secrets in the environment.
+//   self:  PeaceG03/PeaceAI-Workspace (SELF_ALLOW) with peaceai/lib/loop.ts present so a protected edit reaches
+//          SELF_PROTECTED in the full loop (not FETCH_FAILED).
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -44,6 +46,11 @@ export const CALC_WRONG = "export function add(a: number, b: number): number {\n
 export const FLAG_FIXED = "export function ready(): boolean {\n  return true;\n}\n";
 export const SECRET_NAME = "PEACEAI_M146_FAKE_SECRET";
 
+/** Known content of peaceai/lib/loop.ts in the SELF_ALLOW fixture (full-loop SELF_PROTECTED proof). */
+export const SELF_LOOP_PIN = "export const pin = 1;\n";
+/** In-body edit of SELF_LOOP_PIN that must be refused as SELF_PROTECTED on a SELF_ALLOW repo. */
+export const SELF_LOOP_EDIT = "export const pin = 2;\n";
+
 export interface Ctx {
   base: string;
   /** Owned by the test runner; the candidate must not be able to create anything here. */
@@ -53,6 +60,8 @@ export interface Ctx {
   hits: () => number;
   calc: PlanTask;
   jail: PlanTask;
+  /** SELF_ALLOW fixture: PeaceG03/PeaceAI-Workspace with a protected peaceai/lib/loop.ts plus a failing calc. */
+  self: PlanTask;
   file: PlanTaskFile;
   fetcher: CopyFetcher;
   root: string;
@@ -99,6 +108,18 @@ export function setup(port: number, hits: () => number): Ctx {
   });
   const calc = task("m146-calc", "m146-fixture/calc", calcPins, "Fix add in src/calc.ts so that it returns the sum of its two arguments.", "src/calc.ts", "test/calc.test.ts");
   const jail = task("m146-jail", "m146-fixture/jail", jailPins, "Make ready in src/flag.ts return true once the module is loaded.", "src/flag.ts", "test/jail.test.ts");
+  // SELF_ALLOW full-loop fixture: fetched as PeaceG03/PeaceAI-Workspace (fetcher uses the repo name). Holds a
+  // PROTECTED_SELF path (peaceai/lib/loop.ts) so a protected edit can reach applyEdits and land on SELF_PROTECTED
+  // (not FETCH_FAILED). Baseline still fails on src/calc.ts like the calc fixture.
+  const selfPins = buildRepo(join(base, "repos/PeaceAI-Workspace"), {
+    "package.json": pkg, LICENSE: MIT,
+    "src/calc.ts": "export function add(a: number, b: number): number {\n  return a - b;\n}\n",
+    "peaceai/lib/loop.ts": SELF_LOOP_PIN,
+  }, {
+    "src/calc.ts": CALC_FIXED,
+    "test/calc.test.ts": `import test from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../src/calc.ts";\n\ntest("add sums two numbers", () => assert.equal(add(2, 3), 5));\ntest("add keeps the other number for zero", () => assert.equal(add(0, 4), 4));\n`,
+  });
+  const self = task("m146-self", "PeaceG03/PeaceAI-Workspace", selfPins, "Fix add in src/calc.ts so that it returns the sum of its two arguments.", "src/calc.ts", "test/calc.test.ts");
   const file: PlanTaskFile = { schema: "peaceai-plan-tasks:v1" as PlanTaskFile["schema"], set: "public", tasks: [calc] };
   // a scratch root with an empty committed log (lock tests)
   const root = join(base, "root");
@@ -117,7 +138,7 @@ export function setup(port: number, hits: () => number): Ctx {
   chmodSync(join(noNs, "unshare"), 0o755);
   const env = { ...process.env, [STAGE2_CAND_ENV]: process.env.M146_CAND ?? "" };
   const cand = stage2CandUid(env).ok;
-  return { base, marker, port, hits, calc, jail, file, edits, cand, env, noNs, fetcher: gitCopyFetcher((r) => join(base, "repos", r.split("/")[1]!)), root };
+  return { base, marker, port, hits, calc, jail, self, file, edits, cand, env, noNs, fetcher: gitCopyFetcher((r) => join(base, "repos", r.split("/")[1]!)), root };
 }
 
 export function teardown(ctx: Ctx): void {

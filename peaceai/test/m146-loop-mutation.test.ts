@@ -77,6 +77,22 @@ for (const g of guards) {
   });
 }
 
+
+// M216: restoring fail-open (`opts.selfAllow &&` instead of `opts.selfAllow !== false`) must be caught by a case.
+test("M146 mutation: restoring applyEdits fail-open (selfAllow truthy) makes a case fail", async () => {
+  const open = source.replace(
+    "opts.selfAllow !== false && isSelfAllowForbiddenPath(String(e.path))",
+    "opts.selfAllow && isSelfAllowForbiddenPath(String(e.path))",
+  );
+  assert.notEqual(open, source, "fail-closed condition present to restore");
+  const file = join(dir, "mutant-self-protect-fail-open.ts");
+  writeFileSync(file, rewrite(open));
+  const r = await runMutant(file);
+  assert.ok(r, "fail-open mutant hung");
+  assert.deepEqual(r.crashed, [], "fail-open mutant crashed instead of failing an assertion");
+  assert.ok(r.failed.length > 0, "no case notices applyEdits fail-open restored");
+});
+
 // The plan-log add-only guard (m146-planlog.ts): each "// guard:<id>" line is deleted in a copy, which must fail a case.
 const planLogSource = readFileSync(resolve(import.meta.dirname, "m146-planlog.ts"), "utf8");
 const planLogLines = planLogSource.split("\n");

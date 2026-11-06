@@ -9,7 +9,7 @@ import { loopRowProblem } from "../lib/looprow.ts";
 import { RUN_LOG } from "../lib/plangrade.ts";
 import { LOOP_LOG } from "../lib/looprow.ts";
 import type { PlanTask } from "../lib/plan.ts";
-import { CALC_FIXED, CALC_WRONG, FLAG_FIXED, SECRET_NAME, type Ctx } from "./m146-fixtures.ts";
+import { CALC_FIXED, CALC_WRONG, FLAG_FIXED, SECRET_NAME, SELF_LOOP_EDIT, SELF_LOOP_PIN, type Ctx } from "./m146-fixtures.ts";
 
 type Lib = typeof Loop;
 export interface Case { id: string; run: (lib: Lib, ctx: Ctx) => void }
@@ -149,13 +149,29 @@ export const CASES: Case[] = [
       assert.equal(lib.isSelfAllowForbiddenPath(okPath), false, okPath);
       assert.equal(lib.applyEdits(copy, [{ path: okPath, content: "export const ok = 1;\n" }], { selfAllow: true }), null);
       assert.ok(existsSync(join(ctx.edits, okPath)), "non-protected path written");
-      // without selfAllow the PROTECTED_SELF gate does not fire (external-repo path)
-      assert.equal(lib.applyEdits(copy, [{ path: "peaceai/lib/loop.ts", content: "export const y = 2;\n" }]), null);
-      // full loop on an allowlisted self repo: protected edit refuses (or CAND_UID_* before fetch when no cand)
-      const r = run(lib, ctx, { ...ctx.calc, repo: "PeaceG03/PeaceAI-Workspace" }, fixed([{ path: "peaceai/lib/loop.ts", content: "export const z = 3;\n" }]));
+      // fail closed: omitted selfAllow (and {}) refuses PROTECTED_SELF / never-zone; explicit false is the external path
+      assert.equal(lib.applyEdits(copy, [{ path: "peaceai/lib/loop.ts", content: "export const y = 2;\n" }]), "SELF_PROTECTED");
+      assert.equal(lib.applyEdits(copy, [{ path: "peaceai/lib/loop.ts", content: "export const y = 3;\n" }], {}), "SELF_PROTECTED");
+      assert.ok(!existsSync(join(ctx.edits, "peaceai/lib/loop.ts")), "default wrote nothing");
+      assert.equal(lib.applyEdits(copy, [{ path: "peaceai/lib/loop.ts", content: "export const y = 4;\n" }], { selfAllow: false }), null);
+      assert.ok(existsSync(join(ctx.edits, "peaceai/lib/loop.ts")), "explicit false still writes (external/non-self)");
+      // full loop on the SELF_ALLOW fixture: protected in-body edit refuses (or CAND_UID_* before fetch when no cand)
+      // and writes nothing into the copy (snapshot the protected file just before close)
+      let protectedAfter: string | null = "unset";
+      const fetcher: Loop.CopyFetcher = (...a) => {
+        const c = ctx.fetcher(...a);
+        const close = c.close;
+        c.close = () => {
+          try { protectedAfter = readFileSync(join(c.dir, "peaceai/lib/loop.ts"), "utf8"); } catch { protectedAfter = null; }
+          close();
+        };
+        return c;
+      };
+      const r = run(lib, ctx, ctx.self, fixed([{ path: "peaceai/lib/loop.ts", content: SELF_LOOP_EDIT }]), { fetcher });
       if (!ctx.cand) { assert.match(r.row.code, NO_CAND); assert.equal(r.row.attempts, 0); return; }
       assert.equal(r.row.code, "SELF_PROTECTED");
       assert.equal(r.row.result, "refused");
+      assert.equal(protectedAfter, SELF_LOOP_PIN, "full loop wrote nothing to the protected path");
     },
   },
   {
