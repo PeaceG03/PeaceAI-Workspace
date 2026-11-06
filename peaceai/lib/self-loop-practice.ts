@@ -209,13 +209,15 @@ export function seedPracticeShape(scratchDir: string, shape: PracticeShape): { o
       writeFileSync(join(scratchDir, TEXT_PATH), shape.broken);
       writeFileSync(join(scratchDir, DATES_PATH), DATES_OK);
     }
+    // Put the failing self-test on the broken commit too so fault localization can read assert expecteds
+    // from input.files (team tests from merge still overlay for grading).
+    mkdirSync(dirname(join(scratchDir, shape.testPath)), { recursive: true });
+    writeFileSync(join(scratchDir, shape.testPath), shape.testBody);
     git(scratchDir, "add", "-A");
     git(scratchDir, "commit", "-q", "-m", `${SELF_LOOP_PRACTICE_MARKER}:${shape.id}: broken (experimental, not for credit)`);
     const commit = git(scratchDir, "rev-parse", "HEAD");
-    mkdirSync(dirname(join(scratchDir, shape.testPath)), { recursive: true });
-    writeFileSync(join(scratchDir, shape.testPath), shape.testBody);
     writeFileSync(join(scratchDir, shape.editPath), shape.fixed);
-    git(scratchDir, "add", shape.editPath, shape.testPath);
+    git(scratchDir, "add", shape.editPath);
     git(scratchDir, "commit", "-q", "-m", `${SELF_LOOP_PRACTICE_MARKER}:${shape.id}: reference (experimental, not for credit)`);
     const merge = git(scratchDir, "rev-parse", "HEAD");
     return { ok: true, commit, merge };
@@ -226,6 +228,7 @@ export function seedPracticeShape(scratchDir: string, shape: PracticeShape): { o
 
 
 export const HELDOUT_SHAPES_PATH = "peaceai/self-tests/practice/heldout/shapes.json";
+export const HELDOUT2_SHAPES_PATH = "peaceai/self-tests/practice/heldout2/shapes.json";
 
 /** Load sealed held-out shapes (only for eval; shapes are not consulted during localization development). */
 export function loadHeldoutShapes(hostWorkspace: string): PracticeShape[] {
@@ -234,6 +237,19 @@ export function loadHeldoutShapes(hostWorkspace: string): PracticeShape[] {
   };
   if (!Array.isArray(raw.shapes) || raw.shapes.length < 8) throw new Error("heldout shapes missing");
   return raw.shapes;
+}
+
+export function loadHeldout2Shapes(hostWorkspace: string): PracticeShape[] {
+  const raw = JSON.parse(readFileSync(join(hostWorkspace, HELDOUT2_SHAPES_PATH), "utf8")) as {
+    shapes: PracticeShape[];
+  };
+  if (!Array.isArray(raw.shapes) || raw.shapes.length < 8) throw new Error("heldout2 shapes missing");
+  return raw.shapes;
+}
+
+/** M220 dev shapes plus held-out set 1 (now spent / second dev set). */
+export function loadDevCombinedShapes(hostWorkspace: string): PracticeShape[] {
+  return [...PRACTICE_SHAPES, ...loadHeldoutShapes(hostWorkspace)];
 }
 
 export function practiceShapeById(id: string): PracticeShape | undefined {

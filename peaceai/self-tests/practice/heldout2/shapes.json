@@ -1,0 +1,94 @@
+{
+  "schema": "peaceai-self-loop-heldout2:v1",
+  "credit": false,
+  "shapes": [
+    {
+      "id": "ho2-pad2-literal",
+      "kind": "wrong-literal",
+      "editPath": "peaceai/self-tests/helpers/dates.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout2-pad2-literal.test.ts",
+      "request": "Fix pad2 so values below ten are prefixed with a single zero character.",
+      "broken": "// M222-HELDOUT2:ho2-pad2-literal\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\nexport function pad2(n: number): string {\n  return n < 10 ? \"00\" + String(n) : String(n);\n}\nexport function utcHourKey(d: Date): string {\n  return utcDayKey(d) + \"T\" + pad2(d.getUTCHours());\n}\n",
+      "fixed": "// heldout2 fixed dates\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\nexport function pad2(n: number): string {\n  return n < 10 ? \"0\" + String(n) : String(n);\n}\nexport function utcHourKey(d: Date): string {\n  return utcDayKey(d) + \"T\" + pad2(d.getUTCHours());\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { pad2 } from \"./dates.ts\";\ntest(\"pad2 one zero\", () => {\n  assert.equal(pad2(3), \"03\");\n  assert.equal(pad2(12), \"12\");\n});\n",
+      "expectUnfixable": false
+    },
+    {
+      "id": "ho2-pad2-boundary",
+      "kind": "off-by-one",
+      "editPath": "peaceai/self-tests/helpers/dates.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout2-pad2-boundary.test.ts",
+      "request": "Fix pad2 so the padding threshold is ten (values 0..9 get a leading zero).",
+      "broken": "// M222-HELDOUT2:ho2-pad2-boundary\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\nexport function pad2(n: number): string {\n  return n < 9 ? \"0\" + String(n) : String(n);\n}\nexport function utcHourKey(d: Date): string {\n  return utcDayKey(d) + \"T\" + pad2(d.getUTCHours());\n}\n",
+      "fixed": "// heldout2 fixed dates\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\nexport function pad2(n: number): string {\n  return n < 10 ? \"0\" + String(n) : String(n);\n}\nexport function utcHourKey(d: Date): string {\n  return utcDayKey(d) + \"T\" + pad2(d.getUTCHours());\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { pad2 } from \"./dates.ts\";\ntest(\"pad2 threshold ten\", () => {\n  assert.equal(pad2(9), \"09\");\n  assert.equal(pad2(10), \"10\");\n});\n",
+      "expectUnfixable": false
+    },
+    {
+      "id": "ho2-join-swapped",
+      "kind": "swapped-args",
+      "editPath": "peaceai/self-tests/helpers/text.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout2-join-swapped.test.ts",
+      "request": "Fix joinWords so it returns the first word, a space, then the second word.",
+      "broken": "// M222-HELDOUT2:ho2-join-swapped\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\nexport function joinWords(a: string, b: string): string {\n  return b + \" \" + a;\n}\nexport function clamp(n: number, lo: number, hi: number): number {\n  if (n < lo) return lo;\n  if (n > hi) return hi;\n  return n;\n}\n",
+      "fixed": "// heldout2 fixed text\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\nexport function joinWords(a: string, b: string): string {\n  return a + \" \" + b;\n}\nexport function clamp(n: number, lo: number, hi: number): number {\n  if (n < lo) return lo;\n  if (n > hi) return hi;\n  return n;\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { joinWords } from \"./text.ts\";\ntest(\"joinWords order\", () => {\n  assert.equal(joinWords(\"red\", \"fox\"), \"red fox\");\n});\n",
+      "expectUnfixable": false
+    },
+    {
+      "id": "ho2-clamp-op",
+      "kind": "wrong-operator",
+      "editPath": "peaceai/self-tests/helpers/text.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout2-clamp-op.test.ts",
+      "request": "Fix clamp so values below lo return lo and values above hi return hi.",
+      "broken": "// M222-HELDOUT2:ho2-clamp-op\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\nexport function joinWords(a: string, b: string): string {\n  return a + \" \" + b;\n}\nexport function clamp(n: number, lo: number, hi: number): number {\n  if (n > lo) return lo;\n  if (n < hi) return hi;\n  return n;\n}\n",
+      "fixed": "// heldout2 fixed text\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\nexport function joinWords(a: string, b: string): string {\n  return a + \" \" + b;\n}\nexport function clamp(n: number, lo: number, hi: number): number {\n  if (n < lo) return lo;\n  if (n > hi) return hi;\n  return n;\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { clamp } from \"./text.ts\";\ntest(\"clamp bounds\", () => {\n  assert.equal(clamp(-1, 0, 5), 0);\n  assert.equal(clamp(9, 0, 5), 5);\n  assert.equal(clamp(3, 0, 5), 3);\n});\n",
+      "expectUnfixable": false
+    },
+    {
+      "id": "ho2-hourkey-missing-return",
+      "kind": "missing-return",
+      "editPath": "peaceai/self-tests/helpers/dates.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout2-hourkey-missing-return.test.ts",
+      "request": "Fix utcHourKey so it returns dayKey + T + padded hour.",
+      "broken": "// M222-HELDOUT2:ho2-hourkey-missing-return\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\nexport function pad2(n: number): string {\n  return n < 10 ? \"0\" + String(n) : String(n);\n}\nexport function utcHourKey(d: Date): string {\n  const key = utcDayKey(d) + \"T\" + pad2(d.getUTCHours());\n}\n",
+      "fixed": "// heldout2 fixed dates\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\nexport function pad2(n: number): string {\n  return n < 10 ? \"0\" + String(n) : String(n);\n}\nexport function utcHourKey(d: Date): string {\n  return utcDayKey(d) + \"T\" + pad2(d.getUTCHours());\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { utcHourKey } from \"./dates.ts\";\ntest(\"utcHourKey returns\", () => {\n  assert.equal(utcHourKey(new Date(\"2026-02-01T07:00:00Z\")), \"2026-02-01T07\");\n});\n",
+      "expectUnfixable": false
+    },
+    {
+      "id": "ho2-clamp-branch",
+      "kind": "wrong-branch",
+      "editPath": "peaceai/self-tests/helpers/text.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout2-clamp-branch.test.ts",
+      "request": "Fix clamp so the low-bound branch returns lo when n is strictly below lo.",
+      "broken": "// M222-HELDOUT2:ho2-clamp-branch\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\nexport function joinWords(a: string, b: string): string {\n  return a + \" \" + b;\n}\nexport function clamp(n: number, lo: number, hi: number): number {\n  if (n < lo) return hi;\n  if (n > hi) return lo;\n  return n;\n}\n",
+      "fixed": "// heldout2 fixed text\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\nexport function joinWords(a: string, b: string): string {\n  return a + \" \" + b;\n}\nexport function clamp(n: number, lo: number, hi: number): number {\n  if (n < lo) return lo;\n  if (n > hi) return hi;\n  return n;\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { clamp } from \"./text.ts\";\ntest(\"clamp branch targets\", () => {\n  assert.equal(clamp(-2, 1, 4), 1);\n  assert.equal(clamp(8, 1, 4), 4);\n});\n",
+      "expectUnfixable": false
+    },
+    {
+      "id": "ho2-join-transform",
+      "kind": "wrong-string-transform",
+      "editPath": "peaceai/self-tests/helpers/text.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout2-join-transform.test.ts",
+      "request": "Fix joinWords so it joins with a single ASCII space, not by uppercasing.",
+      "broken": "// M222-HELDOUT2:ho2-join-transform\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\nexport function joinWords(a: string, b: string): string {\n  return (a + b).toUpperCase();\n}\nexport function clamp(n: number, lo: number, hi: number): number {\n  if (n < lo) return lo;\n  if (n > hi) return hi;\n  return n;\n}\n",
+      "fixed": "// heldout2 fixed text\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\nexport function joinWords(a: string, b: string): string {\n  return a + \" \" + b;\n}\nexport function clamp(n: number, lo: number, hi: number): number {\n  if (n < lo) return lo;\n  if (n > hi) return hi;\n  return n;\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { joinWords } from \"./text.ts\";\ntest(\"joinWords space\", () => {\n  assert.equal(joinWords(\"a\", \"b\"), \"a b\");\n});\n",
+      "expectUnfixable": false
+    },
+    {
+      "id": "ho2-pad2-oracle",
+      "kind": "oracle-absent",
+      "editPath": "peaceai/self-tests/helpers/dates.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout2-pad2-oracle.test.ts",
+      "request": "Fix pad2 so the practice self-test passes. The required token is not stated here.",
+      "broken": "// M222-HELDOUT2:ho2-pad2-oracle unfixable\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\nexport function pad2(n: number): string {\n  return n < 10 ? \"0\" + String(n) : String(n);\n}\nexport function utcHourKey(d: Date): string {\n  return utcDayKey(d) + \"T\" + pad2(d.getUTCHours());\n}\n",
+      "fixed": "// M222-HELDOUT2:ho2-pad2-oracle still unfixable\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\nexport function pad2(n: number): string {\n  return n < 10 ? \"0\" + String(n) : String(n);\n}\nexport function utcHourKey(d: Date): string {\n  return utcDayKey(d) + \"T\" + pad2(d.getUTCHours());\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { pad2 } from \"./dates.ts\";\ntest(\"pad2 contradictory oracle\", () => {\n  const v = pad2(3);\n  assert.equal(v, \"03\");\n  assert.equal(v.length, 1);\n});\n",
+      "expectUnfixable": true
+    }
+  ]
+}

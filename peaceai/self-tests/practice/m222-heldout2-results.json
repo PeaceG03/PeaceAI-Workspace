@@ -1,0 +1,98 @@
+{
+  "schema": "peaceai-self-loop-practice:v1",
+  "experimental": true,
+  "credit": false,
+  "expectedHead": "85bc19789f37bb59dc17e718eceb6f21cea6a352",
+  "at": "2026-11-06T05:34:19.503Z",
+  "proposer": "fault-localize-v1",
+  "shapes": [
+    {
+      "id": "ho2-pad2-literal",
+      "kind": "wrong-literal",
+      "expectUnfixable": false,
+      "loopCode": "NO_MORE_EDITS",
+      "result": "refused",
+      "attempts": 12,
+      "proposer": "fault-localize-v1",
+      "gap": "fault localization / mutation catalog miss wrong-literal (proposer NO_MORE_EDITS)"
+    },
+    {
+      "id": "ho2-pad2-boundary",
+      "kind": "off-by-one",
+      "expectUnfixable": false,
+      "loopCode": "PASS",
+      "result": "pass",
+      "attempts": 4,
+      "proposer": "fault-localize-v1"
+    },
+    {
+      "id": "ho2-join-swapped",
+      "kind": "swapped-args",
+      "expectUnfixable": false,
+      "loopCode": "PASS",
+      "result": "pass",
+      "attempts": 2,
+      "proposer": "fault-localize-v1"
+    },
+    {
+      "id": "ho2-clamp-op",
+      "kind": "wrong-operator",
+      "expectUnfixable": false,
+      "loopCode": "NO_MORE_EDITS",
+      "result": "refused",
+      "attempts": 10,
+      "proposer": "fault-localize-v1",
+      "gap": "fault localization / mutation catalog miss wrong-operator (proposer NO_MORE_EDITS)"
+    },
+    {
+      "id": "ho2-hourkey-missing-return",
+      "kind": "missing-return",
+      "expectUnfixable": false,
+      "loopCode": "PASS",
+      "result": "pass",
+      "attempts": 1,
+      "proposer": "fault-localize-v1"
+    },
+    {
+      "id": "ho2-clamp-branch",
+      "kind": "wrong-branch",
+      "expectUnfixable": false,
+      "loopCode": "NO_MORE_EDITS",
+      "result": "refused",
+      "attempts": 10,
+      "proposer": "fault-localize-v1",
+      "gap": "fault localization / mutation catalog miss wrong-branch (proposer NO_MORE_EDITS)"
+    },
+    {
+      "id": "ho2-join-transform",
+      "kind": "wrong-string-transform",
+      "expectUnfixable": false,
+      "loopCode": "NO_MORE_EDITS",
+      "result": "refused",
+      "attempts": 3,
+      "proposer": "fault-localize-v1",
+      "gap": "fault localization / mutation catalog miss wrong-string-transform (proposer NO_MORE_EDITS)"
+    },
+    {
+      "id": "ho2-pad2-oracle",
+      "kind": "oracle-absent",
+      "expectUnfixable": true,
+      "loopCode": "NO_MORE_EDITS",
+      "result": "refused",
+      "attempts": 14,
+      "proposer": "fault-localize-v1"
+    }
+  ],
+  "passCount": 3,
+  "total": 8,
+  "passRate": 0.375,
+  "gaps": [
+    "ho2-pad2-literal: fault localization / mutation catalog miss wrong-literal (proposer NO_MORE_EDITS)",
+    "ho2-clamp-op: fault localization / mutation catalog miss wrong-operator (proposer NO_MORE_EDITS)",
+    "ho2-clamp-branch: fault localization / mutation catalog miss wrong-branch (proposer NO_MORE_EDITS)",
+    "ho2-join-transform: fault localization / mutation catalog miss wrong-string-transform (proposer NO_MORE_EDITS)"
+  ],
+  "set": "heldout2",
+  "avgAttempts": 7,
+  "heldout2Sha256Sum": "0dcd06e5d3d6ea5a1b5ca1bbece8e5de39909a438e2be63604d0068cf7605b85"
+}
