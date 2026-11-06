@@ -44,7 +44,7 @@ export function requestNums(text: string): number[] {
     const n = Number(m);
     if (Number.isInteger(n) && Math.abs(n) < 10000) out.push(n);
   }
-  // YYYY-MM-DD implies 10; YYYY-MM implies 7 — general format-length hints from the request text.
+  // YYYY-MM-DD implies 10; YYYY-MM implies 7 - general format-length hints from the request text.
   if (/YYYY-MM-DD|calendar day/i.test(text)) out.push(10);
   if (/YYYY-MM(?!-DD)|month key|month prefix/i.test(text)) out.push(7);
   return out;
