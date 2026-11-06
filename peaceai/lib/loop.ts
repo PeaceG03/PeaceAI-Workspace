@@ -17,8 +17,9 @@
 // - External repos only by default: peaceg03/* is refused (SELF_TARGET), except the exact allowlist
 //   PeaceG03/PeaceAI-Workspace and PeaceG03/PeaceAI (case-insensitive). Lookalike names PeaceAI /
 //   PeaceAI-Workspace under any other owner are also refused. On a SELF_ALLOW target, edits to
-//   PROTECTED_SELF or never-zone paths are refused (SELF_PROTECTED) before write. The stage-2
-//   self-change flag (peaceai/self/stage2.json) is never read or written here.
+//   PROTECTED_SELF or never-zone paths are refused (SELF_PROTECTED) before write. applyEdits fails
+//   closed on that gate when selfAllow is omitted. The stage-2 self-change flag
+//   (peaceai/self/stage2.json) is never read or written here.
 // - PeaceAI's edits are written only inside the copy (every path normalized, no absolute, "..", .git, node_modules,
 //   symlink or realpath escape, never a team test file); the copy has no git remote and nothing is ever pushed.
 // - The public log row carries codes and numbers only; test names stay in the local, gitignored .peaceai-out/loop.
@@ -140,14 +141,16 @@ export function safeEditPath(dir: string, p: unknown): string | null {
 }
 
 /** Writes an edit into the copy. Every path is checked first, so a bad edit writes nothing at all.
- *  `selfAllow`: the target is on SELF_ALLOW (PeaceAI's own Workspace/PeaceAI); refuse PROTECTED_SELF / never-zone paths. */
+ *  `selfAllow`: true = SELF_ALLOW target (refuse PROTECTED_SELF / never-zone); false = external/non-self target (this
+ *  gate off). Fail closed: omitted / undefined is treated as protected (same as true), so a caller that forgets the
+ *  flag cannot write a protected path. The loop always passes the flag explicitly from SELF_ALLOW. */
 export function applyEdits(c: Copy, edits: readonly Edit[], opts: { selfAllow?: boolean } = {}): LoopCode | null {
   const targets: [string, string][] = [];
   for (const e of edits) {
     const full = safeEditPath(c.dir, e.path);
     if (full === null) return "EDIT_OUTSIDE_COPY";
     if (c.teamTests.has(posix.normalize(e.path))) return "TEAM_TEST_EDIT"; // guard:team-tests
-    if (opts.selfAllow && isSelfAllowForbiddenPath(String(e.path))) return "SELF_PROTECTED"; // guard:self-protect
+    if (opts.selfAllow !== false && isSelfAllowForbiddenPath(String(e.path))) return "SELF_PROTECTED"; // guard:self-protect
     targets.push([full, e.content]);
   }
   for (const [full, content] of targets) { mkdirSync(dirname(full), { recursive: true }); writeFileSync(full, content); }
