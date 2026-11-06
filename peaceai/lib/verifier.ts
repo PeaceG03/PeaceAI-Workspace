@@ -11,9 +11,11 @@
 // literal and the header is a plain identifier list; simple destructuring const of a literal object/array.
 // M207 (batch 43): ACL-aware write check (fail-closed OOP_VERIFIER_ACL); injectable privilege probe so has-sudo /
 // probe-failure are testable; forged-reply residual documented as irreducible in-process (see spec).
+// M217 (batch 53): runner-generated per-call nonce binds every reply; judge refuses missing / wrong nonce, extra /
+// duplicate / out-of-order / unparsed lines. Remaining flag-trust residual named OOP_REPLY_FORGE_TERMINAL (not for credit).
 // Status: EXPERIMENTAL, opt-in via VERDICT_MODE "oop-v1". EDIT_SCOPE_POLICY and the in-process default are unchanged.
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, chmodSync, existsSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -52,6 +54,18 @@ export const VERIFIER_REFUSALS = [
   "OOP_JUDGE",
 ] as const;
 export type VerifierRefusal = (typeof VERIFIER_REFUSALS)[number];
+
+/** M217: tagged terminal name for the remaining in-process flag-trust residual (exact/sync/isa/where are
+ *  candidate-reported while harness and module share a process). Protocol forge shapes are closed by the nonce
+ *  bind. Not a verify() refusal today (experimental oop-v1 still runs); any for-credit path must treat this as
+ *  terminal the way INPROC_VERDICT_TERMINAL is for wider in-process scopes. */
+export const OOP_REPLY_FORGE_TERMINAL = "OOP_REPLY_FORGE_TERMINAL" as const;
+/** Why a for-credit path must not treat an oop-v1 OOP_OK as closed against reply forging (null only if a future
+ *  separate-process harness removes candidate-reported flags). */
+export function oopReplyForgeTerminal(): typeof OOP_REPLY_FORGE_TERMINAL {
+  if (true) return OOP_REPLY_FORGE_TERMINAL; // m217-guard:terminal
+  return "OOP_REPLY_FORGE_OPEN" as typeof OOP_REPLY_FORGE_TERMINAL;
+}
 
 /** M204: `cmp` "is" = Object.is on a primitive (toBe / strictEqual); absent or "deep" = deep equality on exact JSON
  *  (toEqual / toStrictEqual / deepStrictEqual); `negate` = not.toBe / notStrictEqual (primitive); `any` = returns
@@ -143,8 +157,8 @@ const SPEC_PATH = fileURLToPath(new URL("../spec/verifier-v1.md", import.meta.ur
 
 // ---- parse / compare: ONE implementation, in the judge (which the third uid runs). Re-exported for tests / callers.
 type Parsed =
-  | { ok: true; id: number; resultOk: true; value: unknown; exact?: boolean; sync?: boolean }
-  | { ok: true; id: number; resultOk: false; where?: string; error: { name: string; message: string; obj?: boolean; nameStr?: boolean; msgStr?: boolean; trunc?: boolean; isa?: string[] } }
+  | { ok: true; id: number; nonce: string; resultOk: true; value: unknown; exact?: boolean; sync?: boolean }
+  | { ok: true; id: number; nonce: string; resultOk: false; where?: string; error: { name: string; message: string; obj?: boolean; nameStr?: boolean; msgStr?: boolean; trunc?: boolean; isa?: string[] } }
   | { ok: false; code: VerifierRefusal; detail?: string };
 const J = createRequire(import.meta.url)(JUDGE_PATH) as {
   valuesEqual(a: unknown, b: unknown, depth?: number): boolean;
@@ -161,8 +175,11 @@ export const valuesEqual: (a: unknown, b: unknown, depth?: number) => boolean = 
 /** Parse one protocol response line. Fail-closed on any deviation. */
 export const parseResponse: (line: string, maxBytes?: number, maxDepth?: number) => Parsed = J.parseResponse;
 export const expectHolds: (got: Parsed, exp: CaseExpect) => boolean = J.expectHolds;
-/** What the runner relays to the judge for one case: the candidate process's raw outcome. */
-export interface RawRun { readonly status: number | null; readonly stdout: string; readonly timeout?: true; readonly session?: true }
+/** What the runner relays to the judge for one case: the candidate process's raw outcome.
+ *  M217: `nonce` is the runner-generated per-call binding the reply must echo (absent on timeout rows). */
+export interface RawRun { readonly status: number | null; readonly stdout: string; readonly nonce?: string; readonly timeout?: true; readonly session?: true }
+/** 32 lowercase hex chars; runner generates one per call (M217). */
+export function newReplyNonce(): string { return randomBytes(16).toString("hex"); }
 /** In-process judge (tests only; verify() always runs it as the verifier uid). */
 export const judgeRuns = J.judge;
 
@@ -1323,7 +1340,8 @@ function runCandidate(
     for (let i = 0; i < o.cases.length; i++) {
       if (Date.now() > sessionDeadline) { runs.push({ status: null, stdout: "", timeout: true, session: true }); break; }
       const c = o.cases[i]!;
-      const req = P.stringify({ v: 1, id: i + 1, fn: c.fn, args: c.args, ...(c.recv === "module" ? { recv: "module" } : {}) }) + "\n";
+      const nonce = newReplyNonce();
+      const req = P.stringify({ v: 1, id: i + 1, fn: c.fn, args: c.args, nonce, ...(c.recv === "module" ? { recv: "module" } : {}) }) + "\n";
       if (Buffer.byteLength(req, "utf8") > maxBytes) return { code: "OOP_OVERSIZE", detail: "request" };
       const before = new Set(candPids(cand.uid));
       const r = spawnSync("sudo", ["-n", "-u", cand.name, "--", "env", "-i", ...envPairs, "setsid", "--wait", process.execPath, ...nodeArgs], {
@@ -1337,10 +1355,10 @@ function runCandidate(
         spawnSync("sudo", ["-n", "kill", "-KILL", ...after.map(String)], { stdio: "ignore" });
       }
       if ((r.error && (r.error as NodeJS.ErrnoException).code === "ETIMEDOUT") || r.status === null) {
-        runs.push({ status: null, stdout: "", timeout: true });
+        runs.push({ status: null, stdout: "", nonce, timeout: true });
         break;
       }
-      runs.push({ status: r.status, stdout: r.stdout ?? "" });
+      runs.push({ status: r.status, stdout: r.stdout ?? "", nonce });
     }
     return { runs, leftovers };
   } catch (e) {

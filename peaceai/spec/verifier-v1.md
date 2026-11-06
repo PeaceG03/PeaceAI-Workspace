@@ -4,8 +4,9 @@ Status: EXPERIMENTAL, NOT DEFAULT, NOT FOR CREDIT. Code: `peaceai/lib/verifier.t
 `peaceai/lib/verifier-harness.cjs`, judge `peaceai/lib/verifier-judge.cjs` (M204), CLI `peaceai/bin/verifier-v1.ts`,
 tests `peaceai/test/m202-verifier.test.ts`, `peaceai/test/m204-verifier-cases.test.ts`,
 `peaceai/test/m205-verifier-forms.test.ts`, `peaceai/test/m206-verifier-forms.test.ts`,
-`peaceai/test/m207-verifier-harden.test.ts`. Batch 40 (M204) / Batch 41 (M205) / Batch 42 (M206) / Batch 43 (M207)
-changes are in the sections below; where they and the M202 text differ, the later section wins.
+`peaceai/test/m207-verifier-harden.test.ts`, `peaceai/test/m217-verifier-reply.test.ts`. Batch 40 (M204) /
+Batch 41 (M205) / Batch 42 (M206) / Batch 43 (M207) / Batch 53 (M217) changes are in the sections below; where they
+and the M202 text differ, the later section wins.
 Loop opt-in: `LoopOptions.verdictMode = "oop-v1"` (or `selectVerdictMode("oop-v1")`). Default remains `inproc`.
 `EDIT_SCOPE_POLICY`, `selfpropose.ts`, `plandefault.ts` and the v4 digest are unchanged.
 
@@ -198,10 +199,9 @@ extracted 0. Batch 39 extractor on the same files: 1 admitted (unjs/destr, 1 cas
 
 ### M204 residuals (honest)
 
-- **Forged stdout (pre-existing).** The candidate owns its stdout and can print any reply line, including an `exact`
-  value it never computed. That is an honest pass only if the value is right; the judge compares to the expectation.
-  `isa` / `where` / `sync` flags are candidate-reported too, so a hostile candidate can claim them. M207 records why a
-  per-run nonce cannot close this in-process.
+- **Forged stdout (pre-existing).** Protocol shapes (extra / wrong / missing nonce, replay) are closed in M217. A
+  reply whose value equals the expectation is an honest black-box pass. `isa` / `where` / `sync` / `exact` flags remain
+  candidate-reported; M217 names that residual `OOP_REPLY_FORGE_TERMINAL`.
 - **ACLs** — closed in M207 (`candAclWrite`, `OOP_VERIFIER_ACL`).
 - **`has-sudo` check untested** — closed in M207 (injectable privilege probe).
 - **`recv: "module"` `this`** is a spread copy of the namespace, not the live module namespace.
@@ -344,8 +344,51 @@ malformed getfacl output is `unknown` (fail-closed), not "none".
 
 ### M207 residuals (honest)
 
-- **Forged reply-line** — irreducible in-process; see soundness note above.
+- **Forged reply-line** — protocol shapes closed in M217 (per-call nonce); remaining flag-trust named
+  `OOP_REPLY_FORGE_TERMINAL` there. The M207 soundness note above still describes why a nonce inside the shared
+  process cannot authenticate candidate-reported flags.
 - **ACL reader is getfacl.** Hosts without getfacl refuse oop-v1 with `OOP_VERIFIER_ACL` (fail-closed), they do not
   silently skip the check.
 - **Default ACLs** on a directory are not treated as write grants to the directory inode (they affect children).
 - **`recv: "module"` `this`** residual from M204 unchanged.
+
+## M217 (batch 53): per-call nonce binds replies; protocol forge shapes closed
+
+### Soundness note
+
+M207 left the forged reply-line residual open as irreducible while harness and candidate share a process. M217
+splits that residual:
+
+1. **Protocol forge shapes (closed).** The runner (box uid) generates a fresh 32-hex nonce per call (`newReplyNonce`)
+   and puts it on the request. The harness echoes it on every reply. The judge refuses fail-closed when:
+   - the reply is missing a well-formed nonce (`detail: "nonce"`, `m217-guard:nonce-parse`);
+   - the reply nonce does not equal the runner's nonce for that run (`detail: "nonce-mismatch"`, `m217-guard:nonce`);
+   - there are extra / duplicate lines (`detail: "lines:N"`, pre-existing `m202-guard:one-line`);
+   - the reply id is out of order (`detail: "id-mismatch"`);
+   - a line is not protocol JSON (`OOP_STDOUT_NOISE` / `OOP_PROTOCOL`, pre-existing).
+   Replaying a prior call's stdout under a new nonce is refused by `nonce-mismatch`. Blind forges that guess a nonce
+   fail the same check. These shapes no longer need to be carried as open residuals.
+
+2. **Flag-trust residual (named terminal, not claimed closed).** `exact` / `sync` / `isa` / `where` are still
+   candidate-reported from a harness that shares the candidate address space. A hostile module that reads the request
+   (and its nonce) and prints a fully-formed reply with the expected value is producing the expected black-box
+   output — an honest pass under I/O comparison, same bound M207 recorded. Forging flags without a separate-process
+   harness remains irreducible in-process. That residual is named `OOP_REPLY_FORGE_TERMINAL` (`oopReplyForgeTerminal`,
+   `m217-guard:terminal`). Experimental oop-v1 still runs; any for-credit path must treat the tag as terminal the way
+   `INPROC_VERDICT_TERMINAL` is for wider in-process scopes. This batch does not enable for-credit.
+
+### Guards (m217-guard)
+
+`nonce-parse` (judge parseResponse), `nonce` (judge match against RawRun.nonce), `terminal` (oopReplyForgeTerminal).
+
+### Admitted / refused
+
+Honest add / leap / temperature shapes still verify under oop-v1 (nonce echoed by the harness). Refused near misses:
+missing nonce, wrong nonce, replay under a new nonce, extra protocol line, out-of-order id, non-protocol stdout.
+
+### M217 residuals (honest)
+
+- **`OOP_REPLY_FORGE_TERMINAL`** — candidate-reported flags while harness and module share a process; see above.
+- Closing flag-trust needs a judge-side channel that never enters the candidate process (out of verifier-v1's
+  one-harness design), same bound M207 recorded.
+- ACL / `recv:module` residuals unchanged.

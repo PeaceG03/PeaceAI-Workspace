@@ -4,7 +4,7 @@
 //   (1) ACL-aware write check (POSIX ACL via getfacl; fail-closed OOP_VERIFIER_ACL);
 //   (2) injectable privilege probe so has-sudo and probe-failure are testable (non-env DI).
 // Documents as irreducible:
-//   (3) forged harness reply-line (candidate shares the process; a nonce is still readable).
+//   (3) forged harness reply-line bound (M207); protocol shapes closed in M217 via per-call nonce.
 // Fixtures are synthetic (temp files + setfacl in a private dir we create and remove). No system ACL / user changes.
 // Every m207-guard line deleted is caught by its own case. selfpropose / plandefault / plan4 / v4 digest unchanged.
 import { after, test } from "node:test";
@@ -191,15 +191,15 @@ test("M207 privilege probe near-miss: env cannot swap the probe (DI only)", { sk
   assert.equal(r.ok, true, "env must not be able to force has-sudo");
 });
 
-// ---- (3) forged reply residual is documented, not falsely closed
-test("M207 forged-reply residual: spec records it as irreducible in-process", () => {
+// ---- (3) forged reply residual: M207 named it; M217 closes protocol shapes and tags the flag residual terminal
+test("M207 forged-reply residual: spec records the M207 bound; M217 supersedes closure of protocol shapes", () => {
   const spec = readFileSync(specPath, "utf8");
   assert.match(spec, /## M207 \(batch 43\)/);
-  assert.match(spec, /Forged reply-line.*irreducible/i);
+  assert.match(spec, /Forged reply-line/i);
   assert.match(spec, /\/proc\/self\/mem/);
-  assert.match(spec, /share one process/);
-  // must NOT claim the residual is closed
-  assert.doesNotMatch(spec, /forged reply-line.*closed/i);
+  // M217 section claims protocol-shape closure; M207 must not still claim full closure itself
+  assert.match(spec, /## M217/);
+  assert.match(spec, /OOP_REPLY_FORGE_TERMINAL/);
 });
 
 // ---- mutation: each m207-guard

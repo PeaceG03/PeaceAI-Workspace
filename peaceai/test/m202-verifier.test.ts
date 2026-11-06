@@ -128,12 +128,14 @@ test("M202 parseResponse: protocol / oversize / depth refusals", () => {
   assert.equal(parseResponse(JSON.stringify({ v: 2, id: 1, ok: true, value: 1 })).ok, false);
   const big = JSON.stringify({ v: 1, id: 1, ok: true, value: "x".repeat(70_000) });
   assert.equal((parseResponse(big) as any).code, "OOP_OVERSIZE");
-  let deep: any = { v: 1, id: 1, ok: true, value: null as any };
+  let deep: any = { v: 1, id: 1, ok: true, nonce: "ab".repeat(16), value: null as any };
   let cur = deep;
   for (let i = 0; i < 40; i++) { cur.value = { n: i, value: null }; cur = cur.value; }
   assert.equal((parseResponse(JSON.stringify(deep)) as any).code, "OOP_DEPTH");
-  const good = parseResponse(JSON.stringify({ v: 1, id: 7, ok: true, value: false }));
-  assert.deepEqual(good, { ok: true, id: 7, resultOk: true, value: false });
+  const n = "ab".repeat(16);
+  const good = parseResponse(JSON.stringify({ v: 1, id: 7, ok: true, value: false, nonce: n }));
+  assert.deepEqual(good, { ok: true, id: 7, nonce: n, resultOk: true, value: false });
+  assert.equal((parseResponse(JSON.stringify({ v: 1, id: 7, ok: true, value: false })) as any).detail, "nonce");
   assert.equal(valuesEqual({ a: [1, 2] }, { a: [1, 2] }), true);
   assert.equal(valuesEqual(0, -0), false); // Object.is
 });
@@ -275,7 +277,7 @@ test("M202 mutation: deleting each m202-guard tag fails a case of its own guard"
       assert.equal((parseResponse(big) as any).code, "OOP_OVERSIZE");
     },
     "depth": () => {
-      let deep: any = { v: 1, id: 1, ok: true, value: null };
+      let deep: any = { v: 1, id: 1, ok: true, nonce: "cd".repeat(16), value: null };
       let cur = deep;
       for (let i = 0; i < 40; i++) { cur.value = { n: i, value: null }; cur = cur.value; }
       assert.equal((parseResponse(JSON.stringify(deep)) as any).code, "OOP_DEPTH");

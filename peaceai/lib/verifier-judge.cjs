@@ -4,6 +4,8 @@
 // one JSON request on stdin ({ cases, runs, maxBytes, maxDepth }), compares with primordials captured at load, writes
 // <outDir>/verdict.json (outDir owned by the verifier uid) and prints nothing else but "ok".
 // Pure helpers are exported for verifier.ts and tests (one source of truth for parse and compare).
+// M217: every reply must echo the runner-generated per-call nonce (32 hex). Extra / duplicate / out-of-order /
+// unparsed / wrong-nonce / missing-nonce lines are refused fail-closed.
 "use strict";
 const P = Object.freeze({
   is: Object.is, isArray: Array.isArray, keys: Object.keys, parse: JSON.parse, stringify: JSON.stringify,
@@ -13,6 +15,8 @@ const P = Object.freeze({
 const MAX_LINE_BYTES = 65_536;
 const MAX_DEPTH = 32;
 const WHERE = ["load", "lookup", "call", "await", "proto"];
+const NONCE_RE = /^[0-9a-f]{32}$/;
+function validNonce(n) { return typeof n === "string" && NONCE_RE.test(n); }
 
 /** Deep equality on JSON values with the judge's own primordials (identical key sets, Object.is on leaves). */
 function valuesEqual(a, b, depth = 0) {
@@ -43,7 +47,8 @@ function jsonDepth(v, d = 0) {
 
 const isBool = (x) => x === true || x === false;
 /** Parse one protocol response line. Fail-closed on any deviation. M204 fields are optional here (an old line still
- *  parses) but expectHolds credits nothing without them. Present with a wrong type: OOP_PROTOCOL. */
+ *  parses) but expectHolds credits nothing without them. Present with a wrong type: OOP_PROTOCOL.
+ *  M217: `nonce` (32 lowercase hex) is required on every reply. */
 function parseResponse(line, maxBytes = MAX_LINE_BYTES, maxDepth = MAX_DEPTH) {
   if (typeof line !== "string") return { ok: false, code: "OOP_PROTOCOL", detail: "not-string" }; // m202-guard:proto-type
   if (P.byteLength(line, "utf8") > maxBytes) return { ok: false, code: "OOP_OVERSIZE", detail: "line" }; // m202-guard:oversize
@@ -54,12 +59,13 @@ function parseResponse(line, maxBytes = MAX_LINE_BYTES, maxDepth = MAX_DEPTH) {
   if (obj.v !== 1) return { ok: false, code: "OOP_PROTOCOL", detail: "version" }; // m202-guard:proto-v
   if (typeof obj.id !== "number" || !P.isInteger(obj.id)) return { ok: false, code: "OOP_PROTOCOL", detail: "id" };
   if (typeof obj.ok !== "boolean") return { ok: false, code: "OOP_PROTOCOL", detail: "ok" };
+  if (!validNonce(obj.nonce)) return { ok: false, code: "OOP_PROTOCOL", detail: "nonce" }; // m217-guard:nonce-parse
   if (jsonDepth(obj) > maxDepth) return { ok: false, code: "OOP_DEPTH", detail: "response" }; // m202-guard:depth
   if (obj.ok === true) {
     if (!("value" in obj)) return { ok: false, code: "OOP_PROTOCOL", detail: "value" };
     if ("error" in obj) return { ok: false, code: "OOP_PROTOCOL", detail: "value-and-error" };
     if (("exact" in obj && !isBool(obj.exact)) || ("sync" in obj && !isBool(obj.sync))) return { ok: false, code: "OOP_PROTOCOL", detail: "flags" };
-    const out = { ok: true, id: obj.id, resultOk: true, value: obj.value };
+    const out = { ok: true, id: obj.id, nonce: obj.nonce, resultOk: true, value: obj.value };
     if ("exact" in obj) out.exact = obj.exact;
     if ("sync" in obj) out.sync = obj.sync;
     return out;
@@ -73,7 +79,7 @@ function parseResponse(line, maxBytes = MAX_LINE_BYTES, maxDepth = MAX_DEPTH) {
   if ("isa" in err && (!P.isArray(err.isa) || err.isa.length > 16 || err.isa.some((x) => typeof x !== "string"))) return { ok: false, code: "OOP_PROTOCOL", detail: "isa" };
   const error = { name: err.name, message: err.message };
   for (const k of ["obj", "nameStr", "msgStr", "trunc", "isa"]) if (k in err) error[k] = err[k];
-  const out = { ok: true, id: obj.id, resultOk: false, error };
+  const out = { ok: true, id: obj.id, nonce: obj.nonce, resultOk: false, error };
   if ("where" in obj) out.where = obj.where;
   return out;
 }
@@ -132,6 +138,7 @@ function judge(req) {
     const parsed = parseResponse(lines[0], maxBytes, maxDepth);
     if (!parsed.ok) return { code: parsed.code, detail: parsed.detail, results };
     if (parsed.id !== i + 1) return { code: "OOP_PROTOCOL", detail: "id-mismatch", results };
+    if (!validNonce(r.nonce) || parsed.nonce !== r.nonce) return { code: "OOP_PROTOCOL", detail: "nonce-mismatch", results }; // m217-guard:nonce
     if (expectHolds(parsed, c.expect)) { results.push({ id: c.id, pass: true }); continue; }
     const reason = parsed.resultOk ? (parsed.sync !== true ? "async" : parsed.exact !== true ? "inexact" : "value") : "error";
     // evidence (`got`) only when it is what the candidate returned: an inexact or async value's JSON copy is not
@@ -142,7 +149,7 @@ function judge(req) {
   return { code: "OOP_OK", ...counts(), results, leftovers: 0 }; // m202-guard:ok
 }
 
-module.exports = { valuesEqual, parseResponse, expectHolds, judge, MAX_LINE_BYTES, MAX_DEPTH };
+module.exports = { valuesEqual, parseResponse, expectHolds, judge, validNonce, MAX_LINE_BYTES, MAX_DEPTH };
 
 if (require.main === module) {
   const fs = require("node:fs");
