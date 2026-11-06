@@ -95,7 +95,7 @@ test("M146: static: the loop reuses selfpropose.ts guardedRun + stage2CandUid un
   assert.equal([...code.matchAll(/guardedRun\(/g)].length, 1, "one run site");
   assert.doesNotMatch(code, /spawnSync\("(?!id")|execFileSync\("(?!git")/, "only git (fetch/checkout in the copy) and id are spawned directly");
   assert.doesNotMatch(code, /process\.env\s*\[?[^;]*=(?!=)/, "never writes the environment");
-  assert.equal(JSON.parse(readFileSync(resolve(root, "peaceai/self/stage2.json"), "utf8")).enabled, false, "the stage-2 self-change flag stays off");
+  assert.equal(JSON.parse(readFileSync(resolve(root, "peaceai/self/stage2.json"), "utf8")).enabled, true, "Peace flipped the stage-2 self-change flag on");
 });
 
 test("M146: selfpropose.ts (the stage-2 isolation) and the plan-only code are unchanged on this branch; the plan log is add-only", (t) => {

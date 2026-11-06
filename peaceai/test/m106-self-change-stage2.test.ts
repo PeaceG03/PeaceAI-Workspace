@@ -292,10 +292,10 @@ test("M106 limit 4: lands only with the flag on, PR = graded proposal, Peace /ve
   assert.equal(ok.ok, true, ok.reasons.join());
   assert.match(ok.auditorComment ?? "", /#issuecomment-\d+$/);
   const has = (d: { reasons: string[] }, r: string) => assert.ok(d.reasons.includes(r), `${r} not in ${d.reasons}`);
-  // OFF by default: the committed flag, a missing flag, a malformed flag, a truthy-but-not-true flag
+  // Peace flipped the committed flag ON; OFF cases are a missing/malformed/non-boolean flag (and an explicit false)
   const committed = readFileSync(join(repo, STAGE2_FLAG_PATH), "utf8");
-  assert.equal(stage2Enabled(committed), false, "the committed stage-2 flag must stay off (only Peace flips it)");
-  for (const f of [committed, null, "{", '{"enabled": true}', '{"schema":"peaceai-self-stage2:v1","enabled":"true"}', '{"schema":"peaceai-self-stage2:v1","enabled":1}']) {
+  assert.equal(stage2Enabled(committed), true, "Peace flipped the committed stage-2 flag on");
+  for (const f of [null, "{", '{"enabled": true}', '{"schema":"peaceai-self-stage2:v1","enabled":"true"}', '{"schema":"peaceai-self-stage2:v1","enabled":1}', '{"schema":"peaceai-self-stage2:v1","enabled":false}']) {
     has(stage2LandingDecision(goodRecord(), SUITE, PR, both(), AUD, f), "STAGE2_OFF");
   }
   // a later push (head moved) voids both approvals; a different diff is not the proposal
