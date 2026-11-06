@@ -1,8 +1,10 @@
 // PeaceAI verifier-v1 candidate harness (M202). Fixed script: the verifier starts this as the candidate uid.
 // Protocol (stdin/stdout, one JSON object per line, version 1):
-//   request:  {"v":1,"id":<int>,"fn":<string>,"args":<json-array>}
-//   response: {"v":1,"id":<int>,"ok":true,"value":<json>} | {"v":1,"id":<int>,"ok":false,"error":{"name":<string>,"message":<string>}}
-// Only protocol lines go to stdout. Anything else is a protocol deviation the verifier refuses.
+//   request:  {"v":1,"id":<int>,"fn":<string>,"args":<json-array>,"nonce":<32-hex>}
+//   response: {"v":1,"id":<int>,"nonce":<32-hex>,"ok":true,"value":<json>,...} |
+//             {"v":1,"id":<int>,"nonce":<32-hex>,"ok":false,"error":{...},...}
+// M217: every reply echoes the runner-generated per-call nonce; the judge refuses a missing / wrong nonce,
+// extra / duplicate / out-of-order / unparsed lines. Only protocol lines go to stdout.
 // The candidate module path is argv[2]. No inspector / SIGUSR1 (caller passes --disable-sigusr1).
 // M204 (batch 40): every reply also says how the call ended, so the judge credits only what the test's own matcher
 // would: ok replies carry `exact` (the value is plain JSON data, so JSON carries it without loss: no undefined, NaN,
@@ -23,6 +25,10 @@ const H = Object.freeze({
     ["ReferenceError", ReferenceError], ["EvalError", EvalError], ["URIError", URIError]],
 });
 const EXACT_DEPTH = 32;
+const NONCE_RE = /^[0-9a-f]{32}$/;
+
+/** Runner-generated per-call nonce (M217): 32 lowercase hex chars. */
+function validNonce(n) { return typeof n === "string" && NONCE_RE.test(n); }
 
 /** True only for plain JSON data that JSON.stringify / JSON.parse carry without loss. */
 function isExact(v, d = 0) {
@@ -109,37 +115,38 @@ async function handle(line) {
   let req;
   try { req = JSON.parse(line); }
   catch { reply({ v: 1, id: -1, ok: false, where: "proto", error: { name: "ProtocolError", message: "bad-json" } }); return; }
-  if (!req || req.v !== 1 || typeof req.id !== "number" || !Number.isInteger(req.id) || typeof req.fn !== "string" || !Array.isArray(req.args)) {
-    reply({ v: 1, id: typeof req?.id === "number" ? req.id : -1, ok: false, where: "proto", error: { name: "ProtocolError", message: "bad-request" } });
+  if (!req || req.v !== 1 || typeof req.id !== "number" || !Number.isInteger(req.id) || typeof req.fn !== "string" || !Array.isArray(req.args) || !validNonce(req.nonce)) {
+    reply({ v: 1, id: typeof req?.id === "number" ? req.id : -1, ...(validNonce(req?.nonce) ? { nonce: req.nonce } : {}), ok: false, where: "proto", error: { name: "ProtocolError", message: "bad-request" } });
     return;
   }
+  const nonce = req.nonce;
   await ensureMod();
   if (loadErr || mod === null) {
-    reply({ v: 1, id: req.id, ok: false, where: "load", error: serializeErr(loadErr || new Error("load-failed")) });
+    reply({ v: 1, id: req.id, nonce, ok: false, where: "load", error: serializeErr(loadErr || new Error("load-failed")) });
     return;
   }
   const fn = mod[req.fn];
   if (typeof fn !== "function") {
-    reply({ v: 1, id: req.id, ok: false, where: "lookup", error: { name: "TypeError", message: "not-a-function:" + req.fn.slice(0, 100), obj: true, nameStr: true, msgStr: true, trunc: false, isa: ["Error", "TypeError"] } });
+    reply({ v: 1, id: req.id, nonce, ok: false, where: "lookup", error: { name: "TypeError", message: "not-a-function:" + req.fn.slice(0, 100), obj: true, nameStr: true, msgStr: true, trunc: false, isa: ["Error", "TypeError"] } });
     return;
   }
   // M204: a bare `f(x)` in the test has no receiver; `ns.f(x)` has the module as receiver (req.recv === "module").
   const recv = req.recv === "module" ? mod : undefined;
   let out;
   try { out = fn.apply(recv, req.args); }
-  catch (e) { reply({ v: 1, id: req.id, ok: false, where: "call", error: serializeErr(e) }); return; }
+  catch (e) { reply({ v: 1, id: req.id, nonce, ok: false, where: "call", error: serializeErr(e) }); return; }
   let thenable = false;
   try { thenable = out !== null && (typeof out === "object" || typeof out === "function") && typeof out.then === "function"; } catch { thenable = false; }
   let value = out, sync = true;
   if (thenable) {
     sync = false; // m204-guard:h-async
     try { value = await out; }
-    catch (e) { reply({ v: 1, id: req.id, ok: false, where: "await", error: serializeErr(e) }); return; }
+    catch (e) { reply({ v: 1, id: req.id, nonce, ok: false, where: "await", error: serializeErr(e) }); return; }
   }
-  reply({ v: 1, id: req.id, ok: true, ...replyValue(value), sync });
+  reply({ v: 1, id: req.id, nonce, ok: true, ...replyValue(value), sync });
 }
 
-module.exports = { isExact, replyValue, serializeErr };
+module.exports = { isExact, replyValue, serializeErr, validNonce };
 if (require.main === module) (async () => {
   if (!modPath || typeof modPath !== "string") {
     process.stderr.write("harness: missing module path\n");
