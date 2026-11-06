@@ -1,9 +1,9 @@
 // EXPERIMENTAL. credit: false. Practices a skill tree outside the target repo. Never writes inside it.
 //   tsx peaceai/bin/learn-practice.ts --repo <path> --tree <skill-tree.json> --map <program-map.json>
 //     [--out <dir>] [--seed N] [--max-minutes N] [--max-attempts-total N] [--from-history] [--recheck] [--today YYYY-MM-DD]
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { insideRepo, LearnRefuse } from "../lib/learnpractice.ts";
+import { insideRepo, LearnRefuse, prepareOutDir, safeWriteFile } from "../lib/learnpractice.ts";
 
 const USAGE = "usage: learn-practice.ts --repo <path> --tree <skill-tree.json> --map <program-map.json> [--out <dir>] [--seed N] [--max-minutes N] [--max-attempts-total N] [--from-history] [--recheck] [--today YYYY-MM-DD]";
 
@@ -23,7 +23,7 @@ for (let i = 0; i < args.length; i++) {
 const repo = opt.get("repo");
 const treePath = opt.get("tree");
 const mapPath = opt.get("map");
-if (!repo || !treePath || !mapPath || !existsSync(repo)) { console.log(repo && !existsSync(repo) ? "refused NOT_A_DIRECTORY" : USAGE); process.exit(2); }
+if (!repo || !treePath || !mapPath || !existsSync(repo) || !statSync(repo).isDirectory()) { console.log(repo && existsSync(repo) && !statSync(repo).isDirectory() ? "refused NOT_A_DIRECTORY" : repo && !existsSync(repo) ? "refused NOT_A_DIRECTORY" : USAGE); process.exit(2); }
 const out = resolve(opt.get("out") ?? resolve(process.cwd(), "learn-practice-out"));
 if (insideRepo(repo, out)) { console.log("refused WRITE_IN_TARGET"); process.exit(2); }
 
@@ -49,7 +49,9 @@ try {
   process.exit(2);
 }
 
-const today = opt.get("today") ?? new Date().toISOString().slice(0, 10);
+const todayRaw = opt.get("today") ?? new Date().toISOString().slice(0, 10);
+if (!/^\d{4}-\d{2}-\d{2}$/.test(todayRaw)) { console.log(USAGE); process.exit(2); }
+const today = todayRaw;
 const base = {
   tree, map, repoPath: repo, seed: num("seed", 1), maxMinutes: num("max-minutes", 30),
   maxAttemptsTotal: num("max-attempts-total", 200), fromHistory: flag.has("--from-history"), outPath: out, today,
@@ -65,21 +67,21 @@ try {
   } else {
     run = practiceProgram(base);
   }
+  prepareOutDir(repo, out);
+  safeWriteFile(repo, resolve(out, "practice-results.json"), `${JSON.stringify(run, null, 2)}\n`);
+  safeWriteFile(repo, resolve(out, "learn-progress.txt"), renderProgress(run));
+  const gaps = gapRows(run, tree, programName(repo), today);
+  const gapPath = resolve(out, "needs-teaching.jsonl");
+  const prevGaps = exists(gapPath) ? readFileSync(gapPath, "utf8") : "";
+  safeWriteFile(repo, gapPath, mergeNeedsTeaching(prevGaps, gaps));
+  const pairs = buildLearnPairs(run, programName(repo));
+  writeLearnPairs(resolve(out, "pairs"), pairs, repo);
+  const learned = run.nodes.filter((n: { status: string }) => n.status === "LEARNED").length;
+  console.log(`experimental credit=false history=${run.history} budgetStopped=${run.budgetStopped}`);
+  console.log(`nodes=${run.nodes.length} learned=${learned} attempts=${run.attemptsUsed} minutes=${run.minutesUsed} pairs=${pairs.docs.length} dropped_leak=${pairs.dropped.leak} dropped_near=${pairs.dropped.nearDuplicate}`);
+  console.log("wrote practice-results.json learn-progress.txt needs-teaching.jsonl pairs/docs.jsonl pairs/manifest.jsonl");
 } catch (e) {
   if (e instanceof LearnRefuse) { console.log(`refused ${e.code}`); process.exit(2); }
   throw e;
 }
-
-mkdirSync(out, { recursive: true });
-writeFileSync(resolve(out, "practice-results.json"), `${JSON.stringify(run, null, 2)}\n`);
-writeFileSync(resolve(out, "learn-progress.txt"), renderProgress(run));
-const gaps = gapRows(run, tree, programName(repo), today);
-const prevGaps = existsSync(resolve(out, "needs-teaching.jsonl")) ? readFileSync(resolve(out, "needs-teaching.jsonl"), "utf8") : "";
-writeFileSync(resolve(out, "needs-teaching.jsonl"), mergeNeedsTeaching(prevGaps, gaps));
-const pairs = buildLearnPairs(run, programName(repo));
-writeLearnPairs(resolve(out, "pairs"), pairs);
-const learned = run.nodes.filter((n) => n.status === "LEARNED").length;
-console.log(`experimental credit=false history=${run.history} budgetStopped=${run.budgetStopped}`);
-console.log(`nodes=${run.nodes.length} learned=${learned} attempts=${run.attemptsUsed} minutes=${run.minutesUsed} pairs=${pairs.docs.length} dropped_leak=${pairs.dropped.leak} dropped_near=${pairs.dropped.nearDuplicate}`);
-console.log("wrote practice-results.json learn-progress.txt needs-teaching.jsonl pairs/docs.jsonl pairs/manifest.jsonl");
 process.exit(0);
