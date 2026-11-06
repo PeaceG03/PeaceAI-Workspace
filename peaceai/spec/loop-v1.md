@@ -10,7 +10,7 @@ code search tools (PR #635).
 
 Given a task from a locked plan-only task file (request + repo pinned at a commit, team merge commit and test files):
 
-1. refuse PeaceAI's own repos (`SELF_TARGET`) and refuse without the stage-2 candidate uid (`CAND_UID_*`), before
+1. refuse PeaceAI's own org repos (`SELF_TARGET`), except exact allowlist `PeaceG03/PeaceAI-Workspace` and `PeaceG03/PeaceAI` (case-insensitive; lookalike names under other owners also refused); on those allowlisted targets refuse edits to `PROTECTED_SELF` / never-zone paths (`SELF_PROTECTED`); and refuse without the stage-2 candidate uid (`CAND_UID_*`), before
    anything is fetched;
 2. fetch the pinned commit into a throwaway copy (no remote configured; nothing is ever pushed), check the commit and
    license against the task;

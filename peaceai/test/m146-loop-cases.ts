@@ -102,14 +102,60 @@ export const CASES: Case[] = [
     },
   },
   {
-    id: "PeaceAI's own repos are never a loop target (SELF_TARGET, nothing fetched)",
+    id: "SELF_TARGET: Workspace/PeaceAI allowed; other peaceg03 and lookalikes refused (nothing fetched when refused)",
     run(lib, ctx) {
       let fetched = 0;
-      for (const repo of ["PeaceG03/PeaceAI-Workspace", "peaceg03/PeaceAI-Results"]) {
-        const r = run(lib, ctx, { ...ctx.calc, repo }, fixed([]), { fetcher: (...a: Parameters<Loop.CopyFetcher>) => { fetched++; return ctx.fetcher(...a); } });
-        assert.equal(r.row.code, "SELF_TARGET");
+      const fetcher = (...a: Parameters<Loop.CopyFetcher>) => { fetched++; return ctx.fetcher(...a); };
+      // exact allow (case-insensitive): pass the SELF_TARGET guard (may hit CAND_UID_* without a cand)
+      for (const repo of ["PeaceG03/PeaceAI-Workspace", "PeaceG03/PeaceAI", "peaceg03/peaceai-workspace", "PEACEG03/PEACEAI"]) {
+        const r = run(lib, ctx, { ...ctx.calc, repo }, fixed([]), { fetcher });
+        assert.notEqual(r.row.code, "SELF_TARGET", repo);
+        if (!ctx.cand) assert.match(r.row.code, NO_CAND, repo); // CAND_UID_* still before fetch
       }
-      assert.equal(fetched, 0);
+      // still refused: other peaceg03/*, peaceg03 lookalikes, and other-owner lookalike names
+      const refused = ["peaceg03/PeaceAI-Results", "peaceg03/peaceai-workspace-evil", "PeaceG03/PeaceAI-evil", "other-owner/PeaceAI", "other-owner/PeaceAI-Workspace"];
+      const refusedBefore = fetched;
+      for (const repo of refused) {
+        const r = run(lib, ctx, { ...ctx.calc, repo }, fixed([]), { fetcher });
+        assert.equal(r.row.code, "SELF_TARGET", repo);
+      }
+      assert.equal(fetched, refusedBefore, "SELF_TARGET refuses before fetch");
+      assert.equal(lib.isLoopSelfTarget("PeaceG03/PeaceAI-Workspace"), false);
+      assert.equal(lib.isLoopSelfTarget("peaceg03/PeaceAI-Results"), true);
+      assert.equal(lib.isLoopSelfTarget("other-owner/PeaceAI"), true);
+      assert.equal(lib.SELF_ALLOW.has("other-owner/peaceai"), false);
+      assert.equal(lib.SELF_ALLOW.has("peaceg03/peaceai-workspace-evil"), false);
+    },
+  },
+  {
+    id: "SELF_ALLOW: PROTECTED_SELF / never-zone edits are SELF_PROTECTED; a non-protected path is still admitted",
+    run(lib, ctx) {
+      const copy = { dir: ctx.edits, head: "", teamTests: new Map<string, string>(), close() {} };
+      const forbidden = [
+        "peaceai/lib/gate.ts",
+        "peaceai/lib/verifier.ts",
+        "peaceai/lib/verifier-judge.cjs",
+        "peaceai/lib/selfpropose.ts",
+        "peaceai/lib/loop.ts",
+        ".github/workflows/tests.yml",
+      ];
+      for (const path of forbidden) {
+        assert.equal(lib.isSelfAllowForbiddenPath(path), true, path);
+        assert.equal(lib.applyEdits(copy, [{ path, content: "export const x = 1;\n" }], { selfAllow: true }), "SELF_PROTECTED", path);
+        assert.ok(!existsSync(join(ctx.edits, path)), `wrote nothing for ${path}`);
+      }
+      // non-protected under an allowed self repo: admitted by this gate
+      const okPath = "peaceai/nl/demo-self-allow.ts";
+      assert.equal(lib.isSelfAllowForbiddenPath(okPath), false, okPath);
+      assert.equal(lib.applyEdits(copy, [{ path: okPath, content: "export const ok = 1;\n" }], { selfAllow: true }), null);
+      assert.ok(existsSync(join(ctx.edits, okPath)), "non-protected path written");
+      // without selfAllow the PROTECTED_SELF gate does not fire (external-repo path)
+      assert.equal(lib.applyEdits(copy, [{ path: "peaceai/lib/loop.ts", content: "export const y = 2;\n" }]), null);
+      // full loop on an allowlisted self repo: protected edit refuses (or CAND_UID_* before fetch when no cand)
+      const r = run(lib, ctx, { ...ctx.calc, repo: "PeaceG03/PeaceAI-Workspace" }, fixed([{ path: "peaceai/lib/loop.ts", content: "export const z = 3;\n" }]));
+      if (!ctx.cand) { assert.match(r.row.code, NO_CAND); assert.equal(r.row.attempts, 0); return; }
+      assert.equal(r.row.code, "SELF_PROTECTED");
+      assert.equal(r.row.result, "refused");
     },
   },
   {
