@@ -1,0 +1,232 @@
+// M223: learn a program — program map, self-check, and skill tree.
+// The shop is generated in a temp directory. It is made-up original input, not a third-party fixture,
+// not a practice task, and not a reference diff.
+// EXPERIMENTAL. credit is false; nothing here touches scoring.
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import test from "node:test";
+import { buildProgramMap, checkMap } from "../lib/learnmap.ts";
+import { buildSkillTree, renderSkillTree, treeConserved, type GapNode } from "../lib/learntree.ts";
+
+const repo = resolve(import.meta.dirname, "..", "..");
+const tsx = join(repo, "node_modules/.bin/tsx");
+
+/** Byte-for-byte the made-up shop previously stored under peaceai/test/fixtures/learn/mini. */
+const SHOP: Readonly<Record<string, string>> = {
+  "src/cart.ts": `/** Adds one item to the running count. */
+export function addItem(count: number): number {
+  return count + 1;
+}
+
+/** Removes one item from the running count. */
+export function removeItem(count: number): number {
+  return count - 1;
+}
+
+/** Computes the cart total from a unit price. */
+export function total(count: number, price: number): number {
+  return count * price;
+}
+`,
+  "src/deep.ts": `/** Nested tunnel used so a gap stays too big at depth 5. */
+export function tunnel(x: number): number {
+  if (x > 0) {
+    if (x > 1) {
+      if (x > 2) {
+        if (x > 3) {
+          if (x > 4) {
+            if (x > 5) {
+              return x;
+            } else {
+              return 5;
+            }
+          } else {
+            return 4;
+          }
+        } else {
+          return 3;
+        }
+      } else {
+        return 2;
+      }
+    } else {
+      return 1;
+    }
+  } else {
+    return 0;
+  }
+}
+`,
+  "src/index.ts": `/** Shop barrel: cart, tax, and the tunnel. */
+export { addItem, removeItem, total } from "./cart.ts";
+export { rate } from "./tax.ts";
+export { tunnel } from "./deep.ts";
+`,
+  "src/tax.ts": `/** Sales tax for a cent amount. */
+export function rate(cents: number): number {
+  return cents * 5;
+}
+`,
+  "test/cart.test.ts": `import { addItem, total } from "../src/cart.ts";
+
+export function cartCoversAdd(): number {
+  return total(addItem(1), 3);
+}
+`,
+  "test/tax.test.ts": `import { rate } from "../src/tax.ts";
+
+export function taxCoversRate(): number {
+  return rate(100);
+}
+`,
+};
+
+function writeShop(dir: string): void {
+  for (const [rel, text] of Object.entries(SHOP)) {
+    const full = join(dir, rel);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, text);
+  }
+}
+
+function withShop(fn: (dir: string) => void): void {
+  const dir = mkdtempSync(join(tmpdir(), "peaceai-mini-"));
+  try {
+    writeShop(dir);
+    fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("map lists the fixture modules, edges and tests, and is byte-stable", () => {
+  withShop((fix) => {
+    const a = buildProgramMap(fix);
+    const b = buildProgramMap(fix);
+    assert.equal(JSON.stringify(a), JSON.stringify(b));
+    assert.equal(a.schema, "peaceai-learn-map:v1");
+    assert.equal(a.experimental, true);
+    assert.equal(a.credit, false);
+    assert.deepEqual(a.modules.map((m) => m.path), ["src/cart.ts", "src/deep.ts", "src/index.ts", "src/tax.ts"]);
+    assert.deepEqual(a.modules.map((m) => m.exports), [
+      ["addItem", "removeItem", "total"],
+      ["tunnel"],
+      ["addItem", "rate", "removeItem", "total", "tunnel"],
+      ["rate"],
+    ]);
+    assert.deepEqual(a.modules.map((m) => m.imports), [
+      [],
+      [],
+      ["src/cart.ts", "src/deep.ts", "src/tax.ts"],
+      [],
+    ]);
+    assert.equal(a.modules[0]!.summary, "Adds one item to the running count. Removes one item from the running count. Computes the cart total from a unit price.");
+    assert.equal(a.modules[2]!.summary, "Shop barrel: cart, tax, and the tunnel.");
+    assert.deepEqual(a.edges, [
+      { from: "src/index.ts", to: "src/cart.ts" },
+      { from: "src/index.ts", to: "src/deep.ts" },
+      { from: "src/index.ts", to: "src/tax.ts" },
+    ]);
+    assert.deepEqual(a.entryPoints, ["src/index.ts"]);
+    assert.deepEqual(a.tests, [
+      { path: "test/cart.test.ts", covers: ["src/cart.ts"] },
+      { path: "test/tax.test.ts", covers: ["src/tax.ts"] },
+    ]);
+  });
+});
+
+test("checkMap trusts a real map and catches a corrupted edge", () => {
+  withShop((fix) => {
+    const map = buildProgramMap(fix);
+    const ok = checkMap(map, fix);
+    assert.equal(ok.asked, 10);
+    assert.equal(ok.correct, 10);
+    assert.deepEqual(ok.wrong, []);
+    const bad = structuredClone(map);
+    const edge = bad.edges[0]!;
+    edge.to = "src/does-not-exist.ts";
+    const no = checkMap(bad, fix);
+    assert.ok(no.wrong.some((w) => w.id === `edge:${edge.from}>src/does-not-exist.ts`));
+    assert.ok(no.correct < no.asked);
+  });
+});
+
+test("skill tree splits a wide gap, keeps every leaf testable, and parks the depth-5 gap", { timeout: 120_000 }, () => {
+  withShop((fix) => {
+    const map = buildProgramMap(fix);
+    const tree = buildSkillTree(map, fix);
+    const again = buildSkillTree(map, fix);
+    assert.equal(JSON.stringify(tree), JSON.stringify(again));
+    assert.equal(tree.credit, false);
+    assert.equal(tree.experimental, true);
+    assert.equal(tree.planner, "plan-only-v4");
+    assert.ok(tree.missing.includes("edit-existing-function"));
+    const cart = tree.nodes.find((n) => n.id === "mod:src/cart.ts");
+    assert.ok(cart);
+    assert.equal(cart.size, "split");
+    assert.equal(cart.children.length, 3);
+    const byId = new Map(tree.nodes.map((n) => [n.id, n]));
+    for (const id of cart.children) {
+      const leaf = byId.get(id)!;
+      assert.equal(leaf.size, "leaf");
+      assert.equal(leaf.children.length, 0);
+      assert.equal(typeof leaf.testIdea, "string");
+      assert.ok(leaf.testIdea);
+    }
+    const stuck = tree.nodes.filter((n) => n.size === "TOO_BIG_UNSPLIT");
+    assert.equal(stuck.length, 1);
+    assert.equal(stuck[0]!.depth, 5);
+    assert.match(stuck[0]!.reason ?? "", /depth 5/);
+    assert.equal(stuck[0]!.children.length, 0);
+    for (const n of tree.nodes) if (n.size === "leaf") assert.ok(n.testIdea && n.testIdea.length > 0);
+    assert.equal(treeConserved(tree), true);
+    const before = countUnits(tree.nodes.filter((n) => n.parent === null));
+    const after = countUnits(tree.nodes.filter((n) => n.size !== "split"));
+    assert.equal(before, after);
+    const text = renderSkillTree(tree);
+    assert.match(text, /EXPERIMENTAL credit=false/);
+    assert.match(text, /TOO_BIG_UNSPLIT/);
+    assert.match(text, /fix addItem in src\/cart.ts/);
+  });
+});
+
+test("learn CLI refuses to write into the repo it studies", () => {
+  withShop((fix) => {
+    const before = readdirSync(fix).sort();
+    const inside = join(fix, "sneak");
+    const r = spawnSync(tsx, ["peaceai/bin/learn.ts", fix, "--out", inside], { cwd: repo, encoding: "utf8" });
+    assert.notEqual(r.status, 0);
+    assert.match(`${r.stdout}${r.stderr}`, /refused WRITE_IN_TARGET/);
+    assert.equal(existsSync(inside), false);
+    assert.deepEqual(readdirSync(fix).sort(), before);
+    const self = spawnSync(tsx, ["peaceai/bin/learn.ts", fix, "--out", fix], { cwd: repo, encoding: "utf8" });
+    assert.match(`${self.stdout}${self.stderr}`, /refused WRITE_IN_TARGET/);
+    assert.deepEqual(readdirSync(fix).sort(), before);
+  });
+});
+
+test("learn CLI writes the map and the outline outside the repo", { timeout: 120_000 }, () => {
+  withShop((fix) => {
+    const out = mkdtempSync(join(tmpdir(), "peaceai-learn-"));
+    try {
+      const r = spawnSync(tsx, ["peaceai/bin/learn.ts", fix, "--out", out], { cwd: repo, encoding: "utf8" });
+      assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+      assert.match(r.stdout, /credit=false/);
+      const map = JSON.parse(readFileSync(join(out, "program-map.json"), "utf8"));
+      assert.equal(map.credit, false);
+      assert.deepEqual(map.modules.map((m: { path: string }) => m.path), buildProgramMap(fix).modules.map((m) => m.path));
+      const text = readFileSync(join(out, "learn-tree.txt"), "utf8");
+      assert.match(text, /TOO_BIG_UNSPLIT/);
+      assert.equal(existsSync(join(fix, "program-map.json")), false);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+});
+
+function countUnits(nodes: GapNode[]): number {
+  return nodes.reduce((s, n) => s + n.units, 0);
+}
