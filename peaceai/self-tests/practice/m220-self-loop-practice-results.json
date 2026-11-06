@@ -1,0 +1,99 @@
+{
+  "schema": "peaceai-self-loop-practice:v1",
+  "experimental": true,
+  "credit": false,
+  "expectedHead": "85bc19789f37bb59dc17e718eceb6f21cea6a352",
+  "at": "2026-11-06T04:10:31.410Z",
+  "proposer": "repair-v2",
+  "shapes": [
+    {
+      "id": "wrong-literal",
+      "kind": "wrong-literal",
+      "expectUnfixable": false,
+      "loopCode": "ATTEMPT_LIMIT",
+      "result": "fail",
+      "attempts": 5,
+      "proposer": "repair-v2",
+      "gap": "repair candidates exhausted on wrong-literal without a passing edit"
+    },
+    {
+      "id": "off-by-one",
+      "kind": "off-by-one",
+      "expectUnfixable": false,
+      "loopCode": "PASS",
+      "result": "pass",
+      "attempts": 1,
+      "proposer": "repair-v2"
+    },
+    {
+      "id": "swapped-args",
+      "kind": "swapped-args",
+      "expectUnfixable": false,
+      "loopCode": "NO_EDIT",
+      "result": "refused",
+      "attempts": 0,
+      "proposer": "repair-v2",
+      "gap": "repair locate/templates miss swapped-args (proposer NO_EDIT)"
+    },
+    {
+      "id": "wrong-operator",
+      "kind": "wrong-operator",
+      "expectUnfixable": false,
+      "loopCode": "NO_EDIT",
+      "result": "refused",
+      "attempts": 0,
+      "proposer": "repair-v2",
+      "gap": "repair locate/templates miss wrong-operator (proposer NO_EDIT)"
+    },
+    {
+      "id": "missing-return",
+      "kind": "missing-return",
+      "expectUnfixable": false,
+      "loopCode": "NO_MORE_EDITS",
+      "result": "refused",
+      "attempts": 0,
+      "proposer": "repair-v2",
+      "gap": "repair locate/templates miss missing-return (proposer NO_MORE_EDITS)"
+    },
+    {
+      "id": "wrong-branch",
+      "kind": "wrong-branch",
+      "expectUnfixable": false,
+      "loopCode": "NO_EDIT",
+      "result": "refused",
+      "attempts": 0,
+      "proposer": "repair-v2",
+      "gap": "repair locate/templates miss wrong-branch (proposer NO_EDIT)"
+    },
+    {
+      "id": "wrong-string-transform",
+      "kind": "wrong-string-transform",
+      "expectUnfixable": false,
+      "loopCode": "NO_EDIT",
+      "result": "refused",
+      "attempts": 0,
+      "proposer": "repair-v2",
+      "gap": "repair locate/templates miss wrong-string-transform (proposer NO_EDIT)"
+    },
+    {
+      "id": "oracle-absent",
+      "kind": "oracle-absent",
+      "expectUnfixable": true,
+      "loopCode": "NO_MORE_EDITS",
+      "result": "refused",
+      "attempts": 0,
+      "proposer": "repair-v2"
+    }
+  ],
+  "passCount": 1,
+  "total": 8,
+  "passRate": 0.125,
+  "gaps": [
+    "wrong-literal: repair candidates exhausted on wrong-literal without a passing edit",
+    "swapped-args: repair locate/templates miss swapped-args (proposer NO_EDIT)",
+    "wrong-operator: repair locate/templates miss wrong-operator (proposer NO_EDIT)",
+    "missing-return: repair locate/templates miss missing-return (proposer NO_MORE_EDITS)",
+    "wrong-branch: repair locate/templates miss wrong-branch (proposer NO_EDIT)",
+    "wrong-string-transform: repair locate/templates miss wrong-string-transform (proposer NO_EDIT)"
+  ]
+}
