@@ -102,14 +102,29 @@ export const CASES: Case[] = [
     },
   },
   {
-    id: "PeaceAI's own repos are never a loop target (SELF_TARGET, nothing fetched)",
+    id: "SELF_TARGET: Workspace/PeaceAI allowed; other peaceg03 and lookalikes refused (nothing fetched when refused)",
     run(lib, ctx) {
       let fetched = 0;
-      for (const repo of ["PeaceG03/PeaceAI-Workspace", "peaceg03/PeaceAI-Results"]) {
-        const r = run(lib, ctx, { ...ctx.calc, repo }, fixed([]), { fetcher: (...a: Parameters<Loop.CopyFetcher>) => { fetched++; return ctx.fetcher(...a); } });
-        assert.equal(r.row.code, "SELF_TARGET");
+      const fetcher = (...a: Parameters<Loop.CopyFetcher>) => { fetched++; return ctx.fetcher(...a); };
+      // exact allow (case-insensitive): pass the SELF_TARGET guard (may hit CAND_UID_* without a cand)
+      for (const repo of ["PeaceG03/PeaceAI-Workspace", "PeaceG03/PeaceAI", "peaceg03/peaceai-workspace", "PEACEG03/PEACEAI"]) {
+        const r = run(lib, ctx, { ...ctx.calc, repo }, fixed([]), { fetcher });
+        assert.notEqual(r.row.code, "SELF_TARGET", repo);
+        if (!ctx.cand) assert.match(r.row.code, NO_CAND, repo); // CAND_UID_* still before fetch
       }
-      assert.equal(fetched, 0);
+      // still refused: other peaceg03/*, peaceg03 lookalikes, and other-owner lookalike names
+      const refused = ["peaceg03/PeaceAI-Results", "peaceg03/peaceai-workspace-evil", "PeaceG03/PeaceAI-evil", "other-owner/PeaceAI", "other-owner/PeaceAI-Workspace"];
+      const refusedBefore = fetched;
+      for (const repo of refused) {
+        const r = run(lib, ctx, { ...ctx.calc, repo }, fixed([]), { fetcher });
+        assert.equal(r.row.code, "SELF_TARGET", repo);
+      }
+      assert.equal(fetched, refusedBefore, "SELF_TARGET refuses before fetch");
+      assert.equal(lib.isLoopSelfTarget("PeaceG03/PeaceAI-Workspace"), false);
+      assert.equal(lib.isLoopSelfTarget("peaceg03/PeaceAI-Results"), true);
+      assert.equal(lib.isLoopSelfTarget("other-owner/PeaceAI"), true);
+      assert.equal(lib.SELF_ALLOW.has("other-owner/peaceai"), false);
+      assert.equal(lib.SELF_ALLOW.has("peaceg03/peaceai-workspace-evil"), false);
     },
   },
   {

@@ -14,7 +14,9 @@
 //   network and mount namespace (unshare), makes /tmp, /var/tmp and /dev/shm read-only except the private TMPDIR, and
 //   runs node there as the candidate uid. If the namespaces are not available it exits 97/98 and the loop stops with
 //   ISOLATION_UNAVAILABLE (fail closed, never a run with network).
-// - External repos only: a task naming PeaceAI's own repos is refused (SELF_TARGET); the stage-2 self-change flag
+// - External repos only by default: peaceg03/* is refused (SELF_TARGET), except the exact allowlist
+//   PeaceG03/PeaceAI-Workspace and PeaceG03/PeaceAI (case-insensitive). Lookalike names PeaceAI /
+//   PeaceAI-Workspace under any other owner are also refused. The stage-2 self-change flag
 //   (peaceai/self/stage2.json) is never read or written here.
 // - PeaceAI's edits are written only inside the copy (every path normalized, no absolute, "..", .git, node_modules,
 //   symlink or realpath escape, never a team test file); the copy has no git remote and nothing is ever pushed.
@@ -51,7 +53,17 @@ export const ROOT = join(import.meta.dirname, "../..");
 export const MAX_ATTEMPTS = 20;
 const now = (): string => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 const git = (cwd: string, ...a: string[]): string => execFileSync("git", a, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 }).trim();
-const SELF_REPOS = /^peaceg03\//i; // PeaceAI's own repos (Workspace, Results, ...): the loop never targets them
+const SELF_REPOS = /^peaceg03\//i; // PeaceAI's own org: refused unless on SELF_ALLOW
+/** Exact owner/name (lowercase) the loop may target despite SELF_REPOS. Lookalike names under other owners stay refused. */
+export const SELF_ALLOW = new Set(["peaceg03/peaceai-workspace", "peaceg03/peaceai"]);
+/** True when the loop must refuse the repo as SELF_TARGET (before fetch). */
+export function isLoopSelfTarget(repo: string): boolean {
+  const key = repo.toLowerCase();
+  if (SELF_ALLOW.has(key)) return false;
+  if (SELF_REPOS.test(repo)) return true;
+  const name = key.includes("/") ? key.slice(key.indexOf("/") + 1) : key;
+  return name === "peaceai" || name === "peaceai-workspace";
+}
 
 // ---- the copy
 
@@ -1008,7 +1020,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
   if (taskProblem(task)) return done("TASK_INVALID");
   if (!(PLAN_LICENSES as readonly string[]).includes(task.license)) return done("LICENSE_NOT_ALLOWED");
   if (o.training.has(task.repo.toLowerCase())) return done("TRAINING_OVERLAP");
-  if (SELF_REPOS.test(task.repo)) return done("SELF_TARGET"); // guard:self-target
+  if (isLoopSelfTarget(task.repo)) return done("SELF_TARGET"); // guard:self-target
   const cu = stage2CandUid(o.env);
   if (!cu.ok) return done(cu.reason as LoopCode); // guard:cand
   const cand = cu.cand;
