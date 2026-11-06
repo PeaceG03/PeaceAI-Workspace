@@ -128,6 +128,37 @@ export const CASES: Case[] = [
     },
   },
   {
+    id: "SELF_ALLOW: PROTECTED_SELF / never-zone edits are SELF_PROTECTED; a non-protected path is still admitted",
+    run(lib, ctx) {
+      const copy = { dir: ctx.edits, head: "", teamTests: new Map<string, string>(), close() {} };
+      const forbidden = [
+        "peaceai/lib/gate.ts",
+        "peaceai/lib/verifier.ts",
+        "peaceai/lib/verifier-judge.cjs",
+        "peaceai/lib/selfpropose.ts",
+        "peaceai/lib/loop.ts",
+        ".github/workflows/tests.yml",
+      ];
+      for (const path of forbidden) {
+        assert.equal(lib.isSelfAllowForbiddenPath(path), true, path);
+        assert.equal(lib.applyEdits(copy, [{ path, content: "export const x = 1;\n" }], { selfAllow: true }), "SELF_PROTECTED", path);
+        assert.ok(!existsSync(join(ctx.edits, path)), `wrote nothing for ${path}`);
+      }
+      // non-protected under an allowed self repo: admitted by this gate
+      const okPath = "peaceai/nl/demo-self-allow.ts";
+      assert.equal(lib.isSelfAllowForbiddenPath(okPath), false, okPath);
+      assert.equal(lib.applyEdits(copy, [{ path: okPath, content: "export const ok = 1;\n" }], { selfAllow: true }), null);
+      assert.ok(existsSync(join(ctx.edits, okPath)), "non-protected path written");
+      // without selfAllow the PROTECTED_SELF gate does not fire (external-repo path)
+      assert.equal(lib.applyEdits(copy, [{ path: "peaceai/lib/loop.ts", content: "export const y = 2;\n" }]), null);
+      // full loop on an allowlisted self repo: protected edit refuses (or CAND_UID_* before fetch when no cand)
+      const r = run(lib, ctx, { ...ctx.calc, repo: "PeaceG03/PeaceAI-Workspace" }, fixed([{ path: "peaceai/lib/loop.ts", content: "export const z = 3;\n" }]));
+      if (!ctx.cand) { assert.match(r.row.code, NO_CAND); assert.equal(r.row.attempts, 0); return; }
+      assert.equal(r.row.code, "SELF_PROTECTED");
+      assert.equal(r.row.result, "refused");
+    },
+  },
+  {
     id: "the same task rules as plan-only: invalid task, license, training overlap",
     run(lib, ctx) {
       assert.equal(run(lib, ctx, { ...ctx.calc, request: "short" }, fixed([])).row.code, "TASK_INVALID");

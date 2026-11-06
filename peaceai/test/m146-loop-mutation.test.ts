@@ -53,7 +53,7 @@ function runMutant(file: string): Promise<{ failed: string[]; crashed: string[];
 test("M146 mutation: the guard tags are unique and cover the safety guards", () => {
   const ids = guards.map((g) => g.id);
   assert.equal(new Set(ids).size, ids.length, "duplicate guard id");
-  assert.deepEqual([...ids].sort(), ["abs", "cand", "dotdot", "git-nm", "isolated", "isolation-exit", "lock", "realpath", "self-target", "symlink", "team-tests", "wrapper"]);
+  assert.deepEqual([...ids].sort(), ["abs", "cand", "dotdot", "git-nm", "isolated", "isolation-exit", "lock", "realpath", "self-protect", "self-target", "symlink", "team-tests", "wrapper"]);
 });
 
 test("M146 mutation: the unmutated copy passes every case (the harness itself is sound)", async () => {

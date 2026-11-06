@@ -16,8 +16,9 @@
 //   ISOLATION_UNAVAILABLE (fail closed, never a run with network).
 // - External repos only by default: peaceg03/* is refused (SELF_TARGET), except the exact allowlist
 //   PeaceG03/PeaceAI-Workspace and PeaceG03/PeaceAI (case-insensitive). Lookalike names PeaceAI /
-//   PeaceAI-Workspace under any other owner are also refused. The stage-2 self-change flag
-//   (peaceai/self/stage2.json) is never read or written here.
+//   PeaceAI-Workspace under any other owner are also refused. On a SELF_ALLOW target, edits to
+//   PROTECTED_SELF or never-zone paths are refused (SELF_PROTECTED) before write. The stage-2
+//   self-change flag (peaceai/self/stage2.json) is never read or written here.
 // - PeaceAI's edits are written only inside the copy (every path normalized, no absolute, "..", .git, node_modules,
 //   symlink or realpath escape, never a team test file); the copy has no git remote and nothing is ever pushed.
 // - The public log row carries codes and numbers only; test names stay in the local, gitignored .peaceai-out/loop.
@@ -45,6 +46,7 @@ import { committedLog, isLocked, taskKey } from "./plangrade.ts";
 import { ATTEMPT_CODES, SHIM_SYNTH_CODES, EDIT_SCOPE_CLASSES, LOOP_ISOLATION_FAILS, LOOP_LOG, LOOP_MODEL_PROPOSERS, LOOP_SCHEMA_V4, loopRowProblem, LOOP_VERSION_V2, type AttemptCode, type EditScopeClass, type LoopBaseline, type LoopCode, type LoopRow, type LoopTests } from "./looprow.ts";
 import { candCan, detectRunner, installDeps, installShim, openDepsCache, openWorkDir, SHIM_EXITS, shimArgs, type WorkDir, type DepsCache, type DepsFail, type DepsOptions, type RunnerPick } from "./loopdeps.ts";
 import { guardedRun, stage2CandUid, type CandUid, type RawRun } from "./selfpropose.ts";
+import { NEVER_ZONE, PROTECTED_SELF, stage2PathRefusal } from "./selfchange.ts";
 import { DEFAULT_VERDICT_MODE, extractCasesFromSource, selectVerdictMode, verify, type DataCase, type VerdictMode } from "./verifier.ts";
 import { MAX_INDEX_FILE_BYTES, type IndexFile } from "./symbols.ts";
 import { retryCreditProblem, retryModeProblem, retryRunLabel, retryScopeProblem, RETRY_MAX_ATTEMPTS, type RepairRetryMode, type RetryEvidence, type RetryVerdict } from "./repair-retry.ts";
@@ -63,6 +65,14 @@ export function isLoopSelfTarget(repo: string): boolean {
   if (SELF_REPOS.test(repo)) return true;
   const name = key.includes("/") ? key.slice(key.indexOf("/") + 1) : key;
   return name === "peaceai" || name === "peaceai-workspace";
+}
+/** True when an edit path on a SELF_ALLOW repo must be refused (PROTECTED_SELF or never-zone; lists from selfchange.ts). */
+export function isSelfAllowForbiddenPath(path: string): boolean {
+  const norm = posix.normalize(path.replace(/\\/g, "/"));
+  if (PROTECTED_SELF.some((e) => e.pattern.test(norm))) return true;
+  if (NEVER_ZONE.some((z) => z.pattern.test(norm))) return true;
+  const s2 = stage2PathRefusal(norm);
+  return s2 !== null && s2.startsWith("never-zone:");
 }
 
 // ---- the copy
@@ -129,13 +139,15 @@ export function safeEditPath(dir: string, p: unknown): string | null {
   return full;
 }
 
-/** Writes an edit into the copy. Every path is checked first, so a bad edit writes nothing at all. */
-export function applyEdits(c: Copy, edits: readonly Edit[]): LoopCode | null {
+/** Writes an edit into the copy. Every path is checked first, so a bad edit writes nothing at all.
+ *  `selfAllow`: the target is on SELF_ALLOW (PeaceAI's own Workspace/PeaceAI); refuse PROTECTED_SELF / never-zone paths. */
+export function applyEdits(c: Copy, edits: readonly Edit[], opts: { selfAllow?: boolean } = {}): LoopCode | null {
   const targets: [string, string][] = [];
   for (const e of edits) {
     const full = safeEditPath(c.dir, e.path);
     if (full === null) return "EDIT_OUTSIDE_COPY";
     if (c.teamTests.has(posix.normalize(e.path))) return "TEAM_TEST_EDIT"; // guard:team-tests
+    if (opts.selfAllow && isSelfAllowForbiddenPath(String(e.path))) return "SELF_PROTECTED"; // guard:self-protect
     targets.push([full, e.content]);
   }
   for (const [full, content] of targets) { mkdirSync(dirname(full), { recursive: true }); writeFileSync(full, content); }
@@ -1131,7 +1143,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       // M199: inert while EDIT_SCOPE_POLICY stays inside INPROC_BOUNDED_SCOPE; a widened policy is refused per runner here
       if (!loadDiags) { const wide = inprocScopeProblem(det.runner, p.edits.filter((e) => !(safeEditPath(c!.dir, e.path) === null || c!.teamTests.has(posix.normalize(e.path)))).map((e) => editClass(e.path, e.content, readPinned)), verdictMode); if (wide) return done(wide); } // m199-guard:loop-wide
       putTeamTests();
-      const bad = applyEdits(c, p.edits);
+      const bad = applyEdits(c, p.edits, { selfAllow: SELF_ALLOW.has(task.repo.toLowerCase()) });
       if (bad) return done(bad);
       // 5. run, 6. read codes + names
       const r0 = runTeam([...c.teamTests.keys()], retryRunLabel(attempt, p.edits));
