@@ -147,7 +147,7 @@ export function applyEdits(c: Copy, edits: readonly Edit[], opts: { selfAllow?: 
     const full = safeEditPath(c.dir, e.path);
     if (full === null) return "EDIT_OUTSIDE_COPY";
     if (c.teamTests.has(posix.normalize(e.path))) return "TEAM_TEST_EDIT"; // guard:team-tests
-    if (opts.selfAllow && isSelfAllowForbiddenPath(String(e.path))) return "SELF_PROTECTED"; // self-allow defense (tagged gate is in runLoopTask)
+    if (opts.selfAllow && isSelfAllowForbiddenPath(String(e.path))) return "SELF_PROTECTED"; // guard:self-protect
     targets.push([full, e.content]);
   }
   for (const [full, content] of targets) { mkdirSync(dirname(full), { recursive: true }); writeFileSync(full, content); }
@@ -1131,7 +1131,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       if (typeof p !== "object") return done("PROPOSER_FAILED"); // m164-guard:next-empty
       if (!("refuse" in p) && !validEdits((p as { edits?: unknown }).edits)) return done("PROPOSER_FAILED"); // m164-guard:next-malformed
       if ("refuse" in p) return done(p.refuse);
-      if (SELF_ALLOW.has(task.repo.toLowerCase()) && p.edits.some((e) => isSelfAllowForbiddenPath(String(e.path)))) return done("SELF_PROTECTED"); // guard:self-protect
+      if (SELF_ALLOW.has(task.repo.toLowerCase()) && p.edits.some((e) => isSelfAllowForbiddenPath(String(e.path)))) return done("SELF_PROTECTED"); // self-allow before EDIT_SCOPE (tagged gate is in applyEdits)
       // 4. apply in the copy (fresh from the pinned commit + the team's tests each time)
       resetCopy(c);
       // M174 L0 gate: a load-repair proposal must be single `export ` insertions in existing source files, else it is
