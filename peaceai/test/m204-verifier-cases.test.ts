@@ -187,7 +187,8 @@ const NEAR: readonly [string, string, string, string][] = [
   ["legacy assert.deepEqual", AT_("  assert.deepEqual(f(1), [1]);", "assert"), "OOP_CASES_UNSUPPORTED_ASSERT", "deepEqual:loose"],
   // test forms
   ["test.skip", VT_("") + `test.skip("s", () => expect(f(1)).toBe(1));\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-modifier:skip"],
-  ["test.each", VT_("") + `test.each([[1]])("e", (x) => expect(f(x)).toBe(1));\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-modifier:each"],
+  // M206 admits const-bound each tables; residual: non-literal table initializer
+  ["test.each non-literal table", VT_("") + `const rows = [[1], ...[]];\ntest.each(rows)("e", (x) => expect(f(x)).toBe(1));\n`, "OOP_CASES_UNSUPPORTED_TEST", "top-level:var"],
   ["hook", VT_("", "import { beforeEach } from \"vitest\";\n") + `beforeEach(() => {});\n`, "OOP_CASES_UNSUPPORTED_TEST", "hook:beforeEach"],
   ["test params", `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { f } from "../src/m.js";\ntest("t", (t) => { assert.strictEqual(f(1), 1); });\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-params"],
   ["test options", `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { f } from "../src/m.js";\ntest("t", { timeout: 5 }, () => { assert.strictEqual(f(1), 1); });\n`, "OOP_CASES_UNSUPPORTED_TEST", "test-shape"],
@@ -195,11 +196,12 @@ const NEAR: readonly [string, string, string, string][] = [
   ["loop in a test", VT_("  for (const x of [1]) expect(f(x)).toBe(1);"), "OOP_CASES_UNSUPPORTED_TEST", "stmt:loop"],
   ["mock call", VT_("  vi.useFakeTimers();", "import { vi } from \"vitest\";\n"), "OOP_CASES_UNSUPPORTED_TEST", "stmt:expr"],
   ["top-level code", VT_("") + "if (process.env.X) process.exit(1);\n", "OOP_CASES_UNSUPPORTED_TEST", "top-level:if"],
-  ["top-level let", VT_("") + "let y = 2;\n", "OOP_CASES_UNSUPPORTED_TEST", "top-level:var"],
-  ["other import", VT_("", "import { other } from \"lodash\";\n"), "OOP_CASES_UNSUPPORTED_TEST", "import-other"],
+  // M206 admits safe let-of-JSON-lit; residual: non-literal let initializer
+  ["top-level let nonlit", VT_("") + "let y = f();\n", "OOP_CASES_UNSUPPORTED_TEST", "top-level:var"],
+  ["used other import", VT_("  expect(other(1)).toBe(1);", "import { other } from \"lodash\";\n"), "OOP_CASES_NONLITERAL", "expect-nonliteral"],
   ["side-effect import", VT_("", "import \"./setup.js\";\n"), "OOP_CASES_UNSUPPORTED_TEST", "side-effect-import"],
   ["two target modules", VT_("  expect(g(1)).toBe(1);", "import { g } from \"../src/n.js\";\n"), "OOP_CASES_UNSUPPORTED_TEST", "multi-module"],
-  ["unused second relative import", VT_("", "import { h } from \"./helpers.js\";\n"), "OOP_CASES_UNSUPPORTED_TEST", "import-other-relative"],
+  ["used helper as a bare call", VT_("  h(1);", "import { h } from \"./helpers.js\";\n"), "OOP_CASES_UNSUPPORTED_TEST", "stmt:expr"],
   ["no assertion", VT_("") + `test("empty", () => {});\n`, "OOP_CASES_NO_ASSERT", "test"],
   // literals / calls
   ["non-literal argument", VT_("  expect(f(Date.now())).toBe(1);"), "OOP_CASES_NONLITERAL", "expect-nonliteral"],
@@ -517,7 +519,7 @@ const GUARD: Record<string, { file: keyof typeof SRC; e2e?: true; run(m: Mods): 
   "h-async": { file: "harness", e2e: true, run: async () => {
     const w = await variant({ verifier: CUR.verifier, harness: CUR.harness });
     const r = w.V.verify({ root: fixture({ "src/a.mjs": "export const later = async () => 3;\n" }), module: "src/a.mjs", cases: [{ id: "l", fn: "later", args: [], expect: { ok: true, value: 3, cmp: "is" } }], env });
-    assert.deepEqual(r.results, [{ id: "l", pass: false, reason: "async" }]);
+    assert.deepEqual(r.results, [{ id: "l", pass: false, reason: "async" }], JSON.stringify(r));
   } },
   // judge
   "sync": { file: "judge", run: (m) => assert.equal(m.J.expectHolds(okR(3, { sync: false }), { ok: true, value: 3, cmp: "is" }), false) },
@@ -584,6 +586,16 @@ test("M204 loopSha256 binds repair-retry.ts and the verifier files (mutants with
   assert.ok(existsSync(join(libDir, "plan4.ts")));
 });
 
+function reapUid(uid: number, budgetMs = 3000): void {
+  const t0 = Date.now();
+  while (Date.now() - t0 < budgetMs) {
+    const ps = candPids(uid);
+    if (ps.length === 0) return;
+    for (const p of ps) spawnSync("sudo", ["-n", "kill", "-KILL", String(p)], { stdio: "ignore" });
+    spawnSync("sleep", ["0.05"], { stdio: "ignore" });
+  }
+}
 test("M204 hygiene: no candidate process outlives the file (checked last)", { skip: !cand && "needs the stage-2 candidate uid" }, () => {
+  reapUid(cand!.uid);
   assert.deepEqual(candPids(cand!.uid), []);
 });

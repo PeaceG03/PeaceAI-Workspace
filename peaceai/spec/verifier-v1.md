@@ -2,8 +2,10 @@
 
 Status: EXPERIMENTAL, NOT DEFAULT, NOT FOR CREDIT. Code: `peaceai/lib/verifier.ts`, harness
 `peaceai/lib/verifier-harness.cjs`, judge `peaceai/lib/verifier-judge.cjs` (M204), CLI `peaceai/bin/verifier-v1.ts`,
-tests `peaceai/test/m202-verifier.test.ts`, `peaceai/test/m204-verifier-cases.test.ts`. Batch 40 (M204) changes are
-in the "M204" section below; where it and the M202 text differ, M204 wins.
+tests `peaceai/test/m202-verifier.test.ts`, `peaceai/test/m204-verifier-cases.test.ts`,
+`peaceai/test/m205-verifier-forms.test.ts`, `peaceai/test/m206-verifier-forms.test.ts`,
+`peaceai/test/m207-verifier-harden.test.ts`. Batch 40 (M204) / Batch 41 (M205) / Batch 42 (M206) / Batch 43 (M207)
+changes are in the sections below; where they and the M202 text differ, the later section wins.
 Loop opt-in: `LoopOptions.verdictMode = "oop-v1"` (or `selectVerdictMode("oop-v1")`). Default remains `inproc`.
 `EDIT_SCOPE_POLICY`, `selfpropose.ts`, `plandefault.ts` and the v4 digest are unchanged.
 
@@ -198,10 +200,152 @@ extracted 0. Batch 39 extractor on the same files: 1 admitted (unjs/destr, 1 cas
 
 - **Forged stdout (pre-existing).** The candidate owns its stdout and can print any reply line, including an `exact`
   value it never computed. That is an honest pass only if the value is right; the judge compares to the expectation.
-  `isa` / `where` / `sync` flags are candidate-reported too, so a hostile candidate can claim them.
-- **ACLs** are not checked by `candMayWrite` (owner / mode bits only). The box uses none on these paths.
-- **`has-sudo` check untested:** no third sudo-capable user exists on the box to exercise it.
+  `isa` / `where` / `sync` flags are candidate-reported too, so a hostile candidate can claim them. M207 records why a
+  per-run nonce cannot close this in-process.
+- **ACLs** — closed in M207 (`candAclWrite`, `OOP_VERIFIER_ACL`).
+- **`has-sudo` check untested** — closed in M207 (injectable privilege probe).
 - **`recv: "module"` `this`** is a spread copy of the namespace, not the live module namespace.
 - **Conservative fails:** toEqual requires exactness; thrown non-objects and truncated messages are not credited.
 - **Unreachable backstops:** the `uncounted` seen != extracted check and the other-assert fallthrough are untagged
   (deleting either is unobservable by construction).
+
+## M205 (batch 41): more general admitted test shapes (still fail-closed)
+
+### Soundness note
+
+The M204 claim still holds: **when verifier-v1 credits a file, every assertion in it was extracted as a case, each case
+means exactly what the assertion means on a JSON value, and each case held.** M205 only adds shapes the extractor can
+reproduce *exactly* by static inspection. Anything not exactly reproducible stays refused by name. The extractor never
+evaluates test code (no `eval`, no running the file, no executing callbacks).
+
+New forms, each with two or more admitted shapes unrelated to PeaceSTOCKS / the public-dev tasks / reference diffs, a
+refused near miss for every condition, and tagged guards whose mutants are caught by a case of that guard:
+
+| form | what is admitted | refused near misses |
+|---|---|---|
+| **describe / suite nesting** | Pure grouping. Nested `describe` / `suite` with string titles and zero-param callbacks. Suite names concatenate into case ids (`outer/inner/cN:fn`). | `describe.each`, suite callbacks with params, generators |
+| **const-of-JSON-literal** | `const name = <JSON lit>` at top level, in a suite, or in a test body. Identifiers (and `obj.prop` of a bound object) resolve to that value in arguments / expectations. | `let`/`var`, shadowing, reassignment (`=`, `+=`, `++`), non-literal initializers, destructuring |
+| **test.each / it.each** | `test.each(<array lit>)(<string>, (params) => ...)` where the table is an array of equal-length arrays of JSON lits, an array of JSON primitives, or an array of plain JSON objects (one object param or a simple object-binding pattern). One case per row; params bind as consts. | non-literal table (including a const binding of the table), tagged-template `each`, `test.skip.each` / `only.each`, arity mismatch, empty table, param shadowing an outer const, `describe.each` |
+| **unused imports** | A non-lib / second relative import that no extracted case uses is ignored. The module under test is the single relative module that appears in extracted calls. | a *used* package import, two *used* relative modules (`multi-module`), side-effect imports |
+
+`assertionsSeen` counts AST assertion calls once; `test.each` expands one AST assertion into N cases, so the fail-closed
+check compares covered AST assertions (not expanded case count) to `assertionsSeen`. Mixed / unsupported assertions still
+refuse the whole file with `extracted = 0`. The Batch 40 silent-skip regression still refuses.
+
+### Guards (m205-guard; m205 deletes each line in a mutant and runs that guard's own case)
+
+`const-resolve`, `const-prop`, `const-bind`, `const-in-test`, `const-kind`, `const-shape`, `const-shadow`,
+`const-reassign`, `suite-nest`, `suite-id`, `each-table`, `each-params`, `each-shape`, `each-shadow`, `each-expand`,
+`unused-import`.
+
+### Dev census (informational; same 13 public-dev team test files; no tuning)
+
+M204 baseline: 0 admitted / 0 extracted (380 assertions seen, 11 supported-form). M205 re-run (no tuning): still 0
+admitted / 0 extracted (380 seen, 11 supported). First refusals moved off `import-other` for several files (unused
+imports now ignored) onto later blockers (`stmt:var`, unequal-length `test.each` tables, `toMatchObject`, suite
+loops). The exact forms above do not yet cover these team files; that is expected and not a target.
+
+### M205 residuals (honest)
+
+- **Const tables for each / describe.each / tagged-template each.** Addressed in M206 (with the safe-binding and
+  literal-cell restrictions documented there).
+- **Property access** on a const object is admitted (`row.s`); computed keys and methods are not.
+- **Unused import side effects** of a named/default import are not reproduced (same class of residual as type-only
+  imports already were). Side-effect-only `import "./x"` stays refused.
+
+## M206 (batch 42): more exact-reproducible bindings and each forms (still fail-closed)
+
+### Soundness note
+
+The M204/M205 claim still holds: **when verifier-v1 credits a file, every assertion in it was extracted as a case, each
+case means exactly what the assertion means on a JSON value, and each case held.** M206 only adds shapes the extractor
+can reproduce *exactly* by static inspection. The extractor never evaluates test code. Anything not exactly reproducible
+stays refused by name.
+
+New forms, each with two or more admitted shapes unrelated to PeaceSTOCKS / the public-dev tasks / reference diffs, a
+refused near miss for every condition, and tagged guards whose mutants are caught by a case of that guard:
+
+| form | what is admitted | refused near misses |
+|---|---|---|
+| **let/var of JSON lit** | `let`/`var name = <JSON lit>` at top level, in a suite, or in a test body, when the name is never reassigned (`=` / compound / `++`/`--`), never mutated (property write or method call on it), and never referenced inside a nested function (capture). Resolved by value like const. | reassign, compound, `++`, method call, property write, nested capture, non-literal initializer |
+| **each table identifier** | `test.each(rows)` / `it.each(rows)` where `rows` is a const (or safe let/var) bound to a JSON array lit, and the binding is never mutated. | unbound id, non-literal initializer, mutated table (`.push` etc.) |
+| **describe.each / suite.each** | `describe.each(table)(title, (params) => { it/... })` and `suite.each(...)` with a literal (or safe bound) table. One suite path per row (`title/@i/...`); names concatenate. | non-literal / empty table, `describe.only.each`, arity mismatch |
+| **tagged-template each** | `test.each` / `describe.each` tagged templates when the header is a plain identifier list and every cell expression is a JSON literal. Positional params or object / object-binding of header keys. | non-literal cell, non-identifier header, no `${}` cells (text-only body) |
+| **destructuring const** | `const { a, b } = { a: lit, b: lit }` and `const [x, y] = [lit, lit]` (simple identifiers, non-computed, no defaults, no rest, no holes, no nesting). | defaults (even literal), rest, nested patterns, computed keys, `let`/`var` destructure |
+
+`assertionsSeen` still counts AST assertion calls once; `test.each` / `describe.each` expand one AST assertion into N
+cases, so the fail-closed check compares covered AST assertions (not expanded case count) to `assertionsSeen`. Mixed /
+unsupported assertions still refuse the whole file with `extracted = 0`. The Batch 40 silent-skip regression and every
+M205 admit still hold.
+
+### Guards (m206-guard; m206 deletes each line in a mutant and runs that guard's own case)
+
+`var-bind`, `var-reassign`, `var-mutate`, `var-capture`, `each-const-table`, `suite-each`, `suite-each-expand`,
+`each-tagged`, `each-tagged-header`, `each-tagged-cell`, `const-destructure`, `const-destructure-array`,
+`const-destructure-default`.
+
+### Dev census (informational; same 13 public-dev team test files; no tuning)
+
+M205 baseline: 0 admitted / 0 extracted (380 assertions seen, 11 supported-form). M206 re-run (no tuning): still 0
+admitted / 0 extracted (380 seen, 11 supported). First refusals unchanged in aggregate
+(`top-level:var` 2, `stmt:var` 3, `test-modifier:each` 1, suite/top-level other 5, `expect-nonliteral` 2). The new
+forms do not yet cover these team files; that is expected and not a target.
+
+### M206 residuals (honest)
+
+- **Closure capture is syntactic.** A nested function that mentions a let/var is refused even when the nested function
+  only reads it. Throws-thunks that close over a let/var therefore refuse; use a const for those.
+- **Method-call mutation.** Any `name.method(...)` on a scoped binding is treated as mutation (including
+  `toString` / `valueOf`). Reads via `name.prop` (property access without call) stay allowed.
+- **ACLs / `has-sudo` / forged stdout.** Addressed or re-documented in M207.
+
+## M207 (batch 43): ACL write check, testable has-sudo, forged-reply residual
+
+### Soundness note
+
+M204's claim still holds. M207 closes two residuals that can be closed without widening the trust boundary, and
+records an honest bound on the third:
+
+1. **ACL-aware write check (closed).** Before any candidate run, every guarded path (work dir, harness, judge, their
+   sources, lib, spec, verdict dir) is checked with `candAclWrite` in addition to `candMayWrite`. `candAclWrite` reads
+   the POSIX access ACL via `getfacl` (named `user:` / `group:` entries; base owner/group/other stay in the mode-bit
+   check). Effective rights apply the ACL mask (getfacl's `#effective:` annotations are stripped before parsing). A named entry that grants the candidate uid, or any of its groups
+   (primary and supplementary, by name or gid), write permission is a refusal `OOP_VERIFIER_ACL`. If `getfacl` fails,
+   times out, or returns an unparseable ACL (including named entries with no mask), the check refuses fail-closed as
+   `OOP_VERIFIER_ACL` (`unknown`). Default ACL entries are ignored for the write-to-this-inode question. Mode-bit
+   group write continues to honour supplementary groups via `id -G` (`groupsOf`).
+
+2. **`has-sudo` / probe failure (closed, testable).** The privilege probe that asks whether the verifier uid can
+   `sudo -n` is injectable through `setVerifierPrivilegeProbeForTests` (module state in the runner process; not
+   env-driven; the candidate uid cannot set it). `has-sudo` -> `OOP_VERIFIER_BAD` / `has-sudo`; probe failure
+   (spawn error / timeout) -> `OOP_VERIFIER_BAD` / `sudo-probe`. Both have tagged guards and cases.
+
+3. **Forged reply-line (irreducible in-process).** The candidate owns its stdout and can print any harness reply
+   line, including `exact: true` and any `isa` / `where` / `sync` flags. Binding each reply to a per-run nonce the
+   candidate "cannot read" does **not** close this while the harness and the candidate share one process: the nonce
+   must live in that address space to be checked, and the candidate can read its own memory (`/proc/self/mem`, as in
+   M201 A7), replace `process.stdout.write`, or otherwise observe harness state after load. A private fd closed before
+   `require` / `import` of the candidate module still leaves the nonce in harness JS memory. Closing this would need a
+   separate judge-side channel that never enters the candidate process (out of scope for verifier-v1's one-harness
+   design). **What bounds it:** the judge compares reply values to the case expectations. Forging a reply that equals
+   the expected value *is* producing the expected output — an honest pass under black-box I/O. Forged flags without
+   the right value fail the comparison. This batch does not claim closure.
+
+### Guards (m207-guard; m207 deletes each line in a mutant and runs that guard's own case)
+
+`has-sudo`, `sudo-probe`, `acl-unknown`, `acl-parse`, `acl-parse-mask`, `acl-mask`, `acl-user`, `acl-group`,
+`acl-check`.
+
+### Admitted / refused (M207)
+
+Two honest configurations (range span; string clip) still verify under oop-v1. Refused near misses: a named ACL for a
+*different* user is not a grant; env vars cannot force the privilege probe; a mask that strips write means no grant;
+malformed getfacl output is `unknown` (fail-closed), not "none".
+
+### M207 residuals (honest)
+
+- **Forged reply-line** — irreducible in-process; see soundness note above.
+- **ACL reader is getfacl.** Hosts without getfacl refuse oop-v1 with `OOP_VERIFIER_ACL` (fail-closed), they do not
+  silently skip the check.
+- **Default ACLs** on a directory are not treated as write grants to the directory inode (they affect children).
+- **`recv: "module"` `this`** residual from M204 unchanged.

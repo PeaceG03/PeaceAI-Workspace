@@ -106,11 +106,18 @@ test("M202 extract: literal assert/expect admitted; non-literal refused; empty r
     "t.ts",
   );
   assert.equal(exp.ok, true);
+  // M205 resolves const-of-JSON-literal bindings; a true non-literal (call arg) is still refused.
   const nonlit = extractCasesFromSource(
-    `import assert from "node:assert/strict";\nimport { isLeap } from "../src/leap.js";\nconst y = 1900;\nit("a", () => assert.strictEqual(isLeap(y), false));\n`,
+    `import assert from "node:assert/strict";\nimport { isLeap } from "../src/leap.js";\nit("a", () => assert.strictEqual(isLeap(Date.now()), false));\n`,
     "t.js",
   );
   assert.deepEqual(nonlit, { ok: false, code: "OOP_CASES_NONLITERAL", detail: "assert-nonliteral" });
+  // and the M205 const-lit form is now admitted (was the previous near-miss)
+  const bound = extractCasesFromSource(
+    `import assert from "node:assert/strict";\nimport { isLeap } from "../src/leap.js";\nconst y = 1900;\nit("a", () => assert.strictEqual(isLeap(y), false));\n`,
+    "t.js",
+  );
+  assert.equal(bound.ok, true);
   const empty = extractCasesFromSource(`export const x = 1;\n`, "t.js");
   assert.deepEqual(empty, { ok: false, code: "OOP_CASES_EMPTY" });
 });

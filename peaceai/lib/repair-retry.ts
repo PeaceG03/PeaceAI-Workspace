@@ -1,8 +1,8 @@
-// repair-retry-v1 (M203, batch 39; spec/repair-retry-v1.md). EXPERIMENTAL, opt-in, NOT the default, NOT for credit.
-// When the loop's first attempt fails verification, the next attempt may be proposed from verifier-v1's per-case
-// evidence (expected vs the value the candidate returned, or its error name) of ONE run, and retried, up to
-// RETRY_MAX_ATTEMPTS attempts in all. Allowed only under VERDICT_MODE oop-v1 (refused in any in-process mode). Every
-// attempt is judged by verifier-v1 on its own run alone; a prediction made here is never a verdict.
+// repair-retry-v1 (M203, batch 39; M208 batch 44; M209 batch 45; spec/repair-retry-v1.md). EXPERIMENTAL, opt-in, NOT the
+// default, NOT for credit. When the loop's first attempt fails verification, the next attempt may be proposed from
+// verifier-v1's per-case evidence (expected vs the value the candidate returned, or its error name) of ONE run, and
+// retried, up to RETRY_MAX_ATTEMPTS attempts in all. Allowed only under VERDICT_MODE oop-v1 (refused in any in-process
+// mode). Every attempt is judged by verifier-v1 on its own run alone; a prediction made here is never a verdict.
 // Pure functions: nothing here runs code under test.
 import { createHash } from "node:crypto";
 import ts from "typescript";
@@ -147,19 +147,25 @@ export function retrySourceClass(orig: string, next: string): "rr-in-function" |
   if (b.length === a.length + 1) {
     // the one added statement: the first index whose removal leaves at most one statement differing from the original
     const aText = new Set(a.map((s) => text(s, sa)));
-    let pick = -1;
-    for (let k = 0; k < b.length && pick < 0; k++) {
+    const topNames = new Set<string>();
+    for (const s of a) { if ((ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s)) && s.name) topNames.add(s.name.text); if (ts.isVariableStatement(s)) for (const d of s.declarationList.declarations) if (ts.isIdentifier(d.name)) topNames.add(d.name.text); }
+    const valid: number[] = [];
+    for (let k = 0; k < b.length; k++) {
       if (aText.has(text(b[k]!, sb))) continue;
       const rest = [...b.slice(0, k), ...b.slice(k + 1)];
-      if (rest.filter((s, i) => text(s, sb) !== text(a[i]!, sa)).length <= 1) pick = k;
+      if (rest.filter((s, i) => text(s, sb) !== text(a[i]!, sa)).length <= 1) valid.push(k);
     }
-    if (pick < 0) return "rr-top-level-count";
+    if (valid.length === 0) return "rr-top-level-count";
+    // M208: when the changed function and the helper are adjacent either placement is a valid "added" statement; the
+    // added one is the function declaration with a NEW top-level name (the changed function keeps its existing name)
+    let pick = valid[0]!;
+    const fresh = valid.find((k) => { const x = b[k]!; return ts.isFunctionDeclaration(x) && !!x.name && !topNames.has(x.name.text); });
+    if (fresh !== undefined) pick = fresh; // m208-guard:class-helper-pick
     const h = b[pick]!;
     if (!ts.isFunctionDeclaration(h) || !h.name || !h.body) return "rr-helper-shape"; // m203-guard:class-helper-fn
     if ((ts.getModifiers(h) ?? []).length || (ts.canHaveDecorators(h) && (ts.getDecorators(h)?.length ?? 0) > 0) || h.asteriskToken) return "rr-helper-modifier"; // m203-guard:class-helper-private
-    const topNames = new Set<string>();
-    for (const s of a) { if ((ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s)) && s.name) topNames.add(s.name.text); if (ts.isVariableStatement(s)) for (const d of s.declarationList.declarations) if (ts.isIdentifier(d.name)) topNames.add(d.name.text); }
     if (topNames.has(h.name.text)) return "rr-helper-name"; // m203-guard:class-helper-name
+    if (counts(orig).has(h.name.text)) return "rr-helper-shadow"; // m208-guard:class-helper-shadow
     helper = h;
     bb = [...b.slice(0, pick), ...b.slice(pick + 1)];
   }
@@ -290,15 +296,314 @@ export function applyTransform(src: string, fn: string, t: Transform): string | 
   return out;
 }
 
+// ---- M208 (batch 44): a bounded private helper, when the fix is logic shared by every return of the function
+
+/** The pinned transform kinds, by the TS type of the value they read and write (for the helper's signature). */
+const KIND: Readonly<Record<string, string>> = Object.freeze({ round: "number", floor: "number", ceil: "number", trunc: "number", trim: "string", lower: "string", upper: "string", not: "boolean" });
+/**
+ * Which ordered pair of two different pinned transforms (first t1, then t2) maps EVERY case of this one run on the
+ * function to its expected value, when no single transform does. Same rules as fitTransform: one run, at least one
+ * failing case, no error, failing cases on one function, value expectations only. A prediction, never a verdict.
+ */
+export function fitPair(ev: RetryEvidence): { pair: readonly [Transform, Transform]; fn: string } | { refuse: string } {
+  const one = fitTransform(ev);
+  if (!("refuse" in one)) return { refuse: "single-fits" }; // m208-guard:pair-single-first
+  if (one.refuse !== "no-fit") return { refuse: one.refuse }; // m208-guard:pair-one-run
+  const fn = ev.cases.find((c) => !c.pass)!.fn;
+  for (const t1 of RETRY_TRANSFORMS) for (const t2 of RETRY_TRANSFORMS) {
+    if (t1 === t2 || KIND[t1.name] !== KIND[t2.name]) continue;
+    let fits = true;
+    for (const c of ev.cases) {
+      if (c.fn !== fn) continue;
+      if (!c.expect.ok || c.expect.negate || c.expect.any) { fits = false; break; } // value expectations only (as M204)
+      const from = c.pass ? { ok: true as const, value: c.expect.value } : c.got;
+      if (!from || !from.ok) { fits = false; break; }
+      const a = t1.f(from.value);
+      const b = a.ok ? t2.f(a.v) : a;
+      if (!b.ok || !valuesEqual(b.v, c.expect.value)) { fits = false; break; } // m208-guard:pair-all
+    }
+    if (fits) return { pair: [t1, t2] as const, fn };
+  }
+  return { refuse: "no-fit" };
+}
+/** A helper name that no word of `src` already uses (so it shadows nothing, top-level or inner). */
+export function freshHelperName(src: string): string {
+  const used = counts(src);
+  let n = "rrShared", k = 1;
+  while (used.has(n)) n = `rrShared${++k}`; // m208-guard:helper-fresh
+  return n;
+}
+/**
+ * `src` with ONE added private helper `function rrShared(v: T): T { return t2(t1(v)); }` placed right after function
+ * `fn`, and every value `fn` returns (its own returns only) passed through it. Emitted only if the result is inside
+ * rr-in-function-v1 as class "rr-helper" (else null): the proposer never offers an edit its own gate would refuse.
+ */
+export function applyHelper(src: string, fn: string, pair: readonly [Transform, Transform]): string | null {
+  const sf = parse(src);
+  if (!sf) return null;
+  let shape: FnShape | null = null;
+  for (const st of sf.statements) { const s = fnShape(st, sf); if (s && s.name === fn) { shape = s; break; } }
+  if (!shape) return null;
+  const name = freshHelperName(src), ty = KIND[pair[0].name]!;
+  const call: Transform = { name: "helper", wrap: (e: string) => `${name}(${e})`, f: () => ({ ok: false }) };
+  const wrapped = applyTransform(src, fn, call);
+  if (wrapped === null) return null;
+  const end = shape.node.end + (wrapped.length - src.length); // the function grew by the wraps; it ends there now
+  const out = wrapped.slice(0, end) + `\n\nfunction ${name}(v: ${ty}): ${ty} {\n  return ${pair[1].wrap(pair[0].wrap("v"))};\n}` + wrapped.slice(end);
+  if (retrySourceClass(src, out) !== "rr-helper") return null; // m208-guard:helper-class
+  return out;
+}
+
+
+// ---- M209 (batch 45): constant and guarded-branch fixes (after single; before/with pair in a fixed order)
+
+/** Source text of a number or string value as a TypeScript literal, or null if it is not a finite number / string. */
+export function litText(v: unknown): string | null {
+  if (typeof v === "number" && Number.isFinite(v)) return Object.is(v, -0) ? "-0" : String(v); // m209-guard:lit-text-num
+  if (typeof v === "string") return JSON.stringify(v); // m209-guard:lit-text-str
+  return null;
+}
+interface LitHit { start: number; end: number; value: unknown; text: string }
+/** Number / string literals in function `fn`'s own body (not a nested function's), or null if `fn` is missing. */
+export function literalsInFn(src: string, fn: string): LitHit[] | null {
+  const sf = parse(src);
+  if (!sf) return null;
+  let shape: FnShape | null = null;
+  for (const st of sf.statements) { const s = fnShape(st, sf); if (s && s.name === fn) { shape = s; break; } }
+  if (!shape) return null;
+  const out: LitHit[] = [];
+  const visit = (x: ts.Node): void => {
+    if (ts.isFunctionLike(x) && x !== shape!.body && x !== shape!.node) return; // nested functions keep their own literals
+    if (ts.isNumericLiteral(x)) {
+      const text = x.getText(sf);
+      const value = Number(text);
+      if (Number.isFinite(value)) out.push({ start: x.getStart(sf), end: x.end, value, text });
+    } else if (ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x)) {
+      out.push({ start: x.getStart(sf), end: x.end, value: x.text, text: x.getText(sf) });
+    }
+    ts.forEachChild(x, visit);
+  };
+  visit(shape.body);
+  return out;
+}
+/** Parameter names of top-level function `fn`, or null. */
+function paramsOf(src: string, fn: string): string[] | null {
+  const sf = parse(src);
+  if (!sf) return null;
+  for (const st of sf.statements) {
+    const s = fnShape(st, sf);
+    if (!s || s.name !== fn) continue;
+    const n = s.node;
+    let params: ts.NodeArray<ts.ParameterDeclaration>;
+    if (ts.isFunctionDeclaration(n) && n.parameters) params = n.parameters;
+    else if (ts.isVariableStatement(n)) {
+      const init = n.declarationList.declarations[0]!.initializer!;
+      params = (init as ts.ArrowFunction | ts.FunctionExpression).parameters;
+    } else return null;
+    const names: string[] = [];
+    for (const p of params) {
+      if (!ts.isIdentifier(p.name)) return null; // only plain identifiers: no destructuring in the predicate target
+      names.push(p.name.text);
+    }
+    return names;
+  }
+  return null;
+}
+
+/**
+ * Which single number/string literal in function `fn` to replace so EVERY case of this one run fits, when no single
+ * pinned transform does. Evidence rule (no execution): every failing case returned the same value V (a finite number or
+ * a string) and expects the same value W ≠ V of the same kind; no passing case expects V; `fn`'s body contains at least
+ * one number/string literal equal to V. A prediction, never a verdict.
+ */
+export function fitConstant(ev: RetryEvidence, src: string): { from: unknown; to: unknown; fn: string } | { refuse: string } {
+  const one = fitTransform(ev);
+  if (!("refuse" in one)) return { refuse: "single-fits" }; // m209-guard:const-single-first
+  if (one.refuse !== "no-fit") return { refuse: one.refuse }; // m209-guard:const-one-run
+  const failing = ev.cases.filter((c) => !c.pass);
+  const fn = failing[0]!.fn;
+  for (const c of ev.cases) {
+    if (c.fn !== fn) continue;
+    if (!c.expect.ok || c.expect.negate || c.expect.any) return { refuse: "no-fit" };
+    if (!c.pass && (!c.got || !c.got.ok)) return { refuse: "no-fit" };
+  }
+  const froms = failing.map((c) => (c.got as { ok: true; value: unknown }).value);
+  const V = froms[0];
+  if (typeof V !== "number" && typeof V !== "string") return { refuse: "no-fit" };
+  if (typeof V === "number" && !Number.isFinite(V)) return { refuse: "no-fit" };
+  if (!froms.every((v) => valuesEqual(v, V))) return { refuse: "two-literals" }; // m209-guard:const-one-value
+  const tos = failing.map((c) => (c.expect as { ok: true; value?: unknown }).value);
+  const W = tos[0];
+  if (typeof W !== typeof V || valuesEqual(W, V)) return { refuse: "no-fit" };
+  if (typeof W === "number" && !Number.isFinite(W)) return { refuse: "no-fit" };
+  if (!tos.every((v) => valuesEqual(v, W))) return { refuse: "no-fit" };
+  for (const c of ev.cases) {
+    if (c.fn !== fn || !c.pass) continue;
+    if (valuesEqual((c.expect as { ok: true; value?: unknown }).value, V)) return { refuse: "no-fit" }; // m209-guard:const-pass
+  }
+  const lits = literalsInFn(src, fn);
+  if (!lits || !lits.some((l) => valuesEqual(l.value, V))) return { refuse: "no-lit" }; // m209-guard:const-lit
+  if (litText(W) === null) return { refuse: "no-fit" };
+  return { from: V, to: W as string | number, fn };
+}
+/**
+ * `src` with every number/string literal equal to `from` inside function `fn`'s own body replaced by the literal form
+ * of `to`. Emitted only if the result is inside rr-in-function-v1 as "rr-in-function" (else null).
+ */
+export function applyConstant(src: string, fn: string, from: unknown, to: unknown): string | null {
+  const lits = literalsInFn(src, fn);
+  const rep = litText(to);
+  if (!lits || rep === null) return null;
+  const hits = lits.filter((l) => valuesEqual(l.value, from));
+  if (hits.length === 0) return null;
+  let out = src;
+  for (const h of [...hits].sort((a, b) => b.start - a.start)) out = out.slice(0, h.start) + rep + out.slice(h.end);
+  if (retrySourceClass(src, out) !== "rr-in-function") return null; // m209-guard:const-class
+  return out;
+}
+
+export type RetryPred =
+  | { readonly kind: "typeof"; readonly param: string; readonly type: string; readonly code: string }
+  | { readonly kind: "eq" | "lt" | "gt"; readonly param: string; readonly lit: unknown; readonly code: string };
+
+const ID_TRANSFORM: Transform = { name: "id", wrap: (e: string) => e, f: (v: unknown) => ({ ok: true, v }) };
+const BRANCH_TRANSFORMS: readonly Transform[] = Object.freeze([...RETRY_TRANSFORMS, ID_TRANSFORM]);
+
+function groupFits(cases: readonly EvidenceCase[], t: Transform): boolean {
+  for (const c of cases) {
+    if (!c.expect.ok || c.expect.negate || c.expect.any) return false;
+    const from = c.pass ? { ok: true as const, value: c.expect.value } : c.got;
+    if (!from || !from.ok) return false;
+    const out = t.f(from.value);
+    if (!out.ok || !valuesEqual(out.v, c.expect.value)) return false;
+  }
+  return true;
+}
+function argAt(c: EvidenceCase, i: number): unknown {
+  return c.args[i];
+}
+function typeofName(v: unknown): string {
+  if (v === null) return "object";
+  return typeof v;
+}
+
+/**
+ * Which one-argument predicate plus two transforms (then / else) split this run's cases into exactly two groups that
+ * each fit one transform, when no single transform does. Predicates, in this pinned order per parameter left-to-right:
+ * typeof === a type observed on that argument in the cases; === / < / > a literal taken from that argument in the
+ * cases. A three-way split, a predicate on two arguments, or a literal not present in the cases is refused. A
+ * prediction, never a verdict.
+ */
+export function fitBranch(ev: RetryEvidence, src: string): { pred: RetryPred; tThen: Transform; tElse: Transform; fn: string } | { refuse: string } {
+  const one = fitTransform(ev);
+  if (!("refuse" in one)) return { refuse: "single-fits" }; // m209-guard:branch-single-first
+  if (one.refuse !== "no-fit") return { refuse: one.refuse }; // m209-guard:branch-one-run
+  const failing = ev.cases.filter((c) => !c.pass);
+  const fn = failing[0]!.fn;
+  const onFn = ev.cases.filter((c) => c.fn === fn);
+  for (const c of onFn) {
+    if (!c.expect.ok || c.expect.negate || c.expect.any) return { refuse: "no-fit" };
+    if (!c.pass && (!c.got || !c.got.ok)) return { refuse: "no-fit" };
+  }
+  const params = paramsOf(src, fn);
+  if (!params || params.length === 0) return { refuse: "no-fit" };
+  let sawThree = false;
+  for (let i = 0; i < params.length; i++) {
+    const p = params[i]!;
+    const observedTypes = [...new Set(onFn.map((c) => typeofName(argAt(c, i))))];
+    if (observedTypes.length >= 3) { sawThree = true; continue; } // m209-guard:branch-two-groups
+    const tryPred = (pred: RetryPred): { pred: RetryPred; tThen: Transform; tElse: Transform; fn: string } | null => {
+      const yes = onFn.filter((c) => evalPred(pred, argAt(c, i)));
+      const no = onFn.filter((c) => !evalPred(pred, argAt(c, i)));
+      // both sides need at least two cases: a one-case ===/comparison is just memorising that input (m203 leap overfit)
+      if (yes.length < 2 || no.length < 2) return null; // m209-guard:branch-two-each
+      for (const tThen of BRANCH_TRANSFORMS) {
+        if (!groupFits(yes, tThen)) continue;
+        for (const tElse of BRANCH_TRANSFORMS) {
+          if (!groupFits(no, tElse)) continue;
+          if (tThen.name === "id" && tElse.name === "id") continue;
+          return { pred, tThen, tElse, fn };
+        }
+      }
+      return null;
+    };
+    for (const ty of observedTypes) {
+      if (!["string", "number", "boolean", "object", "undefined"].includes(ty)) continue;
+      const hit = tryPred({ kind: "typeof", param: p, type: ty, code: `typeof ${p} === ${JSON.stringify(ty)}` });
+      if (hit) return hit; // m209-guard:branch-typeof
+    }
+    const lits: unknown[] = [];
+    for (const c of onFn) {
+      const v = argAt(c, i);
+      if ((typeof v === "number" && Number.isFinite(v)) || typeof v === "string" || typeof v === "boolean") {
+        if (!lits.some((x) => valuesEqual(x, v))) lits.push(v);
+      }
+    }
+    for (const lit of lits) {
+      const lt = litText(lit) ?? (typeof lit === "boolean" ? String(lit) : null);
+      if (lt === null) continue;
+      const hit = tryPred({ kind: "eq", param: p, lit, code: `${p} === ${lt}` });
+      if (hit) return hit; // m209-guard:branch-eq
+    }
+    for (const lit of lits) {
+      if (typeof lit !== "number") continue;
+      const lt = litText(lit);
+      if (lt === null) continue;
+      for (const kind of ["lt", "gt"] as const) {
+        const code = kind === "lt" ? `${p} < ${lt}` : `${p} > ${lt}`;
+        const hit = tryPred({ kind, param: p, lit, code });
+        if (hit) return hit; // m209-guard:branch-cmp
+      }
+    }
+  }
+  return { refuse: sawThree ? "three-way" : "no-fit" };
+}
+function evalPred(pred: RetryPred, v: unknown): boolean {
+  if (pred.kind === "typeof") return typeofName(v) === pred.type;
+  if (pred.kind === "eq") return valuesEqual(v, pred.lit);
+  if (typeof v !== "number" || typeof pred.lit !== "number") return false;
+  return pred.kind === "lt" ? v < pred.lit : v > pred.lit;
+}
+/**
+ * `src` with every value function `fn` returns wrapped as `pred ? tThen(e) : tElse(e)`. Emitted only if the result is
+ * inside rr-in-function-v1 as "rr-in-function" (else null).
+ */
+export function applyBranch(src: string, fn: string, pred: RetryPred, tThen: Transform, tElse: Transform): string | null {
+  const sf = parse(src);
+  if (!sf) return null;
+  let shape: FnShape | null = null;
+  for (const st of sf.statements) { const s = fnShape(st, sf); if (s && s.name === fn) { shape = s; break; } }
+  if (!shape) return null;
+  const spans: [number, number][] = [];
+  if (!ts.isBlock(shape.body)) spans.push([shape.body.getStart(sf), shape.body.end]);
+  else {
+    const visit = (x: ts.Node): void => {
+      if (ts.isFunctionLike(x)) return;
+      if (ts.isReturnStatement(x)) { if (!x.expression) { spans.length = 0; spans.push([-1, -1]); return; } spans.push([x.expression.getStart(sf), x.expression.end]); }
+      ts.forEachChild(x, visit);
+    };
+    ts.forEachChild(shape.body, visit);
+  }
+  if (spans.length === 0 || spans.some(([s]) => s < 0)) return null;
+  let out = src;
+  for (const [s, e] of spans.sort((x, y) => y[0] - x[0])) {
+    const expr = out.slice(s, e);
+    out = out.slice(0, s) + `(${pred.code} ? ${tThen.wrap(expr)} : ${tElse.wrap(expr)})` + out.slice(e);
+  }
+  if (retrySourceClass(src, out) !== "rr-in-function") return null; // m209-guard:branch-class
+  return out;
+}
+
 /** ProposeInput as the loop gives it under repair-retry-v1: each feedback entry carries its own run's evidence. */
 export type RetryFeedback = Feedback & { evidence?: RetryEvidence };
 export type RetryProposeInput = ProposeInput & { feedback: readonly RetryFeedback[]; retryBaseline?: RetryEvidence | null };
 
 /**
- * repair-retry-v1's proposer: attempt 1 is `base` (e.g. repair-v2) unchanged. A later attempt first tries an output
- * transform fitted to ONE run's evidence (the last attempt's own run, applied to that attempt's code; else the baseline
- * run, applied to the original code), never a mix; if none fits it asks `base` again, which sees only its own attempts
- * (renumbered), as if run alone. Stops on a tampered or leftover run. Its predictions are never a verdict.
+ * repair-retry-v1's proposer: attempt 1 is `base` (e.g. repair-v2) unchanged. A later attempt first tries, on ONE run's
+ * evidence (the last attempt's own run on that attempt's code; else the baseline on the original), in this pinned order:
+ * a single output transform; a one-literal constant fix (M209); a pair helper (M208); a guarded branch (M209). Never a
+ * mix of runs. If none fits it asks `base` again, which sees only its own attempts (renumbered), as if run alone. Stops
+ * on a tampered or leftover run. Its predictions are never a verdict. Cap RETRY_MAX_ATTEMPTS = 3.
  */
 export function retryProposer(base: Proposer): Proposer & { readonly transforms: string[] } {
   const mine = new Map<number, Edit[]>(); // attempt -> edits proposed
@@ -328,17 +633,31 @@ export function retryProposer(base: Proposer): Proposer & { readonly transforms:
       for (const r of runs) {
         if (!r.ev) continue;
         const fit = fitTransform(r.ev);
-        if ("refuse" in fit) continue;
         const src = r.code(r.ev.module);
         if (src === undefined) continue;
-        const next = applyTransform(src, fit.fn, fit.transform);
+        let next: string | null = null, what = "";
+        if (!("refuse" in fit)) { next = applyTransform(src, fit.fn, fit.transform); what = fit.transform.name; }
+        else {
+          // M209 pinned order after a single transform refuses: constant, then pair (M208), then guarded branch.
+          const cf = fitConstant(r.ev, src);
+          if (!("refuse" in cf)) { next = applyConstant(src, cf.fn, cf.from, cf.to); what = `const(${JSON.stringify(cf.from)}->${JSON.stringify(cf.to)})`; }
+          else {
+            const pf = fitPair(r.ev);
+            if (!("refuse" in pf)) { next = applyHelper(src, pf.fn, pf.pair); what = `helper(${pf.pair[0].name}+${pf.pair[1].name})`; }
+            else {
+              const bf = fitBranch(r.ev, src);
+              if ("refuse" in bf) continue;
+              next = applyBranch(src, bf.fn, bf.pred, bf.tThen, bf.tElse); what = `branch(${bf.pred.kind}:${bf.tThen.name}/${bf.tElse.name})`; // m209-guard:prop-order
+            }
+          }
+        }
         if (next === null || next === src) continue;
         const edits = [{ path: r.ev.module, content: next }];
         const key = retryRunLabel(0, edits);
         if (tried.has(key)) continue;
         tried.add(key);
         mine.set(input.attempt, edits);
-        transforms.push(`${input.attempt}:${fit.transform.name}@${r.ev.run.split(":")[0]}`);
+        transforms.push(`${input.attempt}:${what}@${r.ev.run.split(":")[0]}`);
         return { edits };
       }
       return askBase();
