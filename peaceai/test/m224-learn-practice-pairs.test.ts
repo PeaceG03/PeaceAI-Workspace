@@ -13,8 +13,9 @@ import type { SkillTree } from "../lib/learntree.ts";
 import { buildLearnPairs, readLearnPairs, writeLearnPairs } from "../lib/learnpairs.ts";
 import { RETRY_MAX_ATTEMPTS } from "../lib/repair-retry.ts";
 import {
-  gapRows, heldOutSha, insideRepo, leafStatus, mergeNeedsTeaching, practiceProgram, practiceSealOk,
-  programName, recheckPractice, scoreHeldOut, shouldDemote, splitProblems, withParentStatus,
+  gapRows, hasSymlinkComponent, heldOutSha, insideRepo, leafStatus, LearnRefuse, mergeNeedsTeaching,
+  practiceProgram, practiceSealOk, programName, recheckPractice, safeWriteFile, scoreHeldOut,
+  shouldDemote, splitProblems, withParentStatus,
   type NodeResult, type PracticeProblem, type PracticeRun,
 } from "../lib/learnpractice.ts";
 
@@ -310,6 +311,19 @@ test("learn-practice refuses writes inside the target, including a symlink", () 
     const via = join(out, "via");
     symlinkSync(repo, via);
     assert.equal(insideRepo(repo, join(via, "nested")), true);
+    const outside = mkdtempSync(join(tmpdir(), "peaceai-outside-link-"));
+    const mid = join(out, "mid");
+    symlinkSync(join(repo, "src"), mid);
+    assert.equal(hasSymlinkComponent(join(mid, "new.txt")), true);
+    assert.throws(() => safeWriteFile(repo, join(mid, "new.txt"), "pwn"), (e: unknown) => e instanceof LearnRefuse && e.code === "WRITE_IN_TARGET");
+    assert.equal(existsSync(join(repo, "src/new.txt")), false);
+    const broken = join(out, "broken");
+    symlinkSync(join(repo, "missing-dir"), broken);
+    assert.throws(() => safeWriteFile(repo, join(broken, "new.txt"), "pwn"), (e: unknown) => e instanceof LearnRefuse && e.code === "WRITE_IN_TARGET");
+    symlinkSync(outside, join(out, "elsewhere"));
+    assert.throws(() => safeWriteFile(repo, join(out, "elsewhere", "note.txt"), "nope"), (e: unknown) => e instanceof LearnRefuse && e.code === "WRITE_IN_TARGET");
+    assert.equal(existsSync(join(outside, "note.txt")), false);
+    rmSync(outside, { recursive: true, force: true });
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(out, { recursive: true, force: true });
@@ -346,11 +360,26 @@ test("recheck demotes a learned leaf and its ancestors only from a real new samp
     mkdirSync(join(empty, "src"));
     writeFileSync(join(empty, "src/box.ts"), "export const marker = 1;\n");
     const leafId = "fn:src/box.ts:score";
-    const heldProblem = problem({ id: "old-held", set: "heldout", nodeId: leafId, kind: "old" });
+    const heldSentinel = "HELD_OUT_SENTINEL_m224_do_not_train";
+    const heldProblem = problem({
+      id: "old-held", set: "heldout", nodeId: leafId, kind: "old",
+      test: `test("held", () => { assert.equal(1, 1); }); // ${heldSentinel}\n`,
+      broken: `export function score(n: number): number {\n  return n - 9; // ${heldSentinel}\n}\n`,
+    });
+    const cleanDev = problem({
+      id: "clean-dev", set: "dev", kind: "clean-dev", nodeId: leafId, solved: true, verified: true,
+      broken: "export function score(n: number): number {\n  return n + 0;\n}\n",
+      test: "test(\"clean dev\", () => { assert.equal(score(1), 2); });\n",
+    });
+    const launder = problem({
+      id: "launder", set: "dev", kind: "launder", nodeId: leafId, solved: true, verified: true,
+      sourcePath: "src/other.ts", broken: heldProblem.broken, original: heldProblem.original, fixed: heldProblem.original,
+      test: "test(\"copy\", () => { assert.equal(1, 1); });\n",
+    });
     const prior: PracticeRun = {
       schema: "peaceai-learn-practice:v1", experimental: true, credit: false, seed: 1,
       minutesUsed: 0, attemptsUsed: 3, maxMinutes: 30, maxAttemptsTotal: 200, history: "OFF",
-      budgetStopped: false, sealedBeforeAttempts: true, problems: [heldProblem], rechecks: [],
+      budgetStopped: false, sealedBeforeAttempts: true, problems: [heldProblem, cleanDev, launder], rechecks: [],
       nodes: [
         node({ nodeId: "root", size: "split", parent: null, status: "LEARNED", depth: 0 }),
         node({ nodeId: "mid", size: "split", parent: "root", status: "LEARNED", depth: 1 }),
@@ -381,6 +410,12 @@ test("recheck demotes a learned leaf and its ancestors only from a real new samp
     assert.notEqual(again.nodes.find((n) => n.nodeId === "root")!.status, "LEARNED");
     assert.ok(again.rechecks[0]!.ancestors.includes("mid"));
     assert.ok(again.rechecks[0]!.ancestors.includes("root"));
+    const pairs = buildLearnPairs(again, "recheck");
+    assert.equal(pairs.credit, false);
+    assert.ok(pairs.dropped.nearDuplicate >= 1);
+    assert.ok(pairs.docs.every((d) => !d.text.includes(heldSentinel) && !d.text.includes(heldProblem.test) && !d.text.includes(heldProblem.broken)));
+    assert.ok(pairs.docs.some((d) => d.text.includes("clean dev")));
+    assert.equal(pairs.docs.some((d) => d.path === "src/other.ts"), false);
 
     const stayed = recheckPractice(prior, { tree: only, map: map(), repoPath: empty, seed: 1, now: frozen, today: "2026-11-07" });
     assert.equal(stayed.rechecks[0]!.demoted, false);

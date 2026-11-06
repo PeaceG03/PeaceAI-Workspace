@@ -153,6 +153,22 @@ function existingAncestor(path: string): { base: string; rest: string[] } {
   return { base: cur, rest: rest.reverse() };
 }
 
+/** True when an existing component of `target` is a symlink. Writes must not follow one. */
+export function hasSymlinkComponent(target: string): boolean {
+  const parts = resolve(target).split(sep).filter((p) => p.length > 0);
+  let cur: string = sep;
+  for (const part of parts) {
+    cur = join(cur, part);
+    try {
+      if (lstatSync(cur).isSymbolicLink()) return true;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw e;
+    }
+  }
+  return false;
+}
+
 /** True when `target` is `root` or a path inside it (symlink-safe), same rule as learn.ts. */
 export function insideRepo(root: string, target: string): boolean {
   const repo = realpathSafe(resolve(root));
@@ -167,18 +183,17 @@ function realpathSafe(p: string): string {
   return existsSync(p) ? realpathSync(p) : p;
 }
 
-/** Create `dir` and refuse when it, or a symlink along it, resolves inside `repo`. */
+/** Create `dir` and refuse when it resolves inside `repo` or a path component is a symlink. */
 export function prepareOutDir(repo: string, dir: string): void {
-  if (insideRepo(repo, dir)) throw new LearnRefuse("WRITE_IN_TARGET");
+  if (insideRepo(repo, dir) || hasSymlinkComponent(dir)) throw new LearnRefuse("WRITE_IN_TARGET");
   mkdirSync(dir, { recursive: true });
-  if (insideRepo(repo, dir)) throw new LearnRefuse("WRITE_IN_TARGET");
-  if (lstatSync(dir).isSymbolicLink()) throw new LearnRefuse("WRITE_IN_TARGET");
+  if (insideRepo(repo, dir) || hasSymlinkComponent(dir) || lstatSync(dir).isSymbolicLink()) throw new LearnRefuse("WRITE_IN_TARGET");
 }
 
-/** Write `file` without following a final symlink. Refuses a path that resolves inside `repo`. */
+/** Write `file` without following a symlink component. Refuses a path that resolves inside `repo`. */
 export function safeWriteFile(repo: string, file: string, data: string): void {
   const full = resolve(file);
-  if (insideRepo(repo, full) || insideRepo(repo, dirname(full))) throw new LearnRefuse("WRITE_IN_TARGET");
+  if (insideRepo(repo, full) || insideRepo(repo, dirname(full)) || hasSymlinkComponent(full)) throw new LearnRefuse("WRITE_IN_TARGET");
   prepareOutDir(repo, dirname(full));
   try {
     if (lstatSync(full).isSymbolicLink()) throw new LearnRefuse("WRITE_IN_TARGET");
