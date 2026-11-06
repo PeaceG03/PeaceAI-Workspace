@@ -597,7 +597,8 @@ export function applyBranch(src: string, fn: string, pred: RetryPred, tThen: Tra
 
 // ---- M210 (batch 46) + M211 (batch 47): wrong-argument call-site fix (after single / constant / pair / branch)
 // M210: same-file select helpers (`return <param>`). M211: same-file projection helpers whose body is exactly one
-// closed-catalog unary transform of a parameter (`return Math.floor(a)`, `(s).trim()`, `!(b)`, ...). Both predict without
+// closed-catalog unary transform of a parameter (`return Math.floor(a)`, `(s).trim()`, `!(b)`, ...). M213 also admits the
+// same projection shape when the helper is a top-level `const`/`let` arrow or function expression. All predict without
 // running candidate code. Arbitrary non-select bodies stay refused (no closed pure model -> would need execution).
 
 interface ArgHelper { name: string; retIdx: number; paramCount: number; transform: Transform }
@@ -646,36 +647,79 @@ function matchParamTransform(expr: ts.Expression, param: string): Transform | nu
   return null;
 }
 /**
- * Top-level same-file projection helpers: `function h(...){ return <param> | <catalog-transform>(param); }` (export
- * allowed; no other modifier; no generator). Used only to predict a call's return from its arguments without running
- * code. M210's select helpers are the identity case; M211 adds the closed-catalog unary wraps.
+ * Top-level same-file projection helpers (export allowed; no other modifier; no generator; no async):
+ * - `function h(...){ return <param> | <catalog-transform>(param); }` (M210/M211)
+ * - `[export] const|let h = (p) => <expr>` expression or block body, or `= function (p) { return <expr>; }` (M213)
+ * Used only to predict a call's return from its arguments without running code. M210's select helpers are the identity
+ * case; M211 adds the closed-catalog unary wraps; M213 adds const/arrow/function-expression declaration forms of the
+ * same projection shape. Arbitrary non-select bodies and non-literal wrong args stay refused.
  */
+function matchArgHelper(name: string, parameters: readonly ts.ParameterDeclaration[], expr: ts.Expression): ArgHelper | null {
+  const params: string[] = [];
+  for (const p of parameters) {
+    if (!ts.isIdentifier(p.name)) return null;
+    params.push(p.name.text);
+  }
+  if (params.length === 0) return null;
+  let matched: { retIdx: number; transform: Transform } | null = null;
+  for (let i = 0; i < params.length; i++) {
+    const t = matchParamTransform(expr, params[i]!);
+    if (t) { matched = { retIdx: i, transform: t }; break; } // m211-guard:helper-proj
+  }
+  if (!matched) return null;
+  return { name, retIdx: matched.retIdx, paramCount: params.length, transform: matched.transform };
+}
 export function argHelpers(src: string): ArgHelper[] {
   const sf = parse(src);
   if (!sf) return [];
   const out: ArgHelper[] = [];
   for (const st of sf.statements) {
-    if (!ts.isFunctionDeclaration(st) || !st.name || !st.body) continue;
-    if (st.asteriskToken) continue;
+    if (ts.isFunctionDeclaration(st) && st.name && st.body) {
+      if (st.asteriskToken) continue;
+      const mods = ts.getModifiers(st) ?? [];
+      if (mods.some((m) => m.kind !== ts.SyntaxKind.ExportKeyword)) continue; // m210-guard:helper-plain
+      const stmts = st.body.statements;
+      if (stmts.length !== 1) continue; // m210-guard:helper-select
+      if (!ts.isReturnStatement(stmts[0]!) || !stmts[0]!.expression) continue;
+      const h = matchArgHelper(st.name.text, st.parameters, stmts[0]!.expression!);
+      if (h) out.push(h);
+      continue;
+    }
+    // M213: const/let arrow or function-expression forms of the same projection shape
+    if (!ts.isVariableStatement(st) || st.declarationList.declarations.length !== 1) continue;
     const mods = ts.getModifiers(st) ?? [];
-    if (mods.some((m) => m.kind !== ts.SyntaxKind.ExportKeyword)) continue; // m210-guard:helper-plain
-    const params: string[] = [];
-    let ok = true;
-    for (const p of st.parameters) {
-      if (!ts.isIdentifier(p.name)) { ok = false; break; }
-      params.push(p.name.text);
-    }
-    if (!ok || params.length === 0) continue;
-    const stmts = st.body.statements;
-    if (stmts.length !== 1) continue; // m210-guard:helper-select
-    if (!ts.isReturnStatement(stmts[0]!) || !stmts[0]!.expression) continue;
-    let matched: { retIdx: number; transform: Transform } | null = null;
-    for (let i = 0; i < params.length; i++) {
-      const t = matchParamTransform(stmts[0]!.expression!, params[i]!);
-      if (t) { matched = { retIdx: i, transform: t }; break; } // m211-guard:helper-proj
-    }
-    if (!matched) continue;
-    out.push({ name: st.name.text, retIdx: matched.retIdx, paramCount: params.length, transform: matched.transform });
+    if (mods.some((m) => m.kind !== ts.SyntaxKind.ExportKeyword)) continue; // m213-guard:helper-plain
+    const d = st.declarationList.declarations[0]!;
+    if (!ts.isIdentifier(d.name) || !d.initializer) continue;
+    const init = d.initializer;
+    let expr: ts.Expression | null = null;
+    let parameters: readonly ts.ParameterDeclaration[] | null = null;
+    if (ts.isArrowFunction(init)) {
+      const amods = ts.getModifiers(init) ?? [];
+      if (amods.length > 0) continue; // m213-guard:helper-noasync
+      parameters = init.parameters;
+      if (ts.isBlock(init.body)) {
+        const stmts = init.body.statements;
+        if (stmts.length !== 1) continue; // m213-guard:helper-block
+        if (!ts.isReturnStatement(stmts[0]!) || !stmts[0]!.expression) continue;
+        expr = stmts[0]!.expression;
+      } else {
+        expr = init.body; // m213-guard:helper-arrow
+      }
+    } else if (ts.isFunctionExpression(init)) {
+      if (init.asteriskToken) continue;
+      const amods = ts.getModifiers(init) ?? [];
+      if (amods.length > 0) continue; // refuse async / other modifiers on the expression
+      if (!init.body) continue;
+      parameters = init.parameters;
+      const stmts = init.body.statements;
+      if (stmts.length !== 1) continue;
+      if (!ts.isReturnStatement(stmts[0]!) || !stmts[0]!.expression) continue;
+      expr = stmts[0]!.expression; // m213-guard:helper-fnexpr
+    } else continue;
+    if (!expr || !parameters) continue;
+    const h = matchArgHelper(d.name.text, parameters, expr);
+    if (h) out.push(h);
   }
   return out;
 }
@@ -748,12 +792,13 @@ function predictArg(args: CallHit["args"], retIdx: number, transform: Transform,
 }
 /**
  * Which one call-site literal argument of a same-file projection helper (select, or one closed-catalog unary transform
- * of a parameter) to replace with one of the function's own parameters so EVERY case of this one run fits, when no
- * earlier form (single / constant / pair / branch) is being asked here (the proposer tries those first). Evidence rule
- * (no execution): the helper's body is `return <param>` or `return <catalog-transform>(param)`; the call's argument at
- * that position is a number/string/boolean literal L; replacing L with outer parameter p makes the predicted return
- * equal every case's expected value; and under the current call the predicted return matches what each case returned
- * (so the projection model agrees with the evidence). A prediction, never a verdict.
+ * of a parameter; function declaration or const/arrow/function-expression form, M213) to replace with one of the
+ * function's own parameters so EVERY case of this one run fits, when no earlier form (single / constant / pair /
+ * branch) is being asked here (the proposer tries those first). Evidence rule (no execution): the helper's body is
+ * `return <param>` or `return <catalog-transform>(param)` (or an arrow expression body of that shape); the call's
+ * argument at that position is a number/string/boolean literal L; replacing L with outer parameter p makes the
+ * predicted return equal every case's expected value; and under the current call the predicted return matches what
+ * each case returned (so the projection model agrees with the evidence). A prediction, never a verdict.
  */
 export function fitWrongArg(ev: RetryEvidence, src: string): { fn: string; helper: string; callStart: number; argStart: number; argEnd: number; param: string } | { refuse: string } {
   const one = fitTransform(ev);
@@ -827,7 +872,7 @@ export type RetryProposeInput = ProposeInput & { feedback: readonly RetryFeedbac
  * repair-retry-v1's proposer: attempt 1 is `base` (e.g. repair-v2) unchanged. A later attempt first tries, on ONE run's
  * evidence (the last attempt's own run on that attempt's code; else the baseline on the original), in this pinned order:
  * a single output transform; a one-literal constant fix (M209); a pair helper (M208); a guarded branch (M209); a
- * wrong-argument call-site fix (M210/M211). Never a mix of runs. If none fits it asks `base` again, which sees only its own
+ * wrong-argument call-site fix (M210/M211/M213). Never a mix of runs. If none fits it asks `base` again, which sees only its own
  * attempts (renumbered), as if run alone. Stops on a tampered or leftover run. Its predictions are never a verdict. Cap
  * RETRY_MAX_ATTEMPTS = 3.
  */
@@ -864,7 +909,7 @@ export function retryProposer(base: Proposer): Proposer & { readonly transforms:
         let next: string | null = null, what = "";
         if (!("refuse" in fit)) { next = applyTransform(src, fit.fn, fit.transform); what = fit.transform.name; }
         else {
-          // pinned order after a single transform refuses: constant, pair (M208), guarded branch (M209), wrong-arg (M210/M211).
+          // pinned order after a single transform refuses: constant, pair (M208), guarded branch (M209), wrong-arg (M210/M211/M213).
           const cf = fitConstant(r.ev, src);
           if (!("refuse" in cf)) { next = applyConstant(src, cf.fn, cf.from, cf.to); what = `const(${JSON.stringify(cf.from)}->${JSON.stringify(cf.to)})`; }
           else {
@@ -877,7 +922,7 @@ export function retryProposer(base: Proposer): Proposer & { readonly transforms:
               } else {
                 const wf = fitWrongArg(r.ev, src);
                 if (!("refuse" in wf)) {
-                  next = applyWrongArg(src, wf.fn, wf.callStart, wf.argStart, wf.argEnd, wf.param); what = `arg(${wf.helper}:${wf.param})`; // m210-guard:prop-order // m211-guard:prop-order
+                  next = applyWrongArg(src, wf.fn, wf.callStart, wf.argStart, wf.argEnd, wf.param); what = `arg(${wf.helper}:${wf.param})`; // m210-guard:prop-order // m211-guard:prop-order // m213-guard:prop-order
                 }
               }
             }
