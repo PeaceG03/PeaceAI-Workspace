@@ -1,4 +1,4 @@
-// repair-retry-v1 (M203, batch 39; M208 batch 44; M209 batch 45; spec/repair-retry-v1.md). EXPERIMENTAL, opt-in, NOT the
+// repair-retry-v1 (M203, batch 39; M208 batch 44; M209 batch 45; M210 batch 46; M211 batch 47; spec/repair-retry-v1.md). EXPERIMENTAL, opt-in, NOT the
 // default, NOT for credit. When the loop's first attempt fails verification, the next attempt may be proposed from
 // verifier-v1's per-case evidence (expected vs the value the candidate returned, or its error name) of ONE run, and
 // retried, up to RETRY_MAX_ATTEMPTS attempts in all. Allowed only under VERDICT_MODE oop-v1 (refused in any in-process
@@ -594,6 +594,342 @@ export function applyBranch(src: string, fn: string, pred: RetryPred, tThen: Tra
   return out;
 }
 
+
+// ---- M210 (batch 46) + M211 (batch 47): wrong-argument call-site fix (after single / constant / pair / branch)
+// M210: same-file select helpers (`return <param>`). M211: same-file projection helpers whose body is exactly one
+// closed-catalog unary transform of a parameter (`return Math.floor(a)`, `(s).trim()`, `!(b)`, ...). M213 also admits the
+// same projection shape when the helper is a top-level `const`/`let` arrow or function expression. M215 admits a
+// call-site argument that is itself one closed-catalog wrap of a literal or outer-param. All predict without running
+// candidate code. Arbitrary non-select bodies and non-catalog call-site expressions stay refused.
+
+
+interface ArgHelper { name: string; retIdx: number; paramCount: number; transform: Transform }
+interface SelectHelper { name: string; retIdx: number; paramCount: number }
+/** Unwrap outer parentheses on an expression. */
+function unwrapParen(expr: ts.Expression): ts.Expression {
+  while (ts.isParenthesizedExpression(expr)) expr = expr.expression;
+  return expr;
+}
+/** Look up a closed-catalog unary transform by name (never invents one). */
+function catalogTransform(name: string): Transform | null {
+  return RETRY_TRANSFORMS.find((t) => t.name === name) ?? null; // m211-guard:helper-catalog
+}
+/**
+ * If `expr` is exactly `param`, or a RETRY_TRANSFORMS wrap of `param` (Math.round/floor/ceil/trunc, .trim/.toLowerCase/
+ * .toUpperCase, or !), return that transform (identity for a bare param). Otherwise null. No other shapes.
+ */
+function matchParamTransform(expr: ts.Expression, param: string): Transform | null {
+  expr = unwrapParen(expr);
+  if (ts.isIdentifier(expr) && expr.text === param) return ID_TRANSFORM;
+  // !(param)
+  if (ts.isPrefixUnaryExpression(expr) && expr.operator === ts.SyntaxKind.ExclamationToken) {
+    const inner = unwrapParen(expr.operand);
+    if (ts.isIdentifier(inner) && inner.text === param) return catalogTransform("not");
+    return null;
+  }
+  if (!ts.isCallExpression(expr) || expr.questionDotToken) return null;
+  // Math.round|floor|ceil|trunc(param)
+  if (expr.arguments.length === 1 && ts.isPropertyAccessExpression(expr.expression)
+    && !expr.expression.questionDotToken && ts.isIdentifier(expr.expression.expression)
+    && expr.expression.expression.text === "Math" && ts.isIdentifier(expr.expression.name)) {
+    const inner = unwrapParen(expr.arguments[0]!);
+    if (!ts.isIdentifier(inner) || inner.text !== param) return null;
+    const m = expr.expression.name.text;
+    if (m === "round" || m === "floor" || m === "ceil" || m === "trunc") return catalogTransform(m);
+    return null;
+  }
+  // (param).trim() | .toLowerCase() | .toUpperCase()
+  if (expr.arguments.length === 0 && ts.isPropertyAccessExpression(expr.expression) && !expr.expression.questionDotToken) {
+    const base = unwrapParen(expr.expression.expression);
+    if (!ts.isIdentifier(base) || base.text !== param) return null;
+    const meth = expr.expression.name.text;
+    const name = meth === "trim" ? "trim" : meth === "toLowerCase" ? "lower" : meth === "toUpperCase" ? "upper" : null;
+    return name ? catalogTransform(name) : null;
+  }
+  return null;
+}
+type ArgInner = { kind: "lit"; value: unknown } | { kind: "param"; index: number };
+type ArgSlot = ArgInner | { kind: "xform"; transform: Transform; inner: ArgInner } | { kind: "other" };
+/** Literal or outer-param under an expression (after unwrap). */
+function argInner(expr: ts.Expression, outer: readonly string[], sf: ts.SourceFile): ArgInner | null {
+  expr = unwrapParen(expr);
+  if (ts.isNumericLiteral(expr)) {
+    const value = Number(expr.getText(sf));
+    return Number.isFinite(value) ? { kind: "lit", value } : null;
+  }
+  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return { kind: "lit", value: expr.text };
+  if (expr.kind === ts.SyntaxKind.TrueKeyword) return { kind: "lit", value: true };
+  if (expr.kind === ts.SyntaxKind.FalseKeyword) return { kind: "lit", value: false };
+  if (ts.isIdentifier(expr)) {
+    const i = outer.indexOf(expr.text);
+    return i >= 0 ? { kind: "param", index: i } : null;
+  }
+  return null;
+}
+/**
+ * Closed pure model of one call argument (M215): a literal, an outer-param identifier, or exactly one
+ * RETRY_TRANSFORMS wrap of either (Math.round/floor/ceil/trunc, .trim/.toLowerCase/.toUpperCase, !). Anything else
+ * is "other" (no prediction without executing candidate code).
+ */
+function parseArgSlot(expr: ts.Expression, outer: readonly string[], sf: ts.SourceFile): ArgSlot {
+  const direct = argInner(expr, outer, sf);
+  if (direct) return direct;
+  expr = unwrapParen(expr);
+  // !(inner)
+  if (ts.isPrefixUnaryExpression(expr) && expr.operator === ts.SyntaxKind.ExclamationToken) {
+    const inner = argInner(expr.operand, outer, sf);
+    const t = catalogTransform("not");
+    return inner && t ? { kind: "xform", transform: t, inner } : { kind: "other" };
+  }
+  if (!ts.isCallExpression(expr) || expr.questionDotToken) return { kind: "other" };
+  // Math.round|floor|ceil|trunc(inner)
+  if (expr.arguments.length === 1 && ts.isPropertyAccessExpression(expr.expression)
+    && !expr.expression.questionDotToken && ts.isIdentifier(expr.expression.expression)
+    && expr.expression.expression.text === "Math" && ts.isIdentifier(expr.expression.name)) {
+    const m = expr.expression.name.text;
+    const t = (m === "round" || m === "floor" || m === "ceil" || m === "trunc") ? catalogTransform(m) : null;
+    const inner = argInner(expr.arguments[0]!, outer, sf);
+    return inner && t ? { kind: "xform", transform: t, inner } : { kind: "other" }; // m215-guard:arg-xform
+  }
+  // (inner).trim() | .toLowerCase() | .toUpperCase()
+  if (expr.arguments.length === 0 && ts.isPropertyAccessExpression(expr.expression) && !expr.expression.questionDotToken) {
+    const base = expr.expression.expression;
+    const meth = expr.expression.name.text;
+    const name = meth === "trim" ? "trim" : meth === "toLowerCase" ? "lower" : meth === "toUpperCase" ? "upper" : null;
+    const t = name ? catalogTransform(name) : null;
+    const inner = argInner(base, outer, sf);
+    return inner && t ? { kind: "xform", transform: t, inner } : { kind: "other" };
+  }
+  return { kind: "other" };
+}
+function evalInner(inner: ArgInner, caseArgs: readonly unknown[]): unknown | undefined {
+  if (inner.kind === "lit") return inner.value;
+  return caseArgs[inner.index];
+}
+/**
+ * Top-level same-file projection helpers (export allowed; no other modifier; no generator; no async):
+ * - `function h(...){ return <param> | <catalog-transform>(param); }` (M210/M211)
+ * - `[export] const|let h = (p) => <expr>` expression or block body, or `= function (p) { return <expr>; }` (M213)
+ * Used only to predict a call's return from its arguments without running code. M210's select helpers are the identity
+ * case; M211 adds the closed-catalog unary wraps; M213 adds const/arrow/function-expression declaration forms of the
+ * same projection shape. Arbitrary non-select bodies and non-literal wrong args stay refused.
+ */
+function matchArgHelper(name: string, parameters: readonly ts.ParameterDeclaration[], expr: ts.Expression): ArgHelper | null {
+  const params: string[] = [];
+  for (const p of parameters) {
+    if (!ts.isIdentifier(p.name)) return null;
+    params.push(p.name.text);
+  }
+  if (params.length === 0) return null;
+  let matched: { retIdx: number; transform: Transform } | null = null;
+  for (let i = 0; i < params.length; i++) {
+    const t = matchParamTransform(expr, params[i]!);
+    if (t) { matched = { retIdx: i, transform: t }; break; } // m211-guard:helper-proj
+  }
+  if (!matched) return null;
+  return { name, retIdx: matched.retIdx, paramCount: params.length, transform: matched.transform };
+}
+export function argHelpers(src: string): ArgHelper[] {
+  const sf = parse(src);
+  if (!sf) return [];
+  const out: ArgHelper[] = [];
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name && st.body) {
+      if (st.asteriskToken) continue;
+      const mods = ts.getModifiers(st) ?? [];
+      if (mods.some((m) => m.kind !== ts.SyntaxKind.ExportKeyword)) continue; // m210-guard:helper-plain
+      const stmts = st.body.statements;
+      if (stmts.length !== 1) continue; // m210-guard:helper-select
+      if (!ts.isReturnStatement(stmts[0]!) || !stmts[0]!.expression) continue;
+      const h = matchArgHelper(st.name.text, st.parameters, stmts[0]!.expression!);
+      if (h) out.push(h);
+      continue;
+    }
+    // M213: const/let arrow or function-expression forms of the same projection shape
+    if (!ts.isVariableStatement(st) || st.declarationList.declarations.length !== 1) continue;
+    const mods = ts.getModifiers(st) ?? [];
+    if (mods.some((m) => m.kind !== ts.SyntaxKind.ExportKeyword)) continue; // m213-guard:helper-plain
+    const d = st.declarationList.declarations[0]!;
+    if (!ts.isIdentifier(d.name) || !d.initializer) continue;
+    const init = d.initializer;
+    let expr: ts.Expression | null = null;
+    let parameters: readonly ts.ParameterDeclaration[] | null = null;
+    if (ts.isArrowFunction(init)) {
+      const amods = ts.getModifiers(init) ?? [];
+      if (amods.length > 0) continue; // m213-guard:helper-noasync
+      parameters = init.parameters;
+      if (ts.isBlock(init.body)) {
+        const stmts = init.body.statements;
+        if (stmts.length !== 1) continue; // m213-guard:helper-block
+        if (!ts.isReturnStatement(stmts[0]!) || !stmts[0]!.expression) continue;
+        expr = stmts[0]!.expression;
+      } else {
+        expr = init.body; // m213-guard:helper-arrow
+      }
+    } else if (ts.isFunctionExpression(init)) {
+      if (init.asteriskToken) continue;
+      const amods = ts.getModifiers(init) ?? [];
+      if (amods.length > 0) continue; // refuse async / other modifiers on the expression
+      if (!init.body) continue;
+      parameters = init.parameters;
+      const stmts = init.body.statements;
+      if (stmts.length !== 1) continue;
+      if (!ts.isReturnStatement(stmts[0]!) || !stmts[0]!.expression) continue;
+      expr = stmts[0]!.expression; // m213-guard:helper-fnexpr
+    } else continue;
+    if (!expr || !parameters) continue;
+    const h = matchArgHelper(d.name.text, parameters, expr);
+    if (h) out.push(h);
+  }
+  return out;
+}
+/** M210 select helpers only (`return <param>`). Kept for the M210 guard surface; wrong-arg search uses `argHelpers`. */
+export function selectHelpers(src: string): SelectHelper[] {
+  return argHelpers(src).filter((h) => h.transform.name === "id").map((h) => ({ name: h.name, retIdx: h.retIdx, paramCount: h.paramCount }));
+}
+interface CallHit {
+  helper: string; retIdx: number; callStart: number; argStart: number; argEnd: number; litValue: unknown; argIdx: number;
+  transform: Transform;
+  /** For each argument: lit, outer-param, catalog-xform of lit/param (M215), or other (unpredictable). */
+  args: readonly ArgSlot[];
+}
+/**
+ * Calls inside function `fn`'s own body to a projection helper whose returned-position argument is a literal (M210),
+ * an outer-parameter identifier (M214), or exactly one closed-catalog unary transform of either (M215). Other
+ * expression shapes stay out (no closed pure model of the current expression without execution).
+ */
+export function wrongArgCalls(src: string, fn: string): CallHit[] | null {
+  const sf = parse(src);
+  if (!sf) return null;
+  let shape: FnShape | null = null;
+  for (const st of sf.statements) { const s = fnShape(st, sf); if (s && s.name === fn) { shape = s; break; } }
+  if (!shape) return null;
+  const helpers = new Map(argHelpers(src).map((h) => [h.name, h] as const));
+  if (helpers.size === 0) return [];
+  const outer = paramsOf(src, fn) ?? [];
+  const out: CallHit[] = [];
+  const visit = (x: ts.Node): void => {
+    if (ts.isFunctionLike(x) && x !== shape!.body && x !== shape!.node) return; // nested functions keep their own calls
+    if (ts.isCallExpression(x) && ts.isIdentifier(x.expression) && !x.questionDotToken) {
+      const h = helpers.get(x.expression.text);
+      if (h && x.arguments.length === h.paramCount) {
+        const args: ArgSlot[] = [];
+        for (const a of x.arguments) args.push(parseArgSlot(a, outer, sf));
+        const ret = args[h.retIdx];
+        // M210 lit / M214 param / M215 catalog-xform of lit|param at returned position.
+        const retOk = !!(ret && (ret.kind === "lit" || ret.kind === "param" || ret.kind === "xform")); // m214-guard:arg-param
+        if (retOk && ret) {
+          const argNode = x.arguments[h.retIdx]!;
+          out.push({
+            helper: h.name, retIdx: h.retIdx, callStart: x.getStart(sf),
+            argStart: argNode.getStart(sf), argEnd: argNode.end,
+            litValue: ret.kind === "lit" ? ret.value : undefined, argIdx: h.retIdx,
+            transform: h.transform, args,
+          });
+        }
+      }
+    }
+    ts.forEachChild(x, visit);
+  };
+  visit(shape.body);
+  return out;
+}
+function predictArg(args: readonly ArgSlot[], retIdx: number, transform: Transform, caseArgs: readonly unknown[]): unknown | undefined {
+  const slot = args[retIdx];
+  if (!slot || slot.kind === "other") return undefined;
+  let raw: unknown | undefined;
+  if (slot.kind === "lit" || slot.kind === "param") raw = evalInner(slot, caseArgs);
+  else {
+    const inner = evalInner(slot.inner, caseArgs);
+    if (inner === undefined) return undefined;
+    const mid = slot.transform.f(inner); // m215-guard:arg-pred
+    if (!mid.ok) return undefined;
+    raw = mid.v;
+  }
+  if (raw === undefined) return undefined;
+  if (transform.name === "id") return raw;
+  const out = transform.f(raw);
+  return out.ok ? out.v : undefined; // m211-guard:arg-pred
+}
+/**
+ * Which one call-site argument of a same-file projection helper (select, or one closed-catalog unary transform of a
+ * parameter; function declaration or const/arrow/function-expression form) to replace with one of the function's own
+ * parameters so EVERY case of this one run fits, when no earlier form (single / constant / pair / branch) is being
+ * asked here (the proposer tries those first). Evidence rule (no execution): the helper's body is `return <param>` or
+ * `return <catalog-transform>(param)` (or an arrow expression body of that shape); the call's argument at that position
+ * is a number/string/boolean literal L (M210), an outer-parameter identifier (M214), or exactly one closed-catalog
+ * unary transform of either (M215); replacing that whole argument span with outer parameter p makes the predicted
+ * return equal every case's expected value; and under the current call the predicted return matches what each case
+ * returned (so the projection model agrees with the evidence). A prediction, never a verdict. Non-catalog expressions
+ * (`n + 0`, nested non-catalog calls, free names) stay refused.
+ */
+export function fitWrongArg(ev: RetryEvidence, src: string): { fn: string; helper: string; callStart: number; argStart: number; argEnd: number; param: string } | { refuse: string } {
+  const one = fitTransform(ev);
+  if (!("refuse" in one)) return { refuse: "single-fits" }; // m210-guard:arg-single-first
+  if (one.refuse !== "no-fit") return { refuse: one.refuse }; // m210-guard:arg-one-run
+  const failing = ev.cases.filter((c) => !c.pass);
+  const fn = failing[0]!.fn;
+  const onFn = ev.cases.filter((c) => c.fn === fn);
+  for (const c of onFn) {
+    if (!c.expect.ok || c.expect.negate || c.expect.any) return { refuse: "no-fit" };
+    if (!c.pass && (!c.got || !c.got.ok)) return { refuse: "no-fit" };
+  }
+  const outer = paramsOf(src, fn);
+  if (!outer || outer.length === 0) return { refuse: "no-fit" };
+  const calls = wrongArgCalls(src, fn);
+  if (!calls) return { refuse: "no-fit" };
+  if (calls.length === 0) return { refuse: "no-call" }; // m210-guard:arg-call
+  for (const call of calls) {
+    // current predictions must match evidence (projection model agrees)
+    let modelOk = true;
+    for (const c of onFn) {
+      const pred = predictArg(call.args, call.retIdx, call.transform, c.args);
+      if (pred === undefined) { modelOk = false; break; }
+      const want = c.pass ? (c.expect as { ok: true; value?: unknown }).value : (c.got as { ok: true; value: unknown }).value;
+      if (!valuesEqual(pred, want)) { modelOk = false; break; } // m210-guard:arg-model
+    }
+    if (!modelOk) continue;
+    for (let j = 0; j < outer.length; j++) {
+      const param = outer[j]!;
+      // replacing the returned-position literal or wrong outer-param with outer param j
+      const cur = call.args[call.retIdx];
+      if (cur && cur.kind === "param" && cur.index === j) continue; // already that param (changed check below also refuses)
+      const nextArgs = call.args.map((a, i) => (i === call.retIdx ? { kind: "param" as const, index: j } : a));
+      let fits = true;
+      for (const c of onFn) {
+        const pred = predictArg(nextArgs, call.retIdx, call.transform, c.args);
+        if (pred === undefined || !valuesEqual(pred, (c.expect as { ok: true; value?: unknown }).value)) { fits = false; break; } // m210-guard:arg-all
+      }
+      if (!fits) continue;
+      // must actually change something: at least one case's predicted value moves
+      let changed = false;
+      for (const c of onFn) {
+        const before = predictArg(call.args, call.retIdx, call.transform, c.args);
+        const after = predictArg(nextArgs, call.retIdx, call.transform, c.args);
+        if (!valuesEqual(before, after)) { changed = true; break; }
+      }
+      if (!changed) continue;
+      return { fn, helper: call.helper, callStart: call.callStart, argStart: call.argStart, argEnd: call.argEnd, param };
+    }
+  }
+  return { refuse: "no-fit" };
+}
+/**
+ * `src` with the call-site argument span [argStart, argEnd) replaced by the identifier `param`. Emitted only if the
+ * result is inside rr-in-function-v1 as "rr-in-function" (else null). Does not invent string words: the replacement is
+ * a parameter name already in the function head. The span may be a literal (M210), an outer-param identifier (M214),
+ * or a catalog-transform expression of either (M215).
+ */
+export function applyWrongArg(src: string, fn: string, callStart: number, argStart: number, argEnd: number, param: string): string | null {
+  if (argStart < 0 || argEnd <= argStart || argEnd > src.length || callStart > argStart) return null;
+  // the span must still be a literal of the named function's call (defence: refuse stale spans)
+  const calls = wrongArgCalls(src, fn);
+  if (!calls || !calls.some((c) => c.argStart === argStart && c.argEnd === argEnd && c.callStart === callStart)) return null; // m210-guard:arg-span
+  const out = src.slice(0, argStart) + param + src.slice(argEnd);
+  if (retrySourceClass(src, out) !== "rr-in-function") return null; // m210-guard:arg-class
+  return out;
+}
+
 /** ProposeInput as the loop gives it under repair-retry-v1: each feedback entry carries its own run's evidence. */
 export type RetryFeedback = Feedback & { evidence?: RetryEvidence };
 export type RetryProposeInput = ProposeInput & { feedback: readonly RetryFeedback[]; retryBaseline?: RetryEvidence | null };
@@ -601,9 +937,10 @@ export type RetryProposeInput = ProposeInput & { feedback: readonly RetryFeedbac
 /**
  * repair-retry-v1's proposer: attempt 1 is `base` (e.g. repair-v2) unchanged. A later attempt first tries, on ONE run's
  * evidence (the last attempt's own run on that attempt's code; else the baseline on the original), in this pinned order:
- * a single output transform; a one-literal constant fix (M209); a pair helper (M208); a guarded branch (M209). Never a
- * mix of runs. If none fits it asks `base` again, which sees only its own attempts (renumbered), as if run alone. Stops
- * on a tampered or leftover run. Its predictions are never a verdict. Cap RETRY_MAX_ATTEMPTS = 3.
+ * a single output transform; a one-literal constant fix (M209); a pair helper (M208); a guarded branch (M209); a
+ * wrong-argument call-site fix (M210-M215). Never a mix of runs. If none fits it asks `base` again, which sees only its own
+ * attempts (renumbered), as if run alone. Stops on a tampered or leftover run. Its predictions are never a verdict. Cap
+ * RETRY_MAX_ATTEMPTS = 3.
  */
 export function retryProposer(base: Proposer): Proposer & { readonly transforms: string[] } {
   const mine = new Map<number, Edit[]>(); // attempt -> edits proposed
@@ -638,7 +975,7 @@ export function retryProposer(base: Proposer): Proposer & { readonly transforms:
         let next: string | null = null, what = "";
         if (!("refuse" in fit)) { next = applyTransform(src, fit.fn, fit.transform); what = fit.transform.name; }
         else {
-          // M209 pinned order after a single transform refuses: constant, then pair (M208), then guarded branch.
+          // pinned order after a single transform refuses: constant, pair (M208), guarded branch (M209), wrong-arg (M210-M215).
           const cf = fitConstant(r.ev, src);
           if (!("refuse" in cf)) { next = applyConstant(src, cf.fn, cf.from, cf.to); what = `const(${JSON.stringify(cf.from)}->${JSON.stringify(cf.to)})`; }
           else {
@@ -646,8 +983,14 @@ export function retryProposer(base: Proposer): Proposer & { readonly transforms:
             if (!("refuse" in pf)) { next = applyHelper(src, pf.fn, pf.pair); what = `helper(${pf.pair[0].name}+${pf.pair[1].name})`; }
             else {
               const bf = fitBranch(r.ev, src);
-              if ("refuse" in bf) continue;
-              next = applyBranch(src, bf.fn, bf.pred, bf.tThen, bf.tElse); what = `branch(${bf.pred.kind}:${bf.tThen.name}/${bf.tElse.name})`; // m209-guard:prop-order
+              if (!("refuse" in bf)) {
+                next = applyBranch(src, bf.fn, bf.pred, bf.tThen, bf.tElse); what = `branch(${bf.pred.kind}:${bf.tThen.name}/${bf.tElse.name})`; // m209-guard:prop-order
+              } else {
+                const wf = fitWrongArg(r.ev, src);
+                if (!("refuse" in wf)) {
+                  next = applyWrongArg(src, wf.fn, wf.callStart, wf.argStart, wf.argEnd, wf.param); what = `arg(${wf.helper}:${wf.param})`; // m210-guard:prop-order // m211-guard:prop-order // m213-guard:prop-order // m214-guard:prop-order // m215-guard:prop-order
+                }
+              }
             }
           }
         }

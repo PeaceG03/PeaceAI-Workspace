@@ -151,8 +151,10 @@ export const CASES: Case[] = [
       assert.ok(existsSync(join(ctx.edits, okPath)), "non-protected path written");
       // without selfAllow the PROTECTED_SELF gate does not fire (external-repo path)
       assert.equal(lib.applyEdits(copy, [{ path: "peaceai/lib/loop.ts", content: "export const y = 2;\n" }]), null);
-      // full loop on an allowlisted self repo: protected edit refuses (or CAND_UID_* before fetch when no cand)
-      const r = run(lib, ctx, { ...ctx.calc, repo: "PeaceG03/PeaceAI-Workspace" }, fixed([{ path: "peaceai/lib/loop.ts", content: "export const z = 3;\n" }]));
+      // full loop on an allowlisted self repo: serve the calc fixture under that name (no GitHub fetch).
+      // Without cand: CAND_UID_* before fetch. With cand: SELF_PROTECTED before EDIT_SCOPE / write.
+      const map = (r: string) => join(ctx.base, "repos", /^peaceg03\/peaceai-workspace$/i.test(r) ? "calc" : (r.split("/")[1] ?? "missing"));
+      const r = run(lib, ctx, { ...ctx.calc, repo: "PeaceG03/PeaceAI-Workspace" }, fixed([{ path: "peaceai/lib/loop.ts", content: "export const z = 3;\n" }]), { fetcher: lib.gitCopyFetcher(map) });
       if (!ctx.cand) { assert.match(r.row.code, NO_CAND); assert.equal(r.row.attempts, 0); return; }
       assert.equal(r.row.code, "SELF_PROTECTED");
       assert.equal(r.row.result, "refused");

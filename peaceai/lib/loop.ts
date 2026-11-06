@@ -1024,6 +1024,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       ...(loadDiags ? { baselineLoad: "MISSING_EXPORT" as const } : {}), // m174-guard:loop-row-load
       ...(editScope ? { editScope } : {}), // m175-guard:loop-row-scope
       ...(rr ? { repairRetry: "repair-retry-v1" as const } : {}), // M203: an experimental row, never the default's
+      ...(verdictMode === "oop-v1" ? { verdictMode: "oop-v1" as const } : {}), // non-inproc only; inproc omits // m212-guard:loop-tag
     },
     plan, attempts: records, context,
   });
@@ -1130,6 +1131,7 @@ export function runLoopTask(task: PlanTask, set: "public" | "hidden", fileSha: s
       if (typeof p !== "object") return done("PROPOSER_FAILED"); // m164-guard:next-empty
       if (!("refuse" in p) && !validEdits((p as { edits?: unknown }).edits)) return done("PROPOSER_FAILED"); // m164-guard:next-malformed
       if ("refuse" in p) return done(p.refuse);
+      if (SELF_ALLOW.has(task.repo.toLowerCase()) && p.edits.some((e) => isSelfAllowForbiddenPath(String(e.path)))) return done("SELF_PROTECTED"); // self-allow before EDIT_SCOPE (tagged gate is in applyEdits)
       // 4. apply in the copy (fresh from the pinned commit + the team's tests each time)
       resetCopy(c);
       // M174 L0 gate: a load-repair proposal must be single `export ` insertions in existing source files, else it is
