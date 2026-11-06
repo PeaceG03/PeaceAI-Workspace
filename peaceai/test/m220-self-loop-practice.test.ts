@@ -79,7 +79,7 @@ test("M220 seedPracticeShape: builds a PlanTask and marks the break", () => {
 
 test("M220 missingSkillFor names locate vs attempt exhaustion", () => {
   const shape = P.practiceShapeById("off-by-one")!;
-  assert.match(P.missingSkillFor(shape, { loopCode: "NO_EDIT", attempts: 0, result: "refused" }), /locate|templates/);
+  assert.match(P.missingSkillFor(shape, { loopCode: "NO_EDIT", attempts: 0, result: "refused" }), /locate|templates|fault localization|mutation catalog/);
   assert.match(P.missingSkillFor(shape, { loopCode: "ATTEMPT_LIMIT", attempts: 5, result: "fail" }), /exhausted/);
 });
 

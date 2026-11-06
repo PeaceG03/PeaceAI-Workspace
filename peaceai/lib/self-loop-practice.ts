@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { repairProposer } from "./editpropose.ts";
+import { faultLocalizeProposer } from "./fault-localize.ts";
 import {
   liveDestRefusal,
   liveHeadRefusal,
@@ -223,12 +224,29 @@ export function seedPracticeShape(scratchDir: string, shape: PracticeShape): { o
   }
 }
 
+
+export const HELDOUT_SHAPES_PATH = "peaceai/self-tests/practice/heldout/shapes.json";
+
+/** Load sealed held-out shapes (only for eval; shapes are not consulted during localization development). */
+export function loadHeldoutShapes(hostWorkspace: string): PracticeShape[] {
+  const raw = JSON.parse(readFileSync(join(hostWorkspace, HELDOUT_SHAPES_PATH), "utf8")) as {
+    shapes: PracticeShape[];
+  };
+  if (!Array.isArray(raw.shapes) || raw.shapes.length < 8) throw new Error("heldout shapes missing");
+  return raw.shapes;
+}
+
 export function practiceShapeById(id: string): PracticeShape | undefined {
   return PRACTICE_SHAPES.find((s) => s.id === id);
 }
 
-/** Repair proposer used for honest practice grading (not the M219 restore cheat). */
+/** Default M221 grader: failing-test-driven fault localization (not the M219 restore cheat). */
 export function practiceGradeProposer(): Proposer {
+  return faultLocalizeProposer();
+}
+
+/** Prior M220 grader (repair-v2), kept for comparison runs. */
+export function practiceRepairProposer(): Proposer {
   return repairProposer({ v2: true }) as unknown as Proposer;
 }
 
@@ -293,12 +311,17 @@ export function runPracticeSet(opts: RunPracticeSetOpts): PracticeSetReport | Li
   }
   mkdirSync(opts.outDir, { recursive: true });
   const shapes = opts.shapes ?? PRACTICE_SHAPES;
-  const proposer = opts.proposer ?? practiceGradeProposer();
   const env = { ...process.env, ...opts.env, [STAGE2_CAND_ENV]: opts.env?.[STAGE2_CAND_ENV] ?? process.env[STAGE2_CAND_ENV] };
   const rows: PracticeShapeResult[] = [];
   const gaps: string[] = [];
+  let lastProposerName = (opts.proposer ?? practiceGradeProposer()).name;
 
   for (const shape of shapes) {
+    // Fresh proposer per shape so mutation queues do not leak across tasks.
+    const proposer = opts.proposer?.name === "repair-v2"
+      ? practiceRepairProposer()
+      : practiceGradeProposer();
+    lastProposerName = proposer.name;
     const scratchDest = join(opts.scratchBase, shape.id);
     const err = freshScratch(opts.cleanDir, scratchDest, opts.expectedHead);
     if (err) return err;
@@ -394,7 +417,7 @@ export function runPracticeSet(opts: RunPracticeSetOpts): PracticeSetReport | Li
     credit: false,
     expectedHead: opts.expectedHead,
     at: new Date().toISOString(),
-    proposer: proposer.name,
+    proposer: lastProposerName,
     shapes: rows,
     passCount,
     total: rows.length,
@@ -410,10 +433,10 @@ export function runPracticeSet(opts: RunPracticeSetOpts): PracticeSetReport | Li
 export function missingSkillFor(shape: PracticeShape, row: Pick<LiveRunRow, "loopCode" | "attempts" | "result">): string {
   const code = String(row.loopCode);
   if (code === "NO_EDIT" || code === "NO_MORE_EDITS") {
-    return `repair locate/templates miss ${shape.kind} (proposer ${code})`;
+    return `fault localization / mutation catalog miss ${shape.kind} (proposer ${code})`;
   }
   if (code === "ATTEMPT_LIMIT") {
-    return `repair candidates exhausted on ${shape.kind} without a passing edit`;
+    return `mutation candidates exhausted on ${shape.kind} without a passing edit`;
   }
   if (code.startsWith("CAND_UID_")) return `stage-2 cand unavailable (${code})`;
   if (code === "EDIT_SCOPE" || code === "SELF_PROTECTED") return `edit scope blocked on ${shape.kind}`;

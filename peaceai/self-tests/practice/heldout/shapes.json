@@ -1,0 +1,94 @@
+{
+  "schema": "peaceai-self-loop-heldout:v1",
+  "credit": false,
+  "shapes": [
+    {
+      "id": "ho-month-literal",
+      "kind": "wrong-literal",
+      "editPath": "peaceai/self-tests/helpers/dates.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout-month-literal.test.ts",
+      "request": "Fix utcMonthKey so a valid day string yields the seven-character YYYY-MM prefix.",
+      "broken": "// M221-HELDOUT:ho-month-literal (experimental, not for credit). Do not merge.\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\n\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\n\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 4);\n}\n",
+      "fixed": "// heldout fixed\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\n\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\n\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { utcMonthKey } from \"./dates.ts\";\ntest(\"utcMonthKey YYYY-MM\", () => {\n  assert.equal(utcMonthKey(\"2026-03-01\"), \"2026-03\");\n});\n",
+      "expectUnfixable": false
+    },
+    {
+      "id": "ho-daykey-boundary",
+      "kind": "off-by-one",
+      "editPath": "peaceai/self-tests/helpers/dates.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout-daykey-boundary.test.ts",
+      "request": "Fix utcDayKey so the slice length is the full calendar day key (ten characters).",
+      "broken": "// M221-HELDOUT:ho-daykey-boundary\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 9);\n}\n\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\n\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\n",
+      "fixed": "// heldout fixed\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\n\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\n\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { utcDayKey } from \"./dates.ts\";\ntest(\"utcDayKey length 10\", () => {\n  assert.equal(utcDayKey(new Date(\"2026-01-05T12:00:00Z\")), \"2026-01-05\");\n});\n",
+      "expectUnfixable": false
+    },
+    {
+      "id": "ho-minutes-swapped",
+      "kind": "swapped-args",
+      "editPath": "peaceai/self-tests/helpers/dates.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout-minutes-swapped.test.ts",
+      "request": "Fix minutesOfUtcDay so hours are multiplied by 60 and minutes are added (not the reverse).",
+      "broken": "// M221-HELDOUT:ho-minutes-swapped\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\n\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCMinutes() * 60 + d.getUTCHours();\n}\n\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\n",
+      "fixed": "// heldout fixed\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\n\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\n\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { minutesOfUtcDay } from \"./dates.ts\";\ntest(\"minutesOfUtcDay hours-first\", () => {\n  assert.equal(minutesOfUtcDay(new Date(\"2026-01-05T02:03:00Z\")), 123);\n});\n",
+      "expectUnfixable": false
+    },
+    {
+      "id": "ho-plural-gt",
+      "kind": "wrong-operator",
+      "editPath": "peaceai/self-tests/helpers/text.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout-plural-gt.test.ts",
+      "request": "Fix plural so the singular form is used only when count is exactly one.",
+      "broken": "// M221-HELDOUT:ho-plural-gt\nexport function plural(count: number, word: string): string {\n  return count > 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\n\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\n",
+      "fixed": "// heldout fixed\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\n\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { plural } from \"./text.ts\";\ntest(\"plural exact-one\", () => {\n  assert.equal(plural(1, \"item\"), \"1 item\");\n  assert.equal(plural(3, \"item\"), \"3 items\");\n});\n",
+      "expectUnfixable": false
+    },
+    {
+      "id": "ho-truncate-no-return",
+      "kind": "missing-return",
+      "editPath": "peaceai/self-tests/helpers/text.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout-truncate-no-return.test.ts",
+      "request": "Fix truncate so short strings are returned unchanged when they fit in max.",
+      "broken": "// M221-HELDOUT:ho-truncate-no-return\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\n\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  if (text.length <= max) {\n    const ok = text;\n  } else {\n    return `${text.slice(0, max - 1)}` + \"\u2026\";\n  }\n}\n",
+      "fixed": "// heldout fixed\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\n\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { truncate } from \"./text.ts\";\ntest(\"truncate short passthrough\", () => {\n  assert.equal(truncate(\"hi\", 5), \"hi\");\n});\n",
+      "expectUnfixable": false
+    },
+    {
+      "id": "ho-month-branch",
+      "kind": "wrong-branch",
+      "editPath": "peaceai/self-tests/helpers/dates.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout-month-branch.test.ts",
+      "request": "Fix utcMonthKey so invalid short day strings throw BAD_DAY and valid ones return YYYY-MM.",
+      "broken": "// M221-HELDOUT:ho-month-branch\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\n\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\n\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length === 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\n",
+      "fixed": "// heldout fixed\nexport function utcDayKey(d: Date): string {\n  return d.toISOString().slice(0, 10);\n}\n\nexport function minutesOfUtcDay(d: Date): number {\n  return d.getUTCHours() * 60 + d.getUTCMinutes();\n}\n\nexport function utcMonthKey(day: string): string {\n  const d = day.slice(0, 10);\n  if (d.length !== 10) throw new Error(\"BAD_DAY\");\n  return d.slice(0, 7);\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { utcMonthKey } from \"./dates.ts\";\ntest(\"utcMonthKey branch\", () => {\n  assert.equal(utcMonthKey(\"2026-07-04\"), \"2026-07\");\n  assert.throws(() => utcMonthKey(\"2026\"), /BAD_DAY/);\n});\n",
+      "expectUnfixable": false
+    },
+    {
+      "id": "ho-truncate-empty-lit",
+      "kind": "wrong-literal",
+      "editPath": "peaceai/self-tests/helpers/text.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout-truncate-empty-lit.test.ts",
+      "request": "Fix truncate so a non-positive max returns an empty string.",
+      "broken": "// M221-HELDOUT:ho-truncate-empty-lit\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\n\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"?\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\n",
+      "fixed": "// heldout fixed\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\n\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { truncate } from \"./text.ts\";\ntest(\"truncate empty max\", () => {\n  assert.equal(truncate(\"abcd\", 0), \"\");\n});\n",
+      "expectUnfixable": false
+    },
+    {
+      "id": "ho-plural-oracle",
+      "kind": "oracle-absent",
+      "editPath": "peaceai/self-tests/helpers/text.ts",
+      "testPath": "peaceai/self-tests/helpers/heldout-plural-oracle.test.ts",
+      "request": "Fix plural so the practice self-test passes. The required token is not stated here.",
+      "broken": "// M221-HELDOUT:ho-plural-oracle unfixable\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\n\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\n",
+      "fixed": "// M221-HELDOUT:ho-plural-oracle still unfixable\nexport function plural(count: number, word: string): string {\n  return count === 1 ? `${count} ${word}` : `${count} ${word}s`;\n}\n\nexport function truncate(text: string, max: number): string {\n  if (max < 1) return \"\";\n  return text.length <= max ? text : `${text.slice(0, max - 1)}` + \"\u2026\";\n}\n",
+      "testBody": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { plural } from \"./text.ts\";\ntest(\"plural contradictory oracle\", () => {\n  const v = plural(2, \"x\");\n  assert.equal(v, \"2 xs\");\n  assert.equal(v.length, 1);\n});\n",
+      "expectUnfixable": true
+    }
+  ]
+}
