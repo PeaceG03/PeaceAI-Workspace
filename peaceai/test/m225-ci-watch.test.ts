@@ -42,7 +42,7 @@ test("config fails closed and never accepts a non-https or credentialed URL", ()
   assert.equal(notifyConfigProblem("", KEY), "missing");
   assert.equal(notifyConfigProblem(URL, ""), "missing");
   assert.equal(notifyConfigProblem("http://notify.example/hook", KEY), "bad-url");
-  assert.equal(notifyConfigProblem("https://user:pass@notify.example/hook", KEY), "bad-url");
+  assert.equal(notifyConfigProblem("https://user:pass@example.com/hook", KEY), "bad-url");
   assert.equal(notifyConfigProblem(URL, KEY), null);
 });
 
