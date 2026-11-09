@@ -9,6 +9,9 @@
 // One problem per break. Input-set copies of the same break are not separate held-out problems:
 // LEARNED needs a pass rate >= 0.75 on at least 4 independent held-out breaks. Held-out is sealed
 // (sha256) before any repair attempt, and that digest is compared again after attempts.
+// Zero held-out rows is not a proof. A function whose inputs this program cannot build is
+// NEEDS_TEACHING / UNSUPPORTED_INPUT, never LEARNED. Probes come from the parameter's type
+// and how the body uses that parameter, not from the function's name.
 // Attempts go through runRepairLoop and then repair-retry, capped at RETRY_MAX_ATTEMPTS.
 // Target code runs only in a temp child with node --permission and a clean environment.
 import { spawnSync } from "node:child_process";
@@ -23,7 +26,7 @@ import { mulberry32, taskSeed } from "./derive-practice.ts";
 import { mutationsIn, parseSource, repairProposer, type Mutation, type Site } from "./editpropose.ts";
 import { bodies } from "./ftpairs.ts";
 import type { GapNode, SkillTree } from "./learntree.ts";
-import type { ProgramMap } from "./learnmap.ts";
+import { checkMap, type ProgramMap } from "./learnmap.ts";
 import { retryProposer, RETRY_MAX_ATTEMPTS, type RetryFeedback } from "./repair-retry.ts";
 import { buildIndex } from "./symbols.ts";
 import { runRepairLoop, type Evaluation } from "./repairloop.ts";
@@ -106,8 +109,12 @@ export interface PracticeRun {
   maxAttemptsTotal: number;
   history: HistoryFlag;
   budgetStopped: boolean;
-  /** True only when every leaf's held-out digest still matches the digest taken before attempts. */
+  /** True only when at least one held-out row was sealed and every such digest still matches. Zero rows is not a seal. */
   sealedBeforeAttempts: boolean;
+  /** True only when a leaf is LEARNED on >= 4 independent held-out breaks at rate >= 0.75. */
+  heldoutProof?: boolean;
+  /** False when checkMap does not trust the map. Absent on older runs. */
+  mapTrusted?: boolean;
   nodes: NodeResult[];
   problems: PracticeProblem[];
   rechecks: RecheckRow[];
@@ -292,27 +299,96 @@ function extractFunction(path: string, content: string, name: string): string | 
   return null;
 }
 
-interface Param { name: string }
-function paramsOf(src: string, name: string): Param[] | null {
+interface Param { name: string; optional: boolean; typeText: string }
+type ProbeKind = "number" | "string" | "boolean" | "numArray" | "strArray";
+
+function implementationOf(src: string, name: string): { sf: ts.SourceFile; fn: ts.SignatureDeclaration } | null {
   const sf = ts.createSourceFile("leaf.ts", src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const fn = sf.statements.find((st) => ts.isFunctionDeclaration(st) && st.name?.text === name) as ts.FunctionDeclaration | undefined;
-  if (!fn) return null;
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name?.text === name && st.body) return { sf, fn: st };
+    if (!ts.isVariableStatement(st)) continue;
+    for (const d of st.declarationList.declarations) {
+      if (!ts.isIdentifier(d.name) || d.name.text !== name || !d.initializer) continue;
+      if (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer)) return { sf, fn: d.initializer };
+    }
+  }
+  return null;
+}
+
+function paramsOf(src: string, name: string): Param[] | null {
+  const found = implementationOf(src, name);
+  if (!found) return null;
   const out: Param[] = [];
-  for (const p of fn.parameters) {
+  for (const p of found.fn.parameters) {
     if (!ts.isIdentifier(p.name) || p.dotDotDotToken) return null;
-    out.push({ name: p.name.text });
+    out.push({ name: p.name.text, optional: !!p.questionToken || !!p.initializer, typeText: p.type ? p.type.getText(found.sf) : "" });
   }
   return out;
 }
 
-type Enc = { v: number | string | boolean | null } | { nan: true } | { error: string };
+function requiredCount(params: readonly Param[]): number {
+  return params.filter((p) => !p.optional).length;
+}
+
+function bodyText(src: string, name: string): string {
+  const found = implementationOf(src, name);
+  const fn = found?.fn;
+  if (!fn || !("body" in fn) || !fn.body) return "";
+  return fn.body.getText(found.sf);
+}
+
+function isAsyncFn(src: string, name: string): boolean {
+  const found = implementationOf(src, name);
+  if (!found) return false;
+  const mods = ts.canHaveModifiers(found.fn) ? ts.getModifiers(found.fn) ?? [] : [];
+  if (mods.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword)) return true;
+  const ret = found.fn.type?.getText(found.sf) ?? "";
+  return /\bPromise\s*</.test(ret);
+}
+
+/** Probe kind from the first parameter's type, else from how the body uses that name. Not from the function name. */
+function probeKind(src: string, name: string): ProbeKind | null {
+  const params = paramsOf(src, name);
+  if (!params || requiredCount(params) !== 1 || params.length > 4) return null;
+  const first = params[0]!;
+  const type = first.typeText.replace(/\s+/g, " ");
+  if (/\bboolean\b/.test(type)) return "boolean";
+  if (/string\s*\[\]|Array<\s*string\s*>|ReadonlyArray<\s*string/.test(type)) return "strArray";
+  if (/number\s*\[\]|Array<\s*number\s*>|ReadonlyArray<\s*number|readonly\s+number\s*\[\]|readonly\s+\[number/.test(type)) return "numArray";
+  if (/\bstring\b/.test(type)) return "string";
+  if (/\bnumber\b/.test(type)) return "number";
+  const body = bodyText(src, name);
+  const id = first.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const arrayUse = new RegExp(`\\b${id}\\s*(\\.\\s*(length|map|reduce|filter|slice|forEach|some|every)|\\[)`).test(body);
+  const stringUse = new RegExp(`\\b${id}\\s*\\.\\s*(toLowerCase|toUpperCase|substring|charAt|trim|replace|padStart|split|includes|startsWith|endsWith)`).test(body);
+  const boolUse = new RegExp(`\\b${id}\\s*===\\s*(true|false)|\\b${id}\\s*!==\\s*(true|false)|!\\s*${id}\\b`).test(body);
+  const numberUse = new RegExp(`\\b${id}\\s*[+\\-*/%]|(?:[+\\-*/%])\\s*${id}\\b`).test(body);
+  if (arrayUse && !stringUse) return "numArray";
+  if (stringUse) return "string";
+  if (boolUse) return "boolean";
+  if (numberUse) return "number";
+  if (arrayUse) return "numArray";
+  return null;
+}
+
+function probeValues(kind: ProbeKind): readonly unknown[] {
+  if (kind === "number") return INPUT_SETS.flat();
+  if (kind === "string") return ["", "a", "ab", "Hello", "x y"];
+  if (kind === "boolean") return [true, false];
+  if (kind === "numArray") return [[], [0], [1, 2], [4, 1, 4], [0, 0, 1]];
+  return [[], ["a"], ["b", "a"], ["Hello", "x"]];
+}
+
+type Enc = { v: number | string | boolean | null } | { nan: true } | { undef: true } | { error: string };
 function sameEnc(a: Enc, b: Enc): boolean {
   if ("error" in a || "error" in b) return false;
   if ("nan" in a || "nan" in b) return "nan" in a && "nan" in b;
+  if ("undef" in a || "undef" in b) return "undef" in a && "undef" in b;
+  if (!("v" in a) || !("v" in b)) return false;
   return Object.is(a.v, b.v);
 }
 function litOf(e: Enc): string | null {
-  if ("error" in e || "nan" in e) return null;
+  if ("error" in e || "nan" in e || "undef" in e) return null;
   if (typeof e.v === "number" && !Number.isFinite(e.v)) return null;
   if (typeof e.v === "string" || typeof e.v === "number" || typeof e.v === "boolean" || e.v === null) return JSON.stringify(e.v);
   return null;
@@ -324,7 +400,18 @@ const data = JSON.parse(readFileSync(new URL("./in.json", import.meta.url), "utf
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 function enc(v) {
   if (typeof v === "number" && Number.isNaN(v)) return { nan: true };
+  if (v === undefined) return { undef: true };
+  if (v && typeof v.then === "function") return { error: "promise" };
   return { v };
+}
+async function cell(fn, args) {
+  try {
+    const v = fn(...args);
+    if (data.await && v && typeof v.then === "function") return enc(await v);
+    return enc(v);
+  } catch {
+    return { error: "throw" };
+  }
 }
 const files = [{ name: "orig.ts", src: data.original }, ...data.broken.map((src, i) => ({ name: "b" + i + ".ts", src }))];
 for (const f of files) writeFileSync(new URL(f.name, import.meta.url), f.src);
@@ -333,11 +420,14 @@ const mods = [];
 for (const f of files) mods.push(await import(new URL(f.name, import.meta.url).href));
 const after = files.map((f) => sha(readFileSync(new URL(f.name, import.meta.url), "utf8")));
 if (before.some((h, i) => h !== after[i])) process.exit(2);
-function column(m) {
+async function column(m) {
   const f = m[data.fn];
-  return data.inputs.map((args) => { try { return enc(f(...args)); } catch { return { error: "throw" }; } });
+  const cells = [];
+  for (const args of data.inputs) cells.push(await cell(f, args));
+  return cells;
 }
-const out = { original: column(mods[0]), broken: mods.slice(1).map((m) => column(m)) };
+const out = { original: await column(mods[0]), broken: [] };
+for (const m of mods.slice(1)) out.broken.push(await column(m));
 writeFileSync(new URL("./out.json", import.meta.url), JSON.stringify(out));
 process.exit(0);
 `;
@@ -357,10 +447,10 @@ function sandboxed(dir: string, args: string[]): boolean {
   return r.status === 0 && !r.error;
 }
 
-function oracleMatrix(original: string, brokenList: string[], inputs: number[][], fn: string): { original: Enc[]; broken: Enc[][] } | null {
+function oracleMatrix(original: string, brokenList: string[], inputs: unknown[][], fn: string, awaitResult: boolean): { original: Enc[]; broken: Enc[][] } | null {
   const dir = mkdtempSync(join(tmpdir(), "peaceai-oracle-"));
   try {
-    writeFileSync(join(dir, "in.json"), JSON.stringify({ fn, original, broken: brokenList, inputs }));
+    writeFileSync(join(dir, "in.json"), JSON.stringify({ fn, original, broken: brokenList, inputs, await: awaitResult }));
     writeFileSync(join(dir, "run.mjs"), ORACLE_JS);
     if (!sandboxed(dir, ["run.mjs"])) return null;
     return JSON.parse(readFileSync(join(dir, "out.json"), "utf8")) as { original: Enc[]; broken: Enc[][] };
@@ -371,8 +461,8 @@ function oracleMatrix(original: string, brokenList: string[], inputs: number[][]
   }
 }
 
-function testSource(fn: string, inputs: readonly number[], expected: readonly string[], mark: string): string {
-  const calls = inputs.map((n, i) => `  assert.equal(${fn}(${n}), ${expected[i]});`).join("\n");
+function testSource(fn: string, inputs: readonly unknown[], expected: readonly string[], mark: string): string {
+  const calls = inputs.map((n, i) => `  assert.equal(${fn}(${JSON.stringify(n)}), ${expected[i]});`).join("\n");
   const note = mark.replace(/[^\t\x20-\x7E]/g, " ").slice(0, 160);
   return `import test from "node:test";\nimport assert from "node:assert/strict";\nimport { ${fn} } from "../src/leaf.ts";\n// practice ${note}\ntest("${fn} holds", () => {\n${calls}\n});\n`;
 }
@@ -443,17 +533,20 @@ function makeBreaks(src: string, name: string): { mut: Mutation; broken: string;
   return out;
 }
 
-function problemsFor(nodeId: string, path: string, name: string, src: string, seed: number, history: PracticeProblem[]): PracticeProblem[] {
-  const params = paramsOf(src, name);
-  if (!params || params.length !== 1) return splitProblems(history, seed);
+function problemsFor(nodeId: string, path: string, name: string, src: string, seed: number, history: PracticeProblem[], budget: Budget): { problems: PracticeProblem[]; emptyCode: "UNSUPPORTED_INPUT" | "NO_PRACTICE_PROBLEM" } {
+  const historyRows = splitProblems(history, seed);
+  const kind = probeKind(src, name);
+  if (!kind) return { problems: historyRows, emptyCode: "UNSUPPORTED_INPUT" };
+  if (timeUp(budget)) { budget.stopped = true; return { problems: historyRows, emptyCode: "NO_PRACTICE_PROBLEM" }; }
   const breaks = makeBreaks(src, name);
-  if (breaks.length === 0) return splitProblems(history, seed);
-  const inputs = INPUT_SETS.flat();
-  const matrix = oracleMatrix(src, breaks.map((b) => b.broken), inputs.map((n) => [n]), name);
-  if (!matrix) return splitProblems(history, seed);
+  if (breaks.length === 0) return { problems: historyRows, emptyCode: "NO_PRACTICE_PROBLEM" };
+  const inputs = probeValues(kind);
+  const matrix = oracleMatrix(src, breaks.map((b) => b.broken), inputs.map((n) => [n]), name, isAsyncFn(src, name));
+  if (!matrix) return { problems: historyRows, emptyCode: "NO_PRACTICE_PROBLEM" };
   const made: PracticeProblem[] = [];
   for (const [bi, br] of breaks.entries()) {
-    const use: number[] = [];
+    if (timeUp(budget)) { budget.stopped = true; break; }
+    const use: unknown[] = [];
     const lits: string[] = [];
     inputs.forEach((n, i) => {
       if (sameEnc(matrix.original[i]!, matrix.broken[bi]![i]!)) return;
@@ -473,7 +566,8 @@ function problemsFor(nodeId: string, path: string, name: string, src: string, se
     });
     if (made.length >= MAX_KINDS) break;
   }
-  return splitProblems([...history, ...made].slice(0, MAX_KINDS), seed);
+  const rows = splitProblems([...history, ...made].slice(0, MAX_KINDS), seed);
+  return { problems: rows, emptyCode: "NO_PRACTICE_PROBLEM" };
 }
 
 /**
@@ -734,11 +828,12 @@ function ownTest(repo: string, map: ProgramMap, path: string, name: string, pre:
 }
 
 function generatedHistoryTest(name: string, pre: string, post: string, sha: string): string | null {
-  if (paramsOf(post, name)?.length !== 1) return null;
-  const inputs = [0, 1, 2, 3, 4];
-  const matrix = oracleMatrix(post, [pre], inputs.map((n) => [n]), name);
+  const kind = probeKind(post, name);
+  if (!kind) return null;
+  const inputs = probeValues(kind).slice(0, 5);
+  const matrix = oracleMatrix(post, [pre], inputs.map((n) => [n]), name, isAsyncFn(post, name));
   if (!matrix) return null;
-  const use: number[] = [];
+  const use: unknown[] = [];
   const lits: string[] = [];
   inputs.forEach((n, i) => {
     if (sameEnc(matrix.original[i]!, matrix.broken[0]![i]!)) return;
@@ -768,12 +863,12 @@ function historyProblems(repo: string, path: string, name: string, nodeId: strin
   return made;
 }
 
-function finishLeaf(node: GapNode, problems: PracticeProblem[], stopped: boolean, sealedSha: string): NodeResult {
+function finishLeaf(node: GapNode, problems: PracticeProblem[], stopped: boolean, sealedSha: string, emptyCode: "UNSUPPORTED_INPUT" | "NO_PRACTICE_PROBLEM"): NodeResult {
   const dev = counts(problems, "dev");
   const held = scoreHeldOut(problems);
   const codes = new Set<string>();
   for (const p of problems) if (p.set === "heldout" && !(p.solved && p.verified)) for (const c of p.reasonCodes) codes.add(c);
-  if (problems.length === 0 && !stopped) codes.add("NO_PRACTICE_PROBLEM");
+  if (problems.length === 0 && !stopped) codes.add(emptyCode);
   if (held.independent > 0 && held.independent < 4 && !stopped) codes.add("TOO_FEW_HELD_OUT");
   if (held.independent >= 4 && held.passed / held.independent < 0.75) codes.add("HELD_OUT_RATE");
   const post = heldOutSha(problems.filter((p) => p.set === "heldout"));
@@ -871,7 +966,8 @@ export function practiceProgram(opts: PracticeOptions): PracticeRun {
       continue;
     }
     const hist = opts.fromHistory ? historyProblems(opts.repoPath, ref.path, ref.name, node.id, opts.map, fixes.get(node.id) ?? []) : [];
-    const built = problemsFor(node.id, ref.path, ref.name, src, seed, hist);
+    const builtPack = problemsFor(node.id, ref.path, ref.name, src, seed, hist, budget);
+    const built = builtPack.problems;
     const sealedSha = heldOutSha(built.filter((p) => p.set === "heldout"));
     const done: PracticeProblem[] = [];
     for (const p of built) {
@@ -886,7 +982,7 @@ export function practiceProgram(opts: PracticeOptions): PracticeRun {
     if (!practiceSealOk(built.filter((p) => p.set === "heldout"), done.filter((p) => p.set === "heldout")) || postSha !== sealedSha) sealedOk = false;
     problems.push(...done);
     const unfinished = done.some((p) => p.reasonCodes.includes("BUDGET_STOPPED") && !p.solved);
-    nodes.push(finishLeaf(node, done, unfinished, sealedSha));
+    nodes.push(finishLeaf(node, done, unfinished, sealedSha, builtPack.emptyCode));
   }
   for (const g of opts.tree.nodes) {
     if (g.size === "leaf") continue;
@@ -896,6 +992,14 @@ export function practiceProgram(opts: PracticeOptions): PracticeRun {
   nodes.sort((a, b) => byStr(a.nodeId, b.nodeId));
   problems.sort((a, b) => byStr(a.id, b.id));
   const minutesUsed = Math.round(((now() - budget.start) / 60_000) * 1000) / 1000;
+  const anyHeld = problems.some((p) => p.set === "heldout");
+  let mapTrusted = false;
+  try {
+    const checked = checkMap(opts.map, opts.repoPath);
+    mapTrusted = checked.wrong.length === 0 && checked.asked > 0;
+  } catch {
+    mapTrusted = false;
+  }
   return {
     schema: LEARN_PRACTICE_SCHEMA,
     experimental: true,
@@ -907,11 +1011,17 @@ export function practiceProgram(opts: PracticeOptions): PracticeRun {
     maxAttemptsTotal: caps.maxAttemptsTotal,
     history,
     budgetStopped: budget.stopped,
-    sealedBeforeAttempts: sealedOk,
+    sealedBeforeAttempts: anyHeld && sealedOk,
+    heldoutProof: heldoutProofOf(nodes),
+    mapTrusted,
     nodes,
     problems,
     rechecks: [],
   };
+}
+
+function heldoutProofOf(nodes: readonly NodeResult[]): boolean {
+  return nodes.some((n) => n.size === "leaf" && n.status === "LEARNED" && n.heldout.problems >= 4 && n.heldout.passed / n.heldout.problems >= 0.75);
 }
 
 function rate(passed: number, total: number): number {
@@ -949,7 +1059,7 @@ export function recheckPractice(prior: PracticeRun, opts: PracticeOptions): Prac
     const src = ref && text !== null && ref.name ? extractFunction(ref.path, text, ref.name) : null;
     let sample: PracticeProblem[] = [];
     if (src && ref) {
-      sample = problemsFor(node.id, ref.path, ref.name, src, seed, [])
+      sample = problemsFor(node.id, ref.path, ref.name, src, seed, [], budget).problems
         .filter((p) => p.set === "heldout" && !oldIds.has(heldIdentity(p)));
     }
     const tried: PracticeProblem[] = [];
@@ -990,7 +1100,8 @@ export function recheckPractice(prior: PracticeRun, opts: PracticeOptions): Prac
     const old = prior.nodes.find((n) => n.nodeId === row.nodeId);
     if (old && row.heldout.sha256 !== old.heldout.sha256) row.heldout.sha256 = old.heldout.sha256;
   }
-  next.sealedBeforeAttempts = sameProblems && prior.sealedBeforeAttempts === true;
+  next.sealedBeforeAttempts = sameProblems && prior.sealedBeforeAttempts === true && next.problems.some((p) => p.set === "heldout");
+  next.heldoutProof = heldoutProofOf(next.nodes);
   next.attemptsUsed += budget.attemptsUsed;
   next.minutesUsed = Math.round((next.minutesUsed + (now() - budget.start) / 60_000) * 1000) / 1000;
   next.budgetStopped = prior.budgetStopped || budget.stopped;
@@ -1001,7 +1112,7 @@ export function recheckPractice(prior: PracticeRun, opts: PracticeOptions): Prac
 export function renderProgress(run: PracticeRun): string {
   const lines = [
     `EXPERIMENTAL credit=false schema=${run.schema}`,
-    `seed=${run.seed} minutes=${run.minutesUsed} attempts=${run.attemptsUsed} budgetStopped=${run.budgetStopped} history=${run.history}`,
+    `seed=${run.seed} minutes=${run.minutesUsed} attempts=${run.attemptsUsed} budgetStopped=${run.budgetStopped} history=${run.history} sealed=${run.sealedBeforeAttempts} heldoutProof=${run.heldoutProof === true} mapTrusted=${run.mapTrusted === true}`,
   ];
   for (const n of run.nodes) {
     lines.push(`- [${n.status}] ${n.title} dev=${n.dev.solved}/${n.dev.problems} heldout=${n.heldout.passed}/${n.heldout.problems} sha=${n.heldout.sha256.slice(0, 12)} attempts=${n.attempts}${n.reasonCodes.length ? ` (${n.reasonCodes.join(",")})` : ""}`);

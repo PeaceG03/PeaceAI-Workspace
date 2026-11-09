@@ -61,4 +61,7 @@ console.log(`experimental credit=false planner=${learned.tree.planner}`);
 console.log(`map modules=${learned.map.modules.length} edges=${learned.map.edges.length} tests=${learned.map.tests.length} trusted=${check.wrong.length === 0 && check.asked > 0 ? "yes" : "no"} asked=${check.asked} correct=${check.correct}`);
 console.log(`tree nodes=${learned.tree.nodes.length} leaves=${learned.tree.nodes.filter((n) => n.size === "leaf").length} unsplittable=${learned.tree.nodes.filter((n) => n.size === "TOO_BIG_UNSPLIT").length}`);
 console.log("wrote program-map.json skill-tree.json learn-tree.txt");
-if (check.wrong.length !== 0 || check.asked === 0) process.exit(1);
+if (check.wrong.length !== 0 || check.asked === 0) {
+  console.log(`untrusted asked=${check.asked} correct=${check.correct} first=${check.wrong[0]?.id ?? "none"}`);
+  process.exit(1);
+}

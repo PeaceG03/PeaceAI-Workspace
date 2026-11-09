@@ -74,11 +74,22 @@ try {
   const gapPath = resolve(out, "needs-teaching.jsonl");
   const prevGaps = exists(gapPath) ? readFileSync(gapPath, "utf8") : "";
   safeWriteFile(repo, gapPath, mergeNeedsTeaching(prevGaps, gaps));
-  const pairs = buildLearnPairs(run, programName(repo));
+  const { checkMap } = await import("../lib/learnmap.ts");
+  let mapTrusted = false;
+  try {
+    const checked = checkMap(map, repo);
+    mapTrusted = checked.wrong.length === 0 && checked.asked > 0;
+  } catch {
+    mapTrusted = false;
+  }
+  if (run.mapTrusted === false) mapTrusted = false;
+  const pairs = buildLearnPairs(run, programName(repo), { eligible: mapTrusted });
   writeLearnPairs(resolve(out, "pairs"), pairs, repo);
   const learned = run.nodes.filter((n: { status: string }) => n.status === "LEARNED").length;
-  console.log(`experimental credit=false history=${run.history} budgetStopped=${run.budgetStopped}`);
-  console.log(`nodes=${run.nodes.length} learned=${learned} attempts=${run.attemptsUsed} minutes=${run.minutesUsed} pairs=${pairs.docs.length} dropped_leak=${pairs.dropped.leak} dropped_near=${pairs.dropped.nearDuplicate}`);
+  const heldPassed = run.nodes.reduce((s: number, n: { heldout: { passed: number } }) => s + n.heldout.passed, 0);
+  const heldRows = run.nodes.reduce((s: number, n: { heldout: { problems: number } }) => s + n.heldout.problems, 0);
+  console.log(`experimental credit=false history=${run.history} budgetStopped=${run.budgetStopped} mapTrusted=${mapTrusted} heldoutProof=${run.heldoutProof === true}`);
+  console.log(`nodes=${run.nodes.length} learned=${learned} attempts=${run.attemptsUsed} minutes=${run.minutesUsed} heldout=${heldPassed}/${heldRows} pairs=${pairs.docs.length} eligible=${pairs.eligible} dropped_leak=${pairs.dropped.leak} dropped_near=${pairs.dropped.nearDuplicate}`);
   console.log("wrote practice-results.json learn-progress.txt needs-teaching.jsonl pairs/docs.jsonl pairs/manifest.jsonl");
 } catch (e) {
   if (e instanceof LearnRefuse) { console.log(`refused ${e.code}`); process.exit(2); }

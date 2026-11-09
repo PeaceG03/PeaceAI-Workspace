@@ -477,6 +477,63 @@ test("from-history reads git and ignores a repo without history", { timeout: 180
   }
 });
 
+test("arrows, arrays, strings, and booleans are candidates; two required params and an untrusted map are not learned", { timeout: 120_000 }, () => {
+  const repo = mkdtempSync(join(tmpdir(), "peaceai-shapes-"));
+  try {
+    mkdirSync(join(repo, "src"));
+    writeFileSync(join(repo, "src/shapes.ts"), [
+      "export const inc = (n: number): number => n + 1;",
+      "export const shout = (s: string): string => s.length > 1 ? s.toUpperCase() : s;",
+      "export function total(xs: number[]): number { return xs.reduce((a, b) => a + b, 0); }",
+      "export function on(v: boolean): boolean { return !v; }",
+      "export function add(a: number, b: number): number { return a + b; }",
+      "",
+    ].join("\n"));
+    const ids = ["inc", "shout", "total", "on", "add"].map((name) => `fn:src/shapes.ts:${name}`);
+    const shapeTree: SkillTree = {
+      ...tree(),
+      nodes: ids.map((id) => ({ id, title: id, parent: null, children: [], size: "leaf" as const, testIdea: "call it", reason: null, depth: 0, units: 1 })),
+    };
+    const shapeMap: ProgramMap = {
+      ...map(),
+      modules: [{ path: "src/shapes.ts", exports: ["inc", "shout", "total", "on", "add"], imports: [], summary: "shapes" }],
+      entryPoints: ["src/shapes.ts"],
+    };
+    const run = practiceProgram({ tree: shapeTree, map: shapeMap, repoPath: repo, seed: 1, maxMinutes: 2, maxAttemptsTotal: 24, now: frozen });
+    assert.equal(run.credit, false);
+    assert.equal(run.heldoutProof, false);
+    const byId = (id: string) => run.nodes.find((n) => n.nodeId === id)!;
+    assert.equal(byId(ids[4]!).status, "NEEDS_TEACHING");
+    assert.ok(byId(ids[4]!).reasonCodes.includes("UNSUPPORTED_INPUT"));
+    assert.equal(run.problems.some((p) => p.function === "add"), false);
+    for (const name of ["inc", "shout", "total", "on"]) {
+      const rows = run.problems.filter((p) => p.function === name);
+      assert.ok(rows.length > 0, name);
+      assert.notEqual(byId(`fn:src/shapes.ts:${name}`)!.status, "LEARNED");
+    }
+    assert.ok(run.problems.some((p) => p.function === "shout" && p.test.includes("\"a\"")));
+    assert.ok(run.problems.some((p) => p.function === "total" && p.test.includes("[")));
+    assert.ok(run.problems.some((p) => p.function === "on" && p.test.includes("true")));
+    const held = run.problems.filter((p) => p.set === "heldout");
+    const built = buildLearnPairs(run, "shapes");
+    for (const d of built.docs) assert.ok(held.every((p) => !d.text.includes(p.test) && !d.text.includes(p.broken)));
+    const kinds = built.docs.map((d) => run.problems.find((p) => d.text.includes(p.test))?.kind);
+    assert.equal(new Set(kinds).size, kinds.length);
+    const blocked = buildLearnPairs({ ...run, mapTrusted: false }, "shapes");
+    assert.equal(blocked.eligible, false);
+    assert.equal(blocked.docs.length, 0);
+    const bare = practiceProgram({
+      tree: { ...shapeTree, nodes: [shapeTree.nodes[4]!] },
+      map: shapeMap, repoPath: repo, seed: 1, maxMinutes: 2, maxAttemptsTotal: 4, now: frozen,
+    });
+    assert.equal(bare.problems.length, 0);
+    assert.equal(bare.sealedBeforeAttempts, false);
+    assert.equal(bare.heldoutProof, false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test("a leaf path cannot escape the repo through .. or a symlink", () => {
   const repo = mkdtempSync(join(tmpdir(), "peaceai-escape-"));
   const outside = mkdtempSync(join(tmpdir(), "peaceai-outside-"));

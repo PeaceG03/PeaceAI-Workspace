@@ -154,6 +154,24 @@ test("checkMap trusts a real map and catches a corrupted edge", () => {
   });
 });
 
+test("checkMap trusts a renamed re-export, including a reserved-word alias", () => {
+  const dir = mkdtempSync(join(tmpdir(), "peaceai-alias-"));
+  try {
+    mkdirSync(join(dir, "src"));
+    writeFileSync(join(dir, "src/inner.ts"), "export const inner = 1;\n");
+    writeFileSync(join(dir, "src/index.ts"), "export { inner as kept } from \"./inner.ts\";\nexport { inner as try } from \"./inner.ts\";\n");
+    const map = buildProgramMap(dir);
+    const check = checkMap(map, dir);
+    assert.deepEqual(check.wrong, []);
+    assert.ok(check.asked > 0);
+    const index = map.modules.find((m) => m.path === "src/index.ts");
+    assert.ok(index?.exports.includes("kept"));
+    assert.ok(index?.exports.includes("try"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("skill tree splits a wide gap, keeps every leaf testable, and parks the depth-5 gap", { timeout: 120_000 }, () => {
   withShop((fix) => {
     const map = buildProgramMap(fix);

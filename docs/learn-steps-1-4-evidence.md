@@ -54,5 +54,25 @@ PR 723 branch gen/batch59-learn was not updated. Drafts 716-722 were not touched
 
 ## Efficiency
 
-Unknown. No matched baseline run of the old route and of learn steps 1-4 exists yet.
-What can be measured later, on a temp program that is not a held-out task and not a dev reference diff, with the same minute and attempt caps: independent verified held-out breaks (one per break), verified DEV pairs after the second test run, elapsed time, and attempts used. Repeating one break across inputs does not count as more than one success. Unit tests of the gates are not that measurement.
+Unknown. The default planner, asked inside step 2, is not the same measurement as held-out breaks and DEV pairs. No older command emits those counts for the same target and the same caps.
+
+## Unmodified radash, after the follow-up
+
+Target: https://github.com/sodiray/radash commit 4cab1900d08e0997abc4f17aec3cbfe18958d766, MIT. LICENSE.md, package.json, and src/ were copied unchanged. PeaceAI head for the first run was 9a19bab2a0d1d1e6b191e89bdc241c6ae8eea39c. That run is not a proof of learning: learn.ts exited 1 (map 125/126, export:try), learn-practice.ts exited 0 with 0 attempts, 0 problems, 0 DEV pairs, and held-out 0/0. credit stayed false.
+
+The follow-up keeps that target. Commands, caps, and seed:
+
+```
+tsx peaceai/bin/learn.ts <target> --out <map-out>
+tsx peaceai/bin/learn-practice.ts --repo <target> --tree <map-out>/skill-tree.json --map <map-out>/program-map.json --out <practice-out> --seed 1 --max-minutes 2 --max-attempts-total 24
+```
+
+learn.ts exited 0 in 8 seconds. Map trusted, asked 126, correct 126. Planner plan-only-v4 doable was empty. Missing skills: edit-existing-function, extend-existing-test, run-target-tests. Tree: 307 nodes, 247 leaves.
+
+learn-practice.ts exited 0. Wall clock 20 seconds. The program recorded minutes 0.093, attempts 24, budgetStopped true, mapTrusted true, heldoutProof false, sealed true, learned 0. Independent held-out breaks passed 5 of 8. Eligible DEV pairs: 2. dropped_leak 0, dropped_near 1. The functions that produced problems were capitalize and draw. credit is false. heldoutProof is false because no leaf reached 4 independent held-out breaks at rate 0.75. An empty held-out set is not recorded as a seal.
+
+Leaf reasons included 99 UNSUPPORTED_INPUT, 22 NO_PRACTICE_PROBLEM, and 120 BUDGET_STOPPED. Two required parameters, rest parameters, and inputs this program cannot build stay unsupported. Unit tests of new shapes are not this measurement.
+
+Readiness files docs/PEACEAI_FINAL_PRODUCT_READINESS.md, packages/core/src/ProductReadiness.ts, and docs/PEACEAI_OVERNIGHT_PROGRESS.md are still absent. They were not created.
+
+CONTINUE_REQUIRED. This follow-up is not on main until #724 merges and this branch is reviewed. The host cron and the CI watches are outside this change.

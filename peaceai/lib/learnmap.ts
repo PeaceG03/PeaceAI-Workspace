@@ -255,7 +255,7 @@ function exportersOf(repoPath: string, name: string): string[] {
   if (!hit.ok) return [];
   const paths = new Set<string>();
   for (const d of hit.definitions) if (d.exported && !isTestPath(d.path)) paths.add(d.path);
-  for (const e of hit.reexports) if (!isTestPath(e.path)) paths.add(e.path);
+  for (const e of hit.reexports) if (!isTestPath(e.path) && e.exported === name) paths.add(e.path);
   return [...paths].sort(byStr);
 }
 

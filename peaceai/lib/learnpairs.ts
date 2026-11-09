@@ -21,6 +21,9 @@ export interface PairBuild {
   schema: typeof LEARN_PAIRS_SCHEMA;
   experimental: true;
   credit: false;
+  /** False when the program map is untrusted. Those runs emit no training docs. */
+  eligible: boolean;
+  withheld: number;
   docs: FtDoc[];
   dropped: { leak: number; nearDuplicate: number };
 }
@@ -50,7 +53,12 @@ function editBody(diff: string): string {
  * Held-out problems, and anything derived from them, are not emitted. A DEV edit whose
  * normalized body matches a held-out edit, or a pair leak.scanText flags, is dropped and counted.
  */
-export function buildLearnPairs(run: PracticeRun, program: string): PairBuild {
+export function buildLearnPairs(run: PracticeRun, program: string, opts?: { eligible?: boolean }): PairBuild {
+  const eligible = opts?.eligible !== false && run.mapTrusted !== false;
+  const solvedDev = run.problems.filter((p) => p.set === "dev" && p.solved && p.verified && p.fixed !== null && p.fixed !== p.broken);
+  if (!eligible) {
+    return { schema: LEARN_PAIRS_SCHEMA, experimental: true, credit: false, eligible: false, withheld: solvedDev.length, docs: [], dropped: { leak: 0, nearDuplicate: 0 } };
+  }
   const held = run.problems.filter((p) => p.set === "heldout");
   const heldKeys = new Set(held.map((p) => editKey(functionDiff(p.sourcePath, p.broken, p.original))));
   const heldBodies = new Set(held.map((p) => editBody(functionDiff(p.sourcePath, p.broken, p.original))).filter((b) => b.length > 0));
@@ -59,8 +67,10 @@ export function buildLearnPairs(run: PracticeRun, program: string): PairBuild {
   const docs: FtDoc[] = [];
   const dropped = { leak: 0, nearDuplicate: 0 };
   const seenBodies = new Set<string>();
-  const dev = run.problems.filter((p) => p.set === "dev" && p.solved && p.verified && p.fixed !== null && p.fixed !== p.broken).slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const seenKinds = new Set<string>();
+  const dev = solvedDev.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   for (const p of dev) {
+    if (seenKinds.has(p.kind)) { dropped.nearDuplicate++; continue; }
     const text = pairText(p);
     if (scanText(text).length > 0) { dropped.leak++; continue; }
     const diff = functionDiff(p.sourcePath, p.broken, p.fixed ?? p.original);
@@ -71,6 +81,7 @@ export function buildLearnPairs(run: PracticeRun, program: string): PairBuild {
     const near = heldKeys.has(key) || heldKeys.has(originalKey) || heldBodies.has(body) || heldBodies.has(originalBody)
       || heldTests.some((t) => text.includes(t)) || heldBroken.some((t) => text.includes(t)) || seenBodies.has(body);
     if (near) { dropped.nearDuplicate++; continue; }
+    seenKinds.add(p.kind);
     seenBodies.add(body);
     docs.push({
       repo: program,
@@ -81,7 +92,7 @@ export function buildLearnPairs(run: PracticeRun, program: string): PairBuild {
       split: "train",
     });
   }
-  return { schema: LEARN_PAIRS_SCHEMA, experimental: true, credit: false, docs, dropped };
+  return { schema: LEARN_PAIRS_SCHEMA, experimental: true, credit: false, eligible: true, withheld: 0, docs, dropped };
 }
 
 /** Same lines as peaceai/bin/ft-pairs.ts `emit`. Writes stay outside `repoPath` when it is passed. */
@@ -93,7 +104,7 @@ export function writeLearnPairs(dir: string, built: PairBuild, repoPath?: string
     man.push(JSON.stringify({ doc: n, split: d.split, repo: d.repo, sha: d.sha, path: d.path, function: d.function }));
   });
   const body = (lines: string[]) => lines.length ? `${lines.join("\n")}\n` : "";
-  const meta = `${JSON.stringify({ schema: built.schema, experimental: true, credit: false, dropped: built.dropped, docs: built.docs.length }, null, 2)}\n`;
+  const meta = `${JSON.stringify({ schema: built.schema, experimental: true, credit: false, eligible: built.eligible, withheld: built.withheld, dropped: built.dropped, docs: built.docs.length }, null, 2)}\n`;
   if (!repoPath) throw new LearnRefuse("WRITE_IN_TARGET");
   safeWriteFile(repoPath, join(dir, "docs.jsonl"), body(docs));
   safeWriteFile(repoPath, join(dir, "manifest.jsonl"), body(man));
