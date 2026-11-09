@@ -4,12 +4,13 @@
 // EXPERIMENTAL. credit is false; nothing here touches scoring.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { buildProgramMap, checkMap } from "../lib/learnmap.ts";
 import { buildSkillTree, renderSkillTree, treeConserved, type GapNode } from "../lib/learntree.ts";
+import { practiceProgram } from "../lib/learnpractice.ts";
 
 const repo = resolve(import.meta.dirname, "..", "..");
 const tsx = join(repo, "node_modules/.bin/tsx");
@@ -208,6 +209,86 @@ test("skill tree splits a wide gap, keeps every leaf testable, and parks the dep
     assert.match(text, /EXPERIMENTAL credit=false/);
     assert.match(text, /TOO_BIG_UNSPLIT/);
     assert.match(text, /fix addItem in src\/cart.ts/);
+  });
+});
+
+test("overload declarations keep distinct ids and practice does not drop a node", () => {
+  const dir = mkdtempSync(join(tmpdir(), "peaceai-over-"));
+  try {
+    mkdirSync(join(dir, "src"));
+    writeFileSync(join(dir, "src/measure.ts"), [
+      "export function measure(n: number): number;",
+      "export function measure(n: number, label: string): number;",
+      "export function measure(n: number, label?: string): number {",
+      "  return label ? n + label.length : n + 1;",
+      "}",
+      "export const other = (n: number): number => n + 2;",
+      "",
+    ].join("\n"));
+    const map = buildProgramMap(dir);
+    const tree = buildSkillTree(map, dir);
+    const ids = tree.nodes.map((n) => n.id);
+    assert.equal(new Set(ids).size, ids.length);
+    assert.equal(treeConserved(tree), true);
+    assert.ok(ids.filter((id) => id.startsWith("fn:src/measure.ts:measure:")).length >= 2);
+    const run = practiceProgram({
+      tree, map, repoPath: dir, seed: 1, maxMinutes: 1, maxAttemptsTotal: 0, now: () => 1_700_000_000_000,
+    });
+    assert.equal(run.nodes.length, tree.nodes.length);
+    assert.equal(new Set(run.nodes.map((n) => n.nodeId)).size, tree.nodes.length);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("learn CLI refuses a symlink or hard link at each output and writes none of them", { timeout: 180_000 }, () => {
+  withShop((fix) => {
+    const marker = join(fix, "src", "keep.txt");
+    writeFileSync(marker, "ORIGINAL\n");
+    const names = ["program-map.json", "skill-tree.json", "learn-tree.txt"] as const;
+    const run = (out: string) => spawnSync(tsx, ["peaceai/bin/learn.ts", fix, "--out", out], { cwd: repo, encoding: "utf8" });
+    for (const name of names) {
+      const out = mkdtempSync(join(tmpdir(), "peaceai-link-"));
+      try {
+        symlinkSync(marker, join(out, name));
+        const before = readFileSync(marker, "utf8");
+        const r = run(out);
+        assert.notEqual(r.status, 0, name);
+        assert.match(`${r.stdout}${r.stderr}`, /WRITE_IN_TARGET/);
+        assert.equal(readFileSync(marker, "utf8"), before);
+        for (const other of names) {
+          const dest = join(out, other);
+          if (other === name) assert.equal(lstatSync(dest).isSymbolicLink(), true);
+          else assert.equal(existsSync(dest), false, other);
+        }
+      } finally {
+        rmSync(out, { recursive: true, force: true });
+      }
+    }
+    const mixed = mkdtempSync(join(tmpdir(), "peaceai-mixed-"));
+    try {
+      for (const name of names) symlinkSync(marker, join(mixed, name));
+      const before = readFileSync(marker, "utf8");
+      const r = run(mixed);
+      assert.notEqual(r.status, 0);
+      assert.equal(readFileSync(marker, "utf8"), before);
+      for (const name of names) assert.equal(lstatSync(join(mixed, name)).isSymbolicLink(), true);
+    } finally {
+      rmSync(mixed, { recursive: true, force: true });
+    }
+    const hard = mkdtempSync(join(tmpdir(), "peaceai-hard-"));
+    try {
+      linkSync(marker, join(hard, "program-map.json"));
+      const before = readFileSync(marker, "utf8");
+      const r = run(hard);
+      assert.notEqual(r.status, 0);
+      assert.match(`${r.stdout}${r.stderr}`, /WRITE_IN_TARGET/);
+      assert.equal(readFileSync(marker, "utf8"), before);
+      assert.equal(existsSync(join(hard, "skill-tree.json")), false);
+      assert.equal(existsSync(join(hard, "learn-tree.txt")), false);
+    } finally {
+      rmSync(hard, { recursive: true, force: true });
+    }
   });
 });
 

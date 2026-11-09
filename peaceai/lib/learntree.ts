@@ -189,7 +189,7 @@ function childrenOf(spec: Spec): Spec[] | null {
       const pieces = fn.pieces;
       const units = fnUnits(fn);
       return {
-        id: `fn:${spec.path}:${fn.name}`,
+        id: `fn:${spec.path}:${fn.name}:${fn.line}`,
         title: `fix ${fn.name} in ${spec.path}`,
         parent: spec.id,
         depth: spec.depth + 1,
@@ -211,7 +211,7 @@ function childrenOf(spec: Spec): Spec[] | null {
       const units = unitCount(arm.pieces) || 1;
       const tag = spec.id.startsWith("beh:") ? `${spec.id.slice(spec.id.lastIndexOf(":") + 1)}.${arm.tag}` : arm.tag;
       return {
-        id: `beh:${spec.path}:${fn.name}:${tag}`,
+        id: `beh:${spec.path}:${fn.name}:${fn.line}:${tag}`,
         title: stack.length ? `fix ${fn.name} when ${stack.join(" and ")}` : `fix ${fn.name} in ${spec.path}`,
         parent: spec.id,
         depth: spec.depth + 1,

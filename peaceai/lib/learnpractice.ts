@@ -16,9 +16,9 @@
 // Target code runs only in a temp child with node --permission and a clean environment.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import ts from "typescript";
 import { openRepo } from "./codesearch.ts";
 import { shapeOf } from "./derive-practice-kinds.ts";
@@ -197,20 +197,65 @@ export function prepareOutDir(repo: string, dir: string): void {
   if (insideRepo(repo, dir) || hasSymlinkComponent(dir) || lstatSync(dir).isSymbolicLink()) throw new LearnRefuse("WRITE_IN_TARGET");
 }
 
-/** Write `file` without following a symlink component. Refuses a path that resolves inside `repo`. */
+/** True when opening `file` for write could follow a symlink or alter another name (a hard link). */
+export function outputBlocked(repo: string, file: string): boolean {
+  const full = resolve(file);
+  if (insideRepo(repo, full) || insideRepo(repo, dirname(full)) || hasSymlinkComponent(full)) return true;
+  try {
+    const st = lstatSync(full);
+    if (st.isSymbolicLink() || !st.isFile() || st.nlink > 1) return true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") return true;
+  }
+  return false;
+}
+
+/** Write `file` without following a symlink or a hard link. Refuses a path that resolves inside `repo`. */
 export function safeWriteFile(repo: string, file: string, data: string): void {
   const full = resolve(file);
-  if (insideRepo(repo, full) || insideRepo(repo, dirname(full)) || hasSymlinkComponent(full)) throw new LearnRefuse("WRITE_IN_TARGET");
+  if (outputBlocked(repo, full)) throw new LearnRefuse("WRITE_IN_TARGET");
   prepareOutDir(repo, dirname(full));
-  try {
-    if (lstatSync(full).isSymbolicLink()) throw new LearnRefuse("WRITE_IN_TARGET");
-  } catch (e) {
-    if (e instanceof LearnRefuse) throw e;
-    const code = (e as NodeJS.ErrnoException).code;
-    if (code !== "ENOENT") throw e;
-  }
+  if (outputBlocked(repo, full)) throw new LearnRefuse("WRITE_IN_TARGET");
   const fd = openSync(full, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o644);
   try { writeSync(fd, data); } finally { closeSync(fd); }
+}
+
+/**
+ * Publish every file or none. A destination symlink or hard link is refused before any
+ * final name is replaced, so one bad path cannot leave the others written.
+ */
+export function publishLearnFiles(repo: string, files: readonly { path: string; data: string }[]): void {
+  const specs = files.map((f) => ({ data: f.data, full: resolve(f.path) }));
+  for (const s of specs) {
+    if (outputBlocked(repo, s.full)) throw new LearnRefuse("WRITE_IN_TARGET");
+    prepareOutDir(repo, dirname(s.full));
+    if (outputBlocked(repo, s.full)) throw new LearnRefuse("WRITE_IN_TARGET");
+  }
+  const temps: { tmp: string; full: string }[] = [];
+  try {
+    for (const s of specs) {
+      const tmp = join(dirname(s.full), `.${basename(s.full)}.${process.pid}.${temps.length}.tmp`);
+      if (outputBlocked(repo, tmp)) throw new LearnRefuse("WRITE_IN_TARGET");
+      const fd = openSync(tmp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o644);
+      try { writeSync(fd, s.data); } finally { closeSync(fd); }
+      temps.push({ tmp, full: s.full });
+    }
+  } catch (e) {
+    for (const t of temps) { try { unlinkSync(t.tmp); } catch { /* already gone */ } }
+    throw e;
+  }
+  const published: string[] = [];
+  try {
+    for (const t of temps) {
+      if (outputBlocked(repo, t.full)) throw new LearnRefuse("WRITE_IN_TARGET");
+      renameSync(t.tmp, t.full);
+      published.push(t.full);
+    }
+  } catch (e) {
+    for (const t of temps) { try { unlinkSync(t.tmp); } catch { /* renamed or gone */ } }
+    for (const full of published) { try { unlinkSync(full); } catch { /* best effort */ } }
+    throw e;
+  }
 }
 
 function sha256(s: string): string {
@@ -575,8 +620,16 @@ function problemsFor(nodeId: string, path: string, name: string, src: string, se
  * which breaks are held out and does not clone one break across the two sets.
  */
 export function splitProblems(problems: PracticeProblem[], seed = 1): PracticeProblem[] {
-  const kinds: string[] = [];
+  const distinct: PracticeProblem[] = [];
+  const seenBroken = new Set<string>();
   for (const p of problems) {
+    const key = breakKey(p);
+    if (seenBroken.has(key)) continue;
+    seenBroken.add(key);
+    distinct.push(p);
+  }
+  const kinds: string[] = [];
+  for (const p of distinct) {
     const k = `${p.kind}\n${p.fromHistory ? p.historySha ?? "" : ""}`;
     if (!kinds.includes(k)) kinds.push(k);
   }
@@ -592,7 +645,7 @@ export function splitProblems(problems: PracticeProblem[], seed = 1): PracticePr
   const setOf = new Map(order.map((k, i) => [k, i % 2 === 0 ? "heldout" as const : "dev" as const]));
   const seen = new Set<string>();
   const out: PracticeProblem[] = [];
-  for (const p of problems) {
+  for (const p of distinct) {
     const k = `${p.kind}\n${p.fromHistory ? p.historySha ?? "" : ""}`;
     if (seen.has(k)) continue;
     seen.add(k);
@@ -713,14 +766,20 @@ function attemptOne(problem: PracticeProblem, budget: Budget): PracticeProblem {
   return out;
 }
 
-/** Independent held-out breaks. A kind counts once; it passes only when every row of that kind did. */
+/** One broken program, ignoring kind labels. A history row and a mutation of the same text are one break. */
+export function breakKey(p: { broken: string }): string {
+  return p.broken.replace(/\r\n/g, "\n").replace(/[ \t]+$/gm, "").trim();
+}
+
+/** Independent held-out breaks. The same broken text counts once, whatever its kind is called. */
 export function scoreHeldOut(problems: readonly PracticeProblem[]): { independent: number; passed: number } {
   const groups = new Map<string, PracticeProblem[]>();
   for (const p of problems) {
     if (p.set !== "heldout") continue;
-    const rows = groups.get(p.kind) ?? [];
+    const key = breakKey(p);
+    const rows = groups.get(key) ?? [];
     rows.push(p);
-    groups.set(p.kind, rows);
+    groups.set(key, rows);
   }
   let passed = 0;
   for (const rows of groups.values()) if (rows.every((p) => p.solved && p.verified)) passed++;

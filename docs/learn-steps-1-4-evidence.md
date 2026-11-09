@@ -67,11 +67,13 @@ tsx peaceai/bin/learn.ts <target> --out <map-out>
 tsx peaceai/bin/learn-practice.ts --repo <target> --tree <map-out>/skill-tree.json --map <map-out>/program-map.json --out <practice-out> --seed 1 --max-minutes 2 --max-attempts-total 24
 ```
 
-learn.ts exited 0 in 8 seconds. Map trusted, asked 126, correct 126. Planner plan-only-v4 doable was empty. Missing skills: edit-existing-function, extend-existing-test, run-target-tests. Tree: 307 nodes, 247 leaves.
+learn.ts exited 0 in 8 seconds. Map trusted, asked 126, correct 126. Planner plan-only-v4 doable was empty. Missing skills: edit-existing-function, extend-existing-test, run-target-tests. Tree: 307 nodes, 307 distinct ids, 247 leaves. practice recorded 307 nodes, the same count, so overload ids were not collapsed.
 
-learn-practice.ts exited 0. Wall clock 20 seconds. The program recorded minutes 0.093, attempts 24, budgetStopped true, mapTrusted true, heldoutProof false, sealed true, learned 0. Independent held-out breaks passed 5 of 8. Eligible DEV pairs: 2. dropped_leak 0, dropped_near 1. The functions that produced problems were capitalize and draw. credit is false. heldoutProof is false because no leaf reached 4 independent held-out breaks at rate 0.75. An empty held-out set is not recorded as a seal.
+learn-practice.ts exited 0. Wall clock 20 seconds. The program recorded minutes 0.091, attempts 24, budgetStopped true, mapTrusted true, heldoutProof false, sealed true, learned 0. Independent held-out breaks passed 5 of 8. Eligible DEV pairs: 2. dropped_leak 0, dropped_near 1. The functions that produced problems were capitalize and draw. credit is false. heldoutProof is false because no leaf reached 4 distinct held-out breaks at rate 0.75. The same broken text is one break even when two kinds name it. An empty held-out set is not a seal and not proof.
 
-Leaf reasons included 99 UNSUPPORTED_INPUT, 22 NO_PRACTICE_PROBLEM, and 120 BUDGET_STOPPED. Two required parameters, rest parameters, and inputs this program cannot build stay unsupported. Unit tests of new shapes are not this measurement.
+A destination symlink or hard link for program-map.json, skill-tree.json, or learn-tree.txt is refused before any of the three files is published. The target bytes stayed at the provenance hashes.
+
+Leaf reasons on the earlier shape pass included UNSUPPORTED_INPUT for two required parameters and for inputs this program cannot build. Unit tests of new shapes are not this measurement.
 
 Readiness files docs/PEACEAI_FINAL_PRODUCT_READINESS.md, packages/core/src/ProductReadiness.ts, and docs/PEACEAI_OVERNIGHT_PROGRESS.md are still absent. They were not created.
 

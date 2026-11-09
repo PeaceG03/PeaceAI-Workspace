@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { editKey, normalizedEdit } from "./dedupe.ts";
 import type { FtDoc } from "./ftpairs.ts";
 import { scanText } from "./leak.ts";
-import { LearnRefuse, safeWriteFile, type PracticeProblem, type PracticeRun } from "./learnpractice.ts";
+import { breakKey, LearnRefuse, safeWriteFile, type PracticeProblem, type PracticeRun } from "./learnpractice.ts";
 
 export const LEARN_PAIRS_SCHEMA = "peaceai-learn-pairs:v1" as const;
 
@@ -67,10 +67,11 @@ export function buildLearnPairs(run: PracticeRun, program: string, opts?: { elig
   const docs: FtDoc[] = [];
   const dropped = { leak: 0, nearDuplicate: 0 };
   const seenBodies = new Set<string>();
-  const seenKinds = new Set<string>();
+  const seenBreaks = new Set<string>();
   const dev = solvedDev.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   for (const p of dev) {
-    if (seenKinds.has(p.kind)) { dropped.nearDuplicate++; continue; }
+    const distinct = breakKey(p);
+    if (seenBreaks.has(distinct)) { dropped.nearDuplicate++; continue; }
     const text = pairText(p);
     if (scanText(text).length > 0) { dropped.leak++; continue; }
     const diff = functionDiff(p.sourcePath, p.broken, p.fixed ?? p.original);
@@ -81,7 +82,7 @@ export function buildLearnPairs(run: PracticeRun, program: string, opts?: { elig
     const near = heldKeys.has(key) || heldKeys.has(originalKey) || heldBodies.has(body) || heldBodies.has(originalBody)
       || heldTests.some((t) => text.includes(t)) || heldBroken.some((t) => text.includes(t)) || seenBodies.has(body);
     if (near) { dropped.nearDuplicate++; continue; }
-    seenKinds.add(p.kind);
+    seenBreaks.add(distinct);
     seenBodies.add(body);
     docs.push({
       repo: program,

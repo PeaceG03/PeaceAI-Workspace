@@ -181,7 +181,9 @@ test("status, seal, split, and parent gates do not treat copies as independent h
   assert.equal(shouldDemote(3, 0, false), false);
   assert.equal(shouldDemote(4, 0, true), false);
   const held = [0, 1].flatMap((k) => [0, 1, 2].map((n) => problem({
-    id: `h${k}-${n}`, set: "heldout", kind: `break-${k}`, solved: true, verified: true,
+    id: `h${k}-${n}`, set: "heldout", kind: `break-${k}`,
+    broken: `export function score(n: number): number {\n  return n - ${k + 1};\n}\n`,
+    solved: true, verified: true,
   })));
   assert.equal(scoreHeldOut(held).independent, 2);
   assert.equal(scoreHeldOut(held).passed, 2);
@@ -191,7 +193,10 @@ test("status, seal, split, and parent gates do not treat copies as independent h
   assert.equal(practiceSealOk(held, held), true);
   assert.equal(practiceSealOk(held, held.map((p, i) => (i === 0 ? { ...p, broken: `${p.broken}\n` } : p))), false);
 
-  const kinds = [0, 1, 2].map((i) => problem({ id: `k${i}`, kind: `kind-${i}`, set: "dev" }));
+  const kinds = [0, 1, 2].map((i) => problem({
+    id: `k${i}`, kind: `kind-${i}`, set: "dev",
+    broken: `export function score(n: number): number {\n  return n + ${i};\n}\n`,
+  }));
   const same = splitProblems(kinds, 1);
   assert.deepEqual(same.map((p) => [p.id, p.set]), splitProblems(kinds, 1).map((p) => [p.id, p.set]));
   assert.equal(new Set(same.map((p) => p.kind)).size, same.length);
@@ -475,6 +480,36 @@ test("from-history reads git and ignores a repo without history", { timeout: 180
     rmSync(bare, { recursive: true, force: true });
     rmSync(pwn, { force: true });
   }
+});
+
+test("the same broken program is one break across kinds, and four copies are not LEARNED", () => {
+  const same = "export function score(n: number): number {\n  return n - 1;\n}\n";
+  const rows = [0, 1, 2, 3].map((i) => problem({
+    id: `row-${i}`, set: "heldout", kind: i === 3 ? "history|aaaaaaaaaa" : `mut-${i}`,
+    broken: i === 0 || i === 3 ? same : `export function score(n: number): number {\n  return n - ${i + 3};\n}\n`,
+    fromHistory: i === 3, historySha: i === 3 ? "a".repeat(40) : null,
+    solved: true, verified: true,
+  }));
+  const scored = scoreHeldOut(rows);
+  assert.equal(scored.independent, 3);
+  assert.equal(scored.passed, 3);
+  assert.notEqual(leafStatus(scored.passed, scored.independent, false), "LEARNED");
+  const distinct = [0, 1, 2, 3].map((i) => problem({
+    id: `d-${i}`, set: "heldout", kind: `mut-${i}`,
+    broken: `export function score(n: number): number {\n  return n - ${i + 1};\n}\n`,
+    solved: true, verified: true,
+  }));
+  assert.equal(scoreHeldOut(distinct).independent, 4);
+  assert.equal(leafStatus(4, 4, false), "LEARNED");
+  assert.equal(splitProblems(rows, 1).length, 3);
+  let learnedSeeds = 0;
+  for (let seed = 1; seed <= 50; seed++) {
+    const split = splitProblems(rows.map((p) => ({ ...p, set: "dev" as const })), seed);
+    const heldOnly = split.filter((p) => p.set === "heldout");
+    const again = scoreHeldOut(heldOnly.map((p) => ({ ...p, solved: true, verified: true })));
+    if (leafStatus(again.passed, again.independent, false) === "LEARNED") learnedSeeds++;
+  }
+  assert.equal(learnedSeeds, 0);
 });
 
 test("arrows, arrays, strings, and booleans are candidates; two required params and an untrusted map are not learned", { timeout: 120_000 }, () => {
