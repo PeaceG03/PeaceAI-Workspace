@@ -28,8 +28,8 @@ function watch(over: Partial<Watch> = {}): Watch {
 function pr(over: Partial<GhPr & { repo: string }> = {}): GhPr & { repo: string } {
   return { repo: "PeaceG03/PeaceAI-Workspace", state: "open", merged: false, headSha: HEAD, ...over };
 }
-function run(id: number, head: string, status: string, conclusion: string | null): GhRun {
-  return { id, head_sha: head, status, conclusion };
+function run(id: number, head: string, status: string, conclusion: string | null, attempt = 1): GhRun {
+  return { id, head_sha: head, status, conclusion, run_attempt: attempt };
 }
 function judged(runs: Record<string, GhRun[]>, extra: Partial<GhPr & { repo: string }> = {}, now = NOW, deadline = "2026-11-11T18:00:00.000Z") {
   return judge(pr(extra), ["ci", "leak-check", "builder-log"], runs, now, deadline);
@@ -233,6 +233,134 @@ test("a github error and a refused notify leave the previous fingerprint", async
 test("parsers reject a pull request or run list that is not the documented shape", () => {
   assert.equal(parsePr({ state: "open", merged: false, head: { sha: HEAD } })?.headSha, HEAD);
   assert.equal(parsePr({ state: "open", merged: false, head: { sha: "abc" } }), null);
-  assert.ok(parseRuns({ workflow_runs: [run(1, HEAD, "completed", "success")] }));
+  assert.equal(parseRuns({ workflow_runs: [run(1, HEAD, "completed", "success")] })?.[0]?.run_attempt, 1);
+  assert.equal(parseRuns({ workflow_runs: [{ id: 1, head_sha: HEAD, status: "completed", conclusion: "success" }] })?.[0]?.run_attempt, 1);
   assert.equal(parseRuns({ workflow_runs: [{ id: "x" }] }), null);
+  assert.equal(parseRuns({ workflow_runs: [{ id: 1, head_sha: HEAD, status: "completed", conclusion: "failure", run_attempt: 0 }] }), null);
+  assert.equal(parseRuns({ workflow_runs: [{ id: 1, head_sha: HEAD, status: "completed", conclusion: "failure", run_attempt: "2" }] }), null);
+});
+
+test("rearm observes a new attempt and does not resend the stored failure", async () => {
+  const seen = {
+    ci: [run(8, HEAD, "completed", "failure", 1)],
+    "leak-check": [run(9, HEAD, "completed", "success", 1)],
+    "builder-log": [run(10, HEAD, "completed", "success", 1)],
+  };
+  const attempt1 = judged(seen);
+  const attempt2 = judged({
+    ci: [run(8, HEAD, "completed", "failure", 2)],
+    "leak-check": [run(9, HEAD, "completed", "success", 2)],
+    "builder-log": [run(10, HEAD, "completed", "success", 1)],
+  });
+  assert.equal(attempt1.workflows.every((w) => w.runAttempt === 1), true);
+  assert.notEqual(attempt1.fingerprint, attempt1.legacyFingerprint);
+  assert.equal(attempt2.legacyFingerprint, attempt1.legacyFingerprint);
+  assert.notEqual(attempt2.fingerprint, attempt1.fingerprint);
+  assert.equal(attempt2.workflows.find((w) => w.name === "ci")!.url, "https://github.com/PeaceG03/PeaceAI-Workspace/actions/runs/8/attempts/2");
+  const stored = watch({ active: false, terminal: true, head: HEAD, lastFingerprint: attempt1.legacyFingerprint, lastOverall: "failed" });
+  assert.equal(planNotify(stored, attempt1), false);
+  assert.equal(planNotify({ ...stored, active: true, terminal: false }, attempt1), false);
+  assert.equal(planNotify({ ...stored, active: true, terminal: false }, attempt2), true);
+
+  const dir = mkdtempSync(join(tmpdir(), "ci-watch-rearm-"));
+  const path = join(dir, "state.json");
+  const state = emptyState();
+  state.watches.push(stored);
+  saveState(path, state);
+  const before = readFileSync(path, "utf8");
+  const logs: string[] = [];
+  const posts: Array<{ overall: string; workflows: Array<{ name: string; runAttempt: number | null; url: string | null }> }> = [];
+  let ci = [run(8, HEAD, "completed", "failure", 1)];
+  let leak = [run(9, HEAD, "completed", "success", 1)];
+  let blog = [run(10, HEAD, "completed", "success", 1)];
+  let head = HEAD;
+  const fetchImpl: typeof fetch = async (url, init) => {
+    const u = String(url);
+    if (u.endsWith("/pulls/724")) return Response.json({ state: "open", merged: false, head: { sha: head } });
+    if (u.includes("ci.yml")) return Response.json({ workflow_runs: ci });
+    if (u.includes("leak-check.yml")) return Response.json({ workflow_runs: leak });
+    if (u.includes("builder-log.yml")) return Response.json({ workflow_runs: blog });
+    posts.push(JSON.parse(String(init?.body)));
+    const auth = new Headers(init?.headers).get("authorization") ?? "";
+    assert.equal(auth, `Bearer ${KEY}`);
+    return new Response("ok", { status: 200 });
+  };
+  const cli = io(dir, fetchImpl, logs);
+  assert.equal(await runCli(["add", "--repo", "PeaceG03/PeaceAI-Workspace", "--pr", "724", "--workflows", "ci,leak-check,builder-log"], env(dir), cli), 2);
+  assert.equal(readFileSync(path, "utf8"), before);
+  assert.equal(await runCli(["rearm", "--repo", "PeaceG03/PeaceAI-Workspace", "--pr", "724"], env(dir), cli), 0);
+  assert.equal(logs.some((l) => l.includes(KEY)), false);
+  let saved = loadState(readFileSync(path, "utf8"));
+  assert.equal(saved.ok && saved.state.watches.length, 1);
+  assert.equal(saved.ok && saved.state.watches[0]!.active, true);
+  assert.equal(saved.ok && saved.state.watches[0]!.terminal, false);
+  assert.equal(saved.ok && saved.state.watches[0]!.lastFingerprint, attempt1.legacyFingerprint);
+  assert.equal(saved.ok && saved.state.watches[0]!.deliveredFingerprints?.includes(attempt1.legacyFingerprint), true);
+  assert.equal(await runCli(["rearm", "--repo", "PeaceG03/PeaceAI-Workspace", "--pr", "724"], env(dir), cli), 2);
+  posts.length = 0;
+  assert.equal(await runCli(["tick"], env(dir), cli), 0);
+  assert.equal(posts.length, 0);
+  saved = loadState(readFileSync(path, "utf8"));
+  assert.equal(saved.ok && saved.state.watches[0]!.active, true);
+  assert.equal(saved.ok && saved.state.watches[0]!.lastFingerprint, attempt1.fingerprint);
+  ci = [run(8, HEAD, "in_progress", null, 2)];
+  assert.equal(await runCli(["tick"], env(dir), cli), 0);
+  assert.equal(posts.length, 0);
+  const during = loadState(readFileSync(path, "utf8"));
+  assert.equal(during.ok && during.state.watches[0]!.lastFingerprint, attempt1.fingerprint);
+  ci = [run(8, HEAD, "completed", "failure", 2)];
+  assert.equal(await runCli(["tick"], env(dir), cli), 0);
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0]!.overall, "failed");
+  assert.equal(posts[0]!.workflows.find((w) => w.name === "ci")!.runAttempt, 2);
+  assert.equal(posts[0]!.workflows.find((w) => w.name === "ci")!.url, "https://github.com/PeaceG03/PeaceAI-Workspace/actions/runs/8/attempts/2");
+  saved = loadState(readFileSync(path, "utf8"));
+  assert.equal(saved.ok && saved.state.watches[0]!.active, false);
+  assert.equal(saved.ok && saved.state.watches[0]!.terminal, true);
+  const sent = saved.ok ? saved.state.watches[0]!.lastFingerprint : null;
+  posts.length = 0;
+  assert.equal(await runCli(["tick"], env(dir), cli), 0);
+  assert.equal(posts.length, 0);
+  assert.equal(await runCli(["rearm", "--repo", "PeaceG03/PeaceAI-Workspace", "--pr", "724"], env(dir), cli), 0);
+  assert.equal(await runCli(["tick"], env(dir), cli), 0);
+  assert.equal(posts.length, 0);
+  const nextHead = "b".repeat(40);
+  head = nextHead;
+  ci = [run(18, nextHead, "completed", "success", 1)];
+  leak = [run(19, nextHead, "completed", "success", 1)];
+  blog = [run(20, nextHead, "completed", "success", 1)];
+  assert.equal(await runCli(["tick"], env(dir), cli), 0);
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0]!.overall, "green");
+  saved = loadState(readFileSync(path, "utf8"));
+  assert.equal(saved.ok && saved.state.watches[0]!.deliveredFingerprints?.includes(attempt1.legacyFingerprint), true);
+  assert.equal(saved.ok && sent !== null && saved.state.watches[0]!.deliveredFingerprints?.includes(sent), true);
+  assert.notEqual(saved.ok && saved.state.watches[0]!.lastFingerprint, attempt1.legacyFingerprint);
+  rmSync(dir, { recursive: true });
+});
+
+test("rearm refuses a missing or corrupt file and a failed notify does not drop the baseline", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ci-watch-rearm-hold-"));
+  const path = join(dir, "state.json");
+  const logs: string[] = [];
+  assert.equal(await runCli(["rearm", "--repo", "PeaceG03/PeaceAI-Workspace", "--pr", "724"], env(dir), io(dir, fetch, logs)), 3);
+  writeFileSync(path, "{");
+  assert.equal(await runCli(["rearm", "--repo", "PeaceG03/PeaceAI-Workspace", "--pr", "724"], env(dir), io(dir, fetch, logs)), 3);
+  assert.equal(readFileSync(path, "utf8"), "{");
+  const failure = judged(all(HEAD, "completed", "failure"));
+  const state = emptyState();
+  state.watches.push(watch({ active: false, terminal: true, lastFingerprint: failure.legacyFingerprint, lastOverall: "failed", head: HEAD }));
+  saveState(path, state);
+  const cli = io(dir, async (url) => {
+    const u = String(url);
+    if (u.includes("api.github.com") && u.endsWith("/pulls/724")) return Response.json({ state: "open", merged: false, head: { sha: HEAD } });
+    if (u.includes("api.github.com")) return Response.json({ workflow_runs: [run(8, HEAD, "completed", "success", 2)] });
+    return new Response("no", { status: 500 });
+  }, logs);
+  assert.equal(await runCli(["rearm", "--repo", "PeaceG03/PeaceAI-Workspace", "--pr", "724"], env(dir), cli), 0);
+  const armed = readFileSync(path, "utf8");
+  assert.equal(await runCli(["tick"], env(dir), cli), 4);
+  assert.equal(readFileSync(path, "utf8"), armed);
+  assert.equal(logs.some((l) => l.includes(KEY)), false);
+  rmSync(dir, { recursive: true });
 });

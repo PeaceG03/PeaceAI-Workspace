@@ -5,8 +5,8 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import {
-  addWatch, applyResult, assessWatch, CI_WATCH_SCHEMA, emptyState, eventBody, loadState, notifyConfigProblem,
-  planNotify, postWebhook, saveState, workflowFile,
+  absorbUnchanged, addWatch, applyResult, assessWatch, CI_WATCH_SCHEMA, emptyState, eventBody, loadState,
+  notifyConfigProblem, planNotify, postWebhook, rearmWatch, saveState, workflowFile,
   type Assessment, type Watch, type WatchFile, type WatchWorkflow,
 } from "../lib/ciwatch.ts";
 
@@ -47,9 +47,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv, io: CliIo =
   }
   const cmd = argv[0];
   if (cmd === "add") return addCommand(argv, statePath, io);
+  if (cmd === "rearm") return rearmCommand(argv, statePath, io);
   if (cmd === "tick") return tickCommand(statePath, url, key, token, io);
   if (cmd === "show") return showCommand(statePath, io);
-  io.log("ci-watch: usage add|tick|show");
+  io.log("ci-watch: usage add|rearm|tick|show");
   return 2;
 }
 
@@ -98,6 +99,42 @@ function addCommand(argv: string[], statePath: string, io: CliIo): number {
   return 0;
 }
 
+function rearmCommand(argv: string[], statePath: string, io: CliIo): number {
+  const repo = flag(argv, "--repo") ?? "";
+  const pr = Number(flag(argv, "--pr"));
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || !Number.isInteger(pr) || pr <= 0) {
+    io.log("ci-watch: bad target");
+    return 2;
+  }
+  let text: string;
+  try { text = io.read(statePath); } catch {
+    io.log("ci-watch: state missing");
+    return 3;
+  }
+  const loaded = loadState(text);
+  if (!loaded.ok) {
+    io.log("ci-watch: corrupt");
+    return 3;
+  }
+  const watch = loaded.state.watches.find((w) => w.repo === repo && w.pr === pr);
+  if (!watch) {
+    io.log("ci-watch: not watched");
+    return 2;
+  }
+  const armed = rearmWatch(watch, new Date(io.now()).toISOString());
+  if (!armed.ok) {
+    const line = armed.code === "ACTIVE" ? "ci-watch: already active"
+      : armed.code === "LIMIT" ? "ci-watch: rearm limit"
+      : "ci-watch: not terminal";
+    io.log(line);
+    return 2;
+  }
+  const watches = loaded.state.watches.map((w) => w.repo === repo && w.pr === pr ? armed.watch : w);
+  io.write(statePath, { ...loaded.state, watches });
+  io.log(`ci-watch: rearmed ${repo}#${pr}`);
+  return 0;
+}
+
 async function tickCommand(statePath: string, url: string, key: string, token: string | undefined, io: CliIo): Promise<number> {
   let text: string;
   try { text = io.read(statePath); } catch {
@@ -122,7 +159,7 @@ async function tickCommand(statePath: string, url: string, key: string, token: s
     }
     if (!planNotify(watch, looked)) {
       io.log(`ci-watch: ${looked.settled ? "unchanged" : "pending"} ${watch.repo}#${watch.pr}`);
-      next.push(watch);
+      next.push(absorbUnchanged(watch, looked));
       continue;
     }
     const posted = await postWebhook({
@@ -154,7 +191,9 @@ function showCommand(statePath: string, io: CliIo): number {
     return 3;
   }
   if (!loaded.state.watches.length) io.log("ci-watch: no watches");
-  for (const w of loaded.state.watches) io.log(`ci-watch: ${w.repo}#${w.pr} active=${w.active} overall=${w.lastOverall ?? "none"}`);
+  for (const w of loaded.state.watches) {
+    io.log(`ci-watch: ${w.repo}#${w.pr} active=${w.active} terminal=${w.terminal} overall=${w.lastOverall ?? "none"} rearms=${w.rearms ?? 0}`);
+  }
   return 0;
 }
 

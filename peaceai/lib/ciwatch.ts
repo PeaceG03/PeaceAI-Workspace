@@ -35,6 +35,10 @@ export interface Watch {
   head: string | null;
   lastFingerprint: string | null;
   lastOverall: Overall | null;
+  /** Fingerprints already sent, or adopted as the baseline. Absent on older files. */
+  deliveredFingerprints?: string[];
+  rearms?: number;
+  rearmedAt?: string | null;
 }
 
 export interface WatchFile {
@@ -48,6 +52,8 @@ export interface WorkflowReport {
   name: WatchWorkflow;
   conclusion: RunConclusion;
   runId: number | null;
+  /** GitHub Actions run_attempt. Null when that workflow has no run on this head. */
+  runAttempt: number | null;
   url: string | null;
 }
 
@@ -58,7 +64,10 @@ export interface Assessment {
   workflows: WorkflowReport[];
   settled: boolean;
   overall: Overall;
+  /** Hash including run_attempt. A new attempt does not match the previous alert. */
   fingerprint: string;
+  /** Hash without run_attempt. Matches alerts sent before attempt tracking. */
+  legacyFingerprint: string;
 }
 
 export interface GhRun {
@@ -66,6 +75,7 @@ export interface GhRun {
   head_sha: string;
   status: string;
   conclusion: string | null;
+  run_attempt?: number;
   html_url?: string;
 }
 
@@ -76,7 +86,9 @@ export interface GhPr {
 }
 
 const HEX40 = /^[0-9a-f]{40}$/;
+const HEX64 = /^[0-9a-f]{64}$/;
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const HISTORY_CAP = 32;
 
 export function notifyConfigProblem(url: string, key: string): "missing" | "bad-url" | null {
   if (!url || !key) return "missing";
@@ -106,6 +118,12 @@ function watchOk(w: unknown): w is Watch {
   if (row.head !== null && !HEX40.test(row.head)) return false;
   if (row.lastFingerprint !== null && typeof row.lastFingerprint !== "string") return false;
   if (row.active && row.terminal) return false;
+  if (row.deliveredFingerprints !== undefined) {
+    if (!Array.isArray(row.deliveredFingerprints) || row.deliveredFingerprints.length > HISTORY_CAP) return false;
+    if (!row.deliveredFingerprints.every((item) => typeof item === "string" && HEX64.test(item))) return false;
+  }
+  if (row.rearms !== undefined && (!Number.isInteger(row.rearms) || row.rearms < 0 || row.rearms > 100)) return false;
+  if (row.rearmedAt !== undefined && row.rearmedAt !== null && !isIso(row.rearmedAt)) return false;
   return true;
 }
 
@@ -137,6 +155,32 @@ export function addWatch(state: WatchFile, watch: Watch): { ok: true; state: Wat
   return { ok: true, state: { ...state, watches: [...state.watches, watch] } };
 }
 
+function pushHistory(history: string[] | undefined, fingerprint: string | null): string[] {
+  const base = history ?? [];
+  if (!fingerprint || !HEX64.test(fingerprint) || base.includes(fingerprint)) return base;
+  return [...base, fingerprint].slice(-HISTORY_CAP);
+}
+
+/** Turn the one inactive record back on. Keeps the fingerprint, deadline, and history. */
+export function rearmWatch(watch: Watch, nowIso: string):
+  { ok: true; watch: Watch } | { ok: false; code: "ACTIVE" | "NOT_TERMINAL" | "LIMIT" } {
+  if (watch.active) return { ok: false, code: "ACTIVE" };
+  if (!watch.terminal) return { ok: false, code: "NOT_TERMINAL" };
+  const rearms = (watch.rearms ?? 0) + 1;
+  if (rearms > 100) return { ok: false, code: "LIMIT" };
+  return {
+    ok: true,
+    watch: {
+      ...watch,
+      active: true,
+      terminal: false,
+      rearms,
+      rearmedAt: nowIso,
+      deliveredFingerprints: pushHistory(watch.deliveredFingerprints, watch.lastFingerprint),
+    },
+  };
+}
+
 function sha256(s: string): string {
   return createHash("sha256").update(s).digest("hex");
 }
@@ -149,9 +193,15 @@ function conclusionOf(run: GhRun | undefined): RunConclusion {
   return "failure";
 }
 
-/** Latest run on this exact head. Older shas are ignored. */
+/** Latest run on this exact head. Older shas are ignored. A rerun keeps the same id. */
 export function latestOnHead(runs: readonly GhRun[], head: string): GhRun | undefined {
   return runs.filter((r) => r.head_sha === head).sort((a, b) => b.id - a.id)[0];
+}
+
+function attemptOf(run: GhRun | undefined): number | null {
+  if (!run) return null;
+  const n = run.run_attempt ?? 1;
+  return Number.isInteger(n) && n >= 1 ? n : 1;
 }
 
 export function judge(
@@ -164,9 +214,14 @@ export function judge(
   const workflowsOut: WorkflowReport[] = workflows.map((name) => {
     const run = latestOnHead(byName[name] ?? [], pr.headSha);
     const conclusion = conclusionOf(run);
+    const runAttempt = attemptOf(run);
     const settledRun = conclusion !== "missing" && conclusion !== "pending";
-    const url = run && settledRun && REPO.test(pr.repo) ? `https://github.com/${pr.repo}/actions/runs/${run.id}` : null;
-    return { name, conclusion, runId: run ? run.id : null, url };
+    const url = run && runAttempt && settledRun && REPO.test(pr.repo)
+      ? runAttempt > 1
+        ? `https://github.com/${pr.repo}/actions/runs/${run.id}/attempts/${runAttempt}`
+        : `https://github.com/${pr.repo}/actions/runs/${run.id}`
+      : null;
+    return { name, conclusion, runId: run ? run.id : null, runAttempt, url };
   });
   const pastDeadline = nowMs >= Date.parse(deadlineAt);
   let overall: Overall;
@@ -178,18 +233,44 @@ export function judge(
   else if (workflowsOut.every((w) => w.conclusion === "success")) { overall = "green"; settled = true; }
   else { overall = "failed"; settled = true; }
   if (overall === "pending") settled = false;
-  const fingerprint = sha256(JSON.stringify({
+  const identity = {
     head: pr.headSha,
     overall,
     pr: pr.state,
     merged: pr.merged,
     workflows: workflowsOut.map((w) => ({ name: w.name, conclusion: w.conclusion, runId: w.runId })),
+  };
+  const legacyFingerprint = sha256(JSON.stringify(identity));
+  const fingerprint = sha256(JSON.stringify({
+    ...identity,
+    workflows: workflowsOut.map((w) => ({ name: w.name, conclusion: w.conclusion, runId: w.runId, runAttempt: w.runAttempt })),
   }));
-  return { head: pr.headSha, prState: pr.state, merged: pr.merged, workflows: workflowsOut, settled, overall, fingerprint };
+  return { head: pr.headSha, prState: pr.state, merged: pr.merged, workflows: workflowsOut, settled, overall, fingerprint, legacyFingerprint };
+}
+
+/** True when this settled result is the one already stored, including an alert hashed before run_attempt existed. */
+export function sameDeliveredFailure(watch: Watch, assessment: Assessment): boolean {
+  if (!assessment.settled || !watch.lastFingerprint) return false;
+  if (assessment.fingerprint === watch.lastFingerprint) return true;
+  const firstAttempt = assessment.workflows.every((w) => (w.runAttempt ?? 1) <= 1);
+  return firstAttempt && assessment.legacyFingerprint === watch.lastFingerprint;
 }
 
 export function planNotify(watch: Watch, assessment: Assessment): boolean {
-  return watch.active && !watch.terminal && assessment.settled && assessment.fingerprint !== watch.lastFingerprint;
+  return watch.active && !watch.terminal && assessment.settled && !sameDeliveredFailure(watch, assessment);
+}
+
+/** Remember the new hash of an already-sent attempt so a later tick does not send it. */
+export function absorbUnchanged(watch: Watch, assessment: Assessment): Watch {
+  if (!assessment.settled || assessment.fingerprint === watch.lastFingerprint) return watch;
+  if (!sameDeliveredFailure(watch, assessment)) return watch;
+  return {
+    ...watch,
+    lastFingerprint: assessment.fingerprint,
+    deliveredFingerprints: pushHistory(watch.deliveredFingerprints, watch.lastFingerprint),
+    active: true,
+    terminal: false,
+  };
 }
 
 export function applyResult(watch: Watch, assessment: Assessment, notified: boolean): Watch {
@@ -200,6 +281,7 @@ export function applyResult(watch: Watch, assessment: Assessment, notified: bool
     head: assessment.head,
     lastFingerprint: assessment.fingerprint,
     lastOverall: assessment.overall,
+    deliveredFingerprints: pushHistory(watch.deliveredFingerprints, assessment.fingerprint),
     active: terminal ? false : watch.active,
     terminal,
   };
@@ -309,7 +391,9 @@ export function parseRuns(body: unknown): GhRun[] | null {
     if (!run || typeof run !== "object") return null;
     const row = run as GhRun;
     if (!Number.isInteger(row.id) || typeof row.head_sha !== "string" || typeof row.status !== "string") return null;
-    out.push({ id: row.id, head_sha: row.head_sha, status: row.status, conclusion: row.conclusion ?? null });
+    const attempt = row.run_attempt === undefined ? 1 : row.run_attempt;
+    if (!Number.isInteger(attempt) || attempt < 1 || attempt > 1000) return null;
+    out.push({ id: row.id, head_sha: row.head_sha, status: row.status, conclusion: row.conclusion ?? null, run_attempt: attempt });
   }
   return out;
 }

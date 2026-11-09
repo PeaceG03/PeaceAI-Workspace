@@ -20,7 +20,9 @@ function workflowFile(name) {
   return WATCH_WORKFLOWS.includes(name) ? WORKFLOW_FILE[name] : null;
 }
 var HEX40 = /^[0-9a-f]{40}$/;
+var HEX64 = /^[0-9a-f]{64}$/;
 var REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+var HISTORY_CAP = 32;
 function notifyConfigProblem(url, key) {
   if (!url || !key) return "missing";
   let parsed;
@@ -50,6 +52,12 @@ function watchOk(w) {
   if (row.head !== null && !HEX40.test(row.head)) return false;
   if (row.lastFingerprint !== null && typeof row.lastFingerprint !== "string") return false;
   if (row.active && row.terminal) return false;
+  if (row.deliveredFingerprints !== void 0) {
+    if (!Array.isArray(row.deliveredFingerprints) || row.deliveredFingerprints.length > HISTORY_CAP) return false;
+    if (!row.deliveredFingerprints.every((item) => typeof item === "string" && HEX64.test(item))) return false;
+  }
+  if (row.rearms !== void 0 && (!Number.isInteger(row.rearms) || row.rearms < 0 || row.rearms > 100)) return false;
+  if (row.rearmedAt !== void 0 && row.rearmedAt !== null && !isIso(row.rearmedAt)) return false;
   return true;
 }
 function loadState(text) {
@@ -81,6 +89,28 @@ function addWatch(state, watch) {
   if (state.watches.some((w) => w.repo === watch.repo && w.pr === watch.pr)) return { ok: false, code: "ALREADY" };
   return { ok: true, state: { ...state, watches: [...state.watches, watch] } };
 }
+function pushHistory(history, fingerprint) {
+  const base = history ?? [];
+  if (!fingerprint || !HEX64.test(fingerprint) || base.includes(fingerprint)) return base;
+  return [...base, fingerprint].slice(-HISTORY_CAP);
+}
+function rearmWatch(watch, nowIso) {
+  if (watch.active) return { ok: false, code: "ACTIVE" };
+  if (!watch.terminal) return { ok: false, code: "NOT_TERMINAL" };
+  const rearms = (watch.rearms ?? 0) + 1;
+  if (rearms > 100) return { ok: false, code: "LIMIT" };
+  return {
+    ok: true,
+    watch: {
+      ...watch,
+      active: true,
+      terminal: false,
+      rearms,
+      rearmedAt: nowIso,
+      deliveredFingerprints: pushHistory(watch.deliveredFingerprints, watch.lastFingerprint)
+    }
+  };
+}
 function sha256(s) {
   return createHash("sha256").update(s).digest("hex");
 }
@@ -94,13 +124,19 @@ function conclusionOf(run) {
 function latestOnHead(runs, head) {
   return runs.filter((r) => r.head_sha === head).sort((a, b) => b.id - a.id)[0];
 }
+function attemptOf(run) {
+  if (!run) return null;
+  const n = run.run_attempt ?? 1;
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+}
 function judge(pr, workflows, byName, nowMs, deadlineAt) {
   const workflowsOut = workflows.map((name) => {
     const run = latestOnHead(byName[name] ?? [], pr.headSha);
     const conclusion = conclusionOf(run);
+    const runAttempt = attemptOf(run);
     const settledRun = conclusion !== "missing" && conclusion !== "pending";
-    const url = run && settledRun && REPO.test(pr.repo) ? `https://github.com/${pr.repo}/actions/runs/${run.id}` : null;
-    return { name, conclusion, runId: run ? run.id : null, url };
+    const url = run && runAttempt && settledRun && REPO.test(pr.repo) ? runAttempt > 1 ? `https://github.com/${pr.repo}/actions/runs/${run.id}/attempts/${runAttempt}` : `https://github.com/${pr.repo}/actions/runs/${run.id}` : null;
+    return { name, conclusion, runId: run ? run.id : null, runAttempt, url };
   });
   const pastDeadline = nowMs >= Date.parse(deadlineAt);
   let overall;
@@ -125,17 +161,39 @@ function judge(pr, workflows, byName, nowMs, deadlineAt) {
     settled = true;
   }
   if (overall === "pending") settled = false;
-  const fingerprint = sha256(JSON.stringify({
+  const identity = {
     head: pr.headSha,
     overall,
     pr: pr.state,
     merged: pr.merged,
     workflows: workflowsOut.map((w) => ({ name: w.name, conclusion: w.conclusion, runId: w.runId }))
+  };
+  const legacyFingerprint = sha256(JSON.stringify(identity));
+  const fingerprint = sha256(JSON.stringify({
+    ...identity,
+    workflows: workflowsOut.map((w) => ({ name: w.name, conclusion: w.conclusion, runId: w.runId, runAttempt: w.runAttempt }))
   }));
-  return { head: pr.headSha, prState: pr.state, merged: pr.merged, workflows: workflowsOut, settled, overall, fingerprint };
+  return { head: pr.headSha, prState: pr.state, merged: pr.merged, workflows: workflowsOut, settled, overall, fingerprint, legacyFingerprint };
+}
+function sameDeliveredFailure(watch, assessment) {
+  if (!assessment.settled || !watch.lastFingerprint) return false;
+  if (assessment.fingerprint === watch.lastFingerprint) return true;
+  const firstAttempt = assessment.workflows.every((w) => (w.runAttempt ?? 1) <= 1);
+  return firstAttempt && assessment.legacyFingerprint === watch.lastFingerprint;
 }
 function planNotify(watch, assessment) {
-  return watch.active && !watch.terminal && assessment.settled && assessment.fingerprint !== watch.lastFingerprint;
+  return watch.active && !watch.terminal && assessment.settled && !sameDeliveredFailure(watch, assessment);
+}
+function absorbUnchanged(watch, assessment) {
+  if (!assessment.settled || assessment.fingerprint === watch.lastFingerprint) return watch;
+  if (!sameDeliveredFailure(watch, assessment)) return watch;
+  return {
+    ...watch,
+    lastFingerprint: assessment.fingerprint,
+    deliveredFingerprints: pushHistory(watch.deliveredFingerprints, watch.lastFingerprint),
+    active: true,
+    terminal: false
+  };
 }
 function applyResult(watch, assessment, notified) {
   if (!notified) return watch;
@@ -145,6 +203,7 @@ function applyResult(watch, assessment, notified) {
     head: assessment.head,
     lastFingerprint: assessment.fingerprint,
     lastOverall: assessment.overall,
+    deliveredFingerprints: pushHistory(watch.deliveredFingerprints, assessment.fingerprint),
     active: terminal ? false : watch.active,
     terminal
   };
@@ -228,7 +287,9 @@ function parseRuns(body) {
     if (!run || typeof run !== "object") return null;
     const row = run;
     if (!Number.isInteger(row.id) || typeof row.head_sha !== "string" || typeof row.status !== "string") return null;
-    out.push({ id: row.id, head_sha: row.head_sha, status: row.status, conclusion: row.conclusion ?? null });
+    const attempt = row.run_attempt === void 0 ? 1 : row.run_attempt;
+    if (!Number.isInteger(attempt) || attempt < 1 || attempt > 1e3) return null;
+    out.push({ id: row.id, head_sha: row.head_sha, status: row.status, conclusion: row.conclusion ?? null, run_attempt: attempt });
   }
   return out;
 }
@@ -290,9 +351,10 @@ async function runCli(argv, env, io = defaultIo()) {
   }
   const cmd = argv[0];
   if (cmd === "add") return addCommand(argv, statePath, io);
+  if (cmd === "rearm") return rearmCommand(argv, statePath, io);
   if (cmd === "tick") return tickCommand(statePath, url, key, token, io);
   if (cmd === "show") return showCommand(statePath, io);
-  io.log("ci-watch: usage add|tick|show");
+  io.log("ci-watch: usage add|rearm|tick|show");
   return 2;
 }
 function readOrEmpty(path, io) {
@@ -348,6 +410,41 @@ function addCommand(argv, statePath, io) {
   io.log(`ci-watch: watching ${repo}#${pr}`);
   return 0;
 }
+function rearmCommand(argv, statePath, io) {
+  const repo = flag(argv, "--repo") ?? "";
+  const pr = Number(flag(argv, "--pr"));
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || !Number.isInteger(pr) || pr <= 0) {
+    io.log("ci-watch: bad target");
+    return 2;
+  }
+  let text;
+  try {
+    text = io.read(statePath);
+  } catch {
+    io.log("ci-watch: state missing");
+    return 3;
+  }
+  const loaded = loadState(text);
+  if (!loaded.ok) {
+    io.log("ci-watch: corrupt");
+    return 3;
+  }
+  const watch = loaded.state.watches.find((w) => w.repo === repo && w.pr === pr);
+  if (!watch) {
+    io.log("ci-watch: not watched");
+    return 2;
+  }
+  const armed = rearmWatch(watch, new Date(io.now()).toISOString());
+  if (!armed.ok) {
+    const line = armed.code === "ACTIVE" ? "ci-watch: already active" : armed.code === "LIMIT" ? "ci-watch: rearm limit" : "ci-watch: not terminal";
+    io.log(line);
+    return 2;
+  }
+  const watches = loaded.state.watches.map((w) => w.repo === repo && w.pr === pr ? armed.watch : w);
+  io.write(statePath, { ...loaded.state, watches });
+  io.log(`ci-watch: rearmed ${repo}#${pr}`);
+  return 0;
+}
 async function tickCommand(statePath, url, key, token, io) {
   let text;
   try {
@@ -377,7 +474,7 @@ async function tickCommand(statePath, url, key, token, io) {
     }
     if (!planNotify(watch, looked)) {
       io.log(`ci-watch: ${looked.settled ? "unchanged" : "pending"} ${watch.repo}#${watch.pr}`);
-      next.push(watch);
+      next.push(absorbUnchanged(watch, looked));
       continue;
     }
     const posted = await postWebhook({
@@ -414,7 +511,9 @@ function showCommand(statePath, io) {
     return 3;
   }
   if (!loaded.state.watches.length) io.log("ci-watch: no watches");
-  for (const w of loaded.state.watches) io.log(`ci-watch: ${w.repo}#${w.pr} active=${w.active} overall=${w.lastOverall ?? "none"}`);
+  for (const w of loaded.state.watches) {
+    io.log(`ci-watch: ${w.repo}#${w.pr} active=${w.active} terminal=${w.terminal} overall=${w.lastOverall ?? "none"} rearms=${w.rearms ?? 0}`);
+  }
   return 0;
 }
 var isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

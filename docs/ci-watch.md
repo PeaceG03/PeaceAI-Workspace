@@ -19,22 +19,31 @@ The program exits 2 when URL, key, or state path is missing or the URL is not pl
 
 ## One finite watch
 
-Allowed workflow names are only ci, leak-check, and builder-log. One record per repository and pull request. A second add is refused. Deadline is at most 168 hours. When the required runs have all settled, or the pull request is closed or merged, or the deadline passes, the program POSTs once and marks the watch inactive. A later tick does not POST the same fingerprint again.
+Allowed workflow names are only ci, leak-check, and builder-log. One record per repository and pull request. A second add is refused, including after the record is inactive. Deadline is at most 168 hours and rearm does not move it. When the required runs have all settled, or the pull request is closed or merged, or the deadline passes, the program POSTs once and marks the watch inactive. A later tick does not POST that same result again.
+
+A GitHub rerun keeps the same run id and raises run_attempt. The fingerprint includes that attempt. An alert sent by an older build, whose fingerprint has no attempt, still counts as the attempt-1 result.
 
 ```
 node ci-watch.mjs add --repo PeaceG03/PeaceAI-Workspace --pr 724 --workflows ci,leak-check,builder-log --hours 48
 node ci-watch.mjs tick
 node ci-watch.mjs show
+node ci-watch.mjs rearm --repo PeaceG03/PeaceAI-Workspace --pr 724
 ```
 
-The coordinator installs the hourly tick. This repository does not. Example, not applied here:
+rearm does not POST and does not edit the file by hand. It marks that one inactive terminal record active again and appends the stored fingerprint to deliveredFingerprints. It refuses a missing record, a record that is already active, and a corrupt file. A corrupt file is left unchanged.
 
-```
-17 * * * * node /opt/peaceai/ci-watch.mjs tick
-```
+After rearm, tick reads CI:
 
-Pull request 724 is a finite watch for this proof, not a permanent loop. The same commands work for a later public repository that uses these three workflows.
+- The same head, same run ids, and attempt 1 that were already sent are not sent again. The stored fingerprint is updated to the attempt-aware hash.
+- A missing or in-progress attempt is not sent. The record stays active.
+- A new settled result is sent once, then the record is inactive again. New means a new head, a new run id, or a run_attempt greater than 1. A new attempt whose conclusion is still failure is sent once. The next tick does not send it again.
+- Closed, merged, and deadline still settle once when that result is not the one already sent.
+- If the POST fails, the fingerprint is left in place and a later tick retries. A retry after HTTP 200 can still deliver twice. This program does not claim exactly-once delivery.
+
+The coordinator runs tick on the host. This repository does not install cron, systemd, or any other scheduler. A host without crontab still needs its own hourly tick.
+
+Pull request 724 is one watch record. The same commands work for a later public repository that uses these three workflows.
 
 ## Not done by this program
 
-The webhook routine, the sender key, and the host cron are provisioned outside this repository. No end-to-end wake has been delivered. Readiness files docs/PEACEAI_FINAL_PRODUCT_READINESS.md, packages/core/src/ProductReadiness.ts, and docs/PEACEAI_OVERNIGHT_PROGRESS.md are absent here.
+The webhook routine, the sender key, and the host tick are provisioned outside this repository. The build c61c80e delivered one failure alert for pull request 724, and the next tick did not send it again. This tree adds rearm. The host has not run this tree yet. Readiness files docs/PEACEAI_FINAL_PRODUCT_READINESS.md, packages/core/src/ProductReadiness.ts, and docs/PEACEAI_OVERNIGHT_PROGRESS.md are absent here.
