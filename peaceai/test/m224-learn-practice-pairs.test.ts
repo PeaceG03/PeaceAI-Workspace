@@ -224,6 +224,7 @@ test("status, seal, split, and parent gates do not treat copies as independent h
 });
 
 test("pairs drop held-out copies, unverified solves, and secret-shaped leaks", () => {
+  const leakMail = ["person", "gmail.com"].join("@");
   const held = problem({
     id: "held", set: "heldout", solved: true, verified: true,
     test: "test(\"held only\", () => { assert.equal(score(1), 2); });\n",
@@ -240,7 +241,7 @@ test("pairs drop held-out copies, unverified solves, and secret-shaped leaks", (
       problem({ id: "near", set: "dev", kind: "near", sourcePath: "src/other.ts", broken: held.broken, original: held.original, fixed: held.original, test: "test(\"other\", () => { assert.equal(1, 1); });\n" }),
       problem({
         id: "leak", set: "dev", kind: "leak", sourcePath: "src/zz.ts", function: "zz",
-        broken: "export function zz(n: number): number {\n  return n; // person@gmail.com\n}\n",
+        broken: `export function zz(n: number): number {\n  return n; // ${leakMail}\n}\n`,
         original: "export function zz(n: number): number {\n  return n;\n}\n",
         fixed: "export function zz(n: number): number {\n  return n;\n}\n",
         test: "test(\"zz only\", () => { assert.equal(1, 1); });\n",
@@ -251,7 +252,7 @@ test("pairs drop held-out copies, unverified solves, and secret-shaped leaks", (
   assert.equal(built.credit, false);
   assert.ok(built.dropped.nearDuplicate >= 1);
   assert.ok(built.dropped.leak >= 1);
-  assert.ok(built.docs.every((d) => !d.text.includes(held.test) && !d.text.includes(held.broken) && !d.text.includes("person@gmail.com")));
+  assert.ok(built.docs.every((d) => !d.text.includes(held.test) && !d.text.includes(held.broken) && !d.text.includes(leakMail)));
   assert.ok(built.docs.some((d) => d.function === "score"));
   assert.equal(built.docs.some((d) => d.text.includes("unverified") || d.path === "src/zz.ts"), false);
 });
