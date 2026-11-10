@@ -77,4 +77,6 @@ Leaf reasons on the earlier shape pass included UNSUPPORTED_INPUT for two requir
 
 Readiness files docs/PEACEAI_FINAL_PRODUCT_READINESS.md, packages/core/src/ProductReadiness.ts, and docs/PEACEAI_OVERNIGHT_PROGRESS.md are still absent. They were not created.
 
-CONTINUE_REQUIRED. This follow-up is not on main until #724 merges and this branch is reviewed. The host cron and the CI watches are outside this change.
+CONTINUE_REQUIRED. The two DEV docs from the 24-attempt run are not final training data. Each passed its generated DEV test on a second run, and neither restored the original function text. Neither leaf was LEARNED: draw had 2 held-out breaks (need 4) and capitalize passed 1 of 4. heldoutProof is false. A later 80-attempt run on the same head, target, and seed, still learned 0. That run is not a matched proof.
+
+A follow-up then stopped emitting training docs unless the leaf is LEARNED, and the practice test lists every probed input with a literal original result, not only the one input a mutation changed. On that code, the same 24-attempt command withheld 3 DEV passes and wrote 0 docs. credit stays false.

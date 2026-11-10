@@ -593,15 +593,17 @@ function problemsFor(nodeId: string, path: string, name: string, src: string, se
     if (timeUp(budget)) { budget.stopped = true; break; }
     const use: unknown[] = [];
     const lits: string[] = [];
+    let differs = false;
     inputs.forEach((n, i) => {
-      if (sameEnc(matrix.original[i]!, matrix.broken[bi]![i]!)) return;
       const lit = litOf(matrix.original[i]!);
       if (lit === null) return;
+      if (!sameEnc(matrix.original[i]!, matrix.broken[bi]![i]!)) differs = true;
       use.push(n);
       lits.push(lit);
     });
-    if (use.length === 0) continue;
-    const test = testSource(name, use.slice(0, 6), lits.slice(0, 6), br.kind);
+    // The test is the whole probe, not only the one input the mutation changed.
+    if (!differs || use.length === 0) continue;
+    const test = testSource(name, use.slice(0, 8), lits.slice(0, 8), br.kind);
     if (!confirms(br.broken, src, test)) continue;
     made.push({
       id: `${nodeId}#${br.kind}`,

@@ -54,9 +54,11 @@ function editBody(diff: string): string {
  * normalized body matches a held-out edit, or a pair leak.scanText flags, is dropped and counted.
  */
 export function buildLearnPairs(run: PracticeRun, program: string, opts?: { eligible?: boolean }): PairBuild {
-  const eligible = opts?.eligible !== false && run.mapTrusted !== false;
+  const mapOk = opts?.eligible !== false && run.mapTrusted !== false;
+  const learned = new Set(run.nodes.filter((n) => n.status === "LEARNED").map((n) => n.nodeId));
   const solvedDev = run.problems.filter((p) => p.set === "dev" && p.solved && p.verified && p.fixed !== null && p.fixed !== p.broken);
-  if (!eligible) {
+  const gated = mapOk ? solvedDev.filter((p) => learned.has(p.nodeId)) : [];
+  if (!mapOk || gated.length === 0) {
     return { schema: LEARN_PAIRS_SCHEMA, experimental: true, credit: false, eligible: false, withheld: solvedDev.length, docs: [], dropped: { leak: 0, nearDuplicate: 0 } };
   }
   const held = run.problems.filter((p) => p.set === "heldout");
@@ -68,7 +70,7 @@ export function buildLearnPairs(run: PracticeRun, program: string, opts?: { elig
   const dropped = { leak: 0, nearDuplicate: 0 };
   const seenBodies = new Set<string>();
   const seenBreaks = new Set<string>();
-  const dev = solvedDev.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const dev = gated.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   for (const p of dev) {
     const distinct = breakKey(p);
     if (seenBreaks.has(distinct)) { dropped.nearDuplicate++; continue; }

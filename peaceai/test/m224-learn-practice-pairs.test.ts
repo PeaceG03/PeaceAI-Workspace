@@ -133,8 +133,10 @@ test("held-out counts independent breaks, a short leaf is not LEARNED, and pairs
       assert.ok(heldRows.every((p) => !d.text.includes(p.test) && !d.text.includes(p.broken)));
     }
     const solvedDev = a.problems.filter((p) => p.set === "dev" && p.solved && p.verified && p.fixed);
-    if (solvedDev.length > 0) assert.ok(built.docs.length > 0);
-    assert.ok(built.docs.every((d) => solvedDev.some((p) => d.text.includes(p.test))));
+    const learnedIds = new Set(a.nodes.filter((n) => n.status === "LEARNED").map((n) => n.nodeId));
+    if (solvedDev.some((p) => learnedIds.has(p.nodeId))) assert.ok(built.docs.length > 0);
+    else assert.equal(built.eligible, false);
+    assert.ok(built.docs.every((d) => solvedDev.some((p) => learnedIds.has(p.nodeId) && d.text.includes(p.test))));
 
     const out = mkdtempSync(join(tmpdir(), "peaceai-pairs-"));
     const other = mkdtempSync(join(tmpdir(), "peaceai-pair-repo-"));
@@ -238,7 +240,8 @@ test("pairs drop held-out copies, unverified solves, and secret-shaped leaks", (
   const run: PracticeRun = {
     schema: "peaceai-learn-practice:v1", experimental: true, credit: false, seed: 1,
     minutesUsed: 0, attemptsUsed: 1, maxMinutes: 30, maxAttemptsTotal: 200, history: "OFF",
-    budgetStopped: false, sealedBeforeAttempts: true, rechecks: [], nodes: [],
+    budgetStopped: false, sealedBeforeAttempts: true, rechecks: [],
+    nodes: [node({ nodeId: "fn:src/box.ts:score", status: "LEARNED", heldout: { problems: 4, passed: 4, sha256: "ab".repeat(32) } })],
     problems: [
       held,
       problem({ id: "ok", set: "dev", kind: "dev-kind", test: "test(\"dev\", () => { assert.equal(score(1), 2); });\n", broken: "export function score(n: number): number {\n  return n + 0;\n}\n" }),
@@ -416,14 +419,18 @@ test("recheck demotes a learned leaf and its ancestors only from a real new samp
     assert.notEqual(again.nodes.find((n) => n.nodeId === "root")!.status, "LEARNED");
     assert.ok(again.rechecks[0]!.ancestors.includes("mid"));
     assert.ok(again.rechecks[0]!.ancestors.includes("root"));
-    const pairs = buildLearnPairs(again, "recheck");
+    const withheld = buildLearnPairs(again, "recheck");
+    assert.equal(withheld.credit, false);
+    assert.equal(withheld.eligible, false);
+    assert.equal(withheld.docs.length, 0);
+
+    const stayed = recheckPractice(prior, { tree: only, map: map(), repoPath: empty, seed: 1, now: frozen, today: "2026-11-07" });
+    const pairs = buildLearnPairs(stayed, "recheck");
     assert.equal(pairs.credit, false);
     assert.ok(pairs.dropped.nearDuplicate >= 1);
     assert.ok(pairs.docs.every((d) => !d.text.includes(heldSentinel) && !d.text.includes(heldProblem.test) && !d.text.includes(heldProblem.broken)));
     assert.ok(pairs.docs.some((d) => d.text.includes("clean dev")));
     assert.equal(pairs.docs.some((d) => d.path === "src/other.ts"), false);
-
-    const stayed = recheckPractice(prior, { tree: only, map: map(), repoPath: empty, seed: 1, now: frozen, today: "2026-11-07" });
     assert.equal(stayed.rechecks[0]!.demoted, false);
     assert.equal(stayed.nodes.find((n) => n.nodeId === leafId)!.status, "LEARNED");
     assert.equal(stayed.nodes.find((n) => n.nodeId === leafId)!.heldout.sha256, oldSha);
@@ -480,6 +487,22 @@ test("from-history reads git and ignores a repo without history", { timeout: 180
     rmSync(bare, { recursive: true, force: true });
     rmSync(pwn, { force: true });
   }
+});
+
+test("a dev pass is not training data until that leaf is LEARNED", () => {
+  const dev = problem({ id: "dev-only", set: "dev", kind: "thin", solved: true, verified: true, fixed: "export function score(n: number): number {\n  return 0;\n}\n" });
+  const run: PracticeRun = {
+    schema: "peaceai-learn-practice:v1", experimental: true, credit: false, seed: 1,
+    minutesUsed: 0, attemptsUsed: 1, maxMinutes: 2, maxAttemptsTotal: 24, history: "OFF",
+    budgetStopped: false, sealedBeforeAttempts: true, heldoutProof: false, mapTrusted: true, rechecks: [],
+    nodes: [node({ nodeId: dev.nodeId, status: "PRACTICING", heldout: { problems: 2, passed: 2, sha256: "cd".repeat(32) } })],
+    problems: [dev],
+  };
+  const built = buildLearnPairs(run, "practice");
+  assert.equal(built.eligible, false);
+  assert.equal(built.docs.length, 0);
+  assert.equal(built.withheld, 1);
+  assert.equal(built.credit, false);
 });
 
 test("the same broken program is one break across kinds, and four copies are not LEARNED", () => {
