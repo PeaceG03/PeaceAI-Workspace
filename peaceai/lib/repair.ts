@@ -586,11 +586,28 @@ function ruleAlignAddedConstant(e: RepairError, ctx: RepairContext): RepairEdit 
   return null;
 }
 
-type Val = number | string | boolean | null | Val[];
+type Groups = { readonly groups: Readonly<Record<string, string | undefined>> };
+type Val = number | string | boolean | null | undefined | Val[] | Groups;
 const BAD = Symbol("bad");
 type Res = Val | typeof BAD;
 
+function isGroups(v: Val): v is Groups {
+  return typeof v === "object" && v !== null && !Array.isArray(v) && "groups" in v;
+}
+
+function truthy(v: Val): boolean {
+  if (v === undefined || v === null || v === false || v === "" || v === 0) return false;
+  if (typeof v === "number" && Number.isNaN(v)) return false;
+  return true;
+}
+
 function sameVal(a: Val, b: Val): boolean {
+  if (isGroups(a) || isGroups(b)) {
+    if (!isGroups(a) || !isGroups(b)) return false;
+    const ak = Object.keys(a.groups).sort();
+    const bk = Object.keys(b.groups).sort();
+    return ak.length === bk.length && ak.every((k, i) => k === bk[i] && a.groups[k] === b.groups[k]);
+  }
   if (Array.isArray(a) || Array.isArray(b)) {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
     return a.every((x, i) => sameVal(x, b[i]!));
@@ -668,8 +685,8 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
     const l = evalExpr(n.left, env, sf, depth);
     if (l === BAD) return BAD;
     const k = n.operatorToken.kind;
-    if (k === ts.SyntaxKind.AmpersandAmpersandToken) return l ? evalExpr(n.right, env, sf, depth) : l;
-    if (k === ts.SyntaxKind.BarBarToken) return l ? l : evalExpr(n.right, env, sf, depth);
+    if (k === ts.SyntaxKind.AmpersandAmpersandToken) return truthy(l) ? evalExpr(n.right, env, sf, depth) : l;
+    if (k === ts.SyntaxKind.BarBarToken) return truthy(l) ? l : evalExpr(n.right, env, sf, depth);
     if (k === ts.SyntaxKind.QuestionQuestionToken) return l === null ? evalExpr(n.right, env, sf, depth) : l;
     const r = evalExpr(n.right, env, sf, depth);
     if (r === BAD) return BAD;
@@ -697,12 +714,14 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
   if (ts.isConditionalExpression(n)) {
     const c = evalExpr(n.condition, env, sf, depth);
     if (c === BAD) return BAD;
-    return evalExpr(c ? n.whenTrue : n.whenFalse, env, sf, depth);
+    return evalExpr(truthy(c) ? n.whenTrue : n.whenFalse, env, sf, depth);
   }
-  if (ts.isPropertyAccessExpression(n) && n.name.text === "length") {
+  if (ts.isPropertyAccessExpression(n)) {
     const v = evalExpr(n.expression, env, sf, depth);
-    if (n.questionDotToken && v === null) return null;
-    if (typeof v === "string" || Array.isArray(v)) return v.length;
+    if (v === BAD) return BAD;
+    if (n.questionDotToken && (v === null || v === undefined)) return v;
+    if (isGroups(v)) return n.name.text in v.groups ? v.groups[n.name.text] : undefined;
+    if (n.name.text === "length" && (typeof v === "string" || Array.isArray(v))) return v.length;
     return BAD;
   }
   if (ts.isElementAccessExpression(n)) {
@@ -748,21 +767,30 @@ function boundText(s: string): string | typeof BAD {
   return s.length > MAX_TEXT ? BAD : s;
 }
 
-function replaceText(s: string, search: string | RegExp, repl: string | ((match: string) => Res)): Res {
+function replaceArgs(match: string, index: number, s: string, caps: readonly (string | undefined)[], groups: RegExpExecArray["groups"]): Val[] {
+  const args: Val[] = [match, ...caps, index, s];
+  if (groups) args.push({ groups });
+  return args;
+}
+
+function replaceText(s: string, search: string | RegExp, repl: string | ((args: readonly Val[]) => Res)): Res {
   if (s.length > MAX_TEXT) return BAD;
+  const apply = (args: readonly Val[]): Res => {
+    if (typeof repl === "string") return repl;
+    return repl(args);
+  };
   if (typeof search === "string") {
     const at = s.indexOf(search);
     if (at < 0) return s;
-    const next = typeof repl === "string" ? repl : repl(search);
+    const next = apply([search, at, s]);
     if (typeof next !== "string" || next.includes("$")) return BAD;
     return boundText(s.slice(0, at) + next + s.slice(at + search.length));
   }
-  const flags = search.flags.includes("g") ? search.flags : search.flags;
-  const re = new RegExp(search.source, flags);
+  const re = new RegExp(search.source, search.flags);
   if (!re.flags.includes("g")) {
     const found = re.exec(s);
     if (!found) return s;
-    const next = typeof repl === "string" ? repl : repl(found[0] ?? "");
+    const next = apply(replaceArgs(found[0] ?? "", found.index, s, found.slice(1), found.groups));
     if (typeof next !== "string" || next.includes("$")) return BAD;
     return boundText(s.slice(0, found.index) + next + s.slice(found.index + found[0].length));
   }
@@ -773,7 +801,7 @@ function replaceText(s: string, search: string | RegExp, repl: string | ((match:
   let found: RegExpExecArray | null;
   while ((found = re.exec(s))) {
     if (tick() || ++count > MAX_ITEMS) return BAD;
-    const next = typeof repl === "string" ? repl : repl(found[0] ?? "");
+    const next = apply(replaceArgs(found[0] ?? "", found.index, s, found.slice(1), found.groups));
     if (typeof next !== "string" || next.includes("$")) return BAD;
     out += s.slice(last, found.index) + next;
     last = found.index + found[0].length;
@@ -796,13 +824,25 @@ function splitText(s: string, sep: string | RegExp): Res {
   return parts;
 }
 
+function mentionsArguments(n: ts.Node): boolean {
+  let hit = false;
+  const visit = (x: ts.Node) => {
+    if (hit) return;
+    if (ts.isIdentifier(x) && x.text === "arguments") hit = true;
+    else ts.forEachChild(x, visit);
+  };
+  visit(n);
+  return hit;
+}
+
 function evalCallback(cb: ts.Expression, args: readonly Val[], env: Map<string, Val>, sf: ts.SourceFile, depth: number): Res {
   if (ts.isIdentifier(cb)) {
     const fn = findFn(sf, cb.text);
+    if (!fn || mentionsArguments(fn)) return BAD;
     return fn ? callFn(fn, args, sf, depth + 1) : BAD;
   }
   if (!ts.isArrowFunction(cb) && !ts.isFunctionExpression(cb)) return BAD;
-  if (cb.parameters.some((p) => !ts.isIdentifier(p.name) || p.dotDotDotToken)) return BAD;
+  if (cb.parameters.some((p) => !ts.isIdentifier(p.name) || p.dotDotDotToken) || mentionsArguments(cb)) return BAD;
   return callFn(cb, args, sf, depth + 1, env);
 }
 
@@ -810,33 +850,39 @@ function evalMethod(recv: Val, name: string, args: readonly ts.Expression[], env
   if (!STRING_METHODS.has(name) && !ARRAY_METHODS.has(name)) return BAD;
   if (typeof recv === "string" && STRING_METHODS.has(name)) {
     if (name === "toLowerCase" || name === "toUpperCase" || name === "trim") {
-      if (args.length !== 0) return BAD;
+      for (const a of args) if (evalExpr(a, env, sf, depth) === BAD) return BAD;
       const next = name === "toLowerCase" ? recv.toLowerCase() : name === "toUpperCase" ? recv.toUpperCase() : recv.trim();
       return boundText(next);
     }
     if (name === "charAt" || name === "slice" || name === "substring") {
+      if ((name === "charAt" && args.length > 1) || args.length > 2) return BAD;
       const nums: number[] = [];
       for (const a of args) {
         const v = evalExpr(a, env, sf, depth);
-        const i = v === BAD ? null : asInt(v);
+        if (v === BAD || v === undefined) return BAD;
+        const i = asInt(v);
         if (i === null) return BAD;
         nums.push(i);
       }
-      if (name === "charAt") return nums.length === 1 ? recv.charAt(nums[0]!) : BAD;
-      if (nums.length < 1 || nums.length > 2) return BAD;
+      if (name === "charAt") return boundText(recv.charAt(nums[0] ?? 0));
       const next = name === "slice" ? recv.slice(nums[0], nums[1]) : recv.substring(nums[0], nums[1]);
       return boundText(next);
     }
     if (name === "split" || name === "replace") {
-      if (name === "split" && (args.length < 1 || args.length > 2)) return BAD;
+      if (name === "split" && args.length > 2) return BAD;
       if (name === "replace" && args.length !== 2) return BAD;
+      if (name === "split" && args.length === 0) return recv.length > MAX_ITEMS ? BAD : [recv];
       const searchNode = args[0];
       if (!searchNode) return BAD;
       const search = evalArg(searchNode, env, sf, depth);
       if (search === BAD || (typeof search !== "string" && !(search instanceof RegExp))) return BAD;
       if (name === "split") {
-        if (args.length === 2) return BAD;
-        return splitText(recv, search);
+        const parts = splitText(recv, search);
+        if (parts === BAD || args.length === 1) return parts;
+        const limitV = evalExpr(args[1]!, env, sf, depth);
+        const limit = limitV === BAD ? null : asInt(limitV);
+        if (!Array.isArray(parts) || limit === null || limit < 0) return BAD;
+        return parts.slice(0, limit);
       }
       const repNode = args[1];
       if (!repNode) return BAD;
@@ -845,7 +891,7 @@ function evalMethod(recv: Val, name: string, args: readonly ts.Expression[], env
         return replaceText(recv, search, repNode.text);
       }
       if (ts.isArrowFunction(repNode) || ts.isFunctionExpression(repNode) || ts.isIdentifier(repNode)) {
-        return replaceText(recv, search, (match) => evalCallback(repNode, [match], env, sf, depth));
+        return replaceText(recv, search, (call) => evalCallback(repNode, call, env, sf, depth));
       }
       return BAD;
     }
@@ -853,11 +899,15 @@ function evalMethod(recv: Val, name: string, args: readonly ts.Expression[], env
   if (Array.isArray(recv) && ARRAY_METHODS.has(name)) {
     if (recv.length > MAX_ITEMS) return BAD;
     if (name === "join") {
-      const sepNode = args[0];
-      const sep = sepNode ? evalExpr(sepNode, env, sf, depth) : "";
-      if (typeof sep !== "string" || args.length > 1) return BAD;
-      if (recv.some((x) => x !== null && typeof x !== "string" && typeof x !== "number" && typeof x !== "boolean")) return BAD;
-      return boundText(recv.map((x) => (x === null ? "" : String(x))).join(sep));
+      if (args.length > 1) return BAD;
+      let sep = ",";
+      if (args.length === 1) {
+        const v = evalExpr(args[0]!, env, sf, depth);
+        if (v === BAD || isGroups(v) || Array.isArray(v)) return BAD;
+        sep = v === undefined ? "," : v === null ? "null" : String(v);
+      }
+      if (recv.some((x) => x !== null && x !== undefined && typeof x !== "string" && typeof x !== "number" && typeof x !== "boolean")) return BAD;
+      return boundText(recv.map((x) => (x === null || x === undefined ? "" : String(x))).join(sep));
     }
     const cb = args[0];
     if (!cb || (name !== "reduce" && args.length !== 1) || (name === "reduce" && args.length > 2)) return BAD;
@@ -865,8 +915,8 @@ function evalMethod(recv: Val, name: string, args: readonly ts.Expression[], env
       const out: Val[] = [];
       for (let i = 0; i < recv.length; i++) {
         if (tick()) return BAD;
-        const got = evalCallback(cb, [recv[i]!, i], env, sf, depth);
-        if (got === BAD || got === undefined) return BAD;
+        const got = evalCallback(cb, [recv[i]!, i, recv], env, sf, depth);
+        if (got === BAD) return BAD;
         if (name === "map") out.push(got);
         else if (got) out.push(recv[i]!);
       }
@@ -885,8 +935,8 @@ function evalMethod(recv: Val, name: string, args: readonly ts.Expression[], env
     }
     for (let i = start; i < recv.length; i++) {
       if (tick()) return BAD;
-      const got = evalCallback(cb, [acc, recv[i]!], env, sf, depth);
-      if (got === BAD || got === undefined) return BAD;
+      const got = evalCallback(cb, [acc, recv[i]!, i, recv], env, sf, depth);
+      if (got === BAD) return BAD;
       acc = got;
     }
     return acc;
@@ -930,7 +980,16 @@ function callFn(fn: FnNode, args: readonly Val[], sf: ts.SourceFile, depth: numb
   if (depth === 0) walkSteps = 0;
   if (depth > 8 || tick()) return BAD;
   const env = new Map(parent ?? []);
-  fn.parameters.forEach((p, i) => { if (ts.isIdentifier(p.name)) env.set(p.name.text, args[i] ?? null); });
+  for (let i = 0; i < fn.parameters.length; i++) {
+    const p = fn.parameters[i]!;
+    if (!ts.isIdentifier(p.name) || p.dotDotDotToken) return BAD;
+    const supplied = i < args.length ? args[i] : undefined;
+    if (supplied === undefined && p.initializer) {
+      const v = evalExpr(p.initializer, env, sf, depth);
+      if (v === BAD) return BAD;
+      env.set(p.name.text, v);
+    } else env.set(p.name.text, supplied);
+  }
   if (!fn.body) return BAD;
   if (!ts.isBlock(fn.body)) return evalExpr(fn.body, env, sf, depth);
   const step = (nodes: readonly ts.Statement[]): Res | undefined => {
@@ -939,7 +998,7 @@ function callFn(fn: FnNode, args: readonly Val[], sf: ts.SourceFile, depth: numb
       if (ts.isIfStatement(st)) {
         const c = evalExpr(st.expression, env, sf, depth);
         if (c === BAD) return BAD;
-        const branch = c ? st.thenStatement : st.elseStatement;
+        const branch = truthy(c) ? st.thenStatement : st.elseStatement;
         if (!branch) continue;
         const inner = ts.isBlock(branch) ? step(branch.statements) : step([branch as ts.Statement]);
         if (inner !== undefined) return inner;
@@ -968,7 +1027,7 @@ function callFn(fn: FnNode, args: readonly Val[], sf: ts.SourceFile, depth: numb
     return undefined;
   };
   const out = step(fn.body.statements);
-  return out === undefined ? undefined as unknown as Res : out;
+  return out === undefined ? BAD : out;
 }
 
 function assertSpecs(sf: ts.SourceFile, fnName: string): { args: Val[]; expected: Val }[] | null {
@@ -1050,6 +1109,17 @@ function ruleAlignCallResult(e: RepairError, ctx: RepairContext): RepairEdit | n
  * rejected them. A caller may run those edits and keep one only when it is the unique pass.
  * This does not compose sites and does not read a base file.
  */
+/** Pure-walker result for one call. `ok: false` means the walker refused the body. Not a repair. */
+export function walkResult(source: string, fnName: string, args: readonly unknown[]): { ok: true; value: unknown } | { ok: false } {
+  const sf = parse("leaf.ts", source);
+  const fn = findFn(sf, fnName);
+  if (!fn) return { ok: false };
+  const got = callFn(fn, args as Val[], sf, 0);
+  if (got === BAD) return { ok: false };
+  if (isGroups(got)) return { ok: true, value: { ...got.groups } };
+  return { ok: true, value: got };
+}
+
 export function uncheckedCatalog(source: string, fnName: string, testSource: string): string[] {
   const tsf = parse("leaf.test.ts", testSource);
   const specs = assertSpecs(tsf, fnName);
@@ -1075,7 +1145,7 @@ function decideCallCatalog(content: string, path: string, fnName: string, specs:
     let unknown = false;
     for (const spec of specs) {
       const got = callFn(body, spec.args, parsed, 0);
-      if (got === BAD || got === undefined) { unknown = true; break; }
+      if (got === BAD) { unknown = true; break; }
       if (!sameVal(got, spec.expected)) { ok = false; break; }
     }
     if (unknown) { unchecked.push(next); continue; }

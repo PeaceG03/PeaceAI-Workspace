@@ -17,6 +17,7 @@ import {
   RULES,
   sortErrors,
   uncheckedCatalog,
+  walkResult,
   type RepairContext,
   type RepairError,
 } from "../lib/repair.ts";
@@ -356,6 +357,68 @@ test("the walker judges allowlisted string and array methods, and refuses anythi
   const opaque = ask("pad", "export function pad(s: string): string {\n  return s.padStart(2, \"0\");\n}\n", [["\"a\"", "\"0a\""], ["\"ab\"", "\"ab\""]]);
   assert.equal(opaque.fix, null);
   assert.ok(opaque.unchecked.length > 0);
+});
+
+test("the walker matches JavaScript for every allowlisted builtin, including defaults and callback arity", () => {
+  const real = (source: string) => new Function(`${source.replace(/^export /m, "")}\nreturn f;`)() as (...args: unknown[]) => unknown;
+  const cases: { source: string; args: unknown[] }[] = [
+    { source: "export function f(s){return s.toLowerCase()}", args: ["Ab"] },
+    { source: "export function f(s){return s.toLowerCase(1)}", args: ["Ab"] },
+    { source: "export function f(s){return s.toUpperCase()}", args: ["Ab"] },
+    { source: "export function f(s){return s.trim()}", args: [" Ab "] },
+    { source: "export function f(s){return s.charAt()}", args: ["ab"] },
+    { source: "export function f(s){return s.charAt(1)}", args: ["ab"] },
+    { source: "export function f(s){return s.slice()}", args: ["abcd"] },
+    { source: "export function f(s){return s.slice(1)}", args: ["abcd"] },
+    { source: "export function f(s){return s.slice(1, 3)}", args: ["abcd"] },
+    { source: "export function f(s){return s.substring()}", args: ["abcd"] },
+    { source: "export function f(s){return s.substring(1, 3)}", args: ["abcd"] },
+    { source: "export function f(s){return s.split()}", args: ["ab"] },
+    { source: "export function f(s){return s.split(\"\")}", args: ["ab"] },
+    { source: "export function f(s){return s.split(\"-\")}", args: ["a-b"] },
+    { source: "export function f(s){return s.split(\"-\", 2)}", args: ["a-b-c"] },
+    { source: "export function f(s){return s.replace(\"a\", \"x\")}", args: ["ab"] },
+    { source: "export function f(s){return s.replace(/a/g, \"x\")}", args: ["aba"] },
+    { source: "export function f(s){return s.replace(\"a\", (m, off, str) => m + off + str.length)}", args: ["ab"] },
+    { source: "export function f(s){return s.replace(/(a)(b)/, (m, p1, p2, off, str) => p1 + p2 + \":\" + off)}", args: ["ab"] },
+    { source: "export function f(s){return s.replace(/(?<x>a)/, (m, p1, off, str, g) => g.x)}", args: ["ab"] },
+    { source: "export function f(s){return s.replace(/(a)|(b)/, (m, p1, p2) => \"\" + p2)}", args: ["a"] },
+    { source: "export function f(xs){return xs.map((n, i, arr) => n + i + arr.length)}", args: [[1, 2]] },
+    { source: "export function f(xs){return xs.map((n, i, arr) => arr ? n - 1 : n + 0)}", args: [[1, 2]] },
+    { source: "export function f(xs){return xs.map((n = 7) => n)}", args: [[undefined]] },
+    { source: "export function f(xs){return xs.map((n = 7) => n)}", args: [[null]] },
+    { source: "export function f(xs){return xs.filter((n, i, arr) => i > 0 && arr.length > 0)}", args: [[1, 2, 3]] },
+    { source: "export function f(xs){return xs.reduce((a, v, i, arr) => a + v + i + arr.length, 0)}", args: [[1, 2, 3]] },
+    { source: "export function f(xs){return xs.join()}", args: [["a", "b"]] },
+    { source: "export function f(xs){return xs.join(\"-\")}", args: [["a", "b"]] },
+    { source: "export function f(xs){return xs.join(\"\")}", args: [["a", "b"]] },
+  ];
+  for (const c of cases) {
+    const walked = walkResult(c.source, "f", c.args);
+    const oracle = real(c.source)(...c.args);
+    assert.equal(walked.ok, true, c.source);
+    assert.deepEqual(walked.ok ? walked.value : null, oracle, c.source);
+  }
+  assert.equal(walkResult("export function f(xs){return xs.map((...n) => n)}", "f", [[1]]).ok, false);
+  assert.equal(walkResult("export function f(xs){return xs.map(function (n) { return arguments[1]; })}", "f", [[1]]).ok, false);
+});
+
+test("a map callback that reads the array is repaired on the live branch, and join() keeps the comma", () => {
+  const calls = (name: string, rows: readonly [string, string][]) =>
+    `import test from "node:test";\nimport assert from "node:assert/strict";\nimport { ${name} } from "./leaf";\ntest("${name} holds", () => {\n${rows.map(([input, expected]) => `  assert.equal(${name}(${input}), ${expected});`).join("\n")}\n});\n`;
+  const source = "export function total(xs: number[]): number {\n  return xs.map((n, i, arr) => arr ? n - 1 : n + 0).reduce((a, b) => a + b, 0);\n}\n";
+  const rows: [string, string][] = [["[1]", "2"], ["[1, 2]", "5"]];
+  const testText = calls("total", rows);
+  const err: RepairError = { source: "test", kind: "assertion", code: "ASSERT_equal", file: "src/leaf.test.ts", line: 5, col: 3, message: "total holds", expected: "2", actual: "0" };
+  const fix = repairFor(err, ctxOf({ "src/leaf.ts": source, "src/leaf.test.ts": testText }));
+  assert.equal(fix?.rule, "ALIGN_CALL_RESULT");
+  assert.match(fix?.content ?? "", /arr \? n \+ 1 : n \+ 0/);
+  const ran = new Function(`${(fix?.content ?? "").replace(/: number\[\]|: number/g, "").replace(/^export /m, "")}\nreturn total;`)() as (xs: number[]) => number;
+  assert.deepEqual([ran([1]), ran([1, 2])], [2, 5]);
+  const joined = walkResult("export function f(xs){return xs.join()}", "f", [["a", "b"]]);
+  const empty = walkResult("export function f(xs){return xs.join(\"\")}", "f", [["a", "b"]]);
+  assert.deepEqual(joined.ok ? joined.value : null, "a,b");
+  assert.deepEqual(empty.ok ? empty.value : null, "ab");
 });
 
 test("FIX_PROPERTY_TYPO without a compiler suggestion: the single closest member of the indexed type; ties refuse", () => {
