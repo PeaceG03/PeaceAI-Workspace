@@ -13,7 +13,6 @@ import { IMPORT_EDIT_V2_PARAM_KEYS, IMPORT_EDIT_V2_TRIGGER, IMPORT_EDIT_V2_VOCAB
 import { applyMethodGuardRule, METHOD_GUARD_PARAM_KEYS, METHOD_GUARD_TRIGGER, METHOD_GUARD_VOCAB } from "./method-guard.ts";
 import { applyReplaceRule, BODY_PARAM_KEYS, BODY_VOCAB, REPLACE_TRIGGER } from "./learned-body.ts";
 import { parseExistingTestTask, runExistingTestRule, TEST_EXISTING_TRIGGER, validTestExistingParams } from "./learned-test-existing.ts";
-import { characterizeAppend } from "./characterize.ts";
 import { existingEditDetail, EXISTING_EDIT_TRIGGER, isWire2Params, isWire2RethrowParams, isWireParams, validExistingEditParams } from "./learned-edit-existing.ts";
 import { deriveWireDetail } from "./derive-wire.ts";
 import { deriveWireV2Detail } from "./derive-wire-v2.ts";
@@ -476,10 +475,7 @@ function applyRuleInner(spec: RuleSpec, objective: string, files: readonly Sourc
       // The tested module itself may not be a denied path of the target (the new test file is checked by applyRule).
       const t = parseExistingTestTask(spec.trigger, objective);
       if (t && repo && deniedEditPath(repo, [t.file])) { if (why) why.reason = "denied_path"; return null; }
-      const edit = runExistingTestRule(spec.trigger, spec.params, objective, files, isTest, why, scan); // M80: one new test file when the request already lists the checks
-      if (edit) return edit;
-      if (spec.params.target === "exported-pure-function-v7") return characterizeAppend(spec.trigger, objective, files, isTest ?? (() => false), why);
-      return null;
+      return runExistingTestRule(spec.trigger, spec.params, objective, files, isTest, why, scan); // M80: one new test file for an existing exported pure function; admitted only via the hash-pinned approved list; graded fix-free in Job B
     } catch {
       if (why) why.reason = "internal_error";
       return null;

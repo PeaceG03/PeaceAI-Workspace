@@ -8,8 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { appendedTest } from "../bin/capability-job.ts";
-import { characterizeAppend } from "../lib/characterize.ts";
-import { TEST_EXISTING_TRIGGER } from "../lib/learned-test-existing.ts";
+import { characterizeAppend, TEST_EXISTING_TRIGGER } from "../lib/learned-test-existing.ts";
 
 const isTest = (p: string) => p.endsWith(".test.ts");
 
