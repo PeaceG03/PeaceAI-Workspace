@@ -1,13 +1,14 @@
 // M227: Job A replay records. A pass is a candidate count from a run, bound to head+tree+log.
 // EXPERIMENTAL. credit is false. No network, no kernel.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { buildCapabilityReport, type ReplayBind } from "../lib/capabilityreport.ts";
-import { boundReplay, classifyJobOutput, commitRef, rowUnrunnable } from "../lib/capabilityjob.ts";
-import { archiveSha256, coreProblem, gitTreeSha, readCorePin } from "../bin/capability-job.ts";
+import { CORE_ENTRY, boundReplay, classifyJobOutput, commitRef, rowUnrunnable } from "../lib/capabilityjob.ts";
+import { archiveSha256, coreStillPinned, extractPinnedCore, gitTreeSha, pinnedKernel, readCorePin, type CorePin } from "../bin/capability-job.ts";
 
 const log = readFileSync(resolve(import.meta.dirname, "../../builder-log/tasks.jsonl"), "utf8");
 const HEAD = "a".repeat(40);
@@ -41,26 +42,42 @@ test("a Job A pass counts only when it is bound to the head, tree, and log", () 
   assert.equal(dropped.rows.find((r) => r.seq === seq)?.reason, "CORE_PIN");
 });
 
+function packCore(): { archive: string; pin: CorePin; caller: string } {
+  const caller = mkdtempSync(join(tmpdir(), "peaceai-src-"));
+  const entry = join(caller, "packages/coding-kernel/src");
+  mkdirSync(entry, { recursive: true });
+  writeFileSync(join(entry, "ActionsKernel.ts"), "export const kernel = 1;\n");
+  const tree = gitTreeSha(caller);
+  const archive = join(tmpdir(), `peaceai-core-${process.pid}.tar`);
+  execFileSync("tar", ["-cf", archive, "-C", caller, "."]);
+  return { archive, caller, pin: { schema: "peaceai-core-pin:v1", commit: "a".repeat(40), archiveSha256: archiveSha256(archive), tree } };
+}
+
 test("the committed pin is the only core that is accepted", () => {
   const reviewed = readCorePin(readFileSync(join(process.cwd(), "peaceai/core-pin.json"), "utf8"));
   assert.equal(reviewed?.commit, "caa7e8a9d835292c33becab4e9a3537ef452217f");
   assert.equal(reviewed?.archiveSha256, "64e5aa8edfd20e2245e776faafadacd7e4924bbf5e62e4907217ab961bdc259a");
   assert.equal(reviewed?.tree.length, 40);
-  const dir = mkdtempSync(join(tmpdir(), "peaceai-core-"));
+  const missing = extractPinnedCore(join(tmpdir(), "missing.tar"), reviewed);
+  assert.match("error" in missing ? missing.error : "", /CORE_ARCHIVE_MISSING/);
+  const made = packCore();
   try {
-    assert.match(coreProblem(dir, join(dir, "missing.tar"), reviewed) ?? "", /CORE_ENTRY_MISSING/);
-    assert.match(coreProblem(join(dir, "missing"), join(dir, "missing.tar"), reviewed) ?? "", /CORE_MISSING/);
-    const entry = join(dir, "packages/coding-kernel/src");
-    mkdirSync(entry, { recursive: true });
-    writeFileSync(join(entry, "ActionsKernel.ts"), "export {}\n");
-    const archive = join(dir, "core.tar");
-    writeFileSync(archive, "not-a-real-archive\n");
-    assert.match(coreProblem(dir, archive, reviewed) ?? "", /CORE_ARCHIVE_MISMATCH/);
-    const tree = gitTreeSha(dir);
-    const pin = { schema: "peaceai-core-pin:v1" as const, commit: reviewed!.commit, archiveSha256: archiveSha256(archive), tree };
-    assert.equal(coreProblem(dir, archive, pin), null);
-    writeFileSync(join(entry, "ActionsKernel.ts"), "export const extra = 1;\n");
-    assert.match(coreProblem(dir, archive, pin) ?? "", /CORE_TREE_MISMATCH/);
+    assert.match((extractPinnedCore(made.archive, reviewed) as { error: string }).error, /CORE_ARCHIVE_MISMATCH/);
+    const opened = extractPinnedCore(made.archive, made.pin);
+    assert.ok(!("error" in opened));
+    if ("error" in opened) return;
+    try {
+      assert.equal(statSync(opened.dir).mode & 0o777, 0o700);
+      assert.equal(coreStillPinned(opened.root, made.pin), null);
+      assert.equal(readFileSync(join(opened.root, CORE_ENTRY), "utf8").includes("poisoned"), false);
+      writeFileSync(join(made.caller, CORE_ENTRY), "export const poisoned = 1;\n");
+      assert.equal(readFileSync(join(opened.root, CORE_ENTRY), "utf8").includes("poisoned"), false);
+      const refused = pinnedKernel(made.archive, made.pin, process.cwd(), (root) => writeFileSync(join(root, CORE_ENTRY), "export const poisoned = 1;\n"));
+      assert.match(("error" in refused ? refused.error : ""), /CORE_TREE_MISMATCH/);
+    } finally { opened.dispose(); }
     assert.equal(readCorePin("{\"commit\":\"aa\"}"), null);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    rmSync(made.caller, { recursive: true, force: true });
+    rmSync(made.archive, { force: true });
+  }
 });

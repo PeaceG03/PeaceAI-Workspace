@@ -1,12 +1,12 @@
 // Experimental. credit: false. Read-only Job A replay of the builder-log set.
-//   tsx peaceai/bin/capability-job.ts --core <PeaceAI checkout> [--as-of YYYY-MM-DD] [--out <dir>]
-// --core is a read-only checkout that contains packages/coding-kernel. It is not vendored.
+//   tsx peaceai/bin/capability-job.ts --core-archive <file> [--as-of YYYY-MM-DD] [--out <dir>]
+// The archive is extracted into a private temporary directory, checked against peaceai/core-pin.json, and built from that same directory. A caller-supplied checkout is not a source.
 // Each replay row is bound to this head, this tree, and the sha256 of the log.
 // A missing core checkout leaves every runnable row unmeasured and does not invent a pass.
 // --out must be outside this repo.
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { LOG_PATH, type Entry } from "../../builder-log/check.ts";
@@ -17,7 +17,7 @@ import { CORE_ENTRY, boundReplay, classifyJobOutput, commitRef, rowUnrunnable, t
 
 const ROW_MS = 45_000;
 
-const USAGE = "usage: capability-job.ts --core <dir> --core-archive <file> [--as-of YYYY-MM-DD] [--out <dir>]";
+const USAGE = "usage: capability-job.ts --core-archive <file> [--as-of YYYY-MM-DD] [--out <dir>]";
 const PIN_PATH = "peaceai/core-pin.json";
 
 function flag(name: string, args: string[]): string | undefined {
@@ -63,9 +63,10 @@ export function readCorePin(text: string): CorePin | null {
   } catch { return null; }
 }
 
-/** Git tree sha of a directory, computed in a fresh repo so the source stays untouched. */
+/** Git tree sha of a directory, computed in a private copy so the source bytes stay put. */
 export function gitTreeSha(root: string): string {
   const tmp = mkdtempSync(join(tmpdir(), "peaceai-tree-"));
+  chmodSync(tmp, 0o700);
   try {
     execFileSync("cp", ["-a", `${root}/.`, tmp]);
     execFileSync("chmod", ["-R", "u+w", tmp]);
@@ -78,19 +79,60 @@ export function gitTreeSha(root: string): string {
   }
 }
 
-/** Fail closed unless the archive bytes and the extracted git tree match the committed pin. */
-export function coreProblem(coreDir: string, archivePath: string, pin: CorePin | null): string | null {
-  if (!pin) return "CORE_PIN_UNREADABLE";
-  if (!existsSync(coreDir)) return `CORE_MISSING: ${coreDir} does not exist`;
-  const entry = join(coreDir, CORE_ENTRY);
-  if (!existsSync(entry)) return `CORE_ENTRY_MISSING: ${entry} is not in the checkout`;
-  if (!existsSync(archivePath)) return `CORE_ARCHIVE_MISSING: ${archivePath}`;
+function findCoreRoot(dir: string): string | null {
+  const stack = [dir];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    if (existsSync(join(cur, CORE_ENTRY))) return cur;
+    let names: { name: string; isDirectory: () => boolean }[] = [];
+    try { names = readdirSync(cur, { withFileTypes: true }); } catch { continue; }
+    for (const name of names) if (name.isDirectory() && name.name !== ".git") stack.push(join(cur, name.name));
+  }
+  return null;
+}
+
+export interface PinnedExtract { dir: string; root: string; dispose: () => void }
+
+/** Extract the archive into a fresh 0700 directory and accept it only when both the bytes and the tree match the pin. */
+export function extractPinnedCore(archivePath: string, pin: CorePin | null): PinnedExtract | { error: string } {
+  if (!pin) return { error: "CORE_PIN_UNREADABLE" };
+  if (!existsSync(archivePath)) return { error: `CORE_ARCHIVE_MISSING: ${archivePath}` };
   const digest = archiveSha256(archivePath);
-  if (digest !== pin.archiveSha256) return `CORE_ARCHIVE_MISMATCH: ${digest}`;
+  if (digest !== pin.archiveSha256) return { error: `CORE_ARCHIVE_MISMATCH: ${digest}` };
+  const dir = mkdtempSync(join(tmpdir(), "peaceai-core-"));
+  chmodSync(dir, 0o700);
+  const dispose = () => rmSync(dir, { recursive: true, force: true });
+  const extracted = spawnSync("tar", ["-xf", archivePath, "-C", dir], { encoding: "utf8" });
+  if (extracted.status !== 0) { dispose(); return { error: "CORE_EXTRACT_FAILED" }; }
+  const root = findCoreRoot(dir);
+  if (!root) { dispose(); return { error: `CORE_ENTRY_MISSING: ${CORE_ENTRY}` }; }
   let tree = "";
-  try { tree = gitTreeSha(coreDir); } catch { return "CORE_TREE_UNREADABLE"; }
+  try { tree = gitTreeSha(root); } catch { dispose(); return { error: "CORE_TREE_UNREADABLE" }; }
+  if (tree !== pin.tree) { dispose(); return { error: `CORE_TREE_MISMATCH: ${tree}` }; }
+  chmodSync(dir, 0o700);
+  return { dir, root, dispose };
+}
+
+/** Re-read the tree of the directory about to be built. A change since the extract check refuses the build. */
+export function coreStillPinned(root: string, pin: CorePin): string | null {
+  let tree = "";
+  try { tree = gitTreeSha(root); } catch { return "CORE_TREE_UNREADABLE"; }
   if (tree !== pin.tree) return `CORE_TREE_MISMATCH: ${tree}`;
   return null;
+}
+
+/** Extract, check, build from that same directory, then discard the directory. `afterCheck` runs only in tests. */
+export function pinnedKernel(archivePath: string, pin: CorePin | null, tooling: string, afterCheck?: (root: string) => void): { bundle: string } | { error: string } {
+  const opened = extractPinnedCore(archivePath, pin);
+  if ("error" in opened) return opened;
+  try {
+    afterCheck?.(opened.root);
+    const stale = coreStillPinned(opened.root, pin!);
+    if (stale) return { error: stale };
+    return kernelBundle(opened.root, tooling);
+  } finally {
+    opened.dispose();
+  }
 }
 
 function kernelBundle(coreDir: string, tooling: string): { bundle: string } | { error: string } {
@@ -132,11 +174,10 @@ function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, 
 function main(): void {
   const args = process.argv.slice(2);
   if (args.includes("-h") || args.includes("--help")) { console.log(USAGE); return; }
-  const core = flag("--core", args);
   const asOf = flag("--as-of", args) ?? denverYmd();
   const out = flag("--out", args);
   const coreArchive = flag("--core-archive", args);
-  if (!core || !coreArchive) { console.log(USAGE); process.exit(2); }
+  if (!coreArchive) { console.log(USAGE); process.exit(2); }
   const repo = resolve(import.meta.dirname, "../..");
   if (out && insideRepo(repo, resolve(out))) { console.log("refused WRITE_IN_TARGET"); process.exit(2); }
   const logText = readFileSync(resolve(repo, LOG_PATH), "utf8");
@@ -148,11 +189,10 @@ function main(): void {
   const stocks = process.env.PEACESTOCKS_CLONE?.trim() || "";
   const cloneHead = stocks ? gitLine(stocks, ["rev-parse", "HEAD"]) : null;
   const onMain = stocks && cloneHead && /^[0-9a-f]{40}$/.test(cloneHead) ? makeGitOnMainChecker(stocks) : null;
-  const coreDir = resolve(core);
-  const problem = coreProblem(coreDir, coreArchive, pin);
+  const built = pinnedKernel(resolve(coreArchive), pin, repo);
+  const problem = "error" in built ? built.error : null;
   const coreCommit = problem || !pin ? null : pin.commit;
   const archiveSha = pin?.archiveSha256 ?? "";
-  const built = !problem ? kernelBundle(coreDir, repo) : null;
   const buildError = problem ?? (built && "error" in built ? built.error : null);
   const bundle = built && "bundle" in built ? built.bundle : null;
   const entries = new Map(parseLogEntries(logText).map((e) => [e.seq, e as Entry]));
