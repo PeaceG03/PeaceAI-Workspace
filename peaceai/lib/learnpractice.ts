@@ -538,6 +538,7 @@ function litOf(e: Enc): string | null {
   if ("error" in e || "nan" in e || "undef" in e) return null;
   if (typeof e.v === "number" && !Number.isFinite(e.v)) return null;
   if (typeof e.v === "string" || typeof e.v === "number" || typeof e.v === "boolean" || e.v === null) return JSON.stringify(e.v);
+  if (Array.isArray(e.v)) return JSON.stringify(e.v);
   return null;
 }
 
@@ -614,7 +615,11 @@ function oracleMatrix(original: string, brokenList: string[], inputs: unknown[][
 }
 
 function testSource(fn: string, inputs: readonly unknown[], expected: readonly string[], mark: string): string {
-  const calls = inputs.map((n, i) => `  assert.equal(${fn}(${JSON.stringify(n)}), ${expected[i]});`).join("\n");
+  const calls = inputs.map((n, i) => {
+    const exp = expected[i] ?? "null";
+    const op = exp.startsWith("[") ? "deepEqual" : "equal";
+    return `  assert.${op}(${fn}(${JSON.stringify(n)}), ${exp});`;
+  }).join("\n");
   const note = mark.replace(/[^\t\x20-\x7E]/g, " ").slice(0, 160);
   return `import test from "node:test";\nimport assert from "node:assert/strict";\nimport { ${fn} } from "../src/leaf.ts";\n// practice ${note}\ntest("${fn} holds", () => {\n${calls}\n});\n`;
 }
