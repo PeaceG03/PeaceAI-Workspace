@@ -5,6 +5,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
+import ts from "typescript";
+import { mutationsIn, type Site } from "../lib/editpropose.ts";
 import {
   editDistance,
   errorFingerprint,
@@ -14,6 +16,7 @@ import {
   repairFor,
   RULES,
   sortErrors,
+  uncheckedCatalog,
   type RepairContext,
   type RepairError,
 } from "../lib/repair.ts";
@@ -266,7 +269,56 @@ test("planRepairs: existing tests are never edited; at most one edit per file pe
   ];
   const edits = planRepairs(errors, ctx);
   assert.deepEqual(edits.map((e) => [e.rule, e.path, e.line]), [["ADD_MISSING_REQUIRED_PROPERTY", "src/theme.ts", 5]]);
-  assert.equal(RULES.length, 8);
+  assert.equal(RULES.length, 9);
+});
+
+test("ALIGN_CALL_RESULT: one catalog edit meets every literal call, and the base file is not the answer", () => {
+  const broken = "export function score(n: number): number {\n  return n - 1;\n}\n";
+  const testText = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { score } from "./score";\ntest("score holds", () => {\n  assert.equal(score(0), 1);\n  assert.equal(score(2), 3);\n});\n';
+  const files = { "src/score.ts": broken, "src/score.test.ts": testText };
+  const decoy = "export function score(n: number): number {\n  return 999;\n}\n";
+  const ctx = ctxOf(files, { "src/score.ts": decoy, "src/score.test.ts": testText });
+  const err: RepairError = { source: "test", kind: "assertion", code: "ASSERT_equal", file: "src/score.test.ts", line: 5, col: 3, message: "score holds", expected: "1", actual: "-1" };
+  const fix = repairFor(err, ctx)!;
+  assert.equal(fix.rule, "ALIGN_CALL_RESULT");
+  assert.match(fix.content, /return n \+ 1;/);
+  assert.equal(fix.content.includes("999"), false);
+  assert.equal(fix.content === decoy, false);
+  const thin = { ...files, "src/score.test.ts": 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { score } from "./score";\ntest("score holds", () => {\n  assert.equal(score(0), 1);\n});\n' };
+  assert.equal(repairFor(err, ctxOf(thin)), null);
+  const unreachable = { ...files, "src/score.ts": "export function score(n: number): number {\n  return n;\n}\n" };
+  assert.equal(repairFor({ ...err, actual: "0" }, ctxOf(unreachable)), null);
+  const off = { ...files, "src/score.ts": "export function score(n: number): number {\n  return n + 2;\n}\n" };
+  const offFix = repairFor({ ...err, actual: "2" }, ctxOf(off, { "src/score.ts": decoy }))!;
+  assert.equal(offFix.rule, "ALIGN_CALL_RESULT");
+  assert.match(offFix.content, /return n \+ 1;/);
+  const plain = "export function score(n: number): number {\n  return n - 1;\n}\n";
+  assert.equal(uncheckedCatalog(plain, "score", testText).length, 0);
+  const opaque = "export function tag(s: string): string {\n  const parts = s.replace(/[.]/g, \"-\").split(\"-\");\n  if (parts.length !== 0) return \"\";\n  return parts.join(\":\");\n}\n";
+  const opaqueTest = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { tag } from "./tag";\ntest("tag holds", () => {\n  assert.equal(tag("a"), "a");\n  assert.equal(tag("a.b"), "a:b");\n});\n';
+  assert.ok(uncheckedCatalog(opaque, "tag", opaqueTest).length > 1);
+});
+
+test("ALIGN_CALL_RESULT refuses when a second satisfying catalog edit sits past the first 32", () => {
+  const fillers = Array.from({ length: 8 }, (_, i) => `  if (n === ${101 + i}) return 1;`).join("\n");
+  const broken = `export function score(n: number): number {\n  if (false) return n + 1;\n${fillers}\n  return n - 1;\n}\n`;
+  const testText = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { score } from "./score";\ntest("score holds", () => {\n  assert.equal(score(0), 1);\n  assert.equal(score(2), 3);\n});\n';
+  const sf = ts.createSourceFile("src/score.ts", broken, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const fn = sf.statements.find((st) => ts.isFunctionDeclaration(st) && st.body);
+  const site: Site = { path: "src/score.ts", name: "score", start: fn!.getStart(sf), end: fn!.getEnd(), tier: 0 };
+  const passes: number[] = [];
+  for (const [i, mut] of mutationsIn(sf, site, 0, new Set()).entries()) {
+    const next = broken.slice(0, mut.start) + mut.text + broken.slice(mut.end);
+    const js = ts.transpileModule(next, { compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2020 } }).outputText;
+    const got = new Function("exports", `${js}\nreturn score(0) + "," + score(2);`)({});
+    if (got === "1,3") passes.push(i);
+  }
+  assert.ok(passes.length >= 2);
+  assert.ok(passes.some((i) => i < 32));
+  assert.ok(passes.some((i) => i >= 32));
+  const ctx = ctxOf({ "src/score.ts": broken, "src/score.test.ts": testText });
+  const err: RepairError = { source: "test", kind: "assertion", code: "ASSERT_equal", file: "src/score.test.ts", line: 5, col: 3, message: "score holds", expected: "1", actual: "-1" };
+  assert.equal(repairFor(err, ctx), null);
 });
 
 test("FIX_PROPERTY_TYPO without a compiler suggestion: the single closest member of the indexed type; ties refuse", () => {

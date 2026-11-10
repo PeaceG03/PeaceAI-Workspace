@@ -91,3 +91,13 @@ Head fb8dc84ae304dc856e7f802463058cf0bfe17c5c, tree be034b6f9bbf8c104310fed9c300
 Same-file helpers are included in the sandbox. A missing name is refused. If any probed input changes across two runs, or any probed input is not a stable literal, that leaf has no problem and no verified repair. Two stable results do not stand in for an input the probe could not pin down. The 4-break and 0.75 gates are unchanged. The numbers above are the earlier runs. They are not this head's radash result.
 
 Readiness files docs/PEACEAI_FINAL_PRODUCT_READINESS.md, packages/core/src/ProductReadiness.ts, and docs/PEACEAI_OVERNIGHT_PROGRESS.md are absent. They were not created.
+
+## camel stays NO_RULE
+
+On 050c0e4 the 24-attempt radash run's only problems were camel, 8 of 8, each with 5 asserts, none verified. Each broken body is one catalog edit: a comparison, a negated condition, or an off-by-one. It is not a multi-site composition. `ALIGN_CALL_RESULT` still returns no edit because the pure walker cannot judge `?.replace`, a regular expression, `.split`, `.map`, or `.reduce`. A sandbox search of those candidates cannot prove uniqueness inside the 3-attempt repair cap, so it is not forced. The template proposer already ran and did not verify them. That is beyond this rule.
+
+The next safe step is array results. A function that returns `[n + 1]` is now a literal probe, asserted with deepEqual, and repaired only when one catalog edit meets every assertion.
+
+## Assertion repair after af73937
+
+af739374f0fa697fd2ab3244d0b7f7fd1fb87749 stays the reviewed head. A later commit on a separate branch teaches the existing repair rules to edit a function body from a failing call assertion. The edit is one candidate from the existing mutation catalog, and it is kept only when that candidate is the only one that meets every literal assertion. The base file is not read. One assertion is not enough. The 4-break and 0.75 gates are unchanged.
