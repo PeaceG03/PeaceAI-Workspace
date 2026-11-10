@@ -586,16 +586,59 @@ function ruleAlignAddedConstant(e: RepairError, ctx: RepairContext): RepairEdit 
   return null;
 }
 
-type Val = number | string | boolean | null | Val[];
+type Groups = { readonly groups: Readonly<Record<string, string | undefined>> };
+type Val = number | string | boolean | null | undefined | Val[] | Groups;
 const BAD = Symbol("bad");
 type Res = Val | typeof BAD;
 
+function isGroups(v: Val): v is Groups {
+  return typeof v === "object" && v !== null && !Array.isArray(v) && "groups" in v;
+}
+
+function isPrimitive(v: Val): boolean {
+  return v === undefined || v === null || typeof v === "number" || typeof v === "string" || typeof v === "boolean";
+}
+
+function hasHole(xs: readonly Val[]): boolean {
+  for (let i = 0; i < xs.length; i++) if (!Object.hasOwn(xs, i)) return true;
+  return false;
+}
+
+function truthy(v: Val): boolean {
+  if (v === undefined || v === null || v === false || v === "" || v === 0) return false;
+  if (typeof v === "number" && Number.isNaN(v)) return false;
+  return true;
+}
+
 function sameVal(a: Val, b: Val): boolean {
+  if (isGroups(a) || isGroups(b)) {
+    if (!isGroups(a) || !isGroups(b)) return false;
+    const ak = Object.keys(a.groups).sort();
+    const bk = Object.keys(b.groups).sort();
+    return ak.length === bk.length && ak.every((k, i) => k === bk[i] && a.groups[k] === b.groups[k]);
+  }
   if (Array.isArray(a) || Array.isArray(b)) {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
     return a.every((x, i) => sameVal(x, b[i]!));
   }
+  if (typeof a === "number" && typeof b === "number") return a === b;
   return Object.is(a, b);
+}
+
+/** JavaScript == . Null and undefined match each other. Other mixed types are refused, not coerced. */
+function looseEq(a: Val, b: Val): boolean | typeof BAD {
+  const nil = (v: Val) => v === undefined || v === null;
+  if (nil(a) || nil(b)) return nil(a) && nil(b);
+  if (typeof a === "number" && typeof b === "number") return a === b;
+  if (typeof a === "string" && typeof b === "string") return a === b;
+  if (typeof a === "boolean" && typeof b === "boolean") return a === b;
+  return BAD;
+}
+
+function typeOfVal(v: Val): string {
+  if (v === undefined) return "undefined";
+  if (v === null || Array.isArray(v) || isGroups(v)) return "object";
+  return typeof v;
 }
 
 function litNode(n: ts.Node): Val | typeof BAD {
@@ -608,7 +651,7 @@ function litNode(n: ts.Node): Val | typeof BAD {
   if (!ts.isArrayLiteralExpression(n)) return BAD;
   const xs: Val[] = [];
   for (const el of n.elements) {
-    if (ts.isSpreadElement(el)) return BAD;
+    if (ts.isSpreadElement(el) || ts.isOmittedExpression(el)) return BAD;
     const v = litNode(el);
     if (v === BAD) return BAD;
     xs.push(v);
@@ -616,13 +659,46 @@ function litNode(n: ts.Node): Val | typeof BAD {
   return xs;
 }
 
-/** Pure walk of a tiny expression. Unsupported syntax is BAD. This does not call the host. */
+/**
+ * Pure walk. Allowlisted string/array methods and regex literals only.
+ * No eval, Function, or process. A step or size limit is BAD.
+ */
+const WALK_LIMIT = 4000;
+const MAX_TEXT = 256;
+const MAX_ITEMS = 64;
+let walkSteps = 0;
+function tick(): boolean {
+  walkSteps += 1;
+  return walkSteps > WALK_LIMIT;
+}
+
+const STRING_METHODS = new Set(["toLowerCase", "toUpperCase", "trim", "charAt", "slice", "substring", "split", "replace"]);
+const ARRAY_METHODS = new Set(["map", "filter", "reduce", "join"]);
+
+function compileLiteralRegex(text: string): RegExp | null {
+  const m = /^\/([\s\S]*)\/([gimsuy]*)$/.exec(text);
+  if (!m) return null;
+  const body = m[1]!;
+  const flags = m[2]!;
+  if (body.length > 48 || !/^[gim]*$/.test(flags)) return null;
+  if (/\\[1-9]/.test(body)) return null;
+  if (/\([^)]*[+*][^)]*\)[+*{]/.test(body)) return null;
+  try { return new RegExp(body, flags); } catch { return null; }
+}
+
+function asInt(v: Val): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? Math.trunc(v) : null;
+}
+
 function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: number): Res {
-  if (depth > 8) return BAD;
+  if (depth > 8 || tick()) return BAD;
   if (ts.isParenthesizedExpression(n) || ts.isAsExpression(n) || ts.isTypeAssertionExpression(n) || ts.isNonNullExpression(n) || ts.isSatisfiesExpression(n)) return evalExpr(n.expression, env, sf, depth);
   const lit = litNode(n);
   if (lit !== BAD || ts.isNumericLiteral(n) || ts.isStringLiteral(n) || n.kind === ts.SyntaxKind.NullKeyword) return lit;
-  if (ts.isIdentifier(n)) return env.has(n.text) ? env.get(n.text)! : BAD;
+  if (ts.isIdentifier(n)) {
+    if (n.text === "undefined") return undefined;
+    return env.has(n.text) ? env.get(n.text)! : BAD;
+  }
   if (ts.isPrefixUnaryExpression(n)) {
     const v = evalExpr(n.operand, env, sf, depth);
     if (v === BAD) return BAD;
@@ -635,8 +711,9 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
     const l = evalExpr(n.left, env, sf, depth);
     if (l === BAD) return BAD;
     const k = n.operatorToken.kind;
-    if (k === ts.SyntaxKind.AmpersandAmpersandToken) return l ? evalExpr(n.right, env, sf, depth) : l;
-    if (k === ts.SyntaxKind.BarBarToken) return l ? l : evalExpr(n.right, env, sf, depth);
+    if (k === ts.SyntaxKind.AmpersandAmpersandToken) return truthy(l) ? evalExpr(n.right, env, sf, depth) : l;
+    if (k === ts.SyntaxKind.BarBarToken) return truthy(l) ? l : evalExpr(n.right, env, sf, depth);
+    if (k === ts.SyntaxKind.QuestionQuestionToken) return l === null || l === undefined ? evalExpr(n.right, env, sf, depth) : l;
     const r = evalExpr(n.right, env, sf, depth);
     if (r === BAD) return BAD;
     if (k === ts.SyntaxKind.PlusToken) {
@@ -650,8 +727,16 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
       if (k === ts.SyntaxKind.SlashToken) return r === 0 ? BAD : l / r;
       if (k === ts.SyntaxKind.PercentToken) return r === 0 ? BAD : l % r;
     }
+    if (k === ts.SyntaxKind.EqualsEqualsEqualsToken || k === ts.SyntaxKind.ExclamationEqualsEqualsToken || k === ts.SyntaxKind.EqualsEqualsToken || k === ts.SyntaxKind.ExclamationEqualsToken) {
+      if (!isPrimitive(l) || !isPrimitive(r)) return BAD;
+    }
     if (k === ts.SyntaxKind.EqualsEqualsEqualsToken) return sameVal(l, r);
     if (k === ts.SyntaxKind.ExclamationEqualsEqualsToken) return !sameVal(l, r);
+    if (k === ts.SyntaxKind.EqualsEqualsToken || k === ts.SyntaxKind.ExclamationEqualsToken) {
+      const eq = looseEq(l, r);
+      if (eq === BAD) return BAD;
+      return k === ts.SyntaxKind.EqualsEqualsToken ? eq : !eq;
+    }
     if (typeof l === "number" && typeof r === "number") {
       if (k === ts.SyntaxKind.LessThanToken) return l < r;
       if (k === ts.SyntaxKind.LessThanEqualsToken) return l <= r;
@@ -663,18 +748,39 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
   if (ts.isConditionalExpression(n)) {
     const c = evalExpr(n.condition, env, sf, depth);
     if (c === BAD) return BAD;
-    return evalExpr(c ? n.whenTrue : n.whenFalse, env, sf, depth);
+    return evalExpr(truthy(c) ? n.whenTrue : n.whenFalse, env, sf, depth);
   }
-  if (ts.isPropertyAccessExpression(n) && n.name.text === "length") {
+  if (ts.isPropertyAccessExpression(n)) {
     const v = evalExpr(n.expression, env, sf, depth);
-    if (typeof v === "string" || Array.isArray(v)) return v.length;
+    if (v === BAD) return BAD;
+    if (n.questionDotToken && (v === null || v === undefined)) return BAD;
+    if (isGroups(v)) return n.name.text in v.groups ? v.groups[n.name.text] : undefined;
+    if (n.name.text === "length" && (typeof v === "string" || Array.isArray(v))) return v.length;
     return BAD;
   }
   if (ts.isElementAccessExpression(n)) {
     const v = evalExpr(n.expression, env, sf, depth);
+    if (v === BAD) return BAD;
+    if (n.questionDotToken && (v === null || v === undefined)) return BAD;
     const i = n.argumentExpression ? evalExpr(n.argumentExpression, env, sf, depth) : BAD;
     if (!Array.isArray(v) || typeof i !== "number") return BAD;
-    return v[i] ?? null;
+    return v[i];
+  }
+  if (ts.isTemplateExpression(n)) {
+    let out = n.head.text;
+    for (const span of n.templateSpans) {
+      const v = evalExpr(span.expression, env, sf, depth);
+      if (v === BAD || isGroups(v) || Array.isArray(v)) return BAD;
+      out += v === undefined ? "undefined" : v === null ? "null" : String(v);
+      out += span.literal.text;
+      if (out.length > MAX_TEXT || tick()) return BAD;
+    }
+    return out;
+  }
+  if (ts.isTypeOfExpression(n)) {
+    const v = evalExpr(n.expression, env, sf, depth);
+    if (v === BAD) return BAD;
+    return typeOfVal(v);
   }
   if (ts.isCallExpression(n)) return evalCall(n, env, sf, depth);
   if (ts.isArrayLiteralExpression(n)) {
@@ -690,25 +796,212 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
   return BAD;
 }
 
+function evalArg(a: ts.Expression, env: Map<string, Val>, sf: ts.SourceFile, depth: number): Val | RegExp | typeof BAD {
+  if (ts.isRegularExpressionLiteral(a)) {
+    const re = compileLiteralRegex(a.text);
+    return re ?? BAD;
+  }
+  return evalExpr(a, env, sf, depth);
+}
+
+function boundText(s: string): string | typeof BAD {
+  return s.length > MAX_TEXT ? BAD : s;
+}
+
+function replaceArgs(match: string, index: number, s: string, caps: readonly (string | undefined)[], groups: RegExpExecArray["groups"]): Val[] {
+  const args: Val[] = [match, ...caps, index, s];
+  if (groups) args.push({ groups });
+  return args;
+}
+
+function replaceText(s: string, search: string | RegExp, repl: string | ((args: readonly Val[]) => Res)): Res {
+  if (s.length > MAX_TEXT) return BAD;
+  const apply = (args: readonly Val[]): Res => {
+    if (typeof repl === "string") return repl;
+    return repl(args);
+  };
+  if (typeof search === "string") {
+    const at = s.indexOf(search);
+    if (at < 0) return s;
+    const next = apply([search, at, s]);
+    if (typeof next !== "string" || next.includes("$")) return BAD;
+    return boundText(s.slice(0, at) + next + s.slice(at + search.length));
+  }
+  const re = new RegExp(search.source, search.flags);
+  if (!re.flags.includes("g")) {
+    const found = re.exec(s);
+    if (!found) return s;
+    const next = apply(replaceArgs(found[0] ?? "", found.index, s, found.slice(1), found.groups));
+    if (typeof next !== "string" || next.includes("$")) return BAD;
+    return boundText(s.slice(0, found.index) + next + s.slice(found.index + found[0].length));
+  }
+  let out = "";
+  let last = 0;
+  let count = 0;
+  re.lastIndex = 0;
+  let found: RegExpExecArray | null;
+  while ((found = re.exec(s))) {
+    if (tick() || ++count > MAX_ITEMS) return BAD;
+    const next = apply(replaceArgs(found[0] ?? "", found.index, s, found.slice(1), found.groups));
+    if (typeof next !== "string" || next.includes("$")) return BAD;
+    out += s.slice(last, found.index) + next;
+    last = found.index + found[0].length;
+    if (found[0].length === 0) re.lastIndex += 1;
+    if (out.length > MAX_TEXT) return BAD;
+  }
+  return boundText(out + s.slice(last));
+}
+
+function splitText(s: string, sep: string | RegExp): Res {
+  if (s.length > MAX_TEXT) return BAD;
+  if (typeof sep === "string") {
+    const parts = sep === "" ? (s.length > MAX_ITEMS ? null : [...s]) : s.split(sep);
+    if (!parts || parts.length > MAX_ITEMS) return BAD;
+    return parts;
+  }
+  const re = new RegExp(sep.source, sep.flags);
+  const parts = s.split(re);
+  if (parts.length > MAX_ITEMS) return BAD;
+  return parts;
+}
+
+function mentionsArguments(n: ts.Node): boolean {
+  let hit = false;
+  const visit = (x: ts.Node) => {
+    if (hit) return;
+    if (ts.isIdentifier(x) && x.text === "arguments") hit = true;
+    else ts.forEachChild(x, visit);
+  };
+  visit(n);
+  return hit;
+}
+
+function evalCallback(cb: ts.Expression, args: readonly Val[], env: Map<string, Val>, sf: ts.SourceFile, depth: number): Res {
+  if (ts.isIdentifier(cb)) {
+    const fn = findFn(sf, cb.text);
+    if (!fn || mentionsArguments(fn)) return BAD;
+    return fn ? callFn(fn, args, sf, depth + 1) : BAD;
+  }
+  if (!ts.isArrowFunction(cb) && !ts.isFunctionExpression(cb)) return BAD;
+  if (cb.parameters.some((p) => !ts.isIdentifier(p.name) || p.dotDotDotToken) || mentionsArguments(cb)) return BAD;
+  return callFn(cb, args, sf, depth + 1, env);
+}
+
+function evalMethod(recv: Val, name: string, args: readonly ts.Expression[], env: Map<string, Val>, sf: ts.SourceFile, depth: number): Res {
+  if (!STRING_METHODS.has(name) && !ARRAY_METHODS.has(name)) return BAD;
+  if (typeof recv === "string" && STRING_METHODS.has(name)) {
+    if (name === "toLowerCase" || name === "toUpperCase" || name === "trim") {
+      for (const a of args) if (evalExpr(a, env, sf, depth) === BAD) return BAD;
+      const next = name === "toLowerCase" ? recv.toLowerCase() : name === "toUpperCase" ? recv.toUpperCase() : recv.trim();
+      return boundText(next);
+    }
+    if (name === "charAt" || name === "slice" || name === "substring") {
+      if ((name === "charAt" && args.length > 1) || args.length > 2) return BAD;
+      const nums: number[] = [];
+      for (const a of args) {
+        const v = evalExpr(a, env, sf, depth);
+        if (v === BAD || v === undefined) return BAD;
+        const i = asInt(v);
+        if (i === null) return BAD;
+        nums.push(i);
+      }
+      if (name === "charAt") return boundText(recv.charAt(nums[0] ?? 0));
+      const next = name === "slice" ? recv.slice(nums[0], nums[1]) : recv.substring(nums[0], nums[1]);
+      return boundText(next);
+    }
+    if (name === "split" || name === "replace") {
+      if (name === "split" && args.length > 2) return BAD;
+      if (name === "replace" && args.length !== 2) return BAD;
+      if (name === "split" && args.length === 0) return recv.length > MAX_ITEMS ? BAD : [recv];
+      const searchNode = args[0];
+      if (!searchNode) return BAD;
+      const search = evalArg(searchNode, env, sf, depth);
+      if (search === BAD || (typeof search !== "string" && !(search instanceof RegExp))) return BAD;
+      if (name === "split") {
+        const parts = splitText(recv, search);
+        if (parts === BAD || args.length === 1) return parts;
+        const limitV = evalExpr(args[1]!, env, sf, depth);
+        const limit = limitV === BAD ? null : asInt(limitV);
+        if (!Array.isArray(parts) || limit === null || limit < 0) return BAD;
+        return parts.slice(0, limit);
+      }
+      const repNode = args[1];
+      if (!repNode) return BAD;
+      if (ts.isStringLiteral(repNode) || ts.isNoSubstitutionTemplateLiteral(repNode)) {
+        if (repNode.text.includes("$")) return BAD;
+        return replaceText(recv, search, repNode.text);
+      }
+      if (ts.isArrowFunction(repNode) || ts.isFunctionExpression(repNode) || ts.isIdentifier(repNode)) {
+        return replaceText(recv, search, (call) => evalCallback(repNode, call, env, sf, depth));
+      }
+      return BAD;
+    }
+  }
+  if (Array.isArray(recv) && ARRAY_METHODS.has(name)) {
+    if (recv.length > MAX_ITEMS || hasHole(recv)) return BAD;
+    if (name === "join") {
+      if (args.length > 1) return BAD;
+      let sep = ",";
+      if (args.length === 1) {
+        const v = evalExpr(args[0]!, env, sf, depth);
+        if (v === BAD || isGroups(v) || Array.isArray(v)) return BAD;
+        sep = v === undefined ? "," : v === null ? "null" : String(v);
+      }
+      if (recv.some((x) => x !== null && x !== undefined && typeof x !== "string" && typeof x !== "number" && typeof x !== "boolean")) return BAD;
+      return boundText(recv.map((x) => (x === null || x === undefined ? "" : String(x))).join(sep));
+    }
+    const cb = args[0];
+    if (!cb || (name !== "reduce" && args.length !== 1) || (name === "reduce" && args.length > 2)) return BAD;
+    if (name === "map" || name === "filter") {
+      const out: Val[] = [];
+      for (let i = 0; i < recv.length; i++) {
+        if (tick()) return BAD;
+        const got = evalCallback(cb, [recv[i]!, i, recv], env, sf, depth);
+        if (got === BAD) return BAD;
+        if (name === "map") out.push(got);
+        else if (got) out.push(recv[i]!);
+      }
+      return out;
+    }
+    let acc: Val;
+    let start = 0;
+    if (args.length === 2) {
+      const init = evalExpr(args[1]!, env, sf, depth);
+      if (init === BAD) return BAD;
+      acc = init;
+    } else {
+      if (recv.length === 0) return BAD;
+      acc = recv[0]!;
+      start = 1;
+    }
+    for (let i = start; i < recv.length; i++) {
+      if (tick()) return BAD;
+      const got = evalCallback(cb, [acc, recv[i]!, i, recv], env, sf, depth);
+      if (got === BAD) return BAD;
+      acc = got;
+    }
+    return acc;
+  }
+  return BAD;
+}
+
 function evalCall(n: ts.CallExpression, env: Map<string, Val>, sf: ts.SourceFile, depth: number): Res {
   if (ts.isPropertyAccessExpression(n.expression)) {
     const recv = evalExpr(n.expression.expression, env, sf, depth);
-    const name = n.expression.name.text;
-    if (typeof recv === "string" && n.arguments.length === 0 && (name === "toUpperCase" || name === "toLowerCase")) {
-      return name === "toUpperCase" ? recv.toUpperCase() : recv.toLowerCase();
-    }
-    return BAD;
+    if (n.expression.questionDotToken && (recv === null || recv === undefined)) return BAD;
+    if (recv === BAD) return BAD;
+    return evalMethod(recv, n.expression.name.text, [...n.arguments], env, sf, depth);
   }
   if (!ts.isIdentifier(n.expression)) return BAD;
   const args: Val[] = [];
   for (const a of n.arguments) {
-    const v = evalExpr(a, env, sf, depth);
-    if (v === BAD) return BAD;
+    const v = evalArg(a, env, sf, depth);
+    if (v === BAD || v instanceof RegExp) return BAD;
     args.push(v);
   }
   const fn = findFn(sf, n.expression.text);
   if (!fn) return BAD;
-  return callFn(fn, args, sf, depth + 1);
+  return callFn(fn, args, sf, depth + 1, env);
 }
 
 type FnNode = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
@@ -724,10 +1017,20 @@ function findFn(sf: ts.SourceFile, name: string): FnNode | null {
   return null;
 }
 
-function callFn(fn: FnNode, args: readonly Val[], sf: ts.SourceFile, depth: number): Res {
-  if (depth > 8) return BAD;
-  const env = new Map<string, Val>();
-  fn.parameters.forEach((p, i) => { if (ts.isIdentifier(p.name)) env.set(p.name.text, args[i] ?? null); });
+function callFn(fn: FnNode, args: readonly Val[], sf: ts.SourceFile, depth: number, parent?: ReadonlyMap<string, Val>): Res {
+  if (depth === 0) walkSteps = 0;
+  if (depth > 8 || tick()) return BAD;
+  const env = new Map(parent ?? []);
+  for (let i = 0; i < fn.parameters.length; i++) {
+    const p = fn.parameters[i]!;
+    if (!ts.isIdentifier(p.name) || p.dotDotDotToken) return BAD;
+    const supplied = i < args.length ? args[i] : undefined;
+    if (supplied === undefined && p.initializer) {
+      const v = evalExpr(p.initializer, env, sf, depth);
+      if (v === BAD) return BAD;
+      env.set(p.name.text, v);
+    } else env.set(p.name.text, supplied);
+  }
   if (!fn.body) return BAD;
   if (!ts.isBlock(fn.body)) return evalExpr(fn.body, env, sf, depth);
   const step = (nodes: readonly ts.Statement[]): Res | undefined => {
@@ -736,7 +1039,7 @@ function callFn(fn: FnNode, args: readonly Val[], sf: ts.SourceFile, depth: numb
       if (ts.isIfStatement(st)) {
         const c = evalExpr(st.expression, env, sf, depth);
         if (c === BAD) return BAD;
-        const branch = c ? st.thenStatement : st.elseStatement;
+        const branch = truthy(c) ? st.thenStatement : st.elseStatement;
         if (!branch) continue;
         const inner = ts.isBlock(branch) ? step(branch.statements) : step([branch as ts.Statement]);
         if (inner !== undefined) return inner;
@@ -765,7 +1068,7 @@ function callFn(fn: FnNode, args: readonly Val[], sf: ts.SourceFile, depth: numb
     return undefined;
   };
   const out = step(fn.body.statements);
-  return out === undefined ? undefined as unknown as Res : out;
+  return out === undefined ? BAD : out;
 }
 
 function assertSpecs(sf: ts.SourceFile, fnName: string): { args: Val[]; expected: Val }[] | null {
@@ -847,6 +1150,17 @@ function ruleAlignCallResult(e: RepairError, ctx: RepairContext): RepairEdit | n
  * rejected them. A caller may run those edits and keep one only when it is the unique pass.
  * This does not compose sites and does not read a base file.
  */
+/** Pure-walker result for one call. `ok: false` means the walker refused the body. Not a repair. */
+export function walkResult(source: string, fnName: string, args: readonly unknown[]): { ok: true; value: unknown } | { ok: false } {
+  const sf = parse("leaf.ts", source);
+  const fn = findFn(sf, fnName);
+  if (!fn) return { ok: false };
+  const got = callFn(fn, args as Val[], sf, 0);
+  if (got === BAD) return { ok: false };
+  if (isGroups(got)) return { ok: true, value: { ...got.groups } };
+  return { ok: true, value: got };
+}
+
 export function uncheckedCatalog(source: string, fnName: string, testSource: string): string[] {
   const tsf = parse("leaf.test.ts", testSource);
   const specs = assertSpecs(tsf, fnName);
@@ -862,7 +1176,6 @@ function decideCallCatalog(content: string, path: string, fnName: string, specs:
   const site: Site = { path, name: fnName, start: fn.getStart(sf), end: fn.getEnd(), tier: 0 };
   const hits: string[] = [];
   const unchecked: string[] = [];
-  let judged = 0;
   for (const mut of mutationsIn(sf, site, 0, new Set())) {
     const next = replaceRange(content, mut.start, mut.end, mut.text);
     if (next === content || hits.includes(next) || unchecked.includes(next)) continue;
@@ -873,18 +1186,17 @@ function decideCallCatalog(content: string, path: string, fnName: string, specs:
     let unknown = false;
     for (const spec of specs) {
       const got = callFn(body, spec.args, parsed, 0);
-      if (got === BAD || got === undefined) { unknown = true; break; }
+      if (got === BAD) { unknown = true; break; }
       if (!sameVal(got, spec.expected)) { ok = false; break; }
     }
     if (unknown) { unchecked.push(next); continue; }
-    judged++;
     if (ok) hits.push(next);
     if (hits.length > 1) return null;
   }
   const line = sf.getLineAndCharacterOfPosition(fn.getStart(sf)).line + 1;
+  if (unchecked.length > 0) return { unchecked };
   if (hits.length === 1) return { hit: hits[0]!, line };
-  if (judged > 0) return null;
-  return unchecked.length > 0 ? { unchecked } : null;
+  return null;
 }
 
 const RULE_FNS: readonly ((e: RepairError, ctx: RepairContext) => RepairEdit | null)[] = [
