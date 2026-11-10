@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { appendedTest } from "../bin/capability-job.ts";
 import { characterizeAppend } from "../lib/characterize.ts";
 import { TEST_EXISTING_TRIGGER } from "../lib/learned-test-existing.ts";
 
@@ -37,6 +38,11 @@ test("a characterized assertion is appended to the existing test and passes", ()
     else process.env.PEACEAI_WORKSPACE_DIR = prev;
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("an appended characterization diff names the test that must be run", () => {
+  const diff = "diff --git a/src/a.test.ts b/src/a.test.ts\n+++ b/src/a.test.ts\n@@ -1 +1,4 @@\n+test(\"characterization band\", () => {\n+  assert.equal(band(0), \"zero\");\n+});\n";
+  assert.deepEqual(appendedTest(diff), { file: "src/a.test.ts", name: "characterization band" });
 });
 
 test("a function the lattice cannot call is refused", () => {

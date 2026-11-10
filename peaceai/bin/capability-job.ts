@@ -168,6 +168,13 @@ function targetOf(changed: string): CommitRef | { reason: string } {
   return { repo: "PeaceAI-Workspace", sha };
 }
 
+export function appendedTest(diff: string): { file: string; name: string } | null {
+  const file = /^\+\+\+ b\/(.+\.test\.ts)$/m.exec(diff)?.[1];
+  const name = /^\+test\("((?:\\.|[^"\\])*)"/m.exec(diff)?.[1];
+  if (!file || !name) return null;
+  return { file, name };
+}
+
 function gradeCandidate(dir: string, outDir: string): { status: "pass" | "fail"; reason: string } | null {
   const summary = join(outDir, "summary.json");
   if (!existsSync(summary)) return null;
@@ -179,9 +186,9 @@ function gradeCandidate(dir: string, outDir: string): { status: "pass" | "fail";
   const diff = readFileSync(diffPath, "utf8");
   const applied = spawnSync("git", ["-C", dir, "apply", "--whitespace=nowarn"], { input: diff, encoding: "utf8" });
   if (applied.status !== 0) return { status: "fail", reason: "TEST_APPLY_FAILED" };
-  const file = /^\+\+\+ b\/(.+\.test\.ts)$/m.exec(diff)?.[1];
-  const name = /^\+test\("((?:\\.|[^"\\])*)"\)/m.exec(diff)?.[1];
-  if (!file || !name) return { status: "fail", reason: "TEST_NOT_RUN" };
+  const found = appendedTest(diff);
+  if (!found) return { status: "fail", reason: "TEST_NOT_RUN" };
+  const { file, name } = found;
   const tsx = createRequire(import.meta.url).resolve("tsx");
   const pattern = `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
   const ran = spawnSync(process.execPath, ["--import", tsx, "--test", "--test-name-pattern", pattern, file], { cwd: dir, encoding: "utf8", timeout: 20_000 });
