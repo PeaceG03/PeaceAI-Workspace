@@ -336,9 +336,9 @@ test("the walker judges allowlisted string and array methods, and refuses anythi
     "export function total(xs: number[]): number {\n  return xs.map((n) => n - 1).filter((n) => n > 0).reduce((a, b) => a + b, 0);\n}\n",
     [["[0]", "1"], ["[1, 2]", "5"]],
   );
-  assert.equal(total.fix?.rule, "ALIGN_CALL_RESULT");
-  assert.match(total.fix?.content ?? "", /n \+ 1/);
-  assert.equal(total.unchecked.length, 0);
+  assert.equal(total.fix, null);
+  assert.ok(total.unchecked.some((s) => s.includes("xs === undefined")));
+  assert.deepEqual(walkResult("export function total(xs: number[]): number {\n  return xs.map((n) => n - 1).filter((n) => n > 0).reduce((a, b) => a + b, 0);\n}\n", "total", [[1, 2]]), { ok: true, value: 1 });
   const slug = ask(
     "slug",
     "export function slug(s: string): number {\n  return s.replace(/[.]/g, \"\").toLowerCase().split(\"\").join(\"-\").length - 1;\n}\n",
@@ -398,7 +398,6 @@ test("the walker matches JavaScript for every allowlisted builtin, including def
     { source: "export function f(){return (undefined ?? \"x\") || \"y\"}", args: [] },
     { source: "export function f(){return typeof undefined}", args: [] },
     { source: "export function f(){return typeof null}", args: [] },
-    { source: "export function f(){return undefined?.length ?? \"z\"}", args: [] },
     { source: "export function f(){return -0 === 0}", args: [] },
   ];
   for (const c of cases) {
@@ -413,6 +412,46 @@ test("the walker matches JavaScript for every allowlisted builtin, including def
   assert.equal(walkResult("export function f(){return Object.is(-0, 0)}", "f", []).ok, false);
 });
 
+test("generated differential: an accepted result matches JavaScript, and uncovered shapes are refused", () => {
+  const real = (source: string) => new Function(`${source.replace(/^export /m, "")}\nreturn f;`)() as (...args: unknown[]) => unknown;
+  const same = (a: unknown, b: unknown): boolean => {
+    if (typeof a === "number" && typeof b === "number") return Object.is(a, b);
+    if (Array.isArray(a) || Array.isArray(b)) {
+      if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) if ((i in a) !== (i in b) || ((i in a) && !same(a[i], b[i]))) return false;
+      return true;
+    }
+    return Object.is(a, b);
+  };
+  const agree = (source: string, args: unknown[]) => {
+    const walked = walkResult(source, "f", args);
+    if (!walked.ok) return;
+    let value: unknown;
+    try { value = real(source)(...args); } catch (e) { assert.fail(`walker accepted ${source} ${JSON.stringify(args)} but JavaScript threw ${e}`); }
+    assert.ok(same(walked.value, value), `${source} walker ${JSON.stringify(walked.value)} js ${JSON.stringify(value)}`);
+  };
+  const lattice: unknown[] = [undefined, null, NaN, -0, 0, 1, "", "a", true, false, [], [1], [1, 2], [[1]], [1, , 2]];
+  const bin = ["===", "==", "!=", "!==", "+", "-", "*", "/", "%", "&&", "||", "??", "<", "<=", ">", ">="];
+  for (const op of bin) for (const a of lattice) for (const b of lattice) agree(`export function f(a, b){ return a ${op} b }`, [a, b]);
+  for (const op of ["!", "typeof", "+"]) for (const a of lattice) agree(`export function f(a){ return ${op} a }`, [a]);
+  for (const a of lattice) {
+    agree("export function f(a){ return a?.length }", [a]);
+    agree("export function f(a){ return a?.[0] }", [a]);
+    agree("export function f(a){ return Object.is(a, a) }", [a]);
+    agree("export function f(a){ switch (a) { default: return 1 } }", [a]);
+  }
+  const methods = ["toLowerCase", "toUpperCase", "trim", "charAt", "slice", "substring", "split", "join"];
+  for (const name of methods) for (const a of lattice) agree(`export function f(a){ return a.${name}() }`, [a]);
+  for (const a of lattice) {
+    agree("export function f(a){ return Array.isArray(a) ? a.map((n) => n) : 0 }", [a]);
+    agree("export function f(a){ return Array.isArray(a) ? a.filter((n) => n) : 0 }", [a]);
+    agree("export function f(a){ return Array.isArray(a) ? a.reduce((x, y) => x + y, 0) : 0 }", [a]);
+  }
+  assert.equal(walkResult("export function f(a){ return a === a }", "f", [[[1]]]).ok, false);
+  assert.equal(walkResult("export function f(a){ return a?.length }", "f", [null]).ok, false);
+  assert.equal(walkResult("export function f(a){ return a.map((n) => n) }", "f", [[1, , 2]]).ok, false);
+});
+
 test("a map callback that reads the array is repaired on the live branch, and join() keeps the comma", () => {
   const calls = (name: string, rows: readonly [string, string][]) =>
     `import test from "node:test";\nimport assert from "node:assert/strict";\nimport { ${name} } from "./leaf";\ntest("${name} holds", () => {\n${rows.map(([input, expected]) => `  assert.equal(${name}(${input}), ${expected});`).join("\n")}\n});\n`;
@@ -420,11 +459,11 @@ test("a map callback that reads the array is repaired on the live branch, and jo
   const rows: [string, string][] = [["[1]", "2"], ["[1, 2]", "5"]];
   const testText = calls("total", rows);
   const err: RepairError = { source: "test", kind: "assertion", code: "ASSERT_equal", file: "src/leaf.test.ts", line: 5, col: 3, message: "total holds", expected: "2", actual: "0" };
+  assert.deepEqual(walkResult(source, "total", [[1]]), { ok: true, value: 0 });
+  assert.deepEqual(walkResult(source, "total", [[1, 2]]), { ok: true, value: 1 });
   const fix = repairFor(err, ctxOf({ "src/leaf.ts": source, "src/leaf.test.ts": testText }));
-  assert.equal(fix?.rule, "ALIGN_CALL_RESULT");
-  assert.match(fix?.content ?? "", /arr \? n \+ 1 : n \+ 0/);
-  const ran = new Function(`${(fix?.content ?? "").replace(/: number\[\]|: number/g, "").replace(/^export /m, "")}\nreturn total;`)() as (xs: number[]) => number;
-  assert.deepEqual([ran([1]), ran([1, 2])], [2, 5]);
+  assert.equal(fix, null);
+  assert.ok(uncheckedCatalog(source, "total", testText).some((s) => s.includes("arr !== undefined")));
   const joined = walkResult("export function f(xs){return xs.join()}", "f", [["a", "b"]]);
   const empty = walkResult("export function f(xs){return xs.join(\"\")}", "f", [["a", "b"]]);
   assert.deepEqual(joined.ok ? joined.value : null, "a,b");

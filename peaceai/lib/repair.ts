@@ -595,6 +595,15 @@ function isGroups(v: Val): v is Groups {
   return typeof v === "object" && v !== null && !Array.isArray(v) && "groups" in v;
 }
 
+function isPrimitive(v: Val): boolean {
+  return v === undefined || v === null || typeof v === "number" || typeof v === "string" || typeof v === "boolean";
+}
+
+function hasHole(xs: readonly Val[]): boolean {
+  for (let i = 0; i < xs.length; i++) if (!Object.hasOwn(xs, i)) return true;
+  return false;
+}
+
 function truthy(v: Val): boolean {
   if (v === undefined || v === null || v === false || v === "" || v === 0) return false;
   if (typeof v === "number" && Number.isNaN(v)) return false;
@@ -642,7 +651,7 @@ function litNode(n: ts.Node): Val | typeof BAD {
   if (!ts.isArrayLiteralExpression(n)) return BAD;
   const xs: Val[] = [];
   for (const el of n.elements) {
-    if (ts.isSpreadElement(el)) return BAD;
+    if (ts.isSpreadElement(el) || ts.isOmittedExpression(el)) return BAD;
     const v = litNode(el);
     if (v === BAD) return BAD;
     xs.push(v);
@@ -718,6 +727,9 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
       if (k === ts.SyntaxKind.SlashToken) return r === 0 ? BAD : l / r;
       if (k === ts.SyntaxKind.PercentToken) return r === 0 ? BAD : l % r;
     }
+    if (k === ts.SyntaxKind.EqualsEqualsEqualsToken || k === ts.SyntaxKind.ExclamationEqualsEqualsToken || k === ts.SyntaxKind.EqualsEqualsToken || k === ts.SyntaxKind.ExclamationEqualsToken) {
+      if (!isPrimitive(l) || !isPrimitive(r)) return BAD;
+    }
     if (k === ts.SyntaxKind.EqualsEqualsEqualsToken) return sameVal(l, r);
     if (k === ts.SyntaxKind.ExclamationEqualsEqualsToken) return !sameVal(l, r);
     if (k === ts.SyntaxKind.EqualsEqualsToken || k === ts.SyntaxKind.ExclamationEqualsToken) {
@@ -741,7 +753,7 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
   if (ts.isPropertyAccessExpression(n)) {
     const v = evalExpr(n.expression, env, sf, depth);
     if (v === BAD) return BAD;
-    if (n.questionDotToken && (v === null || v === undefined)) return v;
+    if (n.questionDotToken && (v === null || v === undefined)) return BAD;
     if (isGroups(v)) return n.name.text in v.groups ? v.groups[n.name.text] : undefined;
     if (n.name.text === "length" && (typeof v === "string" || Array.isArray(v))) return v.length;
     return BAD;
@@ -749,7 +761,7 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
   if (ts.isElementAccessExpression(n)) {
     const v = evalExpr(n.expression, env, sf, depth);
     if (v === BAD) return BAD;
-    if (n.questionDotToken && (v === null || v === undefined)) return v;
+    if (n.questionDotToken && (v === null || v === undefined)) return BAD;
     const i = n.argumentExpression ? evalExpr(n.argumentExpression, env, sf, depth) : BAD;
     if (!Array.isArray(v) || typeof i !== "number") return BAD;
     return v[i];
@@ -926,7 +938,7 @@ function evalMethod(recv: Val, name: string, args: readonly ts.Expression[], env
     }
   }
   if (Array.isArray(recv) && ARRAY_METHODS.has(name)) {
-    if (recv.length > MAX_ITEMS) return BAD;
+    if (recv.length > MAX_ITEMS || hasHole(recv)) return BAD;
     if (name === "join") {
       if (args.length > 1) return BAD;
       let sep = ",";
@@ -976,7 +988,7 @@ function evalMethod(recv: Val, name: string, args: readonly ts.Expression[], env
 function evalCall(n: ts.CallExpression, env: Map<string, Val>, sf: ts.SourceFile, depth: number): Res {
   if (ts.isPropertyAccessExpression(n.expression)) {
     const recv = evalExpr(n.expression.expression, env, sf, depth);
-    if (n.expression.questionDotToken && (recv === null || recv === undefined)) return recv;
+    if (n.expression.questionDotToken && (recv === null || recv === undefined)) return BAD;
     if (recv === BAD) return BAD;
     return evalMethod(recv, n.expression.name.text, [...n.arguments], env, sf, depth);
   }
