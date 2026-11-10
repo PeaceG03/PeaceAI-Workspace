@@ -23,8 +23,20 @@ export type RowStatus = "pass" | "fail" | "unmeasured";
 
 export interface ReplayRecord {
   seq: number;
-  status: "pass" | "fail";
+  status: "pass" | "fail" | "unmeasured";
   reason: string;
+  /** 40-hex commit the execution ran on. */
+  head?: string;
+  /** 40-hex tree of that commit. */
+  tree?: string;
+  /** sha256 of the log text the execution read. */
+  input?: string;
+}
+
+export interface ReplayBind {
+  head: string;
+  tree: string;
+  input: string;
 }
 
 export interface CapabilityRow {
@@ -64,7 +76,7 @@ export interface CapabilityReport {
   unmeasured: number;
   setSize: number;
   outsideSet: number;
-  official: { able: number; tasks: number; percent: number | null; note: string };
+  official: { able: number; tasks: number; percent: number | null; ancestry: boolean; cloneHead: string | null; note: string };
   /** In-set rows that are not a fresh pass, ranked by count. */
   gaps: SkillGap[];
   rows: CapabilityRow[];
@@ -73,6 +85,24 @@ export interface CapabilityReport {
 export function realPercent(passes: number, total: number, unmeasured: number): number | null {
   if (total <= 0 || unmeasured > 0) return null;
   return Math.round((1000 * passes) / total) / 10;
+}
+
+export function inputDigest(logText: string): string {
+  return createHash("sha256").update(logText).digest("hex");
+}
+
+const HEX40 = /^[0-9a-f]{40}$/;
+const HEX64 = /^[0-9a-f]{64}$/;
+
+/** Why a record cannot count. Null means it is bound to this head, tree, and log. */
+export function bindingProblem(rec: ReplayRecord, bind: ReplayBind | null): string | null {
+  if (!bind || !HEX40.test(bind.head) || !HEX40.test(bind.tree) || !HEX64.test(bind.input)) return "MISSING_BINDING";
+  if (!rec.head || !rec.tree || !rec.input) return "MISSING_BINDING";
+  if (!HEX40.test(rec.head) || !HEX40.test(rec.tree) || !HEX64.test(rec.input)) return "FORGED_INPUT";
+  if (rec.head !== bind.head) return "STALE_HEAD";
+  if (rec.tree !== bind.tree) return "STALE_TREE";
+  if (rec.input !== bind.input) return "FORGED_INPUT";
+  return null;
 }
 
 function membership(logText: string, asOf: string, onMain: OnMainChecker | null, workspace: WorkspaceProofChecker | null): { tasks: Entry[]; proven: Set<string>; peaceReal: Set<number> } {
@@ -95,14 +125,14 @@ function membership(logText: string, asOf: string, onMain: OnMainChecker | null,
 }
 
 /** Classifies every log row. Does not run a task and does not write. */
-export function buildCapabilityReport(logText: string, asOf: string, onMain: OnMainChecker | null, replay: readonly ReplayRecord[] = [], workspace: WorkspaceProofChecker | null = null): CapabilityReport {
+export function buildCapabilityReport(logText: string, asOf: string, onMain: OnMainChecker | null, replay: readonly ReplayRecord[] = [], workspace: WorkspaceProofChecker | null = null, bind: ReplayBind | null = null, cloneHead: string | null = null): CapabilityReport {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new Error("bad asOf date");
   const official: CoverageReport = coverageReport(logText, asOf, { onMain, workspace });
   const { tasks, proven, peaceReal } = membership(logText, asOf, onMain, workspace);
   if (tasks.length !== official.allTime.builderTasks) throw new Error(`set drifted from coverage.ts: ${tasks.length} vs ${official.allTime.builderTasks}`);
   const bySeq = new Map<number, ReplayRecord>();
   for (const r of replay) {
-    if (!Number.isInteger(r.seq) || (r.status !== "pass" && r.status !== "fail") || !r.reason) throw new Error("replay record invalid");
+    if (!Number.isInteger(r.seq) || (r.status !== "pass" && r.status !== "fail" && r.status !== "unmeasured") || !r.reason) throw new Error("replay record invalid");
     if (bySeq.has(r.seq)) throw new Error("replay seq repeated");
     bySeq.set(r.seq, r);
   }
@@ -111,8 +141,9 @@ export function buildCapabilityReport(logText: string, asOf: string, onMain: OnM
   for (const e of tasks) {
     const officialAble = peaceReal.has(e.seq) ? true : countable(e, proven);
     const rec = bySeq.get(e.seq);
-    const status: RowStatus = rec ? rec.status : "unmeasured";
-    const reason = rec ? rec.reason : "NO_REPLAY";
+    const unbound = rec ? bindingProblem(rec, bind) : "NO_REPLAY";
+    const status: RowStatus = unbound || !rec || rec.status === "unmeasured" ? "unmeasured" : rec.status;
+    const reason = unbound ?? rec!.reason;
     rows.push({ seq: e.seq, by: e.by, skill: e.skill, inSet: true, officialAble, status, reason });
   }
   const entries = parseLogEntries(logText);
@@ -156,7 +187,11 @@ export function buildCapabilityReport(logText: string, asOf: string, onMain: OnM
       able: official.allTime.peaceaiAble,
       tasks: official.allTime.builderTasks,
       percent: official.allTime.percent,
-      note: "coverage.ts live-proven count. Not a fresh execution, and not the headline.",
+      ancestry: onMain !== null && cloneHead !== null && HEX40.test(cloneHead),
+      cloneHead: onMain !== null ? cloneHead : null,
+      note: onMain !== null && cloneHead !== null && HEX40.test(cloneHead)
+        ? `on-main ancestry via git merge-base --is-ancestor against clone ${cloneHead}. Not a fresh execution, and not the headline.`
+        : "fail-closed: no PeaceSTOCKS ancestry check, so this count is not the official on-main figure.",
     },
     gaps,
     rows,
