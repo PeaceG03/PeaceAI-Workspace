@@ -5,6 +5,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
+import ts from "typescript";
+import { mutationsIn, type Site } from "../lib/editpropose.ts";
 import {
   editDistance,
   errorFingerprint,
@@ -289,6 +291,28 @@ test("ALIGN_CALL_RESULT: one catalog edit meets every literal call, and the base
   const offFix = repairFor({ ...err, actual: "2" }, ctxOf(off, { "src/score.ts": decoy }))!;
   assert.equal(offFix.rule, "ALIGN_CALL_RESULT");
   assert.match(offFix.content, /return n \+ 1;/);
+});
+
+test("ALIGN_CALL_RESULT refuses when a second satisfying catalog edit sits past the first 32", () => {
+  const fillers = Array.from({ length: 8 }, (_, i) => `  if (n === ${101 + i}) return 1;`).join("\n");
+  const broken = `export function score(n: number): number {\n  if (false) return n + 1;\n${fillers}\n  return n - 1;\n}\n`;
+  const testText = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { score } from "./score";\ntest("score holds", () => {\n  assert.equal(score(0), 1);\n  assert.equal(score(2), 3);\n});\n';
+  const sf = ts.createSourceFile("src/score.ts", broken, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const fn = sf.statements.find((st) => ts.isFunctionDeclaration(st) && st.body);
+  const site: Site = { path: "src/score.ts", name: "score", start: fn!.getStart(sf), end: fn!.getEnd(), tier: 0 };
+  const passes: number[] = [];
+  for (const [i, mut] of mutationsIn(sf, site, 0, new Set()).entries()) {
+    const next = broken.slice(0, mut.start) + mut.text + broken.slice(mut.end);
+    const js = ts.transpileModule(next, { compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2020 } }).outputText;
+    const got = new Function("exports", `${js}\nreturn score(0) + "," + score(2);`)({});
+    if (got === "1,3") passes.push(i);
+  }
+  assert.ok(passes.length >= 2);
+  assert.ok(passes.some((i) => i < 32));
+  assert.ok(passes.some((i) => i >= 32));
+  const ctx = ctxOf({ "src/score.ts": broken, "src/score.test.ts": testText });
+  const err: RepairError = { source: "test", kind: "assertion", code: "ASSERT_equal", file: "src/score.test.ts", line: 5, col: 3, message: "score holds", expected: "1", actual: "-1" };
+  assert.equal(repairFor(err, ctx), null);
 });
 
 test("FIX_PROPERTY_TYPO without a compiler suggestion: the single closest member of the indexed type; ties refuse", () => {

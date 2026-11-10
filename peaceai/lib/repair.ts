@@ -791,7 +791,8 @@ function assertSpecs(sf: ts.SourceFile, fnName: string): { args: Val[]; expected
 
 /**
  * A failing equality assertion calls a function. Try the existing single-site mutation catalog
- * and keep an edit only when exactly one candidate makes every literal assertion hold.
+ * and keep an edit only when exactly one candidate in the whole catalog makes every literal
+ * assertion hold. Stopping after a prefix can hide a later candidate, so a prefix is not unique.
  * The base file is not read. One assertion is not enough.
  */
 function ruleAlignCallResult(e: RepairError, ctx: RepairContext): RepairEdit | null {
@@ -831,7 +832,7 @@ function ruleAlignCallResult(e: RepairError, ctx: RepairContext): RepairEdit | n
   if (!fn) return null;
   const site: Site = { path: modulePath, name: fnName, start: fn.getStart(sf), end: fn.getEnd(), tier: 0 };
   const hits: string[] = [];
-  for (const mut of mutationsIn(sf, site, 0, new Set()).slice(0, 32)) {
+  for (const mut of mutationsIn(sf, site, 0, new Set())) {
     const next = replaceRange(content, mut.start, mut.end, mut.text);
     if (next === content) continue;
     const parsed = parse(modulePath, next);
