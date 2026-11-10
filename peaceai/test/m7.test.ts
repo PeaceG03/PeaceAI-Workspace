@@ -294,9 +294,9 @@ test("ALIGN_CALL_RESULT: one catalog edit meets every literal call, and the base
   assert.match(offFix.content, /return n \+ 1;/);
   const plain = "export function score(n: number): number {\n  return n - 1;\n}\n";
   assert.equal(uncheckedCatalog(plain, "score", testText).length, 0);
-  const opaque = "export function tag(s: string): string {\n  const parts = s.replace(/[.]/g, \"-\").split(\"-\");\n  if (parts.length !== 0) return \"\";\n  return parts.join(\":\");\n}\n";
-  const opaqueTest = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { tag } from "./tag";\ntest("tag holds", () => {\n  assert.equal(tag("a"), "a");\n  assert.equal(tag("a.b"), "a:b");\n});\n';
-  assert.ok(uncheckedCatalog(opaque, "tag", opaqueTest).length > 1);
+  const judged = "export function tag(s: string): string {\n  const parts = s.replace(/[.]/g, \"-\").split(\"-\");\n  if (parts.length !== 0) return \"\";\n  return parts.join(\":\");\n}\n";
+  const judgedTest = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { tag } from "./tag";\ntest("tag holds", () => {\n  assert.equal(tag("a"), "a");\n  assert.equal(tag("a.b"), "a:b");\n});\n';
+  assert.equal(uncheckedCatalog(judged, "tag", judgedTest).length, 0);
 });
 
 test("ALIGN_CALL_RESULT refuses when a second satisfying catalog edit sits past the first 32", () => {
@@ -319,6 +319,43 @@ test("ALIGN_CALL_RESULT refuses when a second satisfying catalog edit sits past 
   const ctx = ctxOf({ "src/score.ts": broken, "src/score.test.ts": testText });
   const err: RepairError = { source: "test", kind: "assertion", code: "ASSERT_equal", file: "src/score.test.ts", line: 5, col: 3, message: "score holds", expected: "1", actual: "-1" };
   assert.equal(repairFor(err, ctx), null);
+});
+
+test("the walker judges allowlisted string and array methods, and refuses anything else", () => {
+  const calls = (name: string, rows: readonly [string, string][]) =>
+    `import test from "node:test";\nimport assert from "node:assert/strict";\nimport { ${name} } from "./leaf";\ntest("${name} holds", () => {\n${rows.map(([input, expected]) => `  assert.equal(${name}(${input}), ${expected});`).join("\n")}\n});\n`;
+  const ask = (name: string, source: string, rows: readonly [string, string][]) => {
+    const testText = calls(name, rows);
+    const ctx = ctxOf({ "src/leaf.ts": source, "src/leaf.test.ts": testText });
+    const err: RepairError = { source: "test", kind: "assertion", code: "ASSERT_equal", file: "src/leaf.test.ts", line: 5, col: 3, message: `${name} holds`, expected: "1", actual: "0" };
+    return { fix: repairFor(err, ctx), unchecked: uncheckedCatalog(source, name, testText) };
+  };
+  const total = ask(
+    "total",
+    "export function total(xs: number[]): number {\n  return xs.map((n) => n - 1).filter((n) => n > 0).reduce((a, b) => a + b, 0);\n}\n",
+    [["[0]", "1"], ["[1, 2]", "5"]],
+  );
+  assert.equal(total.fix?.rule, "ALIGN_CALL_RESULT");
+  assert.match(total.fix?.content ?? "", /n \+ 1/);
+  assert.equal(total.unchecked.length, 0);
+  const slug = ask(
+    "slug",
+    "export function slug(s: string): number {\n  return s.replace(/[.]/g, \"\").toLowerCase().split(\"\").join(\"-\").length - 1;\n}\n",
+    [["\"A.B\"", "3"], ["\"A\"", "1"]],
+  );
+  assert.equal(slug.fix?.rule, "ALIGN_CALL_RESULT");
+  assert.match(slug.fix?.content ?? "", /length - 0/);
+  assert.equal(slug.unchecked.length, 0);
+  const both = ask(
+    "score",
+    "export function score(n: number): number {\n  const parts = \"ab\".split(\"\");\n  if (false) return n + 1;\n  return n - 1;\n}\n",
+    [["0", "1"], ["2", "3"]],
+  );
+  assert.equal(both.fix, null);
+  assert.equal(both.unchecked.length, 0);
+  const opaque = ask("pad", "export function pad(s: string): string {\n  return s.padStart(2, \"0\");\n}\n", [["\"a\"", "\"0a\""], ["\"ab\"", "\"ab\""]]);
+  assert.equal(opaque.fix, null);
+  assert.ok(opaque.unchecked.length > 0);
 });
 
 test("FIX_PROPERTY_TYPO without a compiler suggestion: the single closest member of the indexed type; ties refuse", () => {

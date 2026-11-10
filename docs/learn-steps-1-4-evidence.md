@@ -98,6 +98,8 @@ On 050c0e4 the 24-attempt radash run's only problems were camel, 8 of 8, each wi
 
 The next safe step is array results. A function that returns `[n + 1]` is now a literal probe, asserted with deepEqual, and repaired only when one catalog edit meets every assertion.
 
+The pure walker now also evaluates an allowlist: string toLowerCase, toUpperCase, trim, charAt, slice, substring, split, and replace; array map, filter, reduce, and join; and regex literals. Anything else, including padStart, stays unjudged. A candidate set with an unjudged edit is not unique. Two judged edits that both meet the assertions still refuse. No eval, Function, or process. Steps and result sizes are bounded. Readiness files are still absent.
+
 ## Assertion repair after af73937
 
 af739374f0fa697fd2ab3244d0b7f7fd1fb87749 stays the reviewed head. A later commit on a separate branch teaches the existing repair rules to edit a function body from a failing call assertion. The edit is one candidate from the existing mutation catalog, and it is kept only when that candidate is the only one that meets every literal assertion. The base file is not read. One assertion is not enough. The 4-break and 0.75 gates are unchanged.

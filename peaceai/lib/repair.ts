@@ -616,13 +616,46 @@ function litNode(n: ts.Node): Val | typeof BAD {
   return xs;
 }
 
-/** Pure walk of a tiny expression. Unsupported syntax is BAD. This does not call the host. */
+/**
+ * Pure walk. Allowlisted string/array methods and regex literals only.
+ * No eval, Function, or process. A step or size limit is BAD.
+ */
+const WALK_LIMIT = 4000;
+const MAX_TEXT = 256;
+const MAX_ITEMS = 64;
+let walkSteps = 0;
+function tick(): boolean {
+  walkSteps += 1;
+  return walkSteps > WALK_LIMIT;
+}
+
+const STRING_METHODS = new Set(["toLowerCase", "toUpperCase", "trim", "charAt", "slice", "substring", "split", "replace"]);
+const ARRAY_METHODS = new Set(["map", "filter", "reduce", "join"]);
+
+function compileLiteralRegex(text: string): RegExp | null {
+  const m = /^\/([\s\S]*)\/([gimsuy]*)$/.exec(text);
+  if (!m) return null;
+  const body = m[1]!;
+  const flags = m[2]!;
+  if (body.length > 48 || !/^[gim]*$/.test(flags)) return null;
+  if (/\\[1-9]/.test(body)) return null;
+  if (/\([^)]*[+*][^)]*\)[+*{]/.test(body)) return null;
+  try { return new RegExp(body, flags); } catch { return null; }
+}
+
+function asInt(v: Val): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? Math.trunc(v) : null;
+}
+
 function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: number): Res {
-  if (depth > 8) return BAD;
+  if (depth > 8 || tick()) return BAD;
   if (ts.isParenthesizedExpression(n) || ts.isAsExpression(n) || ts.isTypeAssertionExpression(n) || ts.isNonNullExpression(n) || ts.isSatisfiesExpression(n)) return evalExpr(n.expression, env, sf, depth);
   const lit = litNode(n);
   if (lit !== BAD || ts.isNumericLiteral(n) || ts.isStringLiteral(n) || n.kind === ts.SyntaxKind.NullKeyword) return lit;
-  if (ts.isIdentifier(n)) return env.has(n.text) ? env.get(n.text)! : BAD;
+  if (ts.isIdentifier(n)) {
+    if (n.text === "undefined") return null;
+    return env.has(n.text) ? env.get(n.text)! : BAD;
+  }
   if (ts.isPrefixUnaryExpression(n)) {
     const v = evalExpr(n.operand, env, sf, depth);
     if (v === BAD) return BAD;
@@ -637,6 +670,7 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
     const k = n.operatorToken.kind;
     if (k === ts.SyntaxKind.AmpersandAmpersandToken) return l ? evalExpr(n.right, env, sf, depth) : l;
     if (k === ts.SyntaxKind.BarBarToken) return l ? l : evalExpr(n.right, env, sf, depth);
+    if (k === ts.SyntaxKind.QuestionQuestionToken) return l === null ? evalExpr(n.right, env, sf, depth) : l;
     const r = evalExpr(n.right, env, sf, depth);
     if (r === BAD) return BAD;
     if (k === ts.SyntaxKind.PlusToken) {
@@ -667,6 +701,7 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
   }
   if (ts.isPropertyAccessExpression(n) && n.name.text === "length") {
     const v = evalExpr(n.expression, env, sf, depth);
+    if (n.questionDotToken && v === null) return null;
     if (typeof v === "string" || Array.isArray(v)) return v.length;
     return BAD;
   }
@@ -675,6 +710,17 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
     const i = n.argumentExpression ? evalExpr(n.argumentExpression, env, sf, depth) : BAD;
     if (!Array.isArray(v) || typeof i !== "number") return BAD;
     return v[i] ?? null;
+  }
+  if (ts.isTemplateExpression(n)) {
+    let out = n.head.text;
+    for (const span of n.templateSpans) {
+      const v = evalExpr(span.expression, env, sf, depth);
+      if (v === BAD || (v !== null && typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean")) return BAD;
+      out += v === null ? "" : String(v);
+      out += span.literal.text;
+      if (out.length > MAX_TEXT || tick()) return BAD;
+    }
+    return out;
   }
   if (ts.isCallExpression(n)) return evalCall(n, env, sf, depth);
   if (ts.isArrayLiteralExpression(n)) {
@@ -690,25 +736,181 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
   return BAD;
 }
 
+function evalArg(a: ts.Expression, env: Map<string, Val>, sf: ts.SourceFile, depth: number): Val | RegExp | typeof BAD {
+  if (ts.isRegularExpressionLiteral(a)) {
+    const re = compileLiteralRegex(a.text);
+    return re ?? BAD;
+  }
+  return evalExpr(a, env, sf, depth);
+}
+
+function boundText(s: string): string | typeof BAD {
+  return s.length > MAX_TEXT ? BAD : s;
+}
+
+function replaceText(s: string, search: string | RegExp, repl: string | ((match: string) => Res)): Res {
+  if (s.length > MAX_TEXT) return BAD;
+  if (typeof search === "string") {
+    const at = s.indexOf(search);
+    if (at < 0) return s;
+    const next = typeof repl === "string" ? repl : repl(search);
+    if (typeof next !== "string" || next.includes("$")) return BAD;
+    return boundText(s.slice(0, at) + next + s.slice(at + search.length));
+  }
+  const flags = search.flags.includes("g") ? search.flags : search.flags;
+  const re = new RegExp(search.source, flags);
+  if (!re.flags.includes("g")) {
+    const found = re.exec(s);
+    if (!found) return s;
+    const next = typeof repl === "string" ? repl : repl(found[0] ?? "");
+    if (typeof next !== "string" || next.includes("$")) return BAD;
+    return boundText(s.slice(0, found.index) + next + s.slice(found.index + found[0].length));
+  }
+  let out = "";
+  let last = 0;
+  let count = 0;
+  re.lastIndex = 0;
+  let found: RegExpExecArray | null;
+  while ((found = re.exec(s))) {
+    if (tick() || ++count > MAX_ITEMS) return BAD;
+    const next = typeof repl === "string" ? repl : repl(found[0] ?? "");
+    if (typeof next !== "string" || next.includes("$")) return BAD;
+    out += s.slice(last, found.index) + next;
+    last = found.index + found[0].length;
+    if (found[0].length === 0) re.lastIndex += 1;
+    if (out.length > MAX_TEXT) return BAD;
+  }
+  return boundText(out + s.slice(last));
+}
+
+function splitText(s: string, sep: string | RegExp): Res {
+  if (s.length > MAX_TEXT) return BAD;
+  if (typeof sep === "string") {
+    const parts = sep === "" ? (s.length > MAX_ITEMS ? null : [...s]) : s.split(sep);
+    if (!parts || parts.length > MAX_ITEMS) return BAD;
+    return parts;
+  }
+  const re = new RegExp(sep.source, sep.flags);
+  const parts = s.split(re);
+  if (parts.length > MAX_ITEMS) return BAD;
+  return parts;
+}
+
+function evalCallback(cb: ts.Expression, args: readonly Val[], env: Map<string, Val>, sf: ts.SourceFile, depth: number): Res {
+  if (ts.isIdentifier(cb)) {
+    const fn = findFn(sf, cb.text);
+    return fn ? callFn(fn, args, sf, depth + 1) : BAD;
+  }
+  if (!ts.isArrowFunction(cb) && !ts.isFunctionExpression(cb)) return BAD;
+  if (cb.parameters.some((p) => !ts.isIdentifier(p.name) || p.dotDotDotToken)) return BAD;
+  return callFn(cb, args, sf, depth + 1, env);
+}
+
+function evalMethod(recv: Val, name: string, args: readonly ts.Expression[], env: Map<string, Val>, sf: ts.SourceFile, depth: number): Res {
+  if (!STRING_METHODS.has(name) && !ARRAY_METHODS.has(name)) return BAD;
+  if (typeof recv === "string" && STRING_METHODS.has(name)) {
+    if (name === "toLowerCase" || name === "toUpperCase" || name === "trim") {
+      if (args.length !== 0) return BAD;
+      const next = name === "toLowerCase" ? recv.toLowerCase() : name === "toUpperCase" ? recv.toUpperCase() : recv.trim();
+      return boundText(next);
+    }
+    if (name === "charAt" || name === "slice" || name === "substring") {
+      const nums: number[] = [];
+      for (const a of args) {
+        const v = evalExpr(a, env, sf, depth);
+        const i = v === BAD ? null : asInt(v);
+        if (i === null) return BAD;
+        nums.push(i);
+      }
+      if (name === "charAt") return nums.length === 1 ? recv.charAt(nums[0]!) : BAD;
+      if (nums.length < 1 || nums.length > 2) return BAD;
+      const next = name === "slice" ? recv.slice(nums[0], nums[1]) : recv.substring(nums[0], nums[1]);
+      return boundText(next);
+    }
+    if (name === "split" || name === "replace") {
+      if (name === "split" && (args.length < 1 || args.length > 2)) return BAD;
+      if (name === "replace" && args.length !== 2) return BAD;
+      const searchNode = args[0];
+      if (!searchNode) return BAD;
+      const search = evalArg(searchNode, env, sf, depth);
+      if (search === BAD || (typeof search !== "string" && !(search instanceof RegExp))) return BAD;
+      if (name === "split") {
+        if (args.length === 2) return BAD;
+        return splitText(recv, search);
+      }
+      const repNode = args[1];
+      if (!repNode) return BAD;
+      if (ts.isStringLiteral(repNode) || ts.isNoSubstitutionTemplateLiteral(repNode)) {
+        if (repNode.text.includes("$")) return BAD;
+        return replaceText(recv, search, repNode.text);
+      }
+      if (ts.isArrowFunction(repNode) || ts.isFunctionExpression(repNode) || ts.isIdentifier(repNode)) {
+        return replaceText(recv, search, (match) => evalCallback(repNode, [match], env, sf, depth));
+      }
+      return BAD;
+    }
+  }
+  if (Array.isArray(recv) && ARRAY_METHODS.has(name)) {
+    if (recv.length > MAX_ITEMS) return BAD;
+    if (name === "join") {
+      const sepNode = args[0];
+      const sep = sepNode ? evalExpr(sepNode, env, sf, depth) : "";
+      if (typeof sep !== "string" || args.length > 1) return BAD;
+      if (recv.some((x) => x !== null && typeof x !== "string" && typeof x !== "number" && typeof x !== "boolean")) return BAD;
+      return boundText(recv.map((x) => (x === null ? "" : String(x))).join(sep));
+    }
+    const cb = args[0];
+    if (!cb || (name !== "reduce" && args.length !== 1) || (name === "reduce" && args.length > 2)) return BAD;
+    if (name === "map" || name === "filter") {
+      const out: Val[] = [];
+      for (let i = 0; i < recv.length; i++) {
+        if (tick()) return BAD;
+        const got = evalCallback(cb, [recv[i]!, i], env, sf, depth);
+        if (got === BAD || got === undefined) return BAD;
+        if (name === "map") out.push(got);
+        else if (got) out.push(recv[i]!);
+      }
+      return out;
+    }
+    let acc: Val;
+    let start = 0;
+    if (args.length === 2) {
+      const init = evalExpr(args[1]!, env, sf, depth);
+      if (init === BAD) return BAD;
+      acc = init;
+    } else {
+      if (recv.length === 0) return BAD;
+      acc = recv[0]!;
+      start = 1;
+    }
+    for (let i = start; i < recv.length; i++) {
+      if (tick()) return BAD;
+      const got = evalCallback(cb, [acc, recv[i]!], env, sf, depth);
+      if (got === BAD || got === undefined) return BAD;
+      acc = got;
+    }
+    return acc;
+  }
+  return BAD;
+}
+
 function evalCall(n: ts.CallExpression, env: Map<string, Val>, sf: ts.SourceFile, depth: number): Res {
   if (ts.isPropertyAccessExpression(n.expression)) {
     const recv = evalExpr(n.expression.expression, env, sf, depth);
-    const name = n.expression.name.text;
-    if (typeof recv === "string" && n.arguments.length === 0 && (name === "toUpperCase" || name === "toLowerCase")) {
-      return name === "toUpperCase" ? recv.toUpperCase() : recv.toLowerCase();
-    }
-    return BAD;
+    if (n.expression.questionDotToken && recv === null) return null;
+    if (recv === BAD) return BAD;
+    return evalMethod(recv, n.expression.name.text, [...n.arguments], env, sf, depth);
   }
   if (!ts.isIdentifier(n.expression)) return BAD;
   const args: Val[] = [];
   for (const a of n.arguments) {
-    const v = evalExpr(a, env, sf, depth);
-    if (v === BAD) return BAD;
+    const v = evalArg(a, env, sf, depth);
+    if (v === BAD || v instanceof RegExp) return BAD;
     args.push(v);
   }
   const fn = findFn(sf, n.expression.text);
   if (!fn) return BAD;
-  return callFn(fn, args, sf, depth + 1);
+  return callFn(fn, args, sf, depth + 1, env);
 }
 
 type FnNode = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
@@ -724,9 +926,10 @@ function findFn(sf: ts.SourceFile, name: string): FnNode | null {
   return null;
 }
 
-function callFn(fn: FnNode, args: readonly Val[], sf: ts.SourceFile, depth: number): Res {
-  if (depth > 8) return BAD;
-  const env = new Map<string, Val>();
+function callFn(fn: FnNode, args: readonly Val[], sf: ts.SourceFile, depth: number, parent?: ReadonlyMap<string, Val>): Res {
+  if (depth === 0) walkSteps = 0;
+  if (depth > 8 || tick()) return BAD;
+  const env = new Map(parent ?? []);
   fn.parameters.forEach((p, i) => { if (ts.isIdentifier(p.name)) env.set(p.name.text, args[i] ?? null); });
   if (!fn.body) return BAD;
   if (!ts.isBlock(fn.body)) return evalExpr(fn.body, env, sf, depth);
@@ -862,7 +1065,6 @@ function decideCallCatalog(content: string, path: string, fnName: string, specs:
   const site: Site = { path, name: fnName, start: fn.getStart(sf), end: fn.getEnd(), tier: 0 };
   const hits: string[] = [];
   const unchecked: string[] = [];
-  let judged = 0;
   for (const mut of mutationsIn(sf, site, 0, new Set())) {
     const next = replaceRange(content, mut.start, mut.end, mut.text);
     if (next === content || hits.includes(next) || unchecked.includes(next)) continue;
@@ -877,14 +1079,13 @@ function decideCallCatalog(content: string, path: string, fnName: string, specs:
       if (!sameVal(got, spec.expected)) { ok = false; break; }
     }
     if (unknown) { unchecked.push(next); continue; }
-    judged++;
     if (ok) hits.push(next);
     if (hits.length > 1) return null;
   }
   const line = sf.getLineAndCharacterOfPosition(fn.getStart(sf)).line + 1;
+  if (unchecked.length > 0) return { unchecked };
   if (hits.length === 1) return { hit: hits[0]!, line };
-  if (judged > 0) return null;
-  return unchecked.length > 0 ? { unchecked } : null;
+  return null;
 }
 
 const RULE_FNS: readonly ((e: RepairError, ctx: RepairContext) => RepairEdit | null)[] = [
