@@ -612,7 +612,24 @@ function sameVal(a: Val, b: Val): boolean {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
     return a.every((x, i) => sameVal(x, b[i]!));
   }
+  if (typeof a === "number" && typeof b === "number") return a === b;
   return Object.is(a, b);
+}
+
+/** JavaScript == . Null and undefined match each other. Other mixed types are refused, not coerced. */
+function looseEq(a: Val, b: Val): boolean | typeof BAD {
+  const nil = (v: Val) => v === undefined || v === null;
+  if (nil(a) || nil(b)) return nil(a) && nil(b);
+  if (typeof a === "number" && typeof b === "number") return a === b;
+  if (typeof a === "string" && typeof b === "string") return a === b;
+  if (typeof a === "boolean" && typeof b === "boolean") return a === b;
+  return BAD;
+}
+
+function typeOfVal(v: Val): string {
+  if (v === undefined) return "undefined";
+  if (v === null || Array.isArray(v) || isGroups(v)) return "object";
+  return typeof v;
 }
 
 function litNode(n: ts.Node): Val | typeof BAD {
@@ -670,7 +687,7 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
   const lit = litNode(n);
   if (lit !== BAD || ts.isNumericLiteral(n) || ts.isStringLiteral(n) || n.kind === ts.SyntaxKind.NullKeyword) return lit;
   if (ts.isIdentifier(n)) {
-    if (n.text === "undefined") return null;
+    if (n.text === "undefined") return undefined;
     return env.has(n.text) ? env.get(n.text)! : BAD;
   }
   if (ts.isPrefixUnaryExpression(n)) {
@@ -687,7 +704,7 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
     const k = n.operatorToken.kind;
     if (k === ts.SyntaxKind.AmpersandAmpersandToken) return truthy(l) ? evalExpr(n.right, env, sf, depth) : l;
     if (k === ts.SyntaxKind.BarBarToken) return truthy(l) ? l : evalExpr(n.right, env, sf, depth);
-    if (k === ts.SyntaxKind.QuestionQuestionToken) return l === null ? evalExpr(n.right, env, sf, depth) : l;
+    if (k === ts.SyntaxKind.QuestionQuestionToken) return l === null || l === undefined ? evalExpr(n.right, env, sf, depth) : l;
     const r = evalExpr(n.right, env, sf, depth);
     if (r === BAD) return BAD;
     if (k === ts.SyntaxKind.PlusToken) {
@@ -703,6 +720,11 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
     }
     if (k === ts.SyntaxKind.EqualsEqualsEqualsToken) return sameVal(l, r);
     if (k === ts.SyntaxKind.ExclamationEqualsEqualsToken) return !sameVal(l, r);
+    if (k === ts.SyntaxKind.EqualsEqualsToken || k === ts.SyntaxKind.ExclamationEqualsToken) {
+      const eq = looseEq(l, r);
+      if (eq === BAD) return BAD;
+      return k === ts.SyntaxKind.EqualsEqualsToken ? eq : !eq;
+    }
     if (typeof l === "number" && typeof r === "number") {
       if (k === ts.SyntaxKind.LessThanToken) return l < r;
       if (k === ts.SyntaxKind.LessThanEqualsToken) return l <= r;
@@ -726,20 +748,27 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
   }
   if (ts.isElementAccessExpression(n)) {
     const v = evalExpr(n.expression, env, sf, depth);
+    if (v === BAD) return BAD;
+    if (n.questionDotToken && (v === null || v === undefined)) return v;
     const i = n.argumentExpression ? evalExpr(n.argumentExpression, env, sf, depth) : BAD;
     if (!Array.isArray(v) || typeof i !== "number") return BAD;
-    return v[i] ?? null;
+    return v[i];
   }
   if (ts.isTemplateExpression(n)) {
     let out = n.head.text;
     for (const span of n.templateSpans) {
       const v = evalExpr(span.expression, env, sf, depth);
-      if (v === BAD || (v !== null && typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean")) return BAD;
-      out += v === null ? "" : String(v);
+      if (v === BAD || isGroups(v) || Array.isArray(v)) return BAD;
+      out += v === undefined ? "undefined" : v === null ? "null" : String(v);
       out += span.literal.text;
       if (out.length > MAX_TEXT || tick()) return BAD;
     }
     return out;
+  }
+  if (ts.isTypeOfExpression(n)) {
+    const v = evalExpr(n.expression, env, sf, depth);
+    if (v === BAD) return BAD;
+    return typeOfVal(v);
   }
   if (ts.isCallExpression(n)) return evalCall(n, env, sf, depth);
   if (ts.isArrayLiteralExpression(n)) {
@@ -947,7 +976,7 @@ function evalMethod(recv: Val, name: string, args: readonly ts.Expression[], env
 function evalCall(n: ts.CallExpression, env: Map<string, Val>, sf: ts.SourceFile, depth: number): Res {
   if (ts.isPropertyAccessExpression(n.expression)) {
     const recv = evalExpr(n.expression.expression, env, sf, depth);
-    if (n.expression.questionDotToken && recv === null) return null;
+    if (n.expression.questionDotToken && (recv === null || recv === undefined)) return recv;
     if (recv === BAD) return BAD;
     return evalMethod(recv, n.expression.name.text, [...n.arguments], env, sf, depth);
   }

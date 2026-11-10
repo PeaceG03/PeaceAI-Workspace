@@ -392,6 +392,14 @@ test("the walker matches JavaScript for every allowlisted builtin, including def
     { source: "export function f(xs){return xs.join()}", args: [["a", "b"]] },
     { source: "export function f(xs){return xs.join(\"-\")}", args: [["a", "b"]] },
     { source: "export function f(xs){return xs.join(\"\")}", args: [["a", "b"]] },
+    { source: "export function f(){return undefined === null}", args: [] },
+    { source: "export function f(){return undefined === undefined}", args: [] },
+    { source: "export function f(){return undefined == null}", args: [] },
+    { source: "export function f(){return (undefined ?? \"x\") || \"y\"}", args: [] },
+    { source: "export function f(){return typeof undefined}", args: [] },
+    { source: "export function f(){return typeof null}", args: [] },
+    { source: "export function f(){return undefined?.length ?? \"z\"}", args: [] },
+    { source: "export function f(){return -0 === 0}", args: [] },
   ];
   for (const c of cases) {
     const walked = walkResult(c.source, "f", c.args);
@@ -401,6 +409,8 @@ test("the walker matches JavaScript for every allowlisted builtin, including def
   }
   assert.equal(walkResult("export function f(xs){return xs.map((...n) => n)}", "f", [[1]]).ok, false);
   assert.equal(walkResult("export function f(xs){return xs.map(function (n) { return arguments[1]; })}", "f", [[1]]).ok, false);
+  assert.equal(walkResult("export function f(){return 0/0}", "f", []).ok, false);
+  assert.equal(walkResult("export function f(){return Object.is(-0, 0)}", "f", []).ok, false);
 });
 
 test("a map callback that reads the array is repaired on the live branch, and join() keeps the comma", () => {
