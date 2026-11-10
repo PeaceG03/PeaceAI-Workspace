@@ -12,6 +12,10 @@
 // Zero held-out rows is not a proof. A function whose inputs this program cannot build is
 // NEEDS_TEACHING / UNSUPPORTED_INPUT, never LEARNED. Probes come from the parameter's type
 // and how the body uses that parameter, not from the function's name.
+// A tree id `fn:<path>:<name>:<line>` names the function, not the line. Same-file helpers
+// are copied into the sandbox so the leaf can run. A name that is not in the file is
+// MISSING_HELPER. Fewer than two stable literal results is UNSTABLE or UNDER_OBSERVED.
+// Those leaves get no problem and no verified repair. One assertion is not evidence.
 // Attempts go through runRepairLoop and then repair-retry, capped at RETRY_MAX_ATTEMPTS.
 // Target code runs only in a temp child with node --permission and a clean environment.
 import { spawnSync } from "node:child_process";
@@ -30,7 +34,7 @@ import { checkMap, type ProgramMap } from "./learnmap.ts";
 import { retryProposer, RETRY_MAX_ATTEMPTS, type RetryFeedback } from "./repair-retry.ts";
 import { buildIndex } from "./symbols.ts";
 import { runRepairLoop, type Evaluation } from "./repairloop.ts";
-import type { RepairContext, RepairError } from "./repair.ts";
+import { parseTapFailures, type RepairContext, type RepairError } from "./repair.ts";
 import type { ProposeInput } from "./loop.ts";
 
 export const LEARN_PRACTICE_SCHEMA = "peaceai-learn-practice:v1" as const;
@@ -38,6 +42,9 @@ export const NEEDS_TEACHING_SCHEMA = "peaceai-needs-teaching:v1" as const;
 const MAX_KINDS = 8;
 const MAX_MUTATIONS = 16;
 const CHILD_MS = 15_000;
+const MIN_OBSERVED = 2;
+const SAFE_GLOBALS = new Set(["Math", "Number", "String", "Boolean", "Array", "Object", "JSON", "undefined", "NaN", "Infinity", "parseInt", "parseFloat", "isNaN", "isFinite", "Date", "RegExp", "Error", "Map", "Set", "WeakMap", "WeakSet", "Promise", "Symbol", "BigInt", "console"]);
+type EmptyCode = "UNSUPPORTED_INPUT" | "NO_PRACTICE_PROBLEM" | "MISSING_HELPER" | "UNSTABLE" | "UNDER_OBSERVED";
 const INPUT_SETS: readonly (readonly number[])[] = [[0, 2, 3], [4, 5, 7], [8, 9, 10]];
 
 export type LeafStatus = "LEARNED" | "PRACTICING" | "NEEDS_TEACHING" | "BUDGET_STOPPED";
@@ -299,11 +306,16 @@ function readRepo(repo: string, rel: string): string | null {
 function leafRef(node: GapNode, repo: string): LeafRef | null {
   if (node.size !== "leaf") return null;
   if (node.id.startsWith("fn:")) {
-    const rest = node.id.slice(3);
-    const i = rest.lastIndexOf(":");
-    if (i <= 0) return null;
-    const path = rest.slice(0, i);
-    const name = rest.slice(i + 1);
+    const parts = node.id.slice(3).split(":");
+    let path = "";
+    let name = "";
+    if (parts.length === 2) {
+      path = parts[0] ?? "";
+      name = parts[1] ?? "";
+    } else if (parts.length === 3 && /^\d+$/.test(parts[2] ?? "")) {
+      path = parts[0] ?? "";
+      name = parts[1] ?? "";
+    } else return null;
     if (!safeRel(path) || !/^[A-Za-z_$][\w$]*$/.test(name)) return null;
     return { node, path, name };
   }
@@ -342,6 +354,95 @@ function extractFunction(path: string, content: string, name: string): string | 
     }
   }
   return null;
+}
+
+function isValueName(node: ts.Identifier): boolean {
+  const p = node.parent;
+  if (!p || ts.isTypeNode(p) || ts.isTypeParameterDeclaration(p) || ts.isHeritageClause(p)) return false;
+  if (ts.isPropertyAccessExpression(p) && p.name === node) return false;
+  if (ts.isQualifiedName(p) && p.right === node) return false;
+  if ((ts.isFunctionDeclaration(p) || ts.isFunctionExpression(p) || ts.isClassDeclaration(p)) && p.name === node) return false;
+  if (ts.isParameter(p) && p.name === node) return false;
+  if ((ts.isVariableDeclaration(p) || ts.isBindingElement(p) || ts.isPropertyAssignment(p) || ts.isPropertyDeclaration(p) || ts.isMethodDeclaration(p)) && p.name === node) return false;
+  if (ts.isImportSpecifier(p) || ts.isExportSpecifier(p) || ts.isMetaProperty(p)) return false;
+  return true;
+}
+
+function declaredNames(root: ts.Node, own: string): Set<string> {
+  const names = new Set<string>([own]);
+  const walk = (n: ts.Node): void => {
+    if (ts.isParameter(n) && ts.isIdentifier(n.name)) names.add(n.name.text);
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name)) names.add(n.name.text);
+    if (ts.isBindingElement(n) && ts.isIdentifier(n.name)) names.add(n.name.text);
+    if (ts.isFunctionDeclaration(n) && n.name) names.add(n.name.text);
+    if (ts.isCatchClause(n) && n.variableDeclaration && ts.isIdentifier(n.variableDeclaration.name)) names.add(n.variableDeclaration.name.text);
+    ts.forEachChild(n, walk);
+  };
+  walk(root);
+  return names;
+}
+
+function freeNames(root: ts.Node, own: string): string[] {
+  const declared = declaredNames(root, own);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const walk = (n: ts.Node): void => {
+    if (ts.isIdentifier(n) && isValueName(n) && !declared.has(n.text) && !seen.has(n.text)) {
+      seen.add(n.text);
+      out.push(n.text);
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(root);
+  return out;
+}
+
+interface Bind { name: string; text: string; root: ts.Node; key: string }
+
+function moduleBinds(sf: ts.SourceFile): Map<string, Bind> {
+  const map = new Map<string, Bind>();
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name?.text && st.body) {
+      map.set(st.name.text, { name: st.name.text, text: st.getText(sf), root: st, key: String(st.getStart(sf)) });
+    }
+    if (!ts.isVariableStatement(st)) continue;
+    for (const d of st.declarationList.declarations) {
+      if (!ts.isIdentifier(d.name) || !d.initializer) continue;
+      map.set(d.name.text, { name: d.name.text, text: st.getText(sf), root: d.initializer, key: String(st.getStart(sf)) });
+    }
+  }
+  return map;
+}
+
+/** The leaf plus same-file values it calls. A missing name is not replaced with a guess. */
+function bundleLeaf(fileText: string, name: string): { src: string } | { code: "MISSING_HELPER" } | null {
+  const own = extractFunction("leaf.ts", fileText, name);
+  if (!own) return null;
+  const sf = ts.createSourceFile("leaf.ts", fileText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const binds = moduleBinds(sf);
+  const target = binds.get(name);
+  if (!target) return null;
+  const order: Bind[] = [];
+  const seenStmt = new Set<string>();
+  const seenName = new Set<string>([name]);
+  const queue = freeNames(target.root, name);
+  let guard = 0;
+  while (queue.length > 0) {
+    const next = queue.shift()!;
+    if (seenName.has(next) || SAFE_GLOBALS.has(next)) continue;
+    seenName.add(next);
+    const bind = binds.get(next);
+    if (!bind) return { code: "MISSING_HELPER" };
+    if (!seenStmt.has(bind.key)) {
+      seenStmt.add(bind.key);
+      order.push(bind);
+    }
+    guard++;
+    if (guard > 12) return { code: "MISSING_HELPER" };
+    for (const f of freeNames(bind.root, bind.name)) if (!seenName.has(f)) queue.push(f);
+  }
+  const prefix = order.map((b) => b.text).join("\n");
+  return { src: prefix ? `${prefix}\n${own}` : own };
 }
 
 interface Param { name: string; optional: boolean; typeText: string }
@@ -471,7 +572,10 @@ async function column(m) {
   for (const args of data.inputs) cells.push(await cell(f, args));
   return cells;
 }
-const out = { original: await column(mods[0]), broken: [] };
+const first = await column(mods[0]);
+const second = await column(mods[0]);
+const stable = first.map((c, i) => JSON.stringify(c) === JSON.stringify(second[i]));
+const out = { original: first, broken: [], stable };
 for (const m of mods.slice(1)) out.broken.push(await column(m));
 writeFileSync(new URL("./out.json", import.meta.url), JSON.stringify(out));
 process.exit(0);
@@ -481,7 +585,7 @@ function cleanEnv(dir: string): NodeJS.ProcessEnv {
   return { PATH: "/usr/bin:/bin", TMPDIR: dir, LANG: "C", LC_ALL: "C" };
 }
 
-function sandboxed(dir: string, args: string[]): boolean {
+function sandboxed(dir: string, args: string[]): { ok: boolean; output: string } {
   const r = spawnSync(process.execPath, [
     "--permission",
     `--allow-fs-read=${dir}`,
@@ -489,16 +593,18 @@ function sandboxed(dir: string, args: string[]): boolean {
     "--experimental-strip-types",
     ...args,
   ], { cwd: dir, env: cleanEnv(dir), encoding: "utf8", timeout: CHILD_MS, maxBuffer: 1 << 20, killSignal: "SIGKILL" });
-  return r.status === 0 && !r.error;
+  return { ok: r.status === 0 && !r.error, output: `${r.stdout ?? ""}\n${r.stderr ?? ""}` };
 }
 
-function oracleMatrix(original: string, brokenList: string[], inputs: unknown[][], fn: string, awaitResult: boolean): { original: Enc[]; broken: Enc[][] } | null {
+function oracleMatrix(original: string, brokenList: string[], inputs: unknown[][], fn: string, awaitResult: boolean): { original: Enc[]; broken: Enc[][]; stable: boolean[] } | null {
   const dir = mkdtempSync(join(tmpdir(), "peaceai-oracle-"));
   try {
     writeFileSync(join(dir, "in.json"), JSON.stringify({ fn, original, broken: brokenList, inputs, await: awaitResult }));
     writeFileSync(join(dir, "run.mjs"), ORACLE_JS);
-    if (!sandboxed(dir, ["run.mjs"])) return null;
-    return JSON.parse(readFileSync(join(dir, "out.json"), "utf8")) as { original: Enc[]; broken: Enc[][] };
+    if (!sandboxed(dir, ["run.mjs"]).ok) return null;
+    const parsed = JSON.parse(readFileSync(join(dir, "out.json"), "utf8")) as { original: Enc[]; broken: Enc[][]; stable?: boolean[] };
+    if (!parsed.stable || parsed.stable.length !== inputs.length) return null;
+    return { original: parsed.original, broken: parsed.broken, stable: parsed.stable };
   } catch {
     return null;
   } finally {
@@ -512,8 +618,9 @@ function testSource(fn: string, inputs: readonly unknown[], expected: readonly s
   return `import test from "node:test";\nimport assert from "node:assert/strict";\nimport { ${fn} } from "../src/leaf.ts";\n// practice ${note}\ntest("${fn} holds", () => {\n${calls}\n});\n`;
 }
 
-function runFileTest(sandbox: string): boolean {
-  return sandboxed(sandbox, ["--experimental-test-isolation=none", "--test-force-exit", "--test", "test/leaf.test.ts"]);
+function runFileTest(sandbox: string): { ok: boolean; errors: RepairError[] } {
+  const ran = sandboxed(sandbox, ["--experimental-test-isolation=none", "--test-force-exit", "--test", "test/leaf.test.ts"]);
+  return { ok: ran.ok, errors: parseTapFailures(ran.output, sandbox) };
 }
 
 function withSandbox(src: string, test: string, fn: (dir: string, rel: string) => void): void {
@@ -533,8 +640,8 @@ function withSandbox(src: string, test: string, fn: (dir: string, rel: string) =
 function confirms(broken: string, original: string, test: string): boolean {
   let bad = true;
   let good = false;
-  withSandbox(broken, test, (dir) => { bad = runFileTest(dir); });
-  withSandbox(original, test, (dir) => { good = runFileTest(dir); });
+  withSandbox(broken, test, (dir) => { bad = runFileTest(dir).ok; });
+  withSandbox(original, test, (dir) => { good = runFileTest(dir).ok; });
   return good && !bad;
 }
 
@@ -562,9 +669,21 @@ function blankNode(node: GapNode, status: LeafStatus, codes: string[]): NodeResu
   };
 }
 
+function functionSpan(src: string, name: string): { start: number; end: number } | null {
+  const found = implementationOf(src, name);
+  if (!found) return null;
+  let node: ts.Node = found.fn;
+  if ((ts.isArrowFunction(found.fn) || ts.isFunctionExpression(found.fn)) && ts.isVariableDeclaration(found.fn.parent)) {
+    const st = found.fn.parent.parent;
+    if (st && ts.isVariableStatement(st)) node = st;
+  }
+  return { start: node.getStart(found.sf), end: node.getEnd() };
+}
+
 function makeBreaks(src: string, name: string): { mut: Mutation; broken: string; kind: string }[] {
   const sf = parseSource("src/leaf.ts", src);
-  const site: Site = { path: "src/leaf.ts", name, start: 0, end: src.length, tier: 0 };
+  const span = functionSpan(src, name) ?? { start: 0, end: src.length };
+  const site: Site = { path: "src/leaf.ts", name, start: span.start, end: span.end, tier: 0 };
   const params = paramsOf(src, name)?.map((p) => p.name) ?? [];
   const seen = new Set<string>();
   const out: { mut: Mutation; broken: string; kind: string }[] = [];
@@ -578,14 +697,34 @@ function makeBreaks(src: string, name: string): { mut: Mutation; broken: string;
   return out;
 }
 
-function problemsFor(nodeId: string, path: string, name: string, src: string, seed: number, history: PracticeProblem[], budget: Budget): { problems: PracticeProblem[]; emptyCode: "UNSUPPORTED_INPUT" | "NO_PRACTICE_PROBLEM" } {
-  const historyRows = splitProblems(history, seed);
+function observedProbe(src: string, name: string): { code: EmptyCode | null; inputs: unknown[]; lits: string[] } {
   const kind = probeKind(src, name);
-  if (!kind) return { problems: historyRows, emptyCode: "UNSUPPORTED_INPUT" };
+  if (!kind) return { code: "UNSUPPORTED_INPUT", inputs: [], lits: [] };
+  const inputs = [...probeValues(kind)];
+  const matrix = oracleMatrix(src, [], inputs.map((n) => [n]), name, isAsyncFn(src, name));
+  if (!matrix) return { code: "NO_PRACTICE_PROBLEM", inputs: [], lits: [] };
+  const use: unknown[] = [];
+  const lits: string[] = [];
+  let unstable = 0;
+  inputs.forEach((n, i) => {
+    if (!matrix.stable[i]) { unstable++; return; }
+    const lit = litOf(matrix.original[i]!);
+    if (lit === null) return;
+    use.push(n);
+    lits.push(lit);
+  });
+  if (use.length < MIN_OBSERVED) return { code: unstable === inputs.length ? "UNSTABLE" : "UNDER_OBSERVED", inputs: [], lits: [] };
+  return { code: null, inputs: use, lits };
+}
+
+function problemsFor(nodeId: string, path: string, name: string, src: string, seed: number, history: PracticeProblem[], budget: Budget): { problems: PracticeProblem[]; emptyCode: EmptyCode } {
+  const historyRows = splitProblems(history, seed);
+  const seen = observedProbe(src, name);
+  if (seen.code) return { problems: historyRows, emptyCode: seen.code };
   if (timeUp(budget)) { budget.stopped = true; return { problems: historyRows, emptyCode: "NO_PRACTICE_PROBLEM" }; }
   const breaks = makeBreaks(src, name);
   if (breaks.length === 0) return { problems: historyRows, emptyCode: "NO_PRACTICE_PROBLEM" };
-  const inputs = probeValues(kind);
+  const inputs = seen.inputs;
   const matrix = oracleMatrix(src, breaks.map((b) => b.broken), inputs.map((n) => [n]), name, isAsyncFn(src, name));
   if (!matrix) return { problems: historyRows, emptyCode: "NO_PRACTICE_PROBLEM" };
   const made: PracticeProblem[] = [];
@@ -595,14 +734,14 @@ function problemsFor(nodeId: string, path: string, name: string, src: string, se
     const lits: string[] = [];
     let differs = false;
     inputs.forEach((n, i) => {
+      if (matrix.stable[i] === false) return;
       const lit = litOf(matrix.original[i]!);
       if (lit === null) return;
       if (!sameEnc(matrix.original[i]!, matrix.broken[bi]![i]!)) differs = true;
       use.push(n);
       lits.push(lit);
     });
-    // The test is the whole probe, not only the one input the mutation changed.
-    if (!differs || use.length === 0) continue;
+    if (!differs || use.length < MIN_OBSERVED) continue;
     const test = testSource(name, use.slice(0, 8), lits.slice(0, 8), br.kind);
     if (!confirms(br.broken, src, test)) continue;
     made.push({
@@ -680,7 +819,10 @@ function attemptOne(problem: PracticeProblem, budget: Budget): PracticeProblem {
     const index = buildIndex([{ path: rel, content: problem.broken }]);
     const ctx: RepairContext = {
       index,
-      read: (p) => (p === rel ? readFileSync(join(dir, rel), "utf8") : null),
+      read: (p) => {
+        if (p !== rel && p !== "test/leaf.test.ts") return null;
+        try { return readFileSync(join(dir, p), "utf8"); } catch { return null; }
+      },
       base: () => null,
       isSource: (p) => p === rel,
       isTest: (p) => p.startsWith("test/"),
@@ -690,10 +832,11 @@ function attemptOne(problem: PracticeProblem, budget: Budget): PracticeProblem {
     });
     const evalOf = (): Evaluation => {
       if (!charge()) return { typecheck: true, originalSuite: false, newTests: false, errors: [failErr("budget")] };
-      passed = runFileTest(dir);
+      const ran = runFileTest(dir);
+      passed = ran.ok;
       return passed
         ? { typecheck: true, originalSuite: true, newTests: true, errors: [] }
-        : { typecheck: true, originalSuite: false, newTests: false, errors: [failErr("test failed")] };
+        : { typecheck: true, originalSuite: false, newTests: false, errors: ran.errors.length ? ran.errors : [failErr("test failed")] };
     };
     try {
       const left = Math.max(1, budget.maxMinutes * 60_000 - (budget.now() - budget.start));
@@ -737,7 +880,8 @@ function attemptOne(problem: PracticeProblem, budget: Budget): PracticeProblem {
           current = next;
           writeFileSync(join(dir, rel), current);
           if (!charge()) break;
-          passed = runFileTest(dir);
+          const ran = runFileTest(dir);
+          passed = ran.ok;
           feedback.push({
             attempt: proposerAttempt - 1,
             codes: passed ? [] : ["TEST_FAIL"],
@@ -752,7 +896,7 @@ function attemptOne(problem: PracticeProblem, budget: Budget): PracticeProblem {
   });
   if (passed && current !== problem.broken) {
     let verified = false;
-    withSandbox(current, problem.test, (dir) => { verified = runFileTest(dir); });
+    withSandbox(current, problem.test, (dir) => { verified = runFileTest(dir).ok; });
     out.solved = verified;
     out.verified = verified;
     out.fixed = verified ? current : null;
@@ -889,22 +1033,17 @@ function ownTest(repo: string, map: ProgramMap, path: string, name: string, pre:
 }
 
 function generatedHistoryTest(name: string, pre: string, post: string, sha: string): string | null {
-  const kind = probeKind(post, name);
-  if (!kind) return null;
-  const inputs = probeValues(kind).slice(0, 5);
-  const matrix = oracleMatrix(post, [pre], inputs.map((n) => [n]), name, isAsyncFn(post, name));
+  const seen = observedProbe(post, name);
+  if (seen.code) return null;
+  const matrix = oracleMatrix(post, [pre], seen.inputs.map((n) => [n]), name, isAsyncFn(post, name));
   if (!matrix) return null;
-  const use: unknown[] = [];
-  const lits: string[] = [];
-  inputs.forEach((n, i) => {
-    if (sameEnc(matrix.original[i]!, matrix.broken[0]![i]!)) return;
-    const lit = litOf(matrix.original[i]!);
-    if (lit === null) return;
-    use.push(n);
-    lits.push(lit);
+  let differs = false;
+  seen.inputs.forEach((_, i) => {
+    if (matrix.stable[i] === false) return;
+    if (!sameEnc(matrix.original[i]!, matrix.broken[0]![i]!)) differs = true;
   });
-  if (use.length === 0) return null;
-  const test = testSource(name, use.slice(0, 3), lits.slice(0, 3), `history ${sha}`);
+  if (!differs) return null;
+  const test = testSource(name, seen.inputs.slice(0, 8), seen.lits.slice(0, 8), `history ${sha}`);
   return confirms(pre, post, test) ? test : null;
 }
 
@@ -924,7 +1063,7 @@ function historyProblems(repo: string, path: string, name: string, nodeId: strin
   return made;
 }
 
-function finishLeaf(node: GapNode, problems: PracticeProblem[], stopped: boolean, sealedSha: string, emptyCode: "UNSUPPORTED_INPUT" | "NO_PRACTICE_PROBLEM"): NodeResult {
+function finishLeaf(node: GapNode, problems: PracticeProblem[], stopped: boolean, sealedSha: string, emptyCode: EmptyCode): NodeResult {
   const dev = counts(problems, "dev");
   const held = scoreHeldOut(problems);
   const codes = new Set<string>();
@@ -1021,11 +1160,16 @@ export function practiceProgram(opts: PracticeOptions): PracticeRun {
     }
     const ref = leafRef(node, opts.repoPath);
     const text = ref ? readRepo(opts.repoPath, ref.path) : null;
-    const src = ref && text !== null && ref.name ? extractFunction(ref.path, text, ref.name) : null;
-    if (!ref || !src) {
+    const prepared = ref && text !== null && ref.name ? bundleLeaf(text, ref.name) : null;
+    if (!ref || !prepared) {
       nodes.push(blankNode(node, "NEEDS_TEACHING", ["NO_FUNCTION"]));
       continue;
     }
+    if ("code" in prepared) {
+      nodes.push(blankNode(node, "NEEDS_TEACHING", [prepared.code]));
+      continue;
+    }
+    const src = prepared.src;
     const hist = opts.fromHistory ? historyProblems(opts.repoPath, ref.path, ref.name, node.id, opts.map, fixes.get(node.id) ?? []) : [];
     const builtPack = problemsFor(node.id, ref.path, ref.name, src, seed, hist, budget);
     const built = builtPack.problems;
@@ -1117,7 +1261,8 @@ export function recheckPractice(prior: PracticeRun, opts: PracticeOptions): Prac
     const oldIds = new Set(oldHeld.map(heldIdentity));
     const ref = leafRef(node, opts.repoPath);
     const text = ref ? readRepo(opts.repoPath, ref.path) : null;
-    const src = ref && text !== null && ref.name ? extractFunction(ref.path, text, ref.name) : null;
+    const prepared = ref && text !== null && ref.name ? bundleLeaf(text, ref.name) : null;
+    const src = prepared && "src" in prepared ? prepared.src : null;
     let sample: PracticeProblem[] = [];
     if (src && ref) {
       sample = problemsFor(node.id, ref.path, ref.name, src, seed, [], budget).problems

@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { editKey, normalizedEdit } from "./dedupe.ts";
 import type { FtDoc } from "./ftpairs.ts";
 import { scanText } from "./leak.ts";
-import { breakKey, LearnRefuse, safeWriteFile, type PracticeProblem, type PracticeRun } from "./learnpractice.ts";
+import { breakKey, leafStatus, LearnRefuse, safeWriteFile, scoreHeldOut, type PracticeProblem, type PracticeRun } from "./learnpractice.ts";
 
 export const LEARN_PAIRS_SCHEMA = "peaceai-learn-pairs:v1" as const;
 
@@ -52,12 +52,26 @@ function editBody(diff: string): string {
  * DEV problems solved and verified by an independent re-run of the real test.
  * Held-out problems, and anything derived from them, are not emitted. A DEV edit whose
  * normalized body matches a held-out edit, or a pair leak.scanText flags, is dropped and counted.
+ * A LEARNED label is not enough. The leaf's own held-out problems must re-score at
+ * >= 4 independent breaks and rate >= 0.75, and the run's heldoutProof must be true.
+ * A test with one assertion is withheld.
  */
+function evidenceQualified(run: PracticeRun, nodeId: string): boolean {
+  if (run.heldoutProof !== true) return false;
+  const node = run.nodes.find((n) => n.nodeId === nodeId);
+  if (!node || node.size !== "leaf" || node.status !== "LEARNED") return false;
+  const scored = scoreHeldOut(run.problems.filter((p) => p.nodeId === nodeId));
+  return leafStatus(scored.passed, scored.independent, false) === "LEARNED";
+}
+
+function assertCount(test: string): number {
+  return test.split("assert.").length - 1;
+}
+
 export function buildLearnPairs(run: PracticeRun, program: string, opts?: { eligible?: boolean }): PairBuild {
   const mapOk = opts?.eligible !== false && run.mapTrusted !== false;
-  const learned = new Set(run.nodes.filter((n) => n.status === "LEARNED").map((n) => n.nodeId));
   const solvedDev = run.problems.filter((p) => p.set === "dev" && p.solved && p.verified && p.fixed !== null && p.fixed !== p.broken);
-  const gated = mapOk ? solvedDev.filter((p) => learned.has(p.nodeId)) : [];
+  const gated = mapOk ? solvedDev.filter((p) => evidenceQualified(run, p.nodeId) && assertCount(p.test) >= 2) : [];
   if (!mapOk || gated.length === 0) {
     return { schema: LEARN_PAIRS_SCHEMA, experimental: true, credit: false, eligible: false, withheld: solvedDev.length, docs: [], dropped: { leak: 0, nearDuplicate: 0 } };
   }

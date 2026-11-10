@@ -212,7 +212,7 @@ test("skill tree splits a wide gap, keeps every leaf testable, and parks the dep
   });
 });
 
-test("overload declarations keep distinct ids and practice does not drop a node", () => {
+test("overload declarations keep distinct ids and practice resolves every generated function id", { timeout: 180_000 }, () => {
   const dir = mkdtempSync(join(tmpdir(), "peaceai-over-"));
   try {
     mkdirSync(join(dir, "src"));
@@ -232,10 +232,18 @@ test("overload declarations keep distinct ids and practice does not drop a node"
     assert.equal(treeConserved(tree), true);
     assert.ok(ids.filter((id) => id.startsWith("fn:src/measure.ts:measure:")).length >= 2);
     const run = practiceProgram({
-      tree, map, repoPath: dir, seed: 1, maxMinutes: 1, maxAttemptsTotal: 0, now: () => 1_700_000_000_000,
+      tree, map, repoPath: dir, seed: 1, maxMinutes: 2, maxAttemptsTotal: 80, now: () => 1_700_000_000_000,
     });
+    assert.equal(run.credit, false);
     assert.equal(run.nodes.length, tree.nodes.length);
     assert.equal(new Set(run.nodes.map((n) => n.nodeId)).size, tree.nodes.length);
+    for (const leaf of tree.nodes.filter((n) => n.size === "leaf")) {
+      const row = run.nodes.find((n) => n.nodeId === leaf.id)!;
+      assert.equal(row.reasonCodes.includes("NO_FUNCTION"), false, leaf.id);
+    }
+    assert.ok(run.problems.some((p) => p.function === "measure" && p.test.split("assert.").length - 1 >= 2));
+    assert.ok(run.problems.some((p) => p.function === "other" && p.test.split("assert.").length - 1 >= 2));
+    assert.equal(run.problems.some((p) => p.verified && p.test.split("assert.").length - 1 < 2), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

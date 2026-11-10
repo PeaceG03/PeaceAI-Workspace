@@ -80,3 +80,14 @@ Readiness files docs/PEACEAI_FINAL_PRODUCT_READINESS.md, packages/core/src/Produ
 CONTINUE_REQUIRED. The two DEV docs from the 24-attempt run are not final training data. Each passed its generated DEV test on a second run, and neither restored the original function text. Neither leaf was LEARNED: draw had 2 held-out breaks (need 4) and capitalize passed 1 of 4. heldoutProof is false. A later 80-attempt run on the same head, target, and seed, still learned 0. That run is not a matched proof.
 
 A follow-up then stopped emitting training docs unless the leaf is LEARNED, and the practice test lists every probed input with a literal original result, not only the one input a mutation changed. On that code, the same 24-attempt command withheld 3 DEV passes and wrote 0 docs. credit stays false.
+
+## Auditor fail at fb8dc84
+
+Head fb8dc84ae304dc856e7f802463058cf0bfe17c5c, tree be034b6f9bbf8c104310fed9c300036b88debfc8, failed review. Two blockers, checked in this tree:
+
+- `fn:<path>:<name>:<line>` was read as a path plus a numeric name, so generated function leaves were NO_FUNCTION. Practice now keeps the name and treats a trailing line as the overload discriminator. A two-export fixture and the overload fixture are practiced from those generated ids.
+- Training docs required only `status === LEARNED`. A constructed leaf with held-out 2/2 and `heldoutProof` false could emit a doc. The pair boundary now re-scores that leaf's held-out problems with the same 4-break and 0.75 rule, and it also requires `heldoutProof`. A one-assertion test is withheld.
+
+Same-file helpers are included in the sandbox. A missing name, an unstable result, or fewer than two stable literal results does not become a problem and is not a verified repair. The 4-break and 0.75 gates are unchanged. The numbers above are the earlier runs. They are not this head's radash result.
+
+Readiness files docs/PEACEAI_FINAL_PRODUCT_READINESS.md, packages/core/src/ProductReadiness.ts, and docs/PEACEAI_OVERNIGHT_PROGRESS.md are absent. They were not created.

@@ -8,8 +8,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { DEFAULT_PLANNER } from "../lib/plandefault.ts";
-import type { ProgramMap } from "../lib/learnmap.ts";
-import type { SkillTree } from "../lib/learntree.ts";
+import { buildProgramMap, type ProgramMap } from "../lib/learnmap.ts";
+import { buildSkillTree, type SkillTree } from "../lib/learntree.ts";
 import { buildLearnPairs, readLearnPairs, writeLearnPairs } from "../lib/learnpairs.ts";
 import { RETRY_MAX_ATTEMPTS } from "../lib/repair-retry.ts";
 import {
@@ -240,19 +240,24 @@ test("pairs drop held-out copies, unverified solves, and secret-shaped leaks", (
   const run: PracticeRun = {
     schema: "peaceai-learn-practice:v1", experimental: true, credit: false, seed: 1,
     minutesUsed: 0, attemptsUsed: 1, maxMinutes: 30, maxAttemptsTotal: 200, history: "OFF",
-    budgetStopped: false, sealedBeforeAttempts: true, rechecks: [],
+    budgetStopped: false, sealedBeforeAttempts: true, heldoutProof: true, mapTrusted: true, rechecks: [],
     nodes: [node({ nodeId: "fn:src/box.ts:score", status: "LEARNED", heldout: { problems: 4, passed: 4, sha256: "ab".repeat(32) } })],
     problems: [
       held,
-      problem({ id: "ok", set: "dev", kind: "dev-kind", test: "test(\"dev\", () => { assert.equal(score(1), 2); });\n", broken: "export function score(n: number): number {\n  return n + 0;\n}\n" }),
+      ...[2, 3, 4].map((i) => problem({
+        id: `held-${i}`, set: "heldout", kind: `held-${i}`, solved: true, verified: true,
+        broken: `export function score(n: number): number {\n  return n - ${i};\n}\n`,
+        test: `test("held ${i}", () => { assert.equal(score(${i + 10}), ${i}); });\n`,
+      })),
+      problem({ id: "ok", set: "dev", kind: "dev-kind", test: "test(\"dev\", () => { assert.equal(score(4), 5); assert.equal(score(6), 7); });\n", broken: "export function score(n: number): number {\n  return n + 0;\n}\n" }),
       problem({ id: "unverified", set: "dev", kind: "unverified", solved: true, verified: false, fixed: held.original }),
-      problem({ id: "near", set: "dev", kind: "near", sourcePath: "src/other.ts", broken: held.broken, original: held.original, fixed: held.original, test: "test(\"other\", () => { assert.equal(1, 1); });\n" }),
+      problem({ id: "near", set: "dev", kind: "near", sourcePath: "src/other.ts", broken: held.broken, original: held.original, fixed: held.original, test: "test(\"other\", () => { assert.equal(1, 1); assert.equal(2, 2); });\n" }),
       problem({
         id: "leak", set: "dev", kind: "leak", sourcePath: "src/zz.ts", function: "zz",
         broken: `export function zz(n: number): number {\n  return n; // ${leakMail}\n}\n`,
         original: "export function zz(n: number): number {\n  return n;\n}\n",
         fixed: "export function zz(n: number): number {\n  return n;\n}\n",
-        test: "test(\"zz only\", () => { assert.equal(1, 1); });\n",
+        test: "test(\"zz only\", () => { assert.equal(1, 1); assert.equal(0, 0); });\n",
       }),
     ],
   };
@@ -378,17 +383,23 @@ test("recheck demotes a learned leaf and its ancestors only from a real new samp
     const cleanDev = problem({
       id: "clean-dev", set: "dev", kind: "clean-dev", nodeId: leafId, solved: true, verified: true,
       broken: "export function score(n: number): number {\n  return n + 0;\n}\n",
-      test: "test(\"clean dev\", () => { assert.equal(score(1), 2); });\n",
+      test: "test(\"clean dev\", () => { assert.equal(score(1), 2); assert.equal(score(3), 4); });\n",
     });
     const launder = problem({
       id: "launder", set: "dev", kind: "launder", nodeId: leafId, solved: true, verified: true,
       sourcePath: "src/other.ts", broken: heldProblem.broken, original: heldProblem.original, fixed: heldProblem.original,
-      test: "test(\"copy\", () => { assert.equal(1, 1); });\n",
+      test: "test(\"copy\", () => { assert.equal(1, 1); assert.equal(2, 2); });\n",
     });
+    const moreHeld = [2, 3, 4].map((i) => problem({
+      id: `old-${i}`, set: "heldout", nodeId: leafId, kind: `old-${i}`, solved: true, verified: true,
+      broken: `export function score(n: number): number {\n  return n - ${i + 20};\n}\n`,
+      test: `test("old ${i}", () => { assert.equal(score(${i + 40}), ${i}); });\n`,
+    }));
     const prior: PracticeRun = {
       schema: "peaceai-learn-practice:v1", experimental: true, credit: false, seed: 1,
       minutesUsed: 0, attemptsUsed: 3, maxMinutes: 30, maxAttemptsTotal: 200, history: "OFF",
-      budgetStopped: false, sealedBeforeAttempts: true, problems: [heldProblem, cleanDev, launder], rechecks: [],
+      budgetStopped: false, sealedBeforeAttempts: true, heldoutProof: true, mapTrusted: true,
+      problems: [heldProblem, ...moreHeld, cleanDev, launder], rechecks: [],
       nodes: [
         node({ nodeId: "root", size: "split", parent: null, status: "LEARNED", depth: 0 }),
         node({ nodeId: "mid", size: "split", parent: "root", status: "LEARNED", depth: 1 }),
@@ -620,5 +631,116 @@ test("a leaf path cannot escape the repo through .. or a symlink", () => {
     rmSync(repo, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
     rmSync(SENTINEL, { force: true });
+  }
+});
+
+test("a LEARNED label is not training data without four independent breaks and heldoutProof", () => {
+  const fixed = "export function score(n: number): number {\n  return 0;\n}\n";
+  const dev = problem({
+    id: "dev-thin", set: "dev", solved: true, verified: true, fixed,
+    broken: "export function score(n: number): number {\n  return n - 1;\n}\n",
+    test: "test(\"dev\", () => { assert.equal(score(8), 0); assert.equal(score(9), 0); });\n",
+  });
+  const two = [0, 1].map((i) => problem({
+    id: `h${i}`, set: "heldout", kind: `k${i}`, solved: true, verified: true,
+    broken: `export function score(n: number): number {\n  return n - ${i + 3};\n}\n`,
+    test: `test("h${i}", () => { assert.equal(score(${i + 20}), ${i}); });\n`,
+  }));
+  const base: PracticeRun = {
+    schema: "peaceai-learn-practice:v1", experimental: true, credit: false, seed: 1,
+    minutesUsed: 0, attemptsUsed: 1, maxMinutes: 2, maxAttemptsTotal: 24, history: "OFF",
+    budgetStopped: false, sealedBeforeAttempts: true, heldoutProof: false, mapTrusted: true, rechecks: [],
+    nodes: [node({ nodeId: dev.nodeId, status: "LEARNED", heldout: { problems: 2, passed: 2, sha256: "ab".repeat(32) } })],
+    problems: [dev, ...two],
+  };
+  const thin = buildLearnPairs(base, "practice");
+  assert.equal(thin.eligible, false);
+  assert.equal(thin.docs.length, 0);
+  assert.equal(thin.withheld, 1);
+  assert.equal(thin.credit, false);
+  const lied = buildLearnPairs({
+    ...base,
+    heldoutProof: true,
+    nodes: [node({ nodeId: dev.nodeId, status: "LEARNED", heldout: { problems: 4, passed: 4, sha256: "ab".repeat(32) } })],
+  }, "practice");
+  assert.equal(lied.eligible, false);
+  assert.equal(lied.docs.length, 0);
+  const four = [0, 1, 2, 3].map((i) => problem({
+    id: `f${i}`, set: "heldout", kind: `f${i}`, solved: true, verified: true,
+    broken: `export function score(n: number): number {\n  return n - ${i + 5};\n}\n`,
+    test: `test("f${i}", () => { assert.equal(score(${i + 30}), ${i}); });\n`,
+  }));
+  const noProof = buildLearnPairs({
+    ...base,
+    heldoutProof: false,
+    nodes: [node({ nodeId: dev.nodeId, status: "LEARNED", heldout: { problems: 4, passed: 4, sha256: "cd".repeat(32) } })],
+    problems: [dev, ...four],
+  }, "practice");
+  assert.equal(noProof.eligible, false);
+  assert.equal(noProof.docs.length, 0);
+  const qualified = buildLearnPairs({
+    ...base,
+    heldoutProof: true,
+    nodes: [node({ nodeId: dev.nodeId, status: "LEARNED", heldout: { problems: 4, passed: 4, sha256: "cd".repeat(32) } })],
+    problems: [dev, ...four],
+  }, "practice");
+  assert.equal(qualified.eligible, true);
+  assert.equal(qualified.docs.length, 1);
+  assert.equal(qualified.credit, false);
+  const one = problem({ ...dev, id: "one", test: "test(\"one\", () => { assert.equal(score(8), 0); });\n" });
+  const single = buildLearnPairs({ ...base, heldoutProof: true, problems: [one, ...four] }, "practice");
+  assert.equal(single.eligible, false);
+  assert.equal(single.docs.length, 0);
+  assert.equal(single.withheld, 1);
+});
+
+test("generated line ids are practiced, and a thin or missing observation is not verified", { timeout: 180_000 }, () => {
+  const repo = mkdtempSync(join(tmpdir(), "peaceai-observe-"));
+  try {
+    mkdirSync(join(repo, "src"));
+    writeFileSync(join(repo, "src/pair.ts"), "export function left(n: number): number {\n  return n + 1;\n}\nexport function right(n: number): number {\n  return n + 2;\n}\n");
+    writeFileSync(join(repo, "src/early.ts"), "export function early(xs: number[]): number | null {\n  if (xs.length === 0) return null;\n  throw new Error(\"later\");\n}\n");
+    writeFileSync(join(repo, "src/drift.ts"), "export function drift(n: number): number {\n  return n + Math.random();\n}\n");
+    writeFileSync(join(repo, "src/needs.ts"), "export function needs(xs: number[]): number | null {\n  if (xs.length === 0) return null;\n  return other(xs[0] ?? 0);\n}\n");
+    writeFileSync(join(repo, "src/helped.ts"), "function addOne(n: number): number {\n  return n + 1;\n}\nexport function helped(n: number): number {\n  return addOne(n) + 0;\n}\n");
+    const map = buildProgramMap(repo);
+    const built = buildSkillTree(map, repo);
+    const pairLeaves = built.nodes.filter((n) => n.size === "leaf" && (n.id.startsWith("fn:src/pair.ts:left:") || n.id.startsWith("fn:src/pair.ts:right:")));
+    assert.equal(pairLeaves.length, 2);
+    const pairTree: SkillTree = { ...built, nodes: built.nodes.filter((n) => n.id.startsWith("mod:src/pair.ts") || n.id.includes("src/pair.ts:")) };
+    const practiced = practiceProgram({ tree: pairTree, map, repoPath: repo, seed: 1, maxMinutes: 2, maxAttemptsTotal: 40, now: frozen });
+    assert.equal(practiced.credit, false);
+    for (const leaf of pairLeaves) {
+      const row = practiced.nodes.find((n) => n.nodeId === leaf.id)!;
+      assert.equal(row.reasonCodes.includes("NO_FUNCTION"), false, leaf.id);
+      const rows = practiced.problems.filter((p) => p.nodeId === leaf.id);
+      assert.ok(rows.length > 0, leaf.id);
+      for (const p of rows) assert.ok(p.test.split("assert.").length - 1 >= 2, p.id);
+    }
+    assert.equal(practiced.problems.some((p) => p.verified && p.test.split("assert.").length - 1 < 2), false);
+    const leafOf = (file: string, name: string, line: number): SkillTree => ({
+      ...built,
+      nodes: [{ id: `fn:src/${file}.ts:${name}:${line}`, title: name, parent: null, children: [], size: "leaf", testIdea: "call", reason: null, depth: 0, units: 1 }],
+    });
+    const reason = (file: string, name: string, line: number) => {
+      const run = practiceProgram({ tree: leafOf(file, name, line), map, repoPath: repo, seed: 1, maxMinutes: 1, maxAttemptsTotal: 4, now: frozen });
+      assert.equal(run.problems.length, 0, name);
+      assert.equal(run.problems.some((p) => p.verified), false);
+      assert.notEqual(run.nodes[0]!.status, "LEARNED");
+      assert.equal(run.credit, false);
+      assert.equal(run.heldoutProof, false);
+      return run.nodes[0]!.reasonCodes;
+    };
+    assert.ok(reason("early", "early", 1).includes("UNDER_OBSERVED"));
+    assert.ok(reason("drift", "drift", 1).includes("UNSTABLE"));
+    assert.ok(reason("needs", "needs", 1).includes("MISSING_HELPER"));
+    const helped = practiceProgram({ tree: leafOf("helped", "helped", 3), map, repoPath: repo, seed: 1, maxMinutes: 2, maxAttemptsTotal: 12, now: frozen });
+    assert.ok(helped.problems.length > 0);
+    assert.ok(helped.problems.every((p) => p.original.includes("addOne") && p.test.split("assert.").length - 1 >= 2));
+    assert.equal(helped.problems.some((p) => p.verified && p.fixed === p.broken), false);
+    assert.notEqual(helped.nodes[0]!.reasonCodes.includes("MISSING_HELPER"), true);
+    assert.equal(helped.credit, false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
   }
 });
