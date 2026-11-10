@@ -6,6 +6,7 @@
 // --out must be outside this repo.
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -167,6 +168,28 @@ function targetOf(changed: string): CommitRef | { reason: string } {
   return { repo: "PeaceAI-Workspace", sha };
 }
 
+function gradeCandidate(dir: string, outDir: string): { status: "pass" | "fail"; reason: string } | null {
+  const summary = join(outDir, "summary.json");
+  if (!existsSync(summary)) return null;
+  let count = 0;
+  try { count = ((JSON.parse(readFileSync(summary, "utf8")) as { candidates?: unknown[] }).candidates ?? []).length; } catch { return null; }
+  if (count < 1) return null;
+  const diffPath = join(outDir, "candidates", "candidate-1.diff");
+  if (!existsSync(diffPath)) return { status: "fail", reason: "TEST_NOT_RUN" };
+  const diff = readFileSync(diffPath, "utf8");
+  const applied = spawnSync("git", ["-C", dir, "apply", "--whitespace=nowarn"], { input: diff, encoding: "utf8" });
+  if (applied.status !== 0) return { status: "fail", reason: "TEST_APPLY_FAILED" };
+  const file = /^\+\+\+ b\/(.+\.test\.ts)$/m.exec(diff)?.[1];
+  const name = /^\+test\("((?:\\.|[^"\\])*)"\)/m.exec(diff)?.[1];
+  if (!file || !name) return { status: "fail", reason: "TEST_NOT_RUN" };
+  const tsx = createRequire(import.meta.url).resolve("tsx");
+  const pattern = `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
+  const ran = spawnSync(process.execPath, ["--import", tsx, "--test", "--test-name-pattern", pattern, file], { cwd: dir, encoding: "utf8", timeout: 20_000 });
+  const out = `${ran.stdout ?? ""}\n${ran.stderr ?? ""}`;
+  if (ran.status === 0 && /^# pass [1-9]/m.test(out) && !/^# fail [1-9]/m.test(out)) return { status: "pass", reason: "TEST_PASSED" };
+  return { status: "fail", reason: "TEST_FAILED" };
+}
+
 function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, seq: number): { status: "pass" | "fail" | "unmeasured"; reason: string } {
   const src = ref.repo === "PeaceSTOCKS" ? (process.env.PEACESTOCKS_CLONE?.trim() || "") : tooling;
   if (!src || !existsSync(src)) return { status: "unmeasured", reason: `NO_CLONE: ${ref.repo}` };
@@ -186,6 +209,8 @@ function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, 
       try { candidates = ((JSON.parse(readFileSync(summary, "utf8")) as { candidates?: unknown[] }).candidates ?? []).length; } catch { candidates = null; }
     }
     const timedOut = (r.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT";
+    const graded = gradeCandidate(dir, outDir);
+    if (graded) return graded;
     return classifyJobOutput({ timedOut, code: r.status, candidates, stdout: `${r.stdout ?? ""}\n${r.stderr ?? ""}` });
   } finally {
     spawnSync("git", ["-C", src, "worktree", "remove", "--force", dir], { stdio: "ignore" });

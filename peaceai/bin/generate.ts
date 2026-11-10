@@ -298,7 +298,9 @@ for (const a of planSteps ? [] : admissions) {
   // M80: TEST_CASE_EXISTING creates exactly ONE new test file (never an existing path) and nothing else: no source
   // edit, no extra file, no fix commit. Job B grades it fix-free (passes today, fails with the function stubbed).
   const existingTest = a.spec.kind === "TEST_EXISTING";
-  if (existingTest && !(edit.create === true && edit.selfGrade === true && edit.extra === undefined && edit.fixSha === undefined && !baseFiles.has(edit.path) && scope.isSource(edit.path) && scope.isTest(edit.path))) continue;
+  const appendedCase = existingTest && edit.selfGrade === true && !edit.create && edit.extra === undefined && edit.fixSha === undefined && baseFiles.has(edit.path) && scope.isTest(edit.path);
+  const newCase = edit.create === true && edit.selfGrade === true && edit.extra === undefined && edit.fixSha === undefined && !baseFiles.has(edit.path) && scope.isSource(edit.path) && scope.isTest(edit.path);
+  if (existingTest && !appendedCase && !newCase) continue;
   if (edit.create && !newModule && !existingTest && (baseFiles.has(edit.path) || !edit.fixSha || !/^[0-9a-f]{40}$/.test(edit.fixSha))) continue;
   // M13: a guard rule edits one existing source file and creates new test files only; it is graded against itself.
   // Live proofs #306/#307: WORKFLOW_JOB (job block, no extra) and TSCONFIG_SCRIPT (package.json + one new root
@@ -324,7 +326,7 @@ for (const a of planSteps ? [] : admissions) {
   const key = createHash("sha256").update(diff).digest("hex");
   if (seen.has(key)) continue;
   seen.add(key);
-  if (checkCandidateScope(parseDiff(diff), baseFiles, scope, { testAppend: !!edit.fixSha }).length > 0) {
+  if (checkCandidateScope(parseDiff(diff), baseFiles, scope, { testAppend: !!edit.fixSha || appendedCase }).length > 0) {
     scopeRejected += 1;
     continue;
   }

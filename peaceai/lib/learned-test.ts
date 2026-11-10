@@ -235,6 +235,7 @@ export function buildTestEdit(
   task: TestTask,
   files: readonly { path: string; content: string }[],
   isTest: (p: string) => boolean = (p) => /\.test\.ts$/.test(p),
+  testPath?: string,
 ): TestEdit | null {
   const allowed = Array.isArray(params.checks) ? params.checks : [];
   if (params.framework !== "node:test-default" || params.assert !== "node:assert/strict-default" || params.matcher !== "regex") return null;
@@ -273,7 +274,7 @@ export function buildTestEdit(
     } else if (c.kind === "throws") body.push(`  assert.throws(() => ${expr}, /${c.code}/);`);
     else body.push(`  await assert.rejects(async () => ${expr}, /${c.code}/);`);
   }
-  if (params.placement === "append") return appendTestEdit(task, target.path, [...roots], body, files, maxLines, isTest);
+  if (params.placement === "append") return appendTestEdit(task, target.path, [...roots], body, files, maxLines, isTest, testPath);
   const dir = target.path.includes("/") ? target.path.slice(0, target.path.lastIndexOf("/") + 1) : "";
   const stem = target.path.slice(dir.length).replace(/\.ts$/, "");
   const path = `${dir}${stem}.${slug(task.title ?? task.symbol)}-${task.fixSha.slice(0, 7)}.test.ts`;
@@ -299,10 +300,10 @@ export function buildTestEdit(
  * the file must already import `assert` (node:assert/strict, default) and `test` (node:test, default) and every
  * name the checks start from, from the target module; otherwise no candidate. The case is added at the end.
  */
-function appendTestEdit(task: TestTask, targetPath: string, roots: string[], body: string[], files: readonly { path: string; content: string }[], maxLines: number, isTest: (p: string) => boolean): TestEdit | null {
+function appendTestEdit(task: TestTask, targetPath: string, roots: string[], body: string[], files: readonly { path: string; content: string }[], maxLines: number, isTest: (p: string) => boolean, chosen?: string): TestEdit | null {
   const dir = targetPath.includes("/") ? targetPath.slice(0, targetPath.lastIndexOf("/") + 1) : "";
   const stem = targetPath.slice(dir.length).replace(/\.ts$/, "");
-  const path = `${dir}${stem}.test.ts`;
+  const path = chosen ?? `${dir}${stem}.test.ts`;
   const file = files.find((f) => f.path === path);
   if (!file || !isTest(file.path)) return null;
   const sf = ts.createSourceFile(path, file.content, ts.ScriptTarget.Latest, true);
