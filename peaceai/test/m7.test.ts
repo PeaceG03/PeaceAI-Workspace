@@ -17,6 +17,7 @@ import {
   RULES,
   sortErrors,
   uncheckedCatalog,
+  walkResult,
   type RepairContext,
   type RepairError,
 } from "../lib/repair.ts";
@@ -294,9 +295,9 @@ test("ALIGN_CALL_RESULT: one catalog edit meets every literal call, and the base
   assert.match(offFix.content, /return n \+ 1;/);
   const plain = "export function score(n: number): number {\n  return n - 1;\n}\n";
   assert.equal(uncheckedCatalog(plain, "score", testText).length, 0);
-  const opaque = "export function tag(s: string): string {\n  const parts = s.replace(/[.]/g, \"-\").split(\"-\");\n  if (parts.length !== 0) return \"\";\n  return parts.join(\":\");\n}\n";
-  const opaqueTest = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { tag } from "./tag";\ntest("tag holds", () => {\n  assert.equal(tag("a"), "a");\n  assert.equal(tag("a.b"), "a:b");\n});\n';
-  assert.ok(uncheckedCatalog(opaque, "tag", opaqueTest).length > 1);
+  const judged = "export function tag(s: string): string {\n  const parts = s.replace(/[.]/g, \"-\").split(\"-\");\n  if (parts.length !== 0) return \"\";\n  return parts.join(\":\");\n}\n";
+  const judgedTest = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { tag } from "./tag";\ntest("tag holds", () => {\n  assert.equal(tag("a"), "a");\n  assert.equal(tag("a.b"), "a:b");\n});\n';
+  assert.equal(uncheckedCatalog(judged, "tag", judgedTest).length, 0);
 });
 
 test("ALIGN_CALL_RESULT refuses when a second satisfying catalog edit sits past the first 32", () => {
@@ -319,6 +320,154 @@ test("ALIGN_CALL_RESULT refuses when a second satisfying catalog edit sits past 
   const ctx = ctxOf({ "src/score.ts": broken, "src/score.test.ts": testText });
   const err: RepairError = { source: "test", kind: "assertion", code: "ASSERT_equal", file: "src/score.test.ts", line: 5, col: 3, message: "score holds", expected: "1", actual: "-1" };
   assert.equal(repairFor(err, ctx), null);
+});
+
+test("the walker judges allowlisted string and array methods, and refuses anything else", () => {
+  const calls = (name: string, rows: readonly [string, string][]) =>
+    `import test from "node:test";\nimport assert from "node:assert/strict";\nimport { ${name} } from "./leaf";\ntest("${name} holds", () => {\n${rows.map(([input, expected]) => `  assert.equal(${name}(${input}), ${expected});`).join("\n")}\n});\n`;
+  const ask = (name: string, source: string, rows: readonly [string, string][]) => {
+    const testText = calls(name, rows);
+    const ctx = ctxOf({ "src/leaf.ts": source, "src/leaf.test.ts": testText });
+    const err: RepairError = { source: "test", kind: "assertion", code: "ASSERT_equal", file: "src/leaf.test.ts", line: 5, col: 3, message: `${name} holds`, expected: "1", actual: "0" };
+    return { fix: repairFor(err, ctx), unchecked: uncheckedCatalog(source, name, testText) };
+  };
+  const total = ask(
+    "total",
+    "export function total(xs: number[]): number {\n  return xs.map((n) => n - 1).filter((n) => n > 0).reduce((a, b) => a + b, 0);\n}\n",
+    [["[0]", "1"], ["[1, 2]", "5"]],
+  );
+  assert.equal(total.fix, null);
+  assert.ok(total.unchecked.some((s) => s.includes("xs === undefined")));
+  assert.deepEqual(walkResult("export function total(xs: number[]): number {\n  return xs.map((n) => n - 1).filter((n) => n > 0).reduce((a, b) => a + b, 0);\n}\n", "total", [[1, 2]]), { ok: true, value: 1 });
+  const slug = ask(
+    "slug",
+    "export function slug(s: string): number {\n  return s.replace(/[.]/g, \"\").toLowerCase().split(\"\").join(\"-\").length - 1;\n}\n",
+    [["\"A.B\"", "3"], ["\"A\"", "1"]],
+  );
+  assert.equal(slug.fix?.rule, "ALIGN_CALL_RESULT");
+  assert.match(slug.fix?.content ?? "", /length - 0/);
+  assert.equal(slug.unchecked.length, 0);
+  const both = ask(
+    "score",
+    "export function score(n: number): number {\n  const parts = \"ab\".split(\"\");\n  if (false) return n + 1;\n  return n - 1;\n}\n",
+    [["0", "1"], ["2", "3"]],
+  );
+  assert.equal(both.fix, null);
+  assert.equal(both.unchecked.length, 0);
+  const opaque = ask("pad", "export function pad(s: string): string {\n  return s.padStart(2, \"0\");\n}\n", [["\"a\"", "\"0a\""], ["\"ab\"", "\"ab\""]]);
+  assert.equal(opaque.fix, null);
+  assert.ok(opaque.unchecked.length > 0);
+});
+
+test("the walker matches JavaScript for every allowlisted builtin, including defaults and callback arity", () => {
+  const real = (source: string) => new Function(`${source.replace(/^export /m, "")}\nreturn f;`)() as (...args: unknown[]) => unknown;
+  const cases: { source: string; args: unknown[] }[] = [
+    { source: "export function f(s){return s.toLowerCase()}", args: ["Ab"] },
+    { source: "export function f(s){return s.toLowerCase(1)}", args: ["Ab"] },
+    { source: "export function f(s){return s.toUpperCase()}", args: ["Ab"] },
+    { source: "export function f(s){return s.trim()}", args: [" Ab "] },
+    { source: "export function f(s){return s.charAt()}", args: ["ab"] },
+    { source: "export function f(s){return s.charAt(1)}", args: ["ab"] },
+    { source: "export function f(s){return s.slice()}", args: ["abcd"] },
+    { source: "export function f(s){return s.slice(1)}", args: ["abcd"] },
+    { source: "export function f(s){return s.slice(1, 3)}", args: ["abcd"] },
+    { source: "export function f(s){return s.substring()}", args: ["abcd"] },
+    { source: "export function f(s){return s.substring(1, 3)}", args: ["abcd"] },
+    { source: "export function f(s){return s.split()}", args: ["ab"] },
+    { source: "export function f(s){return s.split(\"\")}", args: ["ab"] },
+    { source: "export function f(s){return s.split(\"-\")}", args: ["a-b"] },
+    { source: "export function f(s){return s.split(\"-\", 2)}", args: ["a-b-c"] },
+    { source: "export function f(s){return s.replace(\"a\", \"x\")}", args: ["ab"] },
+    { source: "export function f(s){return s.replace(/a/g, \"x\")}", args: ["aba"] },
+    { source: "export function f(s){return s.replace(\"a\", (m, off, str) => m + off + str.length)}", args: ["ab"] },
+    { source: "export function f(s){return s.replace(/(a)(b)/, (m, p1, p2, off, str) => p1 + p2 + \":\" + off)}", args: ["ab"] },
+    { source: "export function f(s){return s.replace(/(?<x>a)/, (m, p1, off, str, g) => g.x)}", args: ["ab"] },
+    { source: "export function f(s){return s.replace(/(a)|(b)/, (m, p1, p2) => \"\" + p2)}", args: ["a"] },
+    { source: "export function f(xs){return xs.map((n, i, arr) => n + i + arr.length)}", args: [[1, 2]] },
+    { source: "export function f(xs){return xs.map((n, i, arr) => arr ? n - 1 : n + 0)}", args: [[1, 2]] },
+    { source: "export function f(xs){return xs.map((n = 7) => n)}", args: [[undefined]] },
+    { source: "export function f(xs){return xs.map((n = 7) => n)}", args: [[null]] },
+    { source: "export function f(xs){return xs.filter((n, i, arr) => i > 0 && arr.length > 0)}", args: [[1, 2, 3]] },
+    { source: "export function f(xs){return xs.reduce((a, v, i, arr) => a + v + i + arr.length, 0)}", args: [[1, 2, 3]] },
+    { source: "export function f(xs){return xs.join()}", args: [["a", "b"]] },
+    { source: "export function f(xs){return xs.join(\"-\")}", args: [["a", "b"]] },
+    { source: "export function f(xs){return xs.join(\"\")}", args: [["a", "b"]] },
+    { source: "export function f(){return undefined === null}", args: [] },
+    { source: "export function f(){return undefined === undefined}", args: [] },
+    { source: "export function f(){return undefined == null}", args: [] },
+    { source: "export function f(){return (undefined ?? \"x\") || \"y\"}", args: [] },
+    { source: "export function f(){return typeof undefined}", args: [] },
+    { source: "export function f(){return typeof null}", args: [] },
+    { source: "export function f(){return -0 === 0}", args: [] },
+  ];
+  for (const c of cases) {
+    const walked = walkResult(c.source, "f", c.args);
+    const oracle = real(c.source)(...c.args);
+    assert.equal(walked.ok, true, c.source);
+    assert.deepEqual(walked.ok ? walked.value : null, oracle, c.source);
+  }
+  assert.equal(walkResult("export function f(xs){return xs.map((...n) => n)}", "f", [[1]]).ok, false);
+  assert.equal(walkResult("export function f(xs){return xs.map(function (n) { return arguments[1]; })}", "f", [[1]]).ok, false);
+  assert.equal(walkResult("export function f(){return 0/0}", "f", []).ok, false);
+  assert.equal(walkResult("export function f(){return Object.is(-0, 0)}", "f", []).ok, false);
+});
+
+test("generated differential: an accepted result matches JavaScript, and uncovered shapes are refused", () => {
+  const real = (source: string) => new Function(`${source.replace(/^export /m, "")}\nreturn f;`)() as (...args: unknown[]) => unknown;
+  const same = (a: unknown, b: unknown): boolean => {
+    if (typeof a === "number" && typeof b === "number") return Object.is(a, b);
+    if (Array.isArray(a) || Array.isArray(b)) {
+      if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) if ((i in a) !== (i in b) || ((i in a) && !same(a[i], b[i]))) return false;
+      return true;
+    }
+    return Object.is(a, b);
+  };
+  const agree = (source: string, args: unknown[]) => {
+    const walked = walkResult(source, "f", args);
+    if (!walked.ok) return;
+    let value: unknown;
+    try { value = real(source)(...args); } catch (e) { assert.fail(`walker accepted ${source} ${JSON.stringify(args)} but JavaScript threw ${e}`); }
+    assert.ok(same(walked.value, value), `${source} walker ${JSON.stringify(walked.value)} js ${JSON.stringify(value)}`);
+  };
+  const lattice: unknown[] = [undefined, null, NaN, -0, 0, 1, "", "a", true, false, [], [1], [1, 2], [[1]], [1, , 2]];
+  const bin = ["===", "==", "!=", "!==", "+", "-", "*", "/", "%", "&&", "||", "??", "<", "<=", ">", ">="];
+  for (const op of bin) for (const a of lattice) for (const b of lattice) agree(`export function f(a, b){ return a ${op} b }`, [a, b]);
+  for (const op of ["!", "typeof", "+"]) for (const a of lattice) agree(`export function f(a){ return ${op} a }`, [a]);
+  for (const a of lattice) {
+    agree("export function f(a){ return a?.length }", [a]);
+    agree("export function f(a){ return a?.[0] }", [a]);
+    agree("export function f(a){ return Object.is(a, a) }", [a]);
+    agree("export function f(a){ switch (a) { default: return 1 } }", [a]);
+  }
+  const methods = ["toLowerCase", "toUpperCase", "trim", "charAt", "slice", "substring", "split", "join"];
+  for (const name of methods) for (const a of lattice) agree(`export function f(a){ return a.${name}() }`, [a]);
+  for (const a of lattice) {
+    agree("export function f(a){ return Array.isArray(a) ? a.map((n) => n) : 0 }", [a]);
+    agree("export function f(a){ return Array.isArray(a) ? a.filter((n) => n) : 0 }", [a]);
+    agree("export function f(a){ return Array.isArray(a) ? a.reduce((x, y) => x + y, 0) : 0 }", [a]);
+  }
+  assert.equal(walkResult("export function f(a){ return a === a }", "f", [[[1]]]).ok, false);
+  assert.equal(walkResult("export function f(a){ return a?.length }", "f", [null]).ok, false);
+  assert.equal(walkResult("export function f(a){ return a.map((n) => n) }", "f", [[1, , 2]]).ok, false);
+});
+
+test("a map callback that reads the array is repaired on the live branch, and join() keeps the comma", () => {
+  const calls = (name: string, rows: readonly [string, string][]) =>
+    `import test from "node:test";\nimport assert from "node:assert/strict";\nimport { ${name} } from "./leaf";\ntest("${name} holds", () => {\n${rows.map(([input, expected]) => `  assert.equal(${name}(${input}), ${expected});`).join("\n")}\n});\n`;
+  const source = "export function total(xs: number[]): number {\n  return xs.map((n, i, arr) => arr ? n - 1 : n + 0).reduce((a, b) => a + b, 0);\n}\n";
+  const rows: [string, string][] = [["[1]", "2"], ["[1, 2]", "5"]];
+  const testText = calls("total", rows);
+  const err: RepairError = { source: "test", kind: "assertion", code: "ASSERT_equal", file: "src/leaf.test.ts", line: 5, col: 3, message: "total holds", expected: "2", actual: "0" };
+  assert.deepEqual(walkResult(source, "total", [[1]]), { ok: true, value: 0 });
+  assert.deepEqual(walkResult(source, "total", [[1, 2]]), { ok: true, value: 1 });
+  const fix = repairFor(err, ctxOf({ "src/leaf.ts": source, "src/leaf.test.ts": testText }));
+  assert.equal(fix, null);
+  assert.ok(uncheckedCatalog(source, "total", testText).some((s) => s.includes("arr !== undefined")));
+  const joined = walkResult("export function f(xs){return xs.join()}", "f", [["a", "b"]]);
+  const empty = walkResult("export function f(xs){return xs.join(\"\")}", "f", [["a", "b"]]);
+  assert.deepEqual(joined.ok ? joined.value : null, "a,b");
+  assert.deepEqual(empty.ok ? empty.value : null, "ab");
 });
 
 test("FIX_PROPERTY_TYPO without a compiler suggestion: the single closest member of the indexed type; ties refuse", () => {
