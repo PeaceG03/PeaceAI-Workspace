@@ -266,7 +266,29 @@ test("planRepairs: existing tests are never edited; at most one edit per file pe
   ];
   const edits = planRepairs(errors, ctx);
   assert.deepEqual(edits.map((e) => [e.rule, e.path, e.line]), [["ADD_MISSING_REQUIRED_PROPERTY", "src/theme.ts", 5]]);
-  assert.equal(RULES.length, 8);
+  assert.equal(RULES.length, 9);
+});
+
+test("ALIGN_CALL_RESULT: one catalog edit meets every literal call, and the base file is not the answer", () => {
+  const broken = "export function score(n: number): number {\n  return n - 1;\n}\n";
+  const testText = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { score } from "./score";\ntest("score holds", () => {\n  assert.equal(score(0), 1);\n  assert.equal(score(2), 3);\n});\n';
+  const files = { "src/score.ts": broken, "src/score.test.ts": testText };
+  const decoy = "export function score(n: number): number {\n  return 999;\n}\n";
+  const ctx = ctxOf(files, { "src/score.ts": decoy, "src/score.test.ts": testText });
+  const err: RepairError = { source: "test", kind: "assertion", code: "ASSERT_equal", file: "src/score.test.ts", line: 5, col: 3, message: "score holds", expected: "1", actual: "-1" };
+  const fix = repairFor(err, ctx)!;
+  assert.equal(fix.rule, "ALIGN_CALL_RESULT");
+  assert.match(fix.content, /return n \+ 1;/);
+  assert.equal(fix.content.includes("999"), false);
+  assert.equal(fix.content === decoy, false);
+  const thin = { ...files, "src/score.test.ts": 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { score } from "./score";\ntest("score holds", () => {\n  assert.equal(score(0), 1);\n});\n' };
+  assert.equal(repairFor(err, ctxOf(thin)), null);
+  const unreachable = { ...files, "src/score.ts": "export function score(n: number): number {\n  return n;\n}\n" };
+  assert.equal(repairFor({ ...err, actual: "0" }, ctxOf(unreachable)), null);
+  const off = { ...files, "src/score.ts": "export function score(n: number): number {\n  return n + 2;\n}\n" };
+  const offFix = repairFor({ ...err, actual: "2" }, ctxOf(off, { "src/score.ts": decoy }))!;
+  assert.equal(offFix.rule, "ALIGN_CALL_RESULT");
+  assert.match(offFix.content, /return n \+ 1;/);
 });
 
 test("FIX_PROPERTY_TYPO without a compiler suggestion: the single closest member of the indexed type; ties refuse", () => {

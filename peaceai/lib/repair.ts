@@ -6,6 +6,7 @@
 // re-validated against the candidate scope, and existing (base) tests are never edited.
 import { posix } from "node:path";
 import ts from "typescript";
+import { mutationsIn, type Site } from "./editpropose.ts";
 import { definitions, type RepoIndex } from "./symbols.ts";
 
 export type ErrorKind =
@@ -212,7 +213,8 @@ export type RuleId =
   | "ADD_MISSING_REQUIRED_PROPERTY"
   | "ADD_FIELD_TO_TYPE"
   | "ADD_UNION_LITERAL"
-  | "ALIGN_ADDED_CONSTANT";
+  | "ALIGN_ADDED_CONSTANT"
+  | "ALIGN_CALL_RESULT";
 
 export const RULES: readonly RuleId[] = [
   "ADD_MISSING_IMPORT",
@@ -223,6 +225,7 @@ export const RULES: readonly RuleId[] = [
   "ADD_FIELD_TO_TYPE",
   "ADD_UNION_LITERAL",
   "ALIGN_ADDED_CONSTANT",
+  "ALIGN_CALL_RESULT",
 ];
 
 export interface RepairContext {
@@ -583,6 +586,270 @@ function ruleAlignAddedConstant(e: RepairError, ctx: RepairContext): RepairEdit 
   return null;
 }
 
+type Val = number | string | boolean | null | Val[];
+const BAD = Symbol("bad");
+type Res = Val | typeof BAD;
+
+function sameVal(a: Val, b: Val): boolean {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((x, i) => sameVal(x, b[i]!));
+  }
+  return Object.is(a, b);
+}
+
+function litNode(n: ts.Node): Val | typeof BAD {
+  if (ts.isNumericLiteral(n)) return Number(n.text);
+  if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) return n.text;
+  if (n.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (n.kind === ts.SyntaxKind.FalseKeyword) return false;
+  if (n.kind === ts.SyntaxKind.NullKeyword) return null;
+  if (ts.isPrefixUnaryExpression(n) && n.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(n.operand)) return -Number(n.operand.text);
+  if (!ts.isArrayLiteralExpression(n)) return BAD;
+  const xs: Val[] = [];
+  for (const el of n.elements) {
+    if (ts.isSpreadElement(el)) return BAD;
+    const v = litNode(el);
+    if (v === BAD) return BAD;
+    xs.push(v);
+  }
+  return xs;
+}
+
+/** Pure walk of a tiny expression. Unsupported syntax is BAD. This does not call the host. */
+function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: number): Res {
+  if (depth > 8) return BAD;
+  if (ts.isParenthesizedExpression(n) || ts.isAsExpression(n) || ts.isTypeAssertionExpression(n) || ts.isNonNullExpression(n) || ts.isSatisfiesExpression(n)) return evalExpr(n.expression, env, sf, depth);
+  const lit = litNode(n);
+  if (lit !== BAD || ts.isNumericLiteral(n) || ts.isStringLiteral(n) || n.kind === ts.SyntaxKind.NullKeyword) return lit;
+  if (ts.isIdentifier(n)) return env.has(n.text) ? env.get(n.text)! : BAD;
+  if (ts.isPrefixUnaryExpression(n)) {
+    const v = evalExpr(n.operand, env, sf, depth);
+    if (v === BAD) return BAD;
+    if (n.operator === ts.SyntaxKind.ExclamationToken) return !v;
+    if (n.operator === ts.SyntaxKind.MinusToken && typeof v === "number") return -v;
+    if (n.operator === ts.SyntaxKind.PlusToken && typeof v === "number") return v;
+    return BAD;
+  }
+  if (ts.isBinaryExpression(n)) {
+    const l = evalExpr(n.left, env, sf, depth);
+    if (l === BAD) return BAD;
+    const k = n.operatorToken.kind;
+    if (k === ts.SyntaxKind.AmpersandAmpersandToken) return l ? evalExpr(n.right, env, sf, depth) : l;
+    if (k === ts.SyntaxKind.BarBarToken) return l ? l : evalExpr(n.right, env, sf, depth);
+    const r = evalExpr(n.right, env, sf, depth);
+    if (r === BAD) return BAD;
+    if (k === ts.SyntaxKind.PlusToken) {
+      if (typeof l === "string" || typeof r === "string") return String(l) + String(r);
+      if (typeof l === "number" && typeof r === "number") return l + r;
+      return BAD;
+    }
+    if (typeof l === "number" && typeof r === "number") {
+      if (k === ts.SyntaxKind.MinusToken) return l - r;
+      if (k === ts.SyntaxKind.AsteriskToken) return l * r;
+      if (k === ts.SyntaxKind.SlashToken) return r === 0 ? BAD : l / r;
+      if (k === ts.SyntaxKind.PercentToken) return r === 0 ? BAD : l % r;
+    }
+    if (k === ts.SyntaxKind.EqualsEqualsEqualsToken) return sameVal(l, r);
+    if (k === ts.SyntaxKind.ExclamationEqualsEqualsToken) return !sameVal(l, r);
+    if (typeof l === "number" && typeof r === "number") {
+      if (k === ts.SyntaxKind.LessThanToken) return l < r;
+      if (k === ts.SyntaxKind.LessThanEqualsToken) return l <= r;
+      if (k === ts.SyntaxKind.GreaterThanToken) return l > r;
+      if (k === ts.SyntaxKind.GreaterThanEqualsToken) return l >= r;
+    }
+    return BAD;
+  }
+  if (ts.isConditionalExpression(n)) {
+    const c = evalExpr(n.condition, env, sf, depth);
+    if (c === BAD) return BAD;
+    return evalExpr(c ? n.whenTrue : n.whenFalse, env, sf, depth);
+  }
+  if (ts.isPropertyAccessExpression(n) && n.name.text === "length") {
+    const v = evalExpr(n.expression, env, sf, depth);
+    if (typeof v === "string" || Array.isArray(v)) return v.length;
+    return BAD;
+  }
+  if (ts.isElementAccessExpression(n)) {
+    const v = evalExpr(n.expression, env, sf, depth);
+    const i = n.argumentExpression ? evalExpr(n.argumentExpression, env, sf, depth) : BAD;
+    if (!Array.isArray(v) || typeof i !== "number") return BAD;
+    return v[i] ?? null;
+  }
+  if (ts.isCallExpression(n)) return evalCall(n, env, sf, depth);
+  if (ts.isArrayLiteralExpression(n)) return litNode(n);
+  return BAD;
+}
+
+function evalCall(n: ts.CallExpression, env: Map<string, Val>, sf: ts.SourceFile, depth: number): Res {
+  if (ts.isPropertyAccessExpression(n.expression)) {
+    const recv = evalExpr(n.expression.expression, env, sf, depth);
+    const name = n.expression.name.text;
+    if (typeof recv === "string" && n.arguments.length === 0 && (name === "toUpperCase" || name === "toLowerCase")) {
+      return name === "toUpperCase" ? recv.toUpperCase() : recv.toLowerCase();
+    }
+    return BAD;
+  }
+  if (!ts.isIdentifier(n.expression)) return BAD;
+  const args: Val[] = [];
+  for (const a of n.arguments) {
+    const v = evalExpr(a, env, sf, depth);
+    if (v === BAD) return BAD;
+    args.push(v);
+  }
+  const fn = findFn(sf, n.expression.text);
+  if (!fn) return BAD;
+  return callFn(fn, args, sf, depth + 1);
+}
+
+type FnNode = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
+
+function findFn(sf: ts.SourceFile, name: string): FnNode | null {
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name?.text === name && st.body) return st;
+    if (!ts.isVariableStatement(st)) continue;
+    for (const d of st.declarationList.declarations) {
+      if (ts.isIdentifier(d.name) && d.name.text === name && d.initializer && (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))) return d.initializer;
+    }
+  }
+  return null;
+}
+
+function callFn(fn: FnNode, args: readonly Val[], sf: ts.SourceFile, depth: number): Res {
+  if (depth > 8) return BAD;
+  const env = new Map<string, Val>();
+  fn.parameters.forEach((p, i) => { if (ts.isIdentifier(p.name)) env.set(p.name.text, args[i] ?? null); });
+  if (!fn.body) return BAD;
+  if (!ts.isBlock(fn.body)) return evalExpr(fn.body, env, sf, depth);
+  const step = (nodes: readonly ts.Statement[]): Res | undefined => {
+    for (const st of nodes) {
+      if (ts.isReturnStatement(st)) return st.expression ? evalExpr(st.expression, env, sf, depth) : undefined;
+      if (ts.isIfStatement(st)) {
+        const c = evalExpr(st.expression, env, sf, depth);
+        if (c === BAD) return BAD;
+        const branch = c ? st.thenStatement : st.elseStatement;
+        if (!branch) continue;
+        const inner = ts.isBlock(branch) ? step(branch.statements) : step([branch as ts.Statement]);
+        if (inner !== undefined) return inner;
+        continue;
+      }
+      if (ts.isBlock(st)) {
+        const inner = step(st.statements);
+        if (inner !== undefined) return inner;
+        continue;
+      }
+      if (ts.isVariableStatement(st)) {
+        for (const d of st.declarationList.declarations) {
+          if (!ts.isIdentifier(d.name) || !d.initializer) return BAD;
+          const v = evalExpr(d.initializer, env, sf, depth);
+          if (v === BAD) return BAD;
+          env.set(d.name.text, v);
+        }
+        continue;
+      }
+      if (ts.isExpressionStatement(st)) {
+        if (evalExpr(st.expression, env, sf, depth) === BAD) return BAD;
+        continue;
+      }
+      return BAD;
+    }
+    return undefined;
+  };
+  const out = step(fn.body.statements);
+  return out === undefined ? undefined as unknown as Res : out;
+}
+
+function assertSpecs(sf: ts.SourceFile, fnName: string): { args: Val[]; expected: Val }[] | null {
+  const out: { args: Val[]; expected: Val }[] = [];
+  let bad = false;
+  const visit = (n: ts.Node) => {
+    if (bad) return;
+    if (ts.isCallExpression(n)) {
+      const callee = n.expression;
+      const method = ts.isPropertyAccessExpression(callee) ? callee.name.text : ts.isIdentifier(callee) ? callee.text : "";
+      if (ASSERT_EQ.has(method) && n.arguments.length >= 2) {
+        const [subject, exp] = n.arguments;
+        if (subject && ts.isCallExpression(subject) && ts.isIdentifier(subject.expression) && subject.expression.text === fnName) {
+          const args: Val[] = [];
+          for (const a of subject.arguments) {
+            const v = litNode(a);
+            if (v === BAD) { bad = true; return; }
+            args.push(v);
+          }
+          const expected = exp ? litNode(exp) : BAD;
+          if (expected === BAD) { bad = true; return; }
+          out.push({ args, expected });
+          return;
+        }
+      }
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return bad ? null : out;
+}
+
+/**
+ * A failing equality assertion calls a function. Try the existing single-site mutation catalog
+ * and keep an edit only when exactly one candidate makes every literal assertion hold.
+ * The base file is not read. One assertion is not enough.
+ */
+function ruleAlignCallResult(e: RepairError, ctx: RepairContext): RepairEdit | null {
+  if (e.kind !== "assertion" || !e.file || !ctx.isTest(e.file)) return null;
+  const operator = e.code.replace(/^ASSERT_/, "");
+  if (!ASSERT_EQ.has(operator)) return null;
+  const testContent = ctx.read(e.file);
+  if (testContent === null) return null;
+  const tsf = parse(e.file, testContent);
+  const pos = offsetOf(tsf, e.line, e.col);
+  if (pos === null) return null;
+  let n: ts.Node | null = nodeAt(tsf, pos);
+  while (n && !ts.isCallExpression(n)) n = n.parent ?? null;
+  if (!n || !ts.isCallExpression(n)) return null;
+  const callee = n.expression;
+  const method = ts.isPropertyAccessExpression(callee) ? callee.name.text : ts.isIdentifier(callee) ? callee.text : "";
+  const subject = n.arguments[0];
+  if (!ASSERT_EQ.has(method) || !subject || !ts.isCallExpression(subject) || !ts.isIdentifier(subject.expression)) return null;
+  const fnName = subject.expression.text;
+  let modulePath: string | null = null;
+  for (const imp of tsf.statements.filter(ts.isImportDeclaration)) {
+    const nb = imp.importClause?.namedBindings;
+    if (!nb || !ts.isNamedImports(nb) || !ts.isStringLiteral(imp.moduleSpecifier)) continue;
+    const el = nb.elements.find((x) => x.name.text === fnName && !x.propertyName);
+    if (!el) continue;
+    const spec = imp.moduleSpecifier.text;
+    if (!spec.startsWith(".")) return null;
+    const baseSpec = posix.normalize(posix.join(posix.dirname(e.file), spec)).replace(/\.(?:js|ts)$/, "");
+    modulePath = [`${baseSpec}.ts`, `${baseSpec}/index.ts`].find((p) => ctx.read(p) !== null) ?? null;
+  }
+  if (!modulePath || !editableSource(ctx, modulePath)) return null;
+  const specs = assertSpecs(tsf, fnName);
+  if (!specs || specs.length < 2) return null;
+  const content = ctx.read(modulePath)!;
+  const sf = parse(modulePath, content);
+  const fn = findFn(sf, fnName);
+  if (!fn) return null;
+  const site: Site = { path: modulePath, name: fnName, start: fn.getStart(sf), end: fn.getEnd(), tier: 0 };
+  const hits: string[] = [];
+  for (const mut of mutationsIn(sf, site, 0, new Set()).slice(0, 32)) {
+    const next = replaceRange(content, mut.start, mut.end, mut.text);
+    if (next === content) continue;
+    const parsed = parse(modulePath, next);
+    const body = findFn(parsed, fnName);
+    if (!body) continue;
+    let ok = true;
+    for (const spec of specs) {
+      const got = callFn(body, spec.args, parsed, 0);
+      if (got === BAD || got === undefined || !sameVal(got, spec.expected)) { ok = false; break; }
+    }
+    if (ok && !hits.includes(next)) hits.push(next);
+    if (hits.length > 1) return null;
+  }
+  if (hits.length !== 1) return null;
+  const lineNo = sf.getLineAndCharacterOfPosition(fn.getStart(sf)).line + 1;
+  return { rule: "ALIGN_CALL_RESULT", path: modulePath, line: lineNo, content: hits[0]! };
+}
+
 const RULE_FNS: readonly ((e: RepairError, ctx: RepairContext) => RepairEdit | null)[] = [
   ruleAddMissingImport, // exact name exists elsewhere beats a typo guess
   ruleFixNameTypo,
@@ -592,6 +859,7 @@ const RULE_FNS: readonly ((e: RepairError, ctx: RepairContext) => RepairEdit | n
   ruleAddMissingRequiredProperty,
   ruleAddUnionLiteral,
   ruleAlignAddedConstant,
+  ruleAlignCallResult,
 ];
 
 /** First applicable rule for one error, or null. */
