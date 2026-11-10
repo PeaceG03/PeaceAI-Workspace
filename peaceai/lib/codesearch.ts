@@ -407,7 +407,9 @@ export function openRepo(rootDir: string): CodeRepo {
         for (const e of info.exports) {
           if (e.from === undefined && e.declaration) continue; // filter:alias-not-decl
           if (e.from === undefined) { if (e.local === name && e.exported !== name) reexports.push(e); continue; }
-          if (e.local === "*" || !e.from) { if (e.exported === name) reexports.push(e); continue; }
+          // The public name of `export { local as exported }` is exported, not local.
+          if (e.exported === name) { reexports.push(e); continue; }
+          if (e.local === "*" || !e.from) continue;
           const target = resolveExport(e.from, e.local!);
           if (target && target.local === name && defPaths.has(target.path)) reexports.push(e);
         }

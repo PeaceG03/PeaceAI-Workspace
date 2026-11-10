@@ -155,6 +155,8 @@ export const CASES: Case[] = [
       const s = ok(r.symbol("parseCount"));
       assert.deepEqual(s.imports.map((i) => `${i.path}:${i.kind}:${i.imported}->${i.definedIn}`), ["src/use-barrel.ts:named:countFrom->src/core.ts", "test/barrel.test.ts:named:countFrom->src/core.ts", "test/core.test.ts:named:parseCount->src/core.ts"]);
       assert.deepEqual(s.reexports.map((e) => `${e.path}:${e.exported}<-${e.local}`), ["src/index.ts:countFrom<-parseCount"]);
+      const alias = ok(r.symbol("countFrom"));
+      assert.ok(alias.reexports.some((e) => e.path === "src/index.ts" && e.exported === "countFrom" && e.local === "parseCount"), "the public alias is the symbol, not only the local name");
       const extra = ok(r.symbol("extra"));
       assert.deepEqual(extra.definitions.map((d) => d.path), ["src/more.ts"]);
     },
