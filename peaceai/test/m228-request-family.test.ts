@@ -59,3 +59,8 @@ test("an ordinary sentence does not pick a family, and dev accepted answers are 
   assert.equal(dev.wrong, 0);
   assert.ok(dev.correct > 0);
 });
+
+test("held-out is scored only after the cues are frozen", () => {
+  const held = scoreFamilies(trainRequestModel(rows), rows, true);
+  assert.deepEqual(held, { rows: 39, correct: 18, wrong: 0, refused: 21 });
+});
