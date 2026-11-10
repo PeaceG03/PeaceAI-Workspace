@@ -677,7 +677,16 @@ function evalExpr(n: ts.Node, env: Map<string, Val>, sf: ts.SourceFile, depth: n
     return v[i] ?? null;
   }
   if (ts.isCallExpression(n)) return evalCall(n, env, sf, depth);
-  if (ts.isArrayLiteralExpression(n)) return litNode(n);
+  if (ts.isArrayLiteralExpression(n)) {
+    const xs: Val[] = [];
+    for (const el of n.elements) {
+      if (ts.isSpreadElement(el)) return BAD;
+      const v = evalExpr(el, env, sf, depth);
+      if (v === BAD) return BAD;
+      xs.push(v);
+    }
+    return xs;
+  }
   return BAD;
 }
 
@@ -828,27 +837,54 @@ function ruleAlignCallResult(e: RepairError, ctx: RepairContext): RepairEdit | n
   if (!specs || specs.length < 2) return null;
   const content = ctx.read(modulePath)!;
   const sf = parse(modulePath, content);
+  const decided = decideCallCatalog(content, modulePath, fnName, specs);
+  if (!decided || !("hit" in decided)) return null;
+  return { rule: "ALIGN_CALL_RESULT", path: modulePath, line: decided.line, content: decided.hit };
+}
+
+/**
+ * Catalog edits the pure walker cannot judge. Empty when the walker already accepted or
+ * rejected them. A caller may run those edits and keep one only when it is the unique pass.
+ * This does not compose sites and does not read a base file.
+ */
+export function uncheckedCatalog(source: string, fnName: string, testSource: string): string[] {
+  const tsf = parse("leaf.test.ts", testSource);
+  const specs = assertSpecs(tsf, fnName);
+  if (!specs || specs.length < 2) return [];
+  const decided = decideCallCatalog(source, "leaf.ts", fnName, specs);
+  return decided && "unchecked" in decided ? decided.unchecked : [];
+}
+
+function decideCallCatalog(content: string, path: string, fnName: string, specs: { args: Val[]; expected: Val }[]): { hit: string; line: number } | { unchecked: string[] } | null {
+  const sf = parse(path, content);
   const fn = findFn(sf, fnName);
   if (!fn) return null;
-  const site: Site = { path: modulePath, name: fnName, start: fn.getStart(sf), end: fn.getEnd(), tier: 0 };
+  const site: Site = { path, name: fnName, start: fn.getStart(sf), end: fn.getEnd(), tier: 0 };
   const hits: string[] = [];
+  const unchecked: string[] = [];
+  let judged = 0;
   for (const mut of mutationsIn(sf, site, 0, new Set())) {
     const next = replaceRange(content, mut.start, mut.end, mut.text);
-    if (next === content) continue;
-    const parsed = parse(modulePath, next);
+    if (next === content || hits.includes(next) || unchecked.includes(next)) continue;
+    const parsed = parse(path, next);
     const body = findFn(parsed, fnName);
     if (!body) continue;
     let ok = true;
+    let unknown = false;
     for (const spec of specs) {
       const got = callFn(body, spec.args, parsed, 0);
-      if (got === BAD || got === undefined || !sameVal(got, spec.expected)) { ok = false; break; }
+      if (got === BAD || got === undefined) { unknown = true; break; }
+      if (!sameVal(got, spec.expected)) { ok = false; break; }
     }
-    if (ok && !hits.includes(next)) hits.push(next);
+    if (unknown) { unchecked.push(next); continue; }
+    judged++;
+    if (ok) hits.push(next);
     if (hits.length > 1) return null;
   }
-  if (hits.length !== 1) return null;
-  const lineNo = sf.getLineAndCharacterOfPosition(fn.getStart(sf)).line + 1;
-  return { rule: "ALIGN_CALL_RESULT", path: modulePath, line: lineNo, content: hits[0]! };
+  const line = sf.getLineAndCharacterOfPosition(fn.getStart(sf)).line + 1;
+  if (hits.length === 1) return { hit: hits[0]!, line };
+  if (judged > 0) return null;
+  return unchecked.length > 0 ? { unchecked } : null;
 }
 
 const RULE_FNS: readonly ((e: RepairError, ctx: RepairContext) => RepairEdit | null)[] = [

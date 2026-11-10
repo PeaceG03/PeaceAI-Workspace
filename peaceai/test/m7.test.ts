@@ -16,6 +16,7 @@ import {
   repairFor,
   RULES,
   sortErrors,
+  uncheckedCatalog,
   type RepairContext,
   type RepairError,
 } from "../lib/repair.ts";
@@ -291,6 +292,11 @@ test("ALIGN_CALL_RESULT: one catalog edit meets every literal call, and the base
   const offFix = repairFor({ ...err, actual: "2" }, ctxOf(off, { "src/score.ts": decoy }))!;
   assert.equal(offFix.rule, "ALIGN_CALL_RESULT");
   assert.match(offFix.content, /return n \+ 1;/);
+  const plain = "export function score(n: number): number {\n  return n - 1;\n}\n";
+  assert.equal(uncheckedCatalog(plain, "score", testText).length, 0);
+  const opaque = "export function tag(s: string): string {\n  const parts = s.replace(/[.]/g, \"-\").split(\"-\");\n  if (parts.length !== 0) return \"\";\n  return parts.join(\":\");\n}\n";
+  const opaqueTest = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { tag } from "./tag";\ntest("tag holds", () => {\n  assert.equal(tag("a"), "a");\n  assert.equal(tag("a.b"), "a:b");\n});\n';
+  assert.ok(uncheckedCatalog(opaque, "tag", opaqueTest).length > 1);
 });
 
 test("ALIGN_CALL_RESULT refuses when a second satisfying catalog edit sits past the first 32", () => {
