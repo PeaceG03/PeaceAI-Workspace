@@ -4,6 +4,7 @@
 // Each replay row is bound to this head, this tree, and the sha256 of the log.
 // A missing core checkout leaves every runnable row unmeasured and does not invent a pass.
 // --out must be outside this repo.
+import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,7 +17,7 @@ import { CORE_ENTRY, boundReplay, classifyJobOutput, commitRef, rowUnrunnable, t
 
 const ROW_MS = 45_000;
 
-const USAGE = "usage: capability-job.ts --core <dir> [--as-of YYYY-MM-DD] [--out <dir>]";
+const USAGE = "usage: capability-job.ts --core <dir> [--core-commit <40hex>] [--core-archive <file>] [--as-of YYYY-MM-DD] [--out <dir>]";
 
 function flag(name: string, args: string[]): string | undefined {
   const i = args.indexOf(name);
@@ -46,12 +47,21 @@ function insideRepo(root: string, target: string): boolean {
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !rel.startsWith("..") && !isAbsolute(rel));
 }
 
-export function coreProblem(coreDir: string): string | null {
+export function archiveSha256(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+/** A git checkout is pinned by HEAD. A tarball checkout (no .git) is pinned by commit id plus the archive sha256. */
+export function coreProblem(coreDir: string, pin?: { commit: string; archiveSha256: string } | null): string | null {
   if (!existsSync(coreDir)) return `CORE_MISSING: ${coreDir} does not exist`;
   const entry = join(coreDir, CORE_ENTRY);
   if (!existsSync(entry)) return `CORE_ENTRY_MISSING: ${entry} is not in the checkout`;
-  const commit = gitLine(coreDir, ["rev-parse", "HEAD"]);
-  if (!commit || !/^[0-9a-f]{40}$/.test(commit)) return `CORE_UNPINNED: ${coreDir} has no commit`;
+  const gitCommit = gitLine(coreDir, ["rev-parse", "HEAD"]);
+  if (gitCommit && /^[0-9a-f]{40}$/.test(gitCommit)) {
+    if (pin && pin.commit !== gitCommit) return `CORE_PIN_MISMATCH: git ${gitCommit} pin ${pin.commit}`;
+    return null;
+  }
+  if (!pin || !/^[0-9a-f]{40}$/.test(pin.commit) || !/^[0-9a-f]{64}$/.test(pin.archiveSha256)) return `CORE_UNPINNED: ${coreDir} has no git commit; pass --core-commit and --core-archive`;
   return null;
 }
 
@@ -98,6 +108,8 @@ function main(): void {
   const core = flag("--core", args);
   const asOf = flag("--as-of", args) ?? denverYmd();
   const out = flag("--out", args);
+  const coreCommitFlag = flag("--core-commit", args);
+  const coreArchive = flag("--core-archive", args);
   if (!core) { console.log(USAGE); process.exit(2); }
   const repo = resolve(import.meta.dirname, "../..");
   if (out && insideRepo(repo, resolve(out))) { console.log("refused WRITE_IN_TARGET"); process.exit(2); }
@@ -110,22 +122,28 @@ function main(): void {
   const cloneHead = stocks ? gitLine(stocks, ["rev-parse", "HEAD"]) : null;
   const onMain = stocks && cloneHead && /^[0-9a-f]{40}$/.test(cloneHead) ? makeGitOnMainChecker(stocks) : null;
   const coreDir = resolve(core);
-  const problem = coreProblem(coreDir);
-  const coreCommit = problem ? null : gitLine(coreDir, ["rev-parse", "HEAD"]);
+  const archiveSha = coreArchive ? archiveSha256(coreArchive) : "";
+  const pin = coreCommitFlag && archiveSha ? { commit: coreCommitFlag, archiveSha256: archiveSha } : null;
+  const problem = coreProblem(coreDir, pin);
+  const gitCommit = gitLine(coreDir, ["rev-parse", "HEAD"]);
+  const coreCommit = (gitCommit && /^[0-9a-f]{40}$/.test(gitCommit) ? gitCommit : pin?.commit) ?? null;
   const built = !problem && coreCommit ? kernelBundle(coreDir, coreCommit, repo) : null;
   const buildError = problem ?? (built && "error" in built ? built.error : null);
   const bundle = built && "bundle" in built ? built.bundle : null;
   const entries = new Map(parseLogEntries(logText).map((e) => [e.seq, e as Entry]));
   const preview = buildCapabilityReport(logText, asOf, onMain, [], null, bind, cloneHead);
-  const replay = preview.rows.filter((r) => r.inSet).map((r) => {
+  const replay = [];
+  for (const r of preview.rows.filter((row) => row.inSet)) {
     const changed = entries.get(r.seq)?.changed ?? "";
     const structural = rowUnrunnable(changed);
-    if (structural) return boundReplay(r.seq, "unmeasured", structural, bind);
-    if (buildError || !bundle) return boundReplay(r.seq, "unmeasured", buildError ?? "KERNEL_MISSING", bind);
-    const ref = commitRef(changed)!;
-    const ran = runOne(repo, bundle, ref, entries.get(r.seq)?.asked ?? "", r.seq);
-    return boundReplay(r.seq, ran.status, ran.reason, bind);
-  });
+    const rec = structural
+      ? boundReplay(r.seq, "unmeasured", structural, bind)
+      : (buildError || !bundle)
+        ? boundReplay(r.seq, "unmeasured", buildError ?? "KERNEL_MISSING", bind)
+        : (() => { const ran = runOne(repo, bundle, commitRef(changed)!, entries.get(r.seq)?.asked ?? "", r.seq); return boundReplay(r.seq, ran.status, ran.reason, bind); })();
+    console.log(`row ${r.seq} ${rec.status} ${rec.reason}`);
+    replay.push(rec);
+  }
   const report = buildCapabilityReport(logText, asOf, onMain, replay, null, bind, cloneHead);
   const counts = new Map<string, number>();
   for (const row of report.rows) if (row.inSet) counts.set(row.reason, (counts.get(row.reason) ?? 0) + 1);
@@ -133,9 +151,9 @@ function main(): void {
   if (out) {
     mkdirSync(out, { recursive: true });
     writeFileSync(join(out, "replay.jsonl"), replay.map((r) => JSON.stringify(r)).join("\n") + "\n");
-    writeFileSync(join(out, "capability-job.json"), JSON.stringify({ experimental: true, credit: false, coreProblem: problem, coreCommit, bind, reasons: ranked, report }, null, 2) + "\n");
+    writeFileSync(join(out, "capability-job.json"), JSON.stringify({ experimental: true, credit: false, coreProblem: buildError, coreCommit, archiveSha256: archiveSha || null, bind, reasons: ranked, report }, null, 2) + "\n");
   }
-  console.log(`experimental credit=false asOf=${report.asOf} core=${buildError ?? `pinned ${coreCommit}`}`);
+  console.log(`experimental credit=false asOf=${report.asOf} core=${buildError ?? `pinned ${coreCommit}`} archive=${archiveSha || "git"}`);
   console.log(`realPass=${report.realPass} passes=${report.passes} fails=${report.fails} unmeasured=${report.unmeasured} set=${report.setSize}`);
   console.log(`official ancestry=${report.official.ancestry} ${report.official.percent}% (${report.official.able}/${report.official.tasks}) cloneHead=${report.official.cloneHead ?? "none"}`);
   console.log(`bind head=${bind.head} tree=${bind.tree} input=${bind.input}`);

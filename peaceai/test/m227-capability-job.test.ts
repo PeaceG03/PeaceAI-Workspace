@@ -1,13 +1,13 @@
 // M227: Job A replay records. A pass is a candidate count from a run, bound to head+tree+log.
 // EXPERIMENTAL. credit is false. No network, no kernel.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { buildCapabilityReport, type ReplayBind } from "../lib/capabilityreport.ts";
 import { boundReplay, classifyJobOutput, commitRef, rowUnrunnable } from "../lib/capabilityjob.ts";
-import { coreProblem } from "../bin/capability-job.ts";
+import { archiveSha256, coreProblem } from "../bin/capability-job.ts";
 
 const log = readFileSync(resolve(import.meta.dirname, "../../builder-log/tasks.jsonl"), "utf8");
 const HEAD = "a".repeat(40);
@@ -43,5 +43,14 @@ test("a directory without the coding kernel is refused by name", () => {
   try {
     assert.match(coreProblem(dir) ?? "", /CORE_ENTRY_MISSING/);
     assert.match(coreProblem(join(dir, "missing")) ?? "", /CORE_MISSING/);
+    const entry = join(dir, "packages/coding-kernel/src");
+    mkdirSync(entry, { recursive: true });
+    writeFileSync(join(entry, "ActionsKernel.ts"), "export {}\n");
+    const archive = join(dir, "core.tar");
+    writeFileSync(archive, "not-a-real-archive\n");
+    assert.match(coreProblem(dir) ?? "", /CORE_UNPINNED/);
+    const pin = { commit: "a".repeat(40), archiveSha256: archiveSha256(archive) };
+    assert.equal(coreProblem(dir, pin), null);
+    assert.equal(pin.archiveSha256.length, 64);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
