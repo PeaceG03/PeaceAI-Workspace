@@ -33,5 +33,5 @@ export function classifyJobOutput(o: { timedOut: boolean; code: number | null; c
 }
 
 export function boundReplay(seq: number, status: ReplayRecord["status"], reason: string, bind: ReplayBind): ReplayRecord {
-  return { seq, status, reason, head: bind.head, tree: bind.tree, input: bind.input };
+  return { seq, status, reason, head: bind.head, tree: bind.tree, input: bind.input, coreCommit: bind.coreCommit, archiveSha256: bind.archiveSha256 };
 }
