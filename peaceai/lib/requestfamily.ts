@@ -42,9 +42,29 @@ export function heldOutRow(seq: number, asked: string): boolean {
   return createHash("sha256").update(`${seq}\n${asked}`).digest()[0]! % 5 === 0;
 }
 
+/** A path, a call, a camelCase or snake_case name, or a code term. The cue word itself does not count. */
+const CODE_CONTEXT = /(?:\b[\w.-]+(?:\/[\w.-]+)+\.[A-Za-z0-9]{1,8}\b|\b[A-Za-z_$][\w$]*\s*\(|`[A-Za-z_$][\w$]*`|\b[a-z][a-z0-9]*[A-Z][\w$]*\b|\b[A-Z][a-z0-9]+[A-Z][\w$]*\b|\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|\b[A-Za-z_$][A-Za-z_$]*\d[\w$]*\b|\btest file\b|\bsrc\/)/;
+
+function contextNear(text: string, start: number, end: number): boolean {
+  const from = Math.max(0, start - 96);
+  const to = Math.min(text.length, end + 96);
+  return CODE_CONTEXT.test(`${text.slice(from, start)} ${text.slice(end, to)}`);
+}
+
 function matched(text: string, families: readonly string[]): string[] {
   const allow = new Set(families);
-  return [...new Set(CUES.filter((c) => allow.has(c.family) && c.re.test(text)).map((c) => c.family))];
+  const hits: string[] = [];
+  for (const cue of CUES) {
+    if (!allow.has(cue.family)) continue;
+    const re = new RegExp(cue.re.source, `${cue.re.flags}g`);
+    let found = false;
+    for (let m = re.exec(text); m; m = re.exec(text)) {
+      if (contextNear(text, m.index, m.index + m[0].length)) { found = true; break; }
+      if (m[0].length === 0) break;
+    }
+    if (found) hits.push(cue.family);
+  }
+  return [...new Set(hits)];
 }
 
 /** Drop any family whose unique dev hits are not all that family. */
