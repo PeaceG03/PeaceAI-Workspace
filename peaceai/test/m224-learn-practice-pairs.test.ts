@@ -370,7 +370,7 @@ test("recheck demotes a learned leaf and its ancestors only from a real new samp
   const empty = mkdtempSync(join(tmpdir(), "peaceai-recheck-empty-"));
   try {
     mkdirSync(join(hard, "src"));
-    writeFileSync(join(hard, "src/box.ts"), "export function score(n: number): number {\n  if (n > 1 && n < 9) return n + 1;\n  if (n >= 9) return n - 2;\n  if (n === 0) return 0;\n  if (n < 0) return n * 2;\n  return n + 4;\n}\n");
+    writeFileSync(join(hard, "src/box.ts"), "export function score(n: number): number {\n  const bump = Math.abs(0);\n  if (n > 1 && n < 9) return n + 1 + bump;\n  if (n >= 9) return n - 2 + bump;\n  if (n === 0) return 0;\n  if (n < 0) return n * 2;\n  return n + 4;\n}\n");
     mkdirSync(join(empty, "src"));
     writeFileSync(join(empty, "src/box.ts"), "export const marker = 1;\n");
     const leafId = "fn:src/box.ts:score";
@@ -742,6 +742,40 @@ test("generated line ids are practiced, and a thin or missing observation is not
     assert.equal(helped.problems.some((p) => p.verified && p.fixed === p.broken), false);
     assert.notEqual(helped.nodes[0]!.reasonCodes.includes("MISSING_HELPER"), true);
     assert.equal(helped.credit, false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("a failing function assertion is repaired from the catalog and two held-out breaks are not LEARNED", { timeout: 60_000 }, () => {
+  const repo = mkdtempSync(join(tmpdir(), "peaceai-align-"));
+  try {
+    mkdirSync(join(repo, "src"));
+    writeFileSync(join(repo, "src/box.ts"), "export function score(n: number): number {\n  return n + 1;\n}\n");
+    const only: SkillTree = {
+      ...tree(),
+      nodes: [{ id: "fn:src/box.ts:score", title: "score", parent: null, children: [], size: "leaf", testIdea: "call score", reason: null, depth: 0, units: 1 }],
+    };
+    const run = practiceProgram({ tree: only, map: map(), repoPath: repo, seed: 1, maxMinutes: 1, maxAttemptsTotal: 12, now: frozen });
+    assert.equal(run.credit, false);
+    assert.equal(run.heldoutProof, false);
+    const leaf = run.nodes.find((n) => n.nodeId === "fn:src/box.ts:score")!;
+    const held = run.problems.filter((p) => p.set === "heldout");
+    const scored = scoreHeldOut(held);
+    assert.ok(scored.independent < 4);
+    assert.equal(leaf.status, leafStatus(scored.passed, scored.independent, false));
+    assert.notEqual(leaf.status, "LEARNED");
+    const verified = run.problems.filter((p) => p.verified && p.fixed);
+    assert.ok(verified.length >= 1);
+    for (const p of verified) {
+      assert.ok(p.test.split("assert.").length - 1 >= 2);
+      assert.notEqual(p.fixed, p.broken);
+      assert.match(p.fixed ?? "", /return n \+ 1;/);
+    }
+    const pairs = buildLearnPairs(run, "align");
+    assert.equal(pairs.eligible, false);
+    assert.equal(pairs.docs.length, 0);
+    assert.equal(pairs.credit, false);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }

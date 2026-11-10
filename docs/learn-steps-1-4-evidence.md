@@ -91,3 +91,7 @@ Head fb8dc84ae304dc856e7f802463058cf0bfe17c5c, tree be034b6f9bbf8c104310fed9c300
 Same-file helpers are included in the sandbox. A missing name is refused. If any probed input changes across two runs, or any probed input is not a stable literal, that leaf has no problem and no verified repair. Two stable results do not stand in for an input the probe could not pin down. The 4-break and 0.75 gates are unchanged. The numbers above are the earlier runs. They are not this head's radash result.
 
 Readiness files docs/PEACEAI_FINAL_PRODUCT_READINESS.md, packages/core/src/ProductReadiness.ts, and docs/PEACEAI_OVERNIGHT_PROGRESS.md are absent. They were not created.
+
+## Assertion repair after af73937
+
+af739374f0fa697fd2ab3244d0b7f7fd1fb87749 stays the reviewed head. A later commit on a separate branch teaches the existing repair rules to edit a function body from a failing call assertion. The edit is one candidate from the existing mutation catalog, and it is kept only when that candidate is the only one that meets every literal assertion. The base file is not read. One assertion is not enough. The 4-break and 0.75 gates are unchanged.
