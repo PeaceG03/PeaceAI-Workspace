@@ -14,8 +14,9 @@
 // and how the body uses that parameter, not from the function's name.
 // A tree id `fn:<path>:<name>:<line>` names the function, not the line. Same-file helpers
 // are copied into the sandbox so the leaf can run. A name that is not in the file is
-// MISSING_HELPER. Fewer than two stable literal results is UNSTABLE or UNDER_OBSERVED.
-// Those leaves get no problem and no verified repair. One assertion is not evidence.
+// MISSING_HELPER. If any probed input changes across two runs, the leaf is UNSTABLE.
+// If any probed input is not a stable literal, or fewer than two are, it is UNDER_OBSERVED.
+// Those leaves get no problem and no verified repair.
 // Attempts go through runRepairLoop and then repair-retry, capped at RETRY_MAX_ATTEMPTS.
 // Target code runs only in a temp child with node --permission and a clean environment.
 import { spawnSync } from "node:child_process";
@@ -713,7 +714,8 @@ function observedProbe(src: string, name: string): { code: EmptyCode | null; inp
     use.push(n);
     lits.push(lit);
   });
-  if (use.length < MIN_OBSERVED) return { code: unstable === inputs.length ? "UNSTABLE" : "UNDER_OBSERVED", inputs: [], lits: [] };
+  if (unstable > 0) return { code: "UNSTABLE", inputs: [], lits: [] };
+  if (use.length < MIN_OBSERVED || use.length < inputs.length) return { code: "UNDER_OBSERVED", inputs: [], lits: [] };
   return { code: null, inputs: use, lits };
 }
 
@@ -741,7 +743,7 @@ function problemsFor(nodeId: string, path: string, name: string, src: string, se
       use.push(n);
       lits.push(lit);
     });
-    if (!differs || use.length < MIN_OBSERVED) continue;
+    if (!differs || use.length < MIN_OBSERVED || use.length < inputs.length) continue;
     const test = testSource(name, use.slice(0, 8), lits.slice(0, 8), br.kind);
     if (!confirms(br.broken, src, test)) continue;
     made.push({

@@ -701,6 +701,7 @@ test("generated line ids are practiced, and a thin or missing observation is not
     writeFileSync(join(repo, "src/pair.ts"), "export function left(n: number): number {\n  return n + 1;\n}\nexport function right(n: number): number {\n  return n + 2;\n}\n");
     writeFileSync(join(repo, "src/early.ts"), "export function early(xs: number[]): number | null {\n  if (xs.length === 0) return null;\n  throw new Error(\"later\");\n}\n");
     writeFileSync(join(repo, "src/drift.ts"), "export function drift(n: number): number {\n  return n + Math.random();\n}\n");
+    writeFileSync(join(repo, "src/sometimes.ts"), "export function sometimes(xs: number[]): number | null {\n  if (xs.length === 0) return null;\n  if (xs.length === 1) return xs[0] ?? null;\n  return (xs[0] ?? 0) + Math.random();\n}\n");
     writeFileSync(join(repo, "src/needs.ts"), "export function needs(xs: number[]): number | null {\n  if (xs.length === 0) return null;\n  return other(xs[0] ?? 0);\n}\n");
     writeFileSync(join(repo, "src/helped.ts"), "function addOne(n: number): number {\n  return n + 1;\n}\nexport function helped(n: number): number {\n  return addOne(n) + 0;\n}\n");
     const map = buildProgramMap(repo);
@@ -733,6 +734,7 @@ test("generated line ids are practiced, and a thin or missing observation is not
     };
     assert.ok(reason("early", "early", 1).includes("UNDER_OBSERVED"));
     assert.ok(reason("drift", "drift", 1).includes("UNSTABLE"));
+    assert.ok(reason("sometimes", "sometimes", 1).includes("UNSTABLE"));
     assert.ok(reason("needs", "needs", 1).includes("MISSING_HELPER"));
     const helped = practiceProgram({ tree: leafOf("helped", "helped", 3), map, repoPath: repo, seed: 1, maxMinutes: 2, maxAttemptsTotal: 12, now: frozen });
     assert.ok(helped.problems.length > 0);

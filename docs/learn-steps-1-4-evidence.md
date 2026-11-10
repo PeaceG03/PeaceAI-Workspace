@@ -88,6 +88,6 @@ Head fb8dc84ae304dc856e7f802463058cf0bfe17c5c, tree be034b6f9bbf8c104310fed9c300
 - `fn:<path>:<name>:<line>` was read as a path plus a numeric name, so generated function leaves were NO_FUNCTION. Practice now keeps the name and treats a trailing line as the overload discriminator. A two-export fixture and the overload fixture are practiced from those generated ids.
 - Training docs required only `status === LEARNED`. A constructed leaf with held-out 2/2 and `heldoutProof` false could emit a doc. The pair boundary now re-scores that leaf's held-out problems with the same 4-break and 0.75 rule, and it also requires `heldoutProof`. A one-assertion test is withheld.
 
-Same-file helpers are included in the sandbox. A missing name, an unstable result, or fewer than two stable literal results does not become a problem and is not a verified repair. The 4-break and 0.75 gates are unchanged. The numbers above are the earlier runs. They are not this head's radash result.
+Same-file helpers are included in the sandbox. A missing name is refused. If any probed input changes across two runs, or any probed input is not a stable literal, that leaf has no problem and no verified repair. Two stable results do not stand in for an input the probe could not pin down. The 4-break and 0.75 gates are unchanged. The numbers above are the earlier runs. They are not this head's radash result.
 
 Readiness files docs/PEACEAI_FINAL_PRODUCT_READINESS.md, packages/core/src/ProductReadiness.ts, and docs/PEACEAI_OVERNIGHT_PROGRESS.md are absent. They were not created.
