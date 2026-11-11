@@ -6,7 +6,6 @@
 // --out must be outside this repo.
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -123,17 +122,20 @@ export function coreStillPinned(root: string, pin: CorePin): string | null {
   return null;
 }
 
-/** Extract, check, build from that same directory, then discard the directory. `afterCheck` runs only in tests. */
-export function pinnedKernel(archivePath: string, pin: CorePin | null, tooling: string, afterCheck?: (root: string) => void): { bundle: string } | { error: string } {
+/** Extract, check, and build from that same directory. The caller discards `coreDir` when the job is done. `afterCheck` runs only in tests. */
+export function pinnedKernel(archivePath: string, pin: CorePin | null, tooling: string, afterCheck?: (root: string) => void): { bundle: string; coreDir: string; dispose: () => void } | { error: string } {
   const opened = extractPinnedCore(archivePath, pin);
   if ("error" in opened) return opened;
   try {
     afterCheck?.(opened.root);
     const stale = coreStillPinned(opened.root, pin!);
-    if (stale) return { error: stale };
-    return kernelBundle(opened.root, tooling);
-  } finally {
+    if (stale) { opened.dispose(); return { error: stale }; }
+    const built = kernelBundle(opened.root, tooling);
+    if ("error" in built) { opened.dispose(); return built; }
+    return { bundle: built.bundle, coreDir: opened.root, dispose: opened.dispose };
+  } catch (err) {
     opened.dispose();
+    throw err;
   }
 }
 
@@ -168,36 +170,23 @@ function targetOf(changed: string): CommitRef | { reason: string } {
   return { repo: "PeaceAI-Workspace", sha };
 }
 
-export function appendedTest(diff: string): { file: string; name: string } | null {
-  const file = /^\+\+\+ b\/(.+\.test\.ts)$/m.exec(diff)?.[1];
-  const name = /^\+test\("((?:\\.|[^"\\])*)"/m.exec(diff)?.[1];
-  if (!file || !name) return null;
-  return { file, name };
-}
-
-function gradeCandidate(dir: string, outDir: string): { status: "pass" | "fail"; reason: string } | null {
+/** A pass is a candidate the production gate accepts. An append without fixSha is rejected there. */
+function productionGate(tooling: string, dir: string, outDir: string, coreDir: string, targetName: string): { status: "pass" | "fail"; reason: string } | null {
   const summary = join(outDir, "summary.json");
   if (!existsSync(summary)) return null;
   let count = 0;
   try { count = ((JSON.parse(readFileSync(summary, "utf8")) as { candidates?: unknown[] }).candidates ?? []).length; } catch { return null; }
   if (count < 1) return null;
-  const diffPath = join(outDir, "candidates", "candidate-1.diff");
-  if (!existsSync(diffPath)) return { status: "fail", reason: "TEST_NOT_RUN" };
-  const diff = readFileSync(diffPath, "utf8");
-  const applied = spawnSync("git", ["-C", dir, "apply", "--whitespace=nowarn"], { input: diff, encoding: "utf8" });
-  if (applied.status !== 0) return { status: "fail", reason: "TEST_APPLY_FAILED" };
-  const found = appendedTest(diff);
-  if (!found) return { status: "fail", reason: "TEST_NOT_RUN" };
-  const { file, name } = found;
-  const tsx = createRequire(import.meta.url).resolve("tsx");
-  const pattern = `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
-  const ran = spawnSync(process.execPath, ["--import", tsx, "--test", "--test-name-pattern", pattern, file], { cwd: dir, encoding: "utf8", timeout: 20_000 });
+  const ran = spawnSync(join(tooling, "node_modules/.bin/tsx"), [join(tooling, "peaceai/bin/gate.ts")], {
+    cwd: tooling, encoding: "utf8", timeout: 60_000,
+    env: { ...process.env, PEACEAI_OUT_DIR: outDir, PEACEAI_WORKSPACE_DIR: dir, PEACEAI_CORE_DIR: coreDir, PEACEAI_TARGET: targetName },
+  });
   const out = `${ran.stdout ?? ""}\n${ran.stderr ?? ""}`;
-  if (ran.status === 0 && /^# pass [1-9]/m.test(out) && !/^# fail [1-9]/m.test(out)) return { status: "pass", reason: "TEST_PASSED" };
-  return { status: "fail", reason: "TEST_FAILED" };
+  if (ran.status === 0 && /GATE PASS/.test(out)) return { status: "pass", reason: `GATE_PASS:${count}` };
+  return { status: "fail", reason: "GATE_FAIL" };
 }
 
-function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, seq: number): { status: "pass" | "fail" | "unmeasured"; reason: string } {
+function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, seq: number, coreDir: string): { status: "pass" | "fail" | "unmeasured"; reason: string } {
   const src = ref.repo === "PeaceSTOCKS" ? (process.env.PEACESTOCKS_CLONE?.trim() || "") : tooling;
   if (!src || !existsSync(src)) return { status: "unmeasured", reason: `NO_CLONE: ${ref.repo}` };
   const dir = join(tmpdir(), `peaceai-joba-${seq}-${ref.sha.slice(0, 8)}`);
@@ -216,8 +205,8 @@ function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, 
       try { candidates = ((JSON.parse(readFileSync(summary, "utf8")) as { candidates?: unknown[] }).candidates ?? []).length; } catch { candidates = null; }
     }
     const timedOut = (r.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT";
-    const graded = gradeCandidate(dir, outDir);
-    if (graded) return graded;
+    const gated = productionGate(tooling, dir, outDir, coreDir, `PeaceG03/${ref.repo}`);
+    if (gated) return gated;
     return classifyJobOutput({ timedOut, code: r.status, candidates, stdout: `${r.stdout ?? ""}\n${r.stderr ?? ""}` });
   } finally {
     spawnSync("git", ["-C", src, "worktree", "remove", "--force", dir], { stdio: "ignore" });
@@ -275,7 +264,7 @@ function main(): void {
         const canon = canonicalRequest(g.family, asked);
         if (!canon) rec = boundReplay(r.seq, "fail", `NO_SLOTS: ${g.family}`, bind);
         else {
-          const ran = runOne(repo, bundle, target, canon, r.seq);
+          const ran = runOne(repo, bundle, target, canon, r.seq, "error" in built ? "" : built.coreDir);
           rec = boundReplay(r.seq, ran.status, ran.reason, bind);
         }
       }
@@ -297,6 +286,7 @@ function main(): void {
   console.log(`official ancestry=${report.official.ancestry} ${report.official.percent}% (${report.official.able}/${report.official.tasks}) cloneHead=${report.official.cloneHead ?? "none"}`);
   console.log(`bind head=${bind.head} tree=${bind.tree} input=${bind.input}`);
   for (const [reason, n] of ranked) console.log(`reason ${n} ${reason}`);
+  if (!("error" in built)) built.dispose();
 }
 
 if (process.argv[1] && process.argv[1].endsWith("capability-job.ts")) main();

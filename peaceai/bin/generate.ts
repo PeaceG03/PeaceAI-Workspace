@@ -20,7 +20,7 @@ import { loadTargets, scopeOf } from "../lib/target.ts";
 import { buildVariants, cleanIssueText } from "../lib/taskmap.ts";
 import { nlDecision } from "../lib/nlparse.ts";
 import { regradeOf, type RegradeRequest } from "../lib/regrade.ts";
-import { characterizeAppend, regularFileReader, repoFileLists } from "../lib/learned-test-existing.ts";
+import { regularFileReader, repoFileLists } from "../lib/learned-test-existing.ts";
 import { spawnSync } from "node:child_process";
 
 const MAX_CANDIDATES = 5;
@@ -290,11 +290,7 @@ for (const a of planSteps ? [] : admissions) {
   const why: { reason?: string; questions?: string } = {};
   // M99: DERIVE_FROM_BEHAVIOR also checks the raw body (fenced code / HTML comments are dropped by cleaning).
   if (a.spec.kind === "DERIVE_FROM_BEHAVIOR") { const r = rawIssueProblem(task.body); if (r) { ruleRefusals.push({ id: a.spec.id, reason: r }); continue; } }
-  let edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest, target, why, newPathExists, [...scanOnlyFiles, ...workflowFiles], `${task.title}\n\n${task.body}`); // Auditor #135: full ls-files + disk; M114: the uncleaned text, read only by the v5 derive rule's example strings
-  if (!edit && a.spec.kind === "TEST_EXISTING" && a.spec.params.target === "exported-pure-function-v7") {
-    const alt = characterizeAppend(a.spec.trigger, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest, why);
-    if (alt) edit = alt;
-  }
+  const edit = applyRule(a.spec, objectiveText, [...candidatesForContext, ...workflowFiles], scope.isTest, target, why, newPathExists, [...scanOnlyFiles, ...workflowFiles], `${task.title}\n\n${task.body}`); // Auditor #135: full ls-files + disk; M114: the uncleaned text, read only by the v5 derive rule's example strings
   if (!edit) { if (why.reason) ruleRefusals.push({ id: a.spec.id, reason: why.reason }); if (why.questions && !ruleQuestions) ruleQuestions = why.questions; continue; }
   // M12: a test rule creates a new file only (never an existing one) and carries the fix commit to grade against.
   // M17: ...except a self-graded function rule creating a new source module (with its new tests in `extra`).
@@ -302,9 +298,7 @@ for (const a of planSteps ? [] : admissions) {
   // M80: TEST_CASE_EXISTING creates exactly ONE new test file (never an existing path) and nothing else: no source
   // edit, no extra file, no fix commit. Job B grades it fix-free (passes today, fails with the function stubbed).
   const existingTest = a.spec.kind === "TEST_EXISTING";
-  const appendedCase = existingTest && edit.selfGrade === true && !edit.create && edit.extra === undefined && edit.fixSha === undefined && baseFiles.has(edit.path) && scope.isTest(edit.path);
-  const newCase = edit.create === true && edit.selfGrade === true && edit.extra === undefined && edit.fixSha === undefined && !baseFiles.has(edit.path) && scope.isSource(edit.path) && scope.isTest(edit.path);
-  if (existingTest && !appendedCase && !newCase) continue;
+  if (existingTest && !(edit.create === true && edit.selfGrade === true && edit.extra === undefined && edit.fixSha === undefined && !baseFiles.has(edit.path) && scope.isSource(edit.path) && scope.isTest(edit.path))) continue;
   if (edit.create && !newModule && !existingTest && (baseFiles.has(edit.path) || !edit.fixSha || !/^[0-9a-f]{40}$/.test(edit.fixSha))) continue;
   // M13: a guard rule edits one existing source file and creates new test files only; it is graded against itself.
   // Live proofs #306/#307: WORKFLOW_JOB (job block, no extra) and TSCONFIG_SCRIPT (package.json + one new root
@@ -330,7 +324,7 @@ for (const a of planSteps ? [] : admissions) {
   const key = createHash("sha256").update(diff).digest("hex");
   if (seen.has(key)) continue;
   seen.add(key);
-  if (checkCandidateScope(parseDiff(diff), baseFiles, scope, { testAppend: !!edit.fixSha || appendedCase }).length > 0) {
+  if (checkCandidateScope(parseDiff(diff), baseFiles, scope, { testAppend: !!edit.fixSha }).length > 0) {
     scopeRejected += 1;
     continue;
   }
