@@ -433,7 +433,7 @@ test("generated differential: an accepted result matches JavaScript, and uncover
   const lattice: unknown[] = [undefined, null, NaN, -0, 0, 1, "", "a", true, false, [], [1], [1, 2], [[1]], [1, , 2]];
   const bin = ["===", "==", "!=", "!==", "+", "-", "*", "/", "%", "&&", "||", "??", "<", "<=", ">", ">="];
   for (const op of bin) for (const a of lattice) for (const b of lattice) agree(`export function f(a, b){ return a ${op} b }`, [a, b]);
-  for (const op of ["!", "typeof", "+"]) for (const a of lattice) agree(`export function f(a){ return ${op} a }`, [a]);
+  for (const op of ["!", "typeof", "+", "-"]) for (const a of lattice) agree(`export function f(a){ return ${op} a }`, [a]);
   for (const a of lattice) {
     agree("export function f(a){ return a?.length }", [a]);
     agree("export function f(a){ return a?.[0] }", [a]);
@@ -442,6 +442,7 @@ test("generated differential: an accepted result matches JavaScript, and uncover
   }
   const methods = ["toLowerCase", "toUpperCase", "trim", "charAt", "slice", "substring", "split", "join"];
   for (const name of methods) for (const a of lattice) agree(`export function f(a){ return a.${name}() }`, [a]);
+  for (const a of lattice) agree(`export function f(a){ return a.replace("a", "b") }`, [a]);
   for (const a of lattice) {
     agree("export function f(a){ return Array.isArray(a) ? a.map((n) => n) : 0 }", [a]);
     agree("export function f(a){ return Array.isArray(a) ? a.filter((n) => n) : 0 }", [a]);
