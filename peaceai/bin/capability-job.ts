@@ -1,6 +1,7 @@
 // Experimental. credit: false. Read-only Job A replay of the builder-log set.
 //   tsx peaceai/bin/capability-job.ts --core-archive <file> [--as-of YYYY-MM-DD] [--out <dir>]
 // The archive is extracted into a private temporary directory, checked against peaceai/core-pin.json, and built from that same directory. A caller-supplied checkout is not a source.
+// Once the byte and tree checks pass, that directory is a git checkout of the pin tree so gate.ts can index it. The tree is unchanged.
 // Each replay row is bound to this head, this tree, and the sha256 of the log.
 // A missing core checkout leaves every runnable row unmeasured and does not invent a pass.
 // --out must be outside this repo.
@@ -31,6 +32,19 @@ function flag(name: string, args: string[]): string | undefined {
 
 function gitLine(cwd: string, args: string[]): string | null {
   try { return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return null; }
+}
+
+/** Drop a caller's repo-locating git env so commands see `cwd`, matching indexGitTree. */
+function gitLocalEnv(): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^GIT_(DIR|WORK_TREE|INDEX_FILE|COMMON_DIR|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|NAMESPACE|PREFIX)$/.test(k)));
+}
+
+/** `git init` + `git add` on a pin-checked extract. Returns the index tree (`git write-tree`). */
+function materializePinCheckout(root: string): string {
+  const env = gitLocalEnv();
+  execFileSync("git", ["init", "-q"], { cwd: root, env, stdio: "ignore" });
+  execFileSync("git", ["add", "-A", "-f"], { cwd: root, env, stdio: "ignore" });
+  return execFileSync("git", ["write-tree"], { cwd: root, env, encoding: "utf8" }).trim();
 }
 
 function insideRepo(root: string, target: string): boolean {
@@ -94,7 +108,7 @@ function findCoreRoot(dir: string): string | null {
 
 export interface PinnedExtract { dir: string; root: string; dispose: () => void }
 
-/** Extract the archive into a fresh 0700 directory and accept it only when both the bytes and the tree match the pin. */
+/** Extract the archive into a fresh 0700 directory and accept it only when both the bytes and the tree match the pin. The accepted directory is a git checkout of that tree. */
 export function extractPinnedCore(archivePath: string, pin: CorePin | null): PinnedExtract | { error: string } {
   if (!pin) return { error: "CORE_PIN_UNREADABLE" };
   if (!existsSync(archivePath)) return { error: `CORE_ARCHIVE_MISSING: ${archivePath}` };
@@ -110,6 +124,9 @@ export function extractPinnedCore(archivePath: string, pin: CorePin | null): Pin
   let tree = "";
   try { tree = gitTreeSha(root); } catch { dispose(); return { error: "CORE_TREE_UNREADABLE" }; }
   if (tree !== pin.tree) { dispose(); return { error: `CORE_TREE_MISMATCH: ${tree}` }; }
+  let indexed = "";
+  try { indexed = materializePinCheckout(root); } catch { dispose(); return { error: "CORE_CHECKOUT_FAILED" }; }
+  if (indexed !== pin.tree) { dispose(); return { error: `CORE_TREE_MISMATCH: ${indexed}` }; }
   chmodSync(dir, 0o700);
   return { dir, root, dispose };
 }
