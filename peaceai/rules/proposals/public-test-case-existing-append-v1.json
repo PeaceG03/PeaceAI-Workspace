@@ -1,0 +1,15 @@
+{
+  "id": "public-test-case-existing-append-v1",
+  "kind": "TEST_EXISTING",
+  "shape": "TEST_CASE_EXISTING_APPEND",
+  "status": "proposal",
+  "teamPicked": true,
+  "credit": 0,
+  "learned": "peaceai/rules/learned/public-test-case-existing-append-v1.json",
+  "issue": "https://github.com/PeaceG03/PeaceAI-Workspace/issues/736",
+  "placement": "append",
+  "grading": "fail-before-pass-after",
+  "maxLines": "8",
+  "note": "Team-picked. No mined hunk count is claimed, so credit stays 0. One appended assertion is three lines; the cap is 8. A candidate is emitted only when the task names one 40-hex fix. The target module is refused by deniedEditPath before any probe. The probe runs a private copy of the checked bytes and sees PATH only.",
+  "tests": ["peaceai/test/m230-append-rule.test.ts"]
+}

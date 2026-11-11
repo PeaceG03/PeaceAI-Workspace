@@ -11,10 +11,14 @@
 //   any other impurity (test_target_impure), PeaceAI's own protected paths (self_protected_path), and signatures
 //   outside the vocabulary (test_target_signature). No model.
 import ts from "typescript";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import { createRequire } from "node:module";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
-import { ARGS_NESTED_OBJECTS, ARGS_PLAIN_DATA_V3, ARGS_PLAIN_DATA_V7, buildTestEdit, checkRoot, FIX_LINE, isDateLiteral, isMapSetLiteral, ISO_DATE_TEXT, parseTestTask, type TestTask } from "./learned-test.ts";
+import { pathToFileURL } from "node:url";
+import { ARGS_NESTED_OBJECTS, ARGS_PLAIN_DATA_V3, ARGS_PLAIN_DATA_V7, buildTestEdit, checkRoot, FIX_LINE, isDateLiteral, isMapSetLiteral, ISO_DATE_TEXT, parseTestTask, TEST_TRIGGER, type TestTask } from "./learned-test.ts";
 import { DATE_LOCAL_TIME, DATE_NOW, DATE_SETTER, dateRefusal, plainPath } from "./learned-complex.ts";
 import { PROTECTED_SELF } from "./selfchange.ts";
 
@@ -30,9 +34,9 @@ export const TEST_EXISTING_VOCAB = {
   assert: ["node:assert/strict-default"],
   checks: ["equal", "deepEqual", "throws"],
   framework: ["node:test-default"],
-  grading: ["pass-now-fail-stub"],
+  grading: ["pass-now-fail-stub", "fail-before-pass-after"],
   matcher: ["regex"],
-  placement: ["new-file"],
+  placement: ["new-file", "append"],
   // M85 (public-test-case-existing-v2): "exported-pure-function-v2" widens the target only: plain-data object types
   // (interfaces / type aliases / object type literals of the vocabulary, string/number literal unions) in the
   // signature, and named value imports from relative sibling modules followed by the same purity analysis (bounded).
@@ -3964,13 +3968,23 @@ export function buildExistingTestEdit(params: Record<string, string | string[]>,
 }
 
 /** Direct entry, behind its own flag (proposal-off-wired); Job A uses runExistingTestRule via the approved list. */
-export function applyExistingTestRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, env: Record<string, string | undefined> = process.env, why?: { reason?: string }): ExistingTestEdit | null {
+export function applyExistingTestRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, env: Record<string, string | undefined> = process.env, why?: { reason?: string }): ExistingTestEdit | { path: string; content: string; fixSha: string } | null {
   if (!testExistingEnabled(env)) return null;
   return runExistingTestRule(trigger, params, objective, files, isTest, why);
 }
 
-/** Job A entry: admitted only via the hash-pinned approved list (Peace /approve-rule); reasons for refusal lines. */
-export function runExistingTestRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string }, scan?: readonly RepoFile[]): ExistingTestEdit | null {
+/** The source file named by a characterization header, whether or not a fix line follows. */
+export function existingTestTargetFile(trigger: string, objective: string): string | null {
+  const lines = objective.split("\n").map((l) => l.trim()).filter(Boolean);
+  const head = lines.find((l) => new RegExp(trigger, "i").test(l));
+  if (!head) return null;
+  const file = new RegExp(trigger, "i").exec(head)?.groups?.file;
+  return file && /^[\w./-]+\.ts$/.test(file) ? file : null;
+}
+
+/** Job A entry: admitted only via the hash-pinned approved list; reasons for refusal lines. */
+export function runExistingTestRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest?: (p: string) => boolean, why?: { reason?: string }, scan?: readonly RepoFile[]): ExistingTestEdit | { path: string; content: string; fixSha: string } | null {
+  if (params.placement === "append") return appendCharacterization(trigger, params, objective, files, isTest ?? ((p) => /\.test\.ts$/.test(p)), why);
   const task = parseExistingTestTask(trigger, objective);
   if (!task) { if (why) why.reason = "task_unparsed"; return null; }
   return buildExistingTestEdit(params, task, files, isTest, why, scan);
@@ -4028,4 +4042,136 @@ export function moduleReadClosure(start: string, read: (rel: string) => string |
 export function loadAllowlistDetail(path: string, content: string, read: ((rel: string) => string | null) | null, all?: LoadProblem[]): LoadProblem | null {
   const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true);
   return loadAllowlistProblem(path, sf, indexModule(sf), read ? (rel) => (rel === path ? content : read(rel)) : null, all);
+}
+
+const FIX_SHA = /^[0-9a-f]{40}$/;
+
+/** The 40-hex fix named by the one fix line. Absent means the append rule emits nothing. */
+function fixShaOf(objective: string): string | null {
+  const lines = objective.split("\n").map((l) => l.trim()).filter(Boolean);
+  const hits = lines.filter((l) => FIX_LINE.test(l));
+  if (hits.length !== 1) return null;
+  const sha = FIX_LINE.exec(hits[0]!)?.groups?.sha?.toLowerCase();
+  return sha && FIX_SHA.test(sha) ? sha : null;
+}
+
+/** Files the checked text imports, taken only from the supplied texts. A missing import is a refusal, never a disk read. */
+function checkedClosure(entry: string, files: readonly { path: string; content: string }[]): Map<string, string> | null {
+  const by = new Map(files.map((f) => [f.path, f.content]));
+  const out = new Map<string, string>();
+  const queue = [entry];
+  const seen = new Set<string>();
+  while (queue.length > 0) {
+    const path = queue.pop()!;
+    if (seen.has(path)) continue;
+    seen.add(path);
+    const text = by.get(path);
+    if (text === undefined) return null;
+    out.set(path, text);
+    const sf = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const specs: string[] = [];
+    const take = (s: string) => { if (s.startsWith("./") || s.startsWith("../")) specs.push(s); };
+    for (const st of sf.statements) {
+      if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier)) take(st.moduleSpecifier.text);
+      if (ts.isExportDeclaration(st) && st.moduleSpecifier && ts.isStringLiteral(st.moduleSpecifier)) take(st.moduleSpecifier.text);
+    }
+    for (const spec of specs) {
+      const hits = (siblingCandidates(path, spec) ?? []).filter((c) => by.has(c));
+      if (hits.length !== 1) return null;
+      queue.push(hits[0]!);
+    }
+  }
+  return out;
+}
+
+type ProbeRow = { args: unknown[]; got: unknown };
+
+/**
+ * Calls the function on a private copy of the checked bytes. The process sees PATH only, never the caller's
+ * environment and never a file outside that copy.
+ */
+function probePrivate(closure: Map<string, string>, entry: string, symbol: string, calls: unknown[][]): ProbeRow[] | null {
+  const dir = mkdtempSync(join(tmpdir(), "peace-probe-"));
+  chmodSync(dir, 0o700);
+  try {
+    for (const [rel, text] of closure) {
+      const dest = join(dir, rel);
+      mkdirSync(dest.split("/").slice(0, -1).join("/"), { recursive: true });
+      writeFileSync(dest, text);
+    }
+    const script = join(dir, "probe.mts");
+    writeFileSync(script, `import { pathToFileURL } from "node:url";\nconst m = await import(pathToFileURL(${JSON.stringify(join(dir, entry))}).href);\nconst fn = m[${JSON.stringify(symbol)}];\nconst rows = [];\nfor (const args of ${JSON.stringify(calls)}) rows.push({ args, got: fn(...args) });\nprocess.stdout.write(JSON.stringify(rows));\n`);
+    const tsx = createRequire(import.meta.url).resolve("tsx/esm");
+    const run = spawnSync(process.execPath, ["--import", tsx, script], {
+      cwd: dir, encoding: "utf8", timeout: 8000,
+      env: { PATH: process.env.PATH ?? "" },
+    });
+    if (run.status !== 0 || run.error) return null;
+    const rows = JSON.parse(run.stdout) as ProbeRow[];
+    return Array.isArray(rows) && rows.length === calls.length ? rows : null;
+  } catch {
+    return null;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * The append characterization rule. It emits one appended assertion only when the task names a fix commit.
+ * The target module was already refused by deniedEditPath when it is a denied path.
+ */
+function appendCharacterization(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], isTest: (p: string) => boolean, why?: { reason?: string }): { path: string; content: string; fixSha: string } | null {
+  const sha = fixShaOf(objective);
+  if (!sha) { if (why) why.reason = "no_fix_sha"; return null; }
+  const file = existingTestTargetFile(trigger, objective);
+  const head = objective.split("\n").map((l) => l.trim()).find((l) => new RegExp(trigger, "i").test(l));
+  const g = head ? new RegExp(trigger, "i").exec(head)?.groups ?? {} : {};
+  const symbol = g.symbol;
+  if (!file || !symbol) { if (why) why.reason = "task_unparsed"; return null; }
+  const src = files.find((f) => f.path === file);
+  if (!src) { if (why) why.reason = "target_missing"; return null; }
+  const refusal = existingTargetRefusal(file, src.content, symbol);
+  if (refusal) { if (why) why.reason = refusal; return null; }
+  const testPath = file.replace(/\.ts$/, ".test.ts");
+  const test = files.find((f) => f.path === testPath);
+  if (!test || !isTest(test.path)) { if (why) why.reason = "no_test_file"; return null; }
+  const closure = checkedClosure(file, files);
+  if (!closure) { if (why) why.reason = "probe_unclosed"; return null; }
+  const calls = signatureCalls(src.content, symbol);
+  if (!calls) { if (why) why.reason = "probe_signature"; return null; }
+  const rows = probePrivate(closure, file, symbol, calls);
+  if (!rows) { if (why) why.reason = "probe_failed"; return null; }
+  const checks = Array.isArray(params.checks) ? params.checks : [];
+  const bullet = oneBullet(rows, symbol, checks);
+  if (!bullet) { if (why) why.reason = "no_check"; return null; }
+  const task = parseTestTask(TEST_TRIGGER, `Add a test for ${symbol} in ${file}\nFix: ${sha}\n${bullet}`);
+  if (!task) { if (why) why.reason = "task_unparsed"; return null; }
+  const built = buildTestEdit({ ...params, grading: "fail-before-pass-after", placement: "append", args: ARGS_PLAIN_DATA_V3 }, task, files, isTest);
+  if (!built || built.fixSha !== sha || built.create) return null;
+  return { path: built.path, content: built.content, fixSha: sha };
+}
+
+/** One call list per primitive parameter combination. Anything else is not probed. */
+function signatureCalls(content: string, symbol: string): unknown[][] | null {
+  const sf = ts.createSourceFile("sig.ts", content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const fn = sf.statements.find((st): st is ts.FunctionDeclaration => ts.isFunctionDeclaration(st) && st.name?.text === symbol && !!st.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword));
+  if (!fn || fn.parameters.length > 2) return null;
+  let calls: unknown[][] = [[]];
+  for (const p of fn.parameters) {
+    if (p.questionToken || p.dotDotDotToken || !p.type) return null;
+    const values = p.type.getText(sf) === "number" ? [0, 1] : p.type.getText(sf) === "string" ? ["a"] : p.type.getText(sf) === "boolean" ? [true] : null;
+    if (!values) return null;
+    calls = calls.flatMap((c) => values.map((v) => [...c, v])).slice(0, 4);
+  }
+  return calls;
+}
+
+function oneBullet(rows: ProbeRow[], symbol: string, checks: readonly string[]): string | null {
+  for (const row of rows) {
+    if (row.got === null || row.got === undefined || typeof row.got === "object") continue;
+    if (!checks.includes("equal")) continue;
+    const args = row.args.map((a) => JSON.stringify(a)).join(", ");
+    return `- ${symbol}(${args}) is ${JSON.stringify(row.got)}`;
+  }
+  return null;
 }
