@@ -22,6 +22,10 @@ test("a row with no repo sha cannot be run, and a candidate is the only pass", (
   assert.deepEqual(commitRef("PeaceAI-Workspace#1, PeaceSTOCKS@abcdef1"), { repo: "PeaceSTOCKS", sha: "abcdef1" });
   assert.deepEqual(classifyJobOutput({ timedOut: false, code: 0, candidates: 1, stdout: "" }), { status: "pass", reason: "JOB_A_CANDIDATES:1" });
   assert.equal(classifyJobOutput({ timedOut: false, code: 0, candidates: 0, stdout: "nl=unsure reason=no_family\n" }).status, "fail");
+  const line = classifyJobOutput({ timedOut: false, code: 0, candidates: 0, stdout: "learned refusals: public-derive-wire-rethrow-v1=wire_trigger; public-test-case-existing-v1=task_unparsed\n" });
+  assert.equal(line.status, "fail");
+  assert.match(line.reason, /wire_trigger/);
+  assert.match(line.reason, /task_unparsed/);
   assert.equal(classifyJobOutput({ timedOut: true, code: null, candidates: null, stdout: "" }).reason, "TIMEOUT");
   assert.equal(classifyJobOutput({ timedOut: false, code: null, candidates: null, stdout: "" }).reason, "SPAWN_FAILED");
 });
