@@ -13,7 +13,8 @@ import { LOG_PATH, type Entry } from "../../builder-log/check.ts";
 import { makeGitOnMainChecker, denverYmd } from "../../builder-log/coverage.ts";
 import { parseLogEntries } from "../../builder-log/coverage.ts";
 import { buildCapabilityReport, inputDigest, type ReplayBind } from "../lib/capabilityreport.ts";
-import { CORE_ENTRY, boundReplay, classifyJobOutput, commitRef, rowUnrunnable, type CommitRef } from "../lib/capabilityjob.ts";
+import { CORE_ENTRY, boundReplay, classifyJobOutput, commitRef, type CommitRef } from "../lib/capabilityjob.ts";
+import { canonicalRequest, guessFamily, scoreFamilies, trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
 
 const ROW_MS = 45_000;
 
@@ -144,6 +145,28 @@ function kernelBundle(coreDir: string, tooling: string): { bundle: string } | { 
   return { bundle: out };
 }
 
+function mergeSha(pr: number): string | null {
+  const r = spawnSync("gh", ["pr", "view", String(pr), "--repo", "PeaceG03/PeaceAI-Workspace", "--json", "mergeCommit"], { encoding: "utf8", timeout: 30_000 });
+  if (r.status !== 0) return null;
+  try {
+    const oid = (JSON.parse(r.stdout) as { mergeCommit?: { oid?: string } }).mergeCommit?.oid;
+    return oid && /^[0-9a-f]{40}$/.test(oid) ? oid : null;
+  } catch { return null; }
+}
+
+/** A repo@sha already in the row, a recovered merge commit, or a permanent reason there is no commit. */
+function targetOf(changed: string): CommitRef | { reason: string } {
+  const ref = commitRef(changed);
+  if (ref) return ref;
+  const none = /^none \(([^)]*)\)$/.exec(changed.trim());
+  if (none) return { reason: `UNMEASURABLE: ${none[1]}` };
+  const prs = [...changed.matchAll(/PeaceAI-Workspace#(\d+)/g)].map((m) => Number(m[1]));
+  if (prs.length !== 1) return { reason: prs.length === 0 ? "UNMEASURABLE: no repo sha and no pull request number" : `UNMEASURABLE: ${prs.length} pull request refs and no sha` };
+  const sha = mergeSha(prs[0]!);
+  if (!sha) return { reason: `UNMEASURABLE: PeaceAI-Workspace#${prs[0]} has no merge commit` };
+  return { repo: "PeaceAI-Workspace", sha };
+}
+
 function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, seq: number): { status: "pass" | "fail" | "unmeasured"; reason: string } {
   const src = ref.repo === "PeaceSTOCKS" ? (process.env.PEACESTOCKS_CLONE?.trim() || "") : tooling;
   if (!src || !existsSync(src)) return { status: "unmeasured", reason: `NO_CLONE: ${ref.repo}` };
@@ -155,7 +178,7 @@ function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, 
   try {
     const r = spawnSync(join(tooling, "node_modules/.bin/tsx"), [join(tooling, "peaceai/bin/generate.ts")], {
       cwd: tooling, encoding: "utf8", timeout: ROW_MS,
-      env: { ...process.env, PEACEAI_KERNEL_BUNDLE: bundle, PEACEAI_OUT_DIR: outDir, PEACEAI_WORKSPACE_DIR: dir, PEACEAI_TARGET: `PeaceG03/${ref.repo}`, ISSUE_TITLE: `builder-log seq ${seq}`, ISSUE_BODY: asked.slice(0, 8000) },
+      env: { ...process.env, PEACEAI_KERNEL_BUNDLE: bundle, PEACEAI_OUT_DIR: outDir, PEACEAI_WORKSPACE_DIR: dir, PEACEAI_TARGET: `PeaceG03/${ref.repo}`, PEACEAI_TEST_EXISTING: "true", ISSUE_TITLE: `builder-log seq ${seq}`, ISSUE_BODY: asked.slice(0, 8000) },
     });
     let candidates: number | null = null;
     const summary = join(outDir, "summary.json");
@@ -196,16 +219,35 @@ function main(): void {
   const buildError = problem ?? (built && "error" in built ? built.error : null);
   const bundle = built && "bundle" in built ? built.bundle : null;
   const entries = new Map(parseLogEntries(logText).map((e) => [e.seq, e as Entry]));
+  const familyRows: FamilyRow[] = [...entries.values()].map((e) => ({ seq: e.seq, asked: e.asked, skill: e.skill }));
+  const model = trainRequestModel(familyRows);
+  const devScore = scoreFamilies(model, familyRows, false);
+  const heldScore = scoreFamilies(model, familyRows, true);
+  console.log(`family dev rows=${devScore.rows} correct=${devScore.correct} wrong=${devScore.wrong} refused=${devScore.refused} kept=${model.families.join(",")}`);
+  console.log(`family heldout rows=${heldScore.rows} correct=${heldScore.correct} wrong=${heldScore.wrong} refused=${heldScore.refused}`);
   const preview = buildCapabilityReport(logText, asOf, onMain, [], null, bind, cloneHead);
   const replay = [];
   for (const r of preview.rows.filter((row) => row.inSet)) {
-    const changed = entries.get(r.seq)?.changed ?? "";
-    const structural = rowUnrunnable(changed);
-    const rec = structural
-      ? boundReplay(r.seq, "unmeasured", structural, bind)
-      : (buildError || !bundle)
-        ? boundReplay(r.seq, "unmeasured", buildError ?? "KERNEL_MISSING", bind)
-        : (() => { const ran = runOne(repo, bundle, commitRef(changed)!, entries.get(r.seq)?.asked ?? "", r.seq); return boundReplay(r.seq, ran.status, ran.reason, bind); })();
+    const entry = entries.get(r.seq);
+    const changed = entry?.changed ?? "";
+    const asked = entry?.asked ?? "";
+    const target = targetOf(changed);
+    let rec;
+    if ("reason" in target) rec = boundReplay(r.seq, "unmeasured", target.reason, bind);
+    else if (buildError || !bundle) rec = boundReplay(r.seq, "unmeasured", buildError ?? "KERNEL_MISSING", bind);
+    else {
+      const g = guessFamily(model, asked);
+      if (g.none) rec = boundReplay(r.seq, "fail", "NOT_CODE_FAMILY", bind);
+      else if (!g.family) rec = boundReplay(r.seq, "fail", "CLASSIFIER_UNSURE", bind);
+      else {
+        const canon = canonicalRequest(g.family, asked);
+        if (!canon) rec = boundReplay(r.seq, "fail", `NO_SLOTS: ${g.family}`, bind);
+        else {
+          const ran = runOne(repo, bundle, target, canon, r.seq);
+          rec = boundReplay(r.seq, ran.status, ran.reason, bind);
+        }
+      }
+    }
     console.log(`row ${r.seq} ${rec.status} ${rec.reason}`);
     replay.push(rec);
   }
