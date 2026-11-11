@@ -4,7 +4,7 @@ import type { ReplayBind, ReplayRecord } from "./capabilityreport.ts";
 import { parseExistingTestTask, TEST_EXISTING_TRIGGER } from "./learned-test-existing.ts";
 import { isCanonical } from "./nlparse.ts";
 import { canonicalRequest } from "./requestfamily.ts";
-import { cleanIssueText } from "./taskmap.ts";
+import { cleanIssueText, MAX_OBJECTIVE_CHARS } from "./taskmap.ts";
 
 export const CORE_ENTRY = "packages/coding-kernel/src/ActionsKernel.ts";
 const SHA_REF = /(PeaceSTOCKS|PeaceAI-Workspace)@([0-9a-f]{7,40})/g;
@@ -54,17 +54,25 @@ export function landingParent(sha: string): string | null {
 
 const TASK_HEADER = new RegExp(TEST_EXISTING_TRIGGER, "i");
 
+/** The ISSUE_TITLE Job A passes for this row. generate.ts spends it inside the objective budget. */
+export function replayIssueTitle(seq: number): string {
+  return `builder-log seq ${seq}`;
+}
+
 /**
  * The issue body Job A should read, only when it is the same characterization task the log already
  * named and the approved rule can parse its checks. Anything else is refused and the log line stands.
- * The body is not sliced: a cut bullet would be a different task.
+ * Validation uses the same title generate will see. A cleaned text that fills the objective budget
+ * may have sliced a check into a different value, so it is refused. The raw body is returned only
+ * when that titled text is uncut and the same task.
  */
-export function adoptIssueBody(asked: string, issueBody: string): string | null {
+export function adoptIssueBody(asked: string, issueBody: string, seq: number): string | null {
   if (!issueBody.trim() || issueBody.length > 8000) return null;
   const header = canonicalRequest("TEST_CASE_EXISTING", asked);
   const named = header ? TASK_HEADER.exec(header)?.groups : undefined;
   if (!named?.symbol || !named.file) return null;
-  const cleaned = cleanIssueText({ title: "", body: issueBody });
+  const cleaned = cleanIssueText({ title: replayIssueTitle(seq), body: issueBody });
+  if (cleaned.length === MAX_OBJECTIVE_CHARS) return null;
   if (!isCanonical(cleaned)) return null;
   const task = parseExistingTestTask(TEST_EXISTING_TRIGGER, cleaned);
   if (!task || task.symbol !== named.symbol || task.file !== named.file || task.checks.length < 1) return null;

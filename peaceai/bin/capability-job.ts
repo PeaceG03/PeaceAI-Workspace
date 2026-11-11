@@ -13,7 +13,7 @@ import { LOG_PATH, type Entry } from "../../builder-log/check.ts";
 import { makeGitOnMainChecker, denverYmd } from "../../builder-log/coverage.ts";
 import { parseLogEntries } from "../../builder-log/coverage.ts";
 import { buildCapabilityReport, inputDigest, type ReplayBind } from "../lib/capabilityreport.ts";
-import { CORE_ENTRY, adoptIssueBody, boundReplay, citedIssue, classifyJobOutput, commitRef, landingParent, type CommitRef } from "../lib/capabilityjob.ts";
+import { CORE_ENTRY, adoptIssueBody, boundReplay, citedIssue, classifyJobOutput, commitRef, landingParent, replayIssueTitle, type CommitRef } from "../lib/capabilityjob.ts";
 import { canonicalRequest, guessFamily, scoreFamilies, trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
 
 const ROW_MS = 45_000;
@@ -212,7 +212,7 @@ function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, 
   try {
     const r = spawnSync(join(tooling, "node_modules/.bin/tsx"), [join(tooling, "peaceai/bin/generate.ts")], {
       cwd: tooling, encoding: "utf8", timeout: ROW_MS,
-      env: { ...process.env, PEACEAI_KERNEL_BUNDLE: bundle, PEACEAI_OUT_DIR: outDir, PEACEAI_WORKSPACE_DIR: dir, PEACEAI_TARGET: `PeaceG03/${ref.repo}`, PEACEAI_TEST_EXISTING: "true", ISSUE_TITLE: `builder-log seq ${seq}`, ISSUE_BODY: asked.slice(0, 8000) },
+      env: { ...process.env, PEACEAI_KERNEL_BUNDLE: bundle, PEACEAI_OUT_DIR: outDir, PEACEAI_WORKSPACE_DIR: dir, PEACEAI_TARGET: `PeaceG03/${ref.repo}`, PEACEAI_TEST_EXISTING: "true", ISSUE_TITLE: replayIssueTitle(seq), ISSUE_BODY: asked.slice(0, 8000) },
     });
     let candidates: number | null = null;
     const summary = join(outDir, "summary.json");
@@ -281,7 +281,7 @@ function main(): void {
         else {
           const n = g.family === "TEST_CASE_EXISTING" ? citedIssue(asked) : null;
           const raw = n ? issueBody(n) : null;
-          const adopted = raw ? adoptIssueBody(asked, raw) : null;
+          const adopted = raw ? adoptIssueBody(asked, raw, r.seq) : null;
           const ran = runOne(repo, bundle, target, adopted ?? canon, r.seq, "error" in built ? "" : built.coreDir);
           rec = boundReplay(r.seq, ran.status, ran.reason, bind);
         }
