@@ -31,12 +31,18 @@ export interface ReplayRecord {
   tree?: string;
   /** sha256 of the log text the execution read. */
   input?: string;
+  /** Pinned core commit, when the row was a Job A replay. */
+  coreCommit?: string;
+  /** sha256 of the core archive, when the row was a Job A replay. */
+  archiveSha256?: string;
 }
 
 export interface ReplayBind {
   head: string;
   tree: string;
   input: string;
+  coreCommit?: string;
+  archiveSha256?: string;
 }
 
 export interface CapabilityRow {
@@ -102,6 +108,9 @@ export function bindingProblem(rec: ReplayRecord, bind: ReplayBind | null): stri
   if (rec.head !== bind.head) return "STALE_HEAD";
   if (rec.tree !== bind.tree) return "STALE_TREE";
   if (rec.input !== bind.input) return "FORGED_INPUT";
+  if (bind.coreCommit || bind.archiveSha256) {
+    if (rec.coreCommit !== bind.coreCommit || rec.archiveSha256 !== bind.archiveSha256) return "CORE_PIN";
+  }
   return null;
 }
 

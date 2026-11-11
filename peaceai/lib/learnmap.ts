@@ -2,6 +2,7 @@
 // Read-only. credit is always false — nothing here is scored, graded, or wired into results.
 // Reuses codesearch (tree, read, symbol, resolveSpecifier), symbols.buildIndex, and coreindex.TEXT_EXT.
 // The CLI binds the typescript package through tsresolve before this module loads.
+import { createHash } from "node:crypto";
 import ts from "typescript";
 import { openRepo, isGeneratedPath, isTestPath, resolveSpecifier, type CodeRepo } from "./codesearch.ts";
 import { TEXT_EXT } from "./coreindex.ts";
@@ -10,6 +11,31 @@ import { buildIndex, type IndexFile } from "./symbols.ts";
 export const LEARN_MAP_SCHEMA = "peaceai-learn-map:v1" as const;
 const CODE_EXT = /\.(?:[cm]?[jt]sx?)$/;
 const byStr = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+/** One parse per distinct file text. The cap keeps a long process from retaining every historical text. */
+const AST_CAP = 4096;
+const astCache = new Map<string, ts.SourceFile>();
+let scanCount = 0;
+let parseCount = 0;
+
+function scriptKind(path: string): ts.ScriptKind {
+  return path.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+}
+
+function sourceFile(path: string, content: string): ts.SourceFile {
+  const key = `${scriptKind(path)}\0${createHash("sha256").update(content).digest("hex")}`;
+  const hit = astCache.get(key);
+  if (hit) return hit;
+  if (astCache.size >= AST_CAP) astCache.clear();
+  parseCount += 1;
+  const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, scriptKind(path));
+  astCache.set(key, sf);
+  return sf;
+}
+
+/** Drops the content-hash parse cache. The next scan parses each distinct text once. */
+export function resetLearnMapCache(): void {
+  astCache.clear();
+}
 
 export interface ProgramModule {
   path: string;
@@ -29,7 +55,15 @@ export interface ProgramMap {
   tests: ProgramTest[];
 }
 export interface MapWrong { id: string; prompt: string; expected: string; actual: string }
-export interface MapCheck { asked: number; correct: number; wrong: MapWrong[] }
+export interface MapCheck {
+  asked: number;
+  correct: number;
+  wrong: MapWrong[];
+  /** Full repo scans performed for this check. One scan answers every question. */
+  scans: number;
+  /** Source parses that missed the content-hash cache during this check. */
+  parses: number;
+}
 
 interface SourceFile { path: string; content: string }
 
@@ -48,8 +82,7 @@ function readWhole(code: CodeRepo, path: string): string | null {
 
 /** Relative specifiers in import / export / require / dynamic import, in source order, de-duplicated. */
 function specifiersOf(path: string, content: string): string[] {
-  const kind = path.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, kind);
+  const sf = sourceFile(path, content);
   const out: string[] = [];
   const add = (spec: string) => { if (!out.includes(spec)) out.push(spec); };
   const visit = (n: ts.Node): void => {
@@ -80,8 +113,7 @@ function hasExportKeyword(node: ts.Node): boolean {
 
 /** Names other files can import from this module, including re-exports. Sorted. */
 function exportNames(path: string, content: string): string[] {
-  const kind = path.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, kind);
+  const sf = sourceFile(path, content);
   const names = new Set<string>();
   for (const st of sf.statements) {
     if (ts.isExportDeclaration(st) && st.exportClause && ts.isNamedExports(st.exportClause)) {
@@ -103,8 +135,7 @@ function exportNames(path: string, content: string): string[] {
 
 /** One line from the file's comments, else the export names, else the declared names. No network. */
 function moduleSummary(path: string, content: string, exports: readonly string[], declared: readonly string[]): string {
-  const kind = path.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  const sf = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, kind);
+  const sf = sourceFile(path, content);
   const notes: string[] = [];
   const add = (raw: string | undefined) => {
     const sentence = raw ? commentSentence(raw) : null;
@@ -145,8 +176,8 @@ function packageEntries(code: CodeRepo, modules: ReadonlySet<string>): string[] 
 
 interface Scan { modules: ProgramModule[]; edges: ProgramEdge[]; tests: ProgramTest[]; entryPoints: string[] }
 
-function scanRepo(repoPath: string): Scan {
-  const code = openRepo(repoPath);
+function scanRepo(code: CodeRepo): Scan {
+  scanCount += 1;
   const tree = code.tree();
   if (!tree.ok) throw new Error(`learn-map: ${tree.reason}`);
   const codePaths = tree.files.filter((p) => TEXT_EXT.test(p) && CODE_EXT.test(p) && !isGeneratedPath(p)).sort(byStr);
@@ -186,7 +217,7 @@ function scanRepo(repoPath: string): Scan {
 
 /** Reads `repoPath` and returns a deterministic program map. Does not write. */
 export function buildProgramMap(repoPath: string): ProgramMap {
-  const scan = scanRepo(repoPath);
+  const scan = scanRepo(openRepo(repoPath));
   return {
     schema: LEARN_MAP_SCHEMA,
     experimental: true,
@@ -198,22 +229,30 @@ export function buildProgramMap(repoPath: string): ProgramMap {
   };
 }
 
-interface Question { id: string; prompt: string; expected: string; answer(repoPath: string): string }
+interface Question { id: string; prompt: string; expected: string; answer(): string }
 
 /** About ten questions taken from the map. Every claimed edge is asked, so a bad edge cannot hide. */
-function questions(map: ProgramMap): Question[] {
+function questions(map: ProgramMap, scan: Scan, code: CodeRepo): Question[] {
+  const edgeSet = new Set(scan.edges.map((e) => `${e.from}>${e.to}`));
+  const importsOf = new Map(scan.modules.map((m) => [m.path, m.imports.join(",")]));
+  const coversOf = new Map<string, string[]>();
+  for (const t of scan.tests) for (const c of t.covers) {
+    const list = coversOf.get(c) ?? [];
+    list.push(t.path);
+    coversOf.set(c, list);
+  }
   const edges: Question[] = map.edges.map((e) => ({
     id: `edge:${e.from}>${e.to}`,
     prompt: `does ${e.from} import ${e.to}?`,
     expected: "yes",
-    answer: (repo) => (scanRepo(repo).edges.some((x) => x.from === e.from && x.to === e.to) ? "yes" : "no"),
+    answer: () => (edgeSet.has(`${e.from}>${e.to}`) ? "yes" : "no"),
   }));
   const rest: { q: Question; rank: number }[] = [];
   for (const m of map.modules) rest.push({ rank: 0, q: {
     id: `imports:${m.path}`,
     prompt: `what does ${m.path} import?`,
     expected: m.imports.join(","),
-    answer: (repo) => scanRepo(repo).modules.find((x) => x.path === m.path)?.imports.join(",") ?? "absent",
+    answer: () => importsOf.get(m.path) ?? "absent",
   } });
   const covered = new Map<string, string[]>();
   for (const t of map.tests) for (const c of t.covers) {
@@ -225,7 +264,7 @@ function questions(map: ProgramMap): Question[] {
     id: `covered:${mod}`,
     prompt: `which tests cover ${mod}?`,
     expected: tests.slice().sort(byStr).join(","),
-    answer: (repo) => scanRepo(repo).tests.filter((t) => t.covers.includes(mod)).map((t) => t.path).sort(byStr).join(","),
+    answer: () => (coversOf.get(mod) ?? []).slice().sort(byStr).join(","),
   } });
   const byExport = new Map<string, string[]>();
   for (const m of map.modules) for (const name of m.exports) {
@@ -237,7 +276,7 @@ function questions(map: ProgramMap): Question[] {
     id: `export:${name}`,
     prompt: `which module exports ${name}?`,
     expected: paths.slice().sort(byStr).join(","),
-    answer: (repo) => exportersOf(repo, name).join(","),
+    answer: () => exportersOf(code, name).join(","),
   } });
   rest.sort((a, b) => a.rank - b.rank || byStr(a.q.id, b.q.id));
   const out = [...edges];
@@ -249,8 +288,7 @@ function questions(map: ProgramMap): Question[] {
 }
 
 /** Modules that really export `name`, from codesearch's symbol tool (definitions and re-exports). */
-function exportersOf(repoPath: string, name: string): string[] {
-  const code = openRepo(repoPath);
+function exportersOf(code: CodeRepo, name: string): string[] {
   const hit = code.symbol(name);
   if (!hit.ok) return [];
   const paths = new Set<string>();
@@ -264,11 +302,21 @@ function exportersOf(repoPath: string, name: string): string[] {
  * and checks each answer against the files in `repoPath`. Trusted only when every answer is correct.
  */
 export function checkMap(map: ProgramMap, repoPath: string): MapCheck {
+  const scansBefore = scanCount;
+  const parsesBefore = parseCount;
+  const code = openRepo(repoPath);
+  const scan = scanRepo(code);
   const wrong: MapWrong[] = [];
-  const qs = questions(map);
+  const qs = questions(map, scan, code);
   for (const q of qs) {
-    const actual = q.answer(repoPath);
+    const actual = q.answer();
     if (actual !== q.expected) wrong.push({ id: q.id, prompt: q.prompt, expected: q.expected, actual });
   }
-  return { asked: qs.length, correct: qs.length - wrong.length, wrong };
+  return {
+    asked: qs.length,
+    correct: qs.length - wrong.length,
+    wrong,
+    scans: scanCount - scansBefore,
+    parses: parseCount - parsesBefore,
+  };
 }

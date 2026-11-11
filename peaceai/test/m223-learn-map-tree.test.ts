@@ -8,7 +8,7 @@ import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, r
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
-import { buildProgramMap, checkMap } from "../lib/learnmap.ts";
+import { buildProgramMap, checkMap, resetLearnMapCache } from "../lib/learnmap.ts";
 import { buildSkillTree, renderSkillTree, treeConserved, type GapNode } from "../lib/learntree.ts";
 import { practiceProgram } from "../lib/learnpractice.ts";
 
@@ -332,6 +332,34 @@ test("learn CLI writes the map and the outline outside the repo", { timeout: 120
       rmSync(out, { recursive: true, force: true });
     }
   });
+});
+
+test("checkMap scans once, reuses file text by hash, and stays inside a time budget", () => {
+  const dir = mkdtempSync(join(tmpdir(), "peaceai-map-budget-"));
+  try {
+    mkdirSync(join(dir, "src"));
+    const n = 24;
+    for (let i = 0; i < n; i++) {
+      const prev = i === 0 ? "" : `import { piece${i - 1} } from "./p${String(i - 1).padStart(2, "0")}.ts";\n`;
+      writeFileSync(join(dir, "src", `p${String(i).padStart(2, "0")}.ts`), `${prev}export function piece${i}(x: number): number {\n  return x + ${i};\n}\n`);
+    }
+    resetLearnMapCache();
+    const map = buildProgramMap(dir);
+    resetLearnMapCache();
+    const t0 = Date.now();
+    const check = checkMap(map, dir);
+    const ms = Date.now() - t0;
+    assert.equal(check.scans, 1);
+    assert.ok(check.parses > 0 && check.parses <= n, `parses ${check.parses}`);
+    assert.deepEqual(check.wrong, []);
+    assert.ok(ms < 2000, `checkMap took ${ms}ms`);
+    const again = checkMap(map, dir);
+    assert.equal(again.scans, 1);
+    assert.equal(again.parses, 0);
+    assert.deepEqual(again.wrong, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 function countUnits(nodes: GapNode[]): number {
