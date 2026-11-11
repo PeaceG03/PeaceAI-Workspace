@@ -13,7 +13,6 @@
 import ts from "typescript";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createRequire } from "node:module";
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
@@ -4101,8 +4100,7 @@ function probePrivate(closure: Map<string, string>, entry: string, symbol: strin
     }
     const script = join(dir, "probe.mts");
     writeFileSync(script, `import { pathToFileURL } from "node:url";\nconst m = await import(pathToFileURL(${JSON.stringify(join(dir, entry))}).href);\nconst fn = m[${JSON.stringify(symbol)}];\nconst rows = [];\nfor (const args of ${JSON.stringify(calls)}) rows.push({ args, got: fn(...args) });\nprocess.stdout.write(JSON.stringify(rows));\n`);
-    const tsx = createRequire(import.meta.url).resolve("tsx/esm");
-    const run = spawnSync(process.execPath, ["--import", tsx, script], {
+    const run = spawnSync(process.execPath, ["--experimental-strip-types", script], {
       cwd: dir, encoding: "utf8", timeout: 8000,
       env: { PATH: process.env.PATH ?? "" },
     });
