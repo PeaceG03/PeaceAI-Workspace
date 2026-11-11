@@ -42,8 +42,13 @@ export function heldOutRow(seq: number, asked: string): boolean {
   return createHash("sha256").update(`${seq}\n${asked}`).digest()[0]! % 5 === 0;
 }
 
-/** A path, a call, a camelCase or snake_case name, or a code term. The cue word itself does not count. */
-const CODE_CONTEXT = /(?:\b[\w.-]+(?:\/[\w.-]+)+\.[A-Za-z0-9]{1,8}\b|\b[A-Za-z_$][\w$]*\s*\(|`[A-Za-z_$][\w$]*`|\b[a-z][a-z0-9]*[A-Z][\w$]*\b|\b[A-Z][a-z0-9]+[A-Z][\w$]*\b|\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|\b[A-Za-z_$][A-Za-z_$]*\d[\w$]*\b|\btest file\b|\bsrc\/)/;
+/**
+ * Code next to a cue. A real path (a letter-led file with a source extension), a call with no space
+ * before the parenthesis, a backticked name, or a snake_case name. Not a brand, a digit-word,
+ * a parenthesis in prose, "test file", or a bare "src/".
+ */
+const CODE_EXT = "ts|tsx|mts|cts|js|jsx|mjs|cjs|json|py|sh|yml|yaml";
+const CODE_CONTEXT = new RegExp(String.raw`(?:(?:^|[^\w./-])(?:\.{1,2}/)?(?:[A-Za-z_][\w.-]*/)+[A-Za-z_][\w.-]*\.(?:${CODE_EXT})\b|\b[A-Za-z_$][\w$]*\(|\`[A-Za-z_$][\w$]*\`|\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b)`);
 
 function contextNear(text: string, start: number, end: number): boolean {
   const from = Math.max(0, start - 96);

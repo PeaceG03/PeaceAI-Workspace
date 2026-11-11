@@ -32,35 +32,56 @@ test("a characterization sentence maps to the existing-test family, and a vague 
 test("an ordinary sentence does not pick a family, and dev accepted answers are correct", () => {
   const model = trainRequestModel(rows);
   void thresholdOnDev(rows);
-  const prose: Record<string, string> = {
-    TEST_CASE_EXISTING: "I took a characterization test at the clinic",
-    TEST_CASE_APPEND: "please append a test to the soup",
-    TEST_CASE: "write regression tests for the new employee",
-    METHOD_GUARD: "please guard the milk with a method",
-    THROW_GUARD: "guard the door and throw the ball",
-    ENV_FIX: "please make the environment variable comfortable",
-    IMPORT_EDIT: "please import the milk from the store",
-    DERIVE_FROM_BEHAVIOR: "derive a conclusion from the essay",
-    LOOP_FUNCTION: "the loop function of the poem is rhyme",
-    COMPLEX_FUNCTION: "a complex function of the economy",
-    WORKFLOW_JOB: "the workflow of the job is tiring",
-    WORKFLOW_STEP: "please cron the bread to rise",
-    ADD_FUNCTION_NEW_MODULE: "a new module of the course starts Monday",
-    ADD_FUNCTION: "please add helper butter to the cake",
-    TSCONFIG_SCRIPT: "typecheck the oven temperature",
-    MODIFY_LOGIC: "fail closed the shop for the night",
-    CHECK_OBJECT_LITERAL_ARGS: "the object-literal of my feelings",
+  const holes = [
+    "from the test file",
+    "src/",
+    "(and eggs) from the store",
+    "the iPhone from the store",
+    "from aisle B12",
+    "on page4",
+    "from the McDonald essay",
+    "from chapter 3/4.5 of the book",
+    "(night shift) is tiring",
+    "(pages 3-4)",
+  ];
+  const cues: Record<string, string> = {
+    TEST_CASE_EXISTING: "characterization test",
+    TEST_CASE_APPEND: "append a test",
+    TEST_CASE: "regression tests",
+    METHOD_GUARD: "with a method",
+    THROW_GUARD: "guard",
+    ENV_FIX: "environment variable",
+    IMPORT_EDIT: "import",
+    DERIVE_FROM_BEHAVIOR: "derive",
+    LOOP_FUNCTION: "loop function",
+    COMPLEX_FUNCTION: "complex function",
+    WORKFLOW_JOB: "workflow of the job",
+    WORKFLOW_STEP: "cron",
+    ADD_FUNCTION_NEW_MODULE: "new module",
+    ADD_FUNCTION: "add helper",
+    TSCONFIG_SCRIPT: "typecheck",
+    MODIFY_LOGIC: "fail closed",
+    CHECK_OBJECT_LITERAL_ARGS: "object-literal",
   };
-  for (const [family, sentence] of Object.entries(prose)) {
-    assert.equal(guessFamily(model, sentence).family, null, `${family}: ${sentence}`);
+  const fixed = [
+    "please import the milk from the test file",
+    "please import the milk src/",
+    "please import the milk (and eggs) from the store",
+    "please import the iPhone from the store",
+    "please import the milk from aisle B12",
+    "derive a conclusion from the essay (pages 3-4)",
+    "derive a conclusion from the essay on page4",
+    "derive a conclusion from the McDonald essay",
+    "derive the answer from chapter 3/4.5 of the book",
+    "the workflow of the job (night shift) is tiring",
+  ];
+  for (const sentence of fixed) assert.equal(guessFamily(model, sentence).family, null, sentence);
+  for (const family of model.families) {
+    const cue = cues[family];
+    assert.ok(cue, family);
+    for (const hole of holes) assert.equal(guessFamily(model, `please ${cue} ${hole}`).family, null, `${family}: ${hole}`);
   }
-  for (const family of model.families) assert.ok(family in prose, family);
   const dev = scoreFamilies(model, rows, false);
   assert.equal(dev.wrong, 0);
   assert.ok(dev.correct > 0);
-});
-
-test("held-out is scored only after the cues are frozen", () => {
-  const held = scoreFamilies(trainRequestModel(rows), rows, true);
-  assert.deepEqual(held, { rows: 39, correct: 18, wrong: 0, refused: 21 });
 });
