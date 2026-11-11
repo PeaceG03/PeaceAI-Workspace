@@ -13,7 +13,7 @@ import { LOG_PATH, type Entry } from "../../builder-log/check.ts";
 import { makeGitOnMainChecker, denverYmd } from "../../builder-log/coverage.ts";
 import { parseLogEntries } from "../../builder-log/coverage.ts";
 import { buildCapabilityReport, inputDigest, type ReplayBind } from "../lib/capabilityreport.ts";
-import { CORE_ENTRY, boundReplay, classifyJobOutput, commitRef, type CommitRef } from "../lib/capabilityjob.ts";
+import { CORE_ENTRY, adoptIssueBody, boundReplay, citedIssue, classifyJobOutput, commitRef, landingParent, type CommitRef } from "../lib/capabilityjob.ts";
 import { canonicalRequest, guessFamily, scoreFamilies, trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
 
 const ROW_MS = 45_000;
@@ -186,13 +186,28 @@ function productionGate(tooling: string, dir: string, outDir: string, coreDir: s
   return { status: "fail", reason: "GATE_FAIL" };
 }
 
+function issueBody(n: number): string | null {
+  const r = spawnSync("gh", ["issue", "view", String(n), "--repo", "PeaceG03/PeaceAI-Workspace", "--json", "body"], { encoding: "utf8", timeout: 30_000 });
+  if (r.status !== 0) return null;
+  try {
+    const body = (JSON.parse(r.stdout) as { body?: unknown }).body;
+    return typeof body === "string" ? body : null;
+  } catch { return null; }
+}
+
 function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, seq: number, coreDir: string): { status: "pass" | "fail" | "unmeasured"; reason: string } {
   const src = ref.repo === "PeaceSTOCKS" ? (process.env.PEACESTOCKS_CLONE?.trim() || "") : tooling;
   if (!src || !existsSync(src)) return { status: "unmeasured", reason: `NO_CLONE: ${ref.repo}` };
+  const rev = landingParent(ref.sha);
+  if (!rev) return { status: "unmeasured", reason: `CHECKOUT_FAILED: ${ref.repo}@${ref.sha}` };
   const dir = join(tmpdir(), `peaceai-joba-${seq}-${ref.sha.slice(0, 8)}`);
   rmSync(dir, { recursive: true, force: true });
-  const add = spawnSync("git", ["-C", src, "worktree", "add", "--detach", "--quiet", dir, ref.sha], { encoding: "utf8", timeout: 60_000 });
-  if (add.status !== 0) return { status: "unmeasured", reason: `CHECKOUT_FAILED: ${ref.repo}@${ref.sha}` };
+  const add = spawnSync("git", ["-C", src, "worktree", "add", "--detach", "--quiet", dir, rev], { encoding: "utf8", timeout: 60_000 });
+  if (add.status !== 0) {
+    spawnSync("git", ["-C", src, "worktree", "remove", "--force", dir], { stdio: "ignore" });
+    rmSync(dir, { recursive: true, force: true });
+    return { status: "unmeasured", reason: `CHECKOUT_FAILED: ${ref.repo}@${rev}` };
+  }
   const outDir = mkdtempSync(join(tmpdir(), "peaceai-joba-out-"));
   try {
     const r = spawnSync(join(tooling, "node_modules/.bin/tsx"), [join(tooling, "peaceai/bin/generate.ts")], {
@@ -255,7 +270,6 @@ function main(): void {
     const target = targetOf(changed);
     let rec;
     if ("reason" in target) rec = boundReplay(r.seq, "unmeasured", target.reason, bind);
-    else if (buildError || !bundle) rec = boundReplay(r.seq, "unmeasured", buildError ?? "KERNEL_MISSING", bind);
     else {
       const g = guessFamily(model, asked);
       if (g.none) rec = boundReplay(r.seq, "fail", "NOT_CODE_FAMILY", bind);
@@ -263,8 +277,12 @@ function main(): void {
       else {
         const canon = canonicalRequest(g.family, asked);
         if (!canon) rec = boundReplay(r.seq, "fail", `NO_SLOTS: ${g.family}`, bind);
+        else if (buildError || !bundle) rec = boundReplay(r.seq, "unmeasured", buildError ?? "KERNEL_MISSING", bind);
         else {
-          const ran = runOne(repo, bundle, target, canon, r.seq, "error" in built ? "" : built.coreDir);
+          const n = g.family === "TEST_CASE_EXISTING" ? citedIssue(asked) : null;
+          const raw = n ? issueBody(n) : null;
+          const adopted = raw ? adoptIssueBody(asked, raw) : null;
+          const ran = runOne(repo, bundle, target, adopted ?? canon, r.seq, "error" in built ? "" : built.coreDir);
           rec = boundReplay(r.seq, ran.status, ran.reason, bind);
         }
       }
