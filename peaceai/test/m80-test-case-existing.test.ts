@@ -78,7 +78,8 @@ test("spec: valid, hash pinned, own kind and trigger, fixed vocabulary; nothing 
   assert.notEqual(TEST_EXISTING_TRIGGER, TEST_TRIGGER);
   assert.equal(SPEC.minedFrom, "public");
   assert.deepEqual(SPEC.params, { assert: "node:assert/strict-default", checks: ["equal", "deepEqual", "throws"], framework: "node:test-default", grading: "pass-now-fail-stub", matcher: "regex", maxLines: "40", placement: "new-file", target: "exported-pure-function" });
-  for (const [k, v] of [["checks", ["equal", "rejects"]], ["grading", "fail-before-pass-after"], ["placement", "append"], ["target", "any-function"], ["maxLines", "2"], ["extra", "x"]] as const)
+  // append and fail-before-pass-after are the append rule's vocabulary. v1's own params stay new-file and pass-now-fail-stub.
+  for (const [k, v] of [["checks", ["equal", "rejects"]], ["grading", "pass-later"], ["placement", "middle"], ["target", "any-function"], ["maxLines", "2"], ["extra", "x"]] as const)
     assert.ok(!validateSpec({ ...SPEC, params: { ...SPEC.params, [k]: v } }), `${k} refused`);
   assert.ok(!validateSpec({ ...SPEC, minedFrom: "core", id: "core-test-case-existing-v1" }), "public-mined only");
   // The fix-based kind is unchanged and the two triggers never read each other's header.

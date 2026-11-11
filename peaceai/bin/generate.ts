@@ -298,7 +298,9 @@ for (const a of planSteps ? [] : admissions) {
   // M80: TEST_CASE_EXISTING creates exactly ONE new test file (never an existing path) and nothing else: no source
   // edit, no extra file, no fix commit. Job B grades it fix-free (passes today, fails with the function stubbed).
   const existingTest = a.spec.kind === "TEST_EXISTING";
-  if (existingTest && !(edit.create === true && edit.selfGrade === true && edit.extra === undefined && edit.fixSha === undefined && !baseFiles.has(edit.path) && scope.isSource(edit.path) && scope.isTest(edit.path))) continue;
+  const newCase = edit.create === true && edit.selfGrade === true && edit.extra === undefined && edit.fixSha === undefined && !baseFiles.has(edit.path) && scope.isSource(edit.path) && scope.isTest(edit.path);
+  const appended = !edit.create && typeof edit.fixSha === "string" && /^[0-9a-f]{40}$/.test(edit.fixSha) && edit.extra === undefined && edit.selfGrade !== true && baseFiles.has(edit.path) && scope.isTest(edit.path);
+  if (existingTest && !newCase && !appended) continue;
   if (edit.create && !newModule && !existingTest && (baseFiles.has(edit.path) || !edit.fixSha || !/^[0-9a-f]{40}$/.test(edit.fixSha))) continue;
   // M13: a guard rule edits one existing source file and creates new test files only; it is graded against itself.
   // Live proofs #306/#307: WORKFLOW_JOB (job block, no extra) and TSCONFIG_SCRIPT (package.json + one new root
