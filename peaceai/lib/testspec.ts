@@ -22,7 +22,10 @@ export type Understanding = (typeof UNDERSTANDINGS)[number];
 
 export const SPEC_CANT = [
   "CANT_DO_YET_NO_SYMBOL",
-  "CANT_DO_YET_ASSERTION",
+  "CANT_DO_YET_RUNNER_ERROR",
+  "CANT_DO_YET_NO_FAILURE",
+  "CANT_DO_YET_ASSERTION_UNPARSED",
+  "CANT_DO_YET_ASSERTION_UNREDUCIBLE",
   "CANT_DO_YET_NO_VERIFY",
   "CANT_DO_YET_CAP",
 ] as const;
@@ -32,9 +35,26 @@ export type SpecCant = (typeof SPEC_CANT)[number];
 export const SPEC_ATTEMPT_CAP = Math.min(MAX_ATTEMPTS, MAX_CANDIDATES);
 
 export interface Expectation {
-  kind: "equal" | "throws" | "type";
+  kind: "equal" | "throws" | "type" | "boolean";
   symbol: string;
   file: string;
+  /** Source text of the call arguments, shortened. */
+  input: string;
+  /** Source text of the expected value, "true"/"false", or "throws". */
+  expected: string;
+}
+
+export const SPEC_DIAG_KINDS = [
+  "runner_error", "no_failure", "assertion_unparsed", "assertion_unreducible",
+  "reduced", "verified", "no_symbol", "no_verify", "cap", "sandbox_poison", "unsafe",
+] as const;
+export type SpecDiagKind = (typeof SPEC_DIAG_KINDS)[number];
+
+export interface SpecDiagnostic {
+  kind: SpecDiagKind;
+  code: number | null;
+  command: string[];
+  lines: string[];
 }
 
 export interface SpecInput {
@@ -64,9 +84,9 @@ export interface SpecInput {
 export type SpecBlock = "UNSAFE_ENV" | "SANDBOX_POISON";
 
 export type SpecResult =
-  | { status: "diff"; diff: string; attempts: number; expectations: Expectation[] }
-  | { status: "cant"; reason: SpecCant; attempts: number }
-  | { status: "blocked"; reason: SpecBlock; attempts: number };
+  | { status: "diff"; diff: string; attempts: number; expectations: Expectation[]; diagnostic: SpecDiagnostic }
+  | { status: "cant"; reason: SpecCant; attempts: number; diagnostic: SpecDiagnostic }
+  | { status: "blocked"; reason: SpecBlock; attempts: number; diagnostic: SpecDiagnostic };
 
 export function specTask(subject: string): string {
   const context = subject.replace(/\s+/g, " ").trim().slice(0, 200);
@@ -130,18 +150,55 @@ function literal(node: ts.Expression): boolean {
   return ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(node.operand);
 }
 
-function called(expr: ts.Expression, locals: ReadonlyMap<string, Binding>): { symbol: string; file: string } | null {
-  if (!ts.isCallExpression(expr)) return null;
-  const callee = expr.expression;
+function concrete(node: ts.Expression): boolean {
+  const expr = unwrap(node);
+  if (literal(expr)) return true;
+  if (ts.isArrayLiteralExpression(expr)) return expr.elements.every((el) => el && !ts.isSpreadElement(el) && ts.isExpression(el) && concrete(el));
+  if (ts.isObjectLiteralExpression(expr)) {
+    return expr.properties.every((p) => ts.isPropertyAssignment(p) && concrete(p.initializer) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) || ts.isNumericLiteral(p.name)));
+  }
+  return false;
+}
+
+function unwrap(expr: ts.Expression): ts.Expression {
+  let cur = expr;
+  while (ts.isAwaitExpression(cur) || ts.isParenthesizedExpression(cur) || ts.isAsExpression(cur) || ts.isSatisfiesExpression(cur) || ts.isTypeAssertionExpression(cur)) cur = cur.expression;
+  return cur;
+}
+
+function snippet(sf: ts.SourceFile, node: ts.Node): string {
+  return sf.text.slice(node.getStart(sf), node.getEnd()).replace(/\s+/g, " ").slice(0, 80);
+}
+
+function called(expr: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: ts.SourceFile): { symbol: string; file: string; input: string } | null {
+  const inner = unwrap(expr);
+  if (!ts.isCallExpression(inner)) return null;
+  const callee = inner.expression;
+  if (!inner.arguments.every((arg) => literal(unwrap(arg)))) return null;
+  const input = inner.arguments.map((arg) => snippet(sf, arg)).join(", ");
   if (ts.isIdentifier(callee)) {
     const b = locals.get(callee.text);
-    if (!b || !expr.arguments.every(literal)) return null;
-    return { symbol: b.imported === "default" ? b.local : b.imported, file: b.file };
+    if (!b) return null;
+    return { symbol: b.imported === "default" ? b.local : b.imported, file: b.file, input };
   }
   if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && ts.isIdentifier(callee.name)) {
     const b = locals.get(callee.expression.text);
-    if (!b || !expr.arguments.every(literal)) return null;
-    return { symbol: callee.name.text, file: b.file };
+    if (!b) return null;
+    return { symbol: callee.name.text, file: b.file, input };
+  }
+  return null;
+}
+
+function arrowCall(fn: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: ts.SourceFile): { symbol: string; file: string; input: string } | null {
+  if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return null;
+  if (ts.isCallExpression(unwrap(fn.body as ts.Expression)) || ts.isBlock(fn.body)) {
+    if (!ts.isBlock(fn.body)) return called(fn.body as ts.Expression, locals, sf);
+    for (const st of fn.body.statements) {
+      if (ts.isExpressionStatement(st)) {
+        const hit = called(st.expression, locals, sf);
+        if (hit) return hit;
+      }
+    }
   }
   return null;
 }
@@ -152,43 +209,48 @@ export function expectationsIn(testFile: string, text: string, sourcePattern: st
   const locals = new Map(found.map((b) => [b.local, b]));
   const sf = ts.createSourceFile(testFile, text, ts.ScriptTarget.Latest, true);
   const out: Expectation[] = [];
-  const add = (kind: Expectation["kind"], hit: { symbol: string; file: string } | null) => {
-    if (!hit) return;
-    if (out.some((e) => e.kind === kind && e.symbol === hit.symbol && e.file === hit.file)) return;
-    out.push({ kind, symbol: hit.symbol, file: hit.file });
+  const add = (kind: Expectation["kind"], hit: { symbol: string; file: string; input: string } | null, expected: string) => {
+    if (!hit || out.length >= 32) return;
+    const row: Expectation = { kind, symbol: hit.symbol, file: hit.file, input: hit.input, expected: expected.slice(0, 80) };
+    if (out.some((e) => e.kind === row.kind && e.symbol === row.symbol && e.file === row.file && e.input === row.input && e.expected === row.expected)) return;
+    out.push(row);
   };
   const visit = (node: ts.Node) => {
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && ts.isIdentifier(node.expression.expression)) {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && ts.isIdentifier(node.expression.expression) && ts.isIdentifier(node.expression.name)) {
       const obj = node.expression.expression.text;
       const method = node.expression.name.text;
       const args = node.arguments;
-      if ((obj === "assert" || obj === "assertStrict") && args[0]) {
-        if ((method === "equal" || method === "strictEqual" || method === "deepEqual" || method === "deepStrictEqual") && literal(args[1] ?? args[0]!)) {
-          const subject = args[0]!;
-          if (ts.isCallExpression(subject) && ts.isIdentifier(subject.expression) && subject.expression.text === "typeof") add("type", called(subject.arguments[0] ?? subject, locals));
-          else add("equal", called(subject, locals));
+      const head = args[0] ? unwrap(args[0]) : undefined;
+      if ((obj === "assert" || obj === "assertStrict") && head) {
+        if ((method === "equal" || method === "strictEqual" || method === "deepEqual" || method === "deepStrictEqual") && args[1] && concrete(args[1])) {
+          if (ts.isCallExpression(head) && ts.isIdentifier(head.expression) && head.expression.text === "typeof" && head.arguments[0]) add("type", called(head.arguments[0], locals, sf), snippet(sf, args[1]));
+          else add("equal", called(head, locals, sf), snippet(sf, args[1]));
         }
-        if (method === "throws" || method === "rejects") {
-          const fn = args[0];
-          if (fn && ts.isArrowFunction(fn) && fn.body && ts.isCallExpression(fn.body)) add("throws", called(fn.body, locals));
-          else if (fn && ts.isArrowFunction(fn) && fn.body && ts.isBlock(fn.body)) {
-            for (const st of fn.body.statements) if (ts.isExpressionStatement(st)) add("throws", called(st.expression, locals));
-          }
-        }
+        if (method === "ok") add("boolean", called(head, locals, sf), "true");
+        if (method === "throws" || method === "rejects") add("throws", arrowCall(head, locals, sf), "throws");
       }
-      if (obj === "expect" && args[0]) {
-        // expect(call).toBe(literal) is a property chain; handled when this node is the outer toBe call.
+      if ((obj === "t" || obj === "tt") && head) {
+        if (method === "true") add("boolean", called(head, locals, sf), "true");
+        if (method === "false") add("boolean", called(head, locals, sf), "false");
+        if ((method === "is" || method === "deepEqual") && args[1]) {
+          const left = called(head, locals, sf);
+          const right = called(args[1], locals, sf);
+          if (left && concrete(args[1])) add("equal", left, snippet(sf, args[1]));
+          else if (right && concrete(head)) add("equal", right, snippet(sf, head));
+        }
+        if (method === "throws") add("throws", arrowCall(head, locals, sf), "throws");
       }
     }
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && ts.isCallExpression(node.expression.expression)) {
       const method = node.expression.name.text;
       const inner = node.expression.expression;
       if (ts.isIdentifier(inner.expression) && inner.expression.text === "expect" && inner.arguments[0]) {
-        const subject = inner.arguments[0];
-        if ((method === "toBe" || method === "toEqual" || method === "toStrictEqual") && node.arguments[0] && literal(node.arguments[0])) add("equal", called(subject, locals));
-        if (method === "toThrow" || method === "toThrowError") {
-          if (ts.isArrowFunction(subject) && subject.body && ts.isCallExpression(subject.body)) add("throws", called(subject.body, locals));
+        const subject = unwrap(inner.arguments[0]);
+        if ((method === "toBe" || method === "toEqual" || method === "toStrictEqual") && node.arguments[0] && concrete(node.arguments[0])) {
+          if (ts.isCallExpression(subject) && ts.isIdentifier(subject.expression) && subject.expression.text === "typeof" && subject.arguments[0]) add("type", called(subject.arguments[0], locals, sf), snippet(sf, node.arguments[0]));
+          else add("equal", called(subject, locals, sf), snippet(sf, node.arguments[0]));
         }
+        if (method === "toThrow" || method === "toThrowError") add("throws", arrowCall(subject, locals, sf), "throws");
       }
     }
     ts.forEachChild(node, visit);
@@ -197,10 +259,38 @@ export function expectationsIn(testFile: string, text: string, sourcePattern: st
   return out;
 }
 
-/** The runner's output is an assertion failure, not a missing runner or a syntax error. */
-export function assertionFailure(output: string, code: number | null): boolean {
-  if (code === null || code === 0) return false;
-  return /AssertionError|ERR_ASSERTION|Expected values|expected .* to (?:be|equal)|toThrow|throws/i.test(output);
+const ASSERTION_OUTPUT = /AssertionError|ERR_ASSERTION|Expected values|expected .+ to (?:be|equal)|Difference \(|\+ Received|- Expected|✘ \[fail\]|Test Files .* failed/i;
+const RUNNER_OUTPUT = /bwrap:|ERR_MODULE_NOT_FOUND|Cannot find module|Cannot find package|error TS\d+|ENOENT|not found/i;
+
+/** What a finished runner process is, before the test source is read. */
+export function classifyRunnerOutput(output: string, code: number | null): "runner_error" | "no_failure" | "assertion_seen" | "assertion_unparsed" {
+  if (code === null) return "runner_error";
+  if (code === 0) return "no_failure";
+  const assertion = ASSERTION_OUTPUT.test(output);
+  if (RUNNER_OUTPUT.test(output) && !assertion) return "runner_error";
+  if (assertion || /^not ok \d+/m.test(output)) return "assertion_seen";
+  return "assertion_unparsed";
+}
+
+/** First assertion-relevant lines. Paths outside the work directory and env assignments are removed. */
+export function sanitizeRunnerLines(output: string, workDir: string): string[] {
+  const rows = output.split("\n").map((line) => line.trim()).filter(Boolean);
+  const relevant = rows.filter((line) => /assert|expect|error|fail|not ok|difference|expected|received|throws|bwrap:|cannot find|ERR_/i.test(line));
+  const picked = (relevant.length ? relevant : rows).slice(0, 5);
+  return picked.map((line) => line
+    .split(workDir).join("<work>")
+    .replace(/\/(?:tmp|home|opt|usr|var|exec-daemon|Users)\/[^\s'")]+/g, "<path>")
+    .replace(/\b[A-Z][A-Z0-9_]{3,}=[^\s]+/g, "<env>")
+    .slice(0, 240));
+}
+
+export function specDiagnostic(kind: SpecDiagKind, code: number | null, command: readonly string[], output: string, workDir: string): SpecDiagnostic {
+  return {
+    kind,
+    code,
+    command: command.map((part) => part.startsWith(workDir) ? `<work>${part.slice(workDir.length)}` : part.startsWith("/") ? "<bin>" : part),
+    lines: sanitizeRunnerLines(output, workDir),
+  };
 }
 
 /**
@@ -259,26 +349,31 @@ function read(root: string, path: string): string | null {
 export function runTestSpec(input: SpecInput): SpecResult {
   const cap = Math.min(SPEC_ATTEMPT_CAP, Math.max(1, Math.floor(input.maxAttempts ?? SPEC_ATTEMPT_CAP)));
   const deny = input.denyPatterns ?? [];
+  const diag = (kind: SpecDiagKind, code: number | null, output: string) => specDiagnostic(kind, code, input.testCommand, output, input.root);
   const first = runSandboxed(input, input.testCommand);
-  if (first.blocked) return { status: "blocked", reason: first.blocked, attempts: 0 };
+  if (first.blocked) return { status: "blocked", reason: first.blocked, attempts: 0, diagnostic: diag(first.blocked === "SANDBOX_POISON" ? "sandbox_poison" : "unsafe", null, "") };
   const output = first.stdout;
-  if (!assertionFailure(output, first.code)) return { status: "cant", reason: "CANT_DO_YET_ASSERTION", attempts: 0 };
+  const seen = classifyRunnerOutput(output, first.code);
+  if (seen === "runner_error") return { status: "cant", reason: "CANT_DO_YET_RUNNER_ERROR", attempts: 0, diagnostic: diag("runner_error", first.code, output) };
+  if (seen === "no_failure") return { status: "cant", reason: "CANT_DO_YET_NO_FAILURE", attempts: 0, diagnostic: diag("no_failure", first.code, output) };
   const testText = read(input.root, input.testFile);
-  if (testText === null) return { status: "cant", reason: "CANT_DO_YET_ASSERTION", attempts: 0 };
+  if (testText === null) return { status: "cant", reason: "CANT_DO_YET_ASSERTION_UNPARSED", attempts: 0, diagnostic: diag("assertion_unparsed", first.code, output) };
   const exists = (path: string) => read(input.root, path) !== null;
   const expectations = expectationsIn(input.testFile, testText, input.sourcePattern, deny, exists);
   if (expectations.length === 0) {
     const named = bindings(input.testFile, testText, input.sourcePattern, deny, exists);
-    return { status: "cant", reason: named.length === 0 ? "CANT_DO_YET_NO_SYMBOL" : "CANT_DO_YET_ASSERTION", attempts: 0 };
+    if (named.length === 0 && seen === "assertion_unparsed") return { status: "cant", reason: "CANT_DO_YET_ASSERTION_UNPARSED", attempts: 0, diagnostic: diag("assertion_unparsed", first.code, output) };
+    if (named.length === 0) return { status: "cant", reason: "CANT_DO_YET_NO_SYMBOL", attempts: 0, diagnostic: diag("no_symbol", first.code, output) };
+    return { status: "cant", reason: "CANT_DO_YET_ASSERTION_UNREDUCIBLE", attempts: 0, diagnostic: diag("assertion_unreducible", first.code, output) };
   }
   const symbols = [...new Set(expectations.map((e) => e.symbol))];
-  if (symbols.length === 0) return { status: "cant", reason: "CANT_DO_YET_NO_SYMBOL", attempts: 0 };
+  if (symbols.length === 0) return { status: "cant", reason: "CANT_DO_YET_NO_SYMBOL", attempts: 0, diagnostic: diag("no_symbol", first.code, output) };
   const sourceFiles = [...new Set(expectations.map((e) => e.file))].filter((p) => allowedSource(p, input.sourcePattern, deny));
-  if (sourceFiles.length === 0) return { status: "cant", reason: "CANT_DO_YET_NO_SYMBOL", attempts: 0 };
+  if (sourceFiles.length === 0) return { status: "cant", reason: "CANT_DO_YET_NO_SYMBOL", attempts: 0, diagnostic: diag("no_symbol", first.code, output) };
   const original = new Map<string, string>();
   for (const path of sourceFiles) {
     const text = read(input.root, path);
-    if (text === null) return { status: "cant", reason: "CANT_DO_YET_NO_SYMBOL", attempts: 0 };
+    if (text === null) return { status: "cant", reason: "CANT_DO_YET_NO_SYMBOL", attempts: 0, diagnostic: diag("no_symbol", first.code, output) };
     original.set(path, text);
   }
   const request = `${specTask(input.subject)}\n${symbols.map((s) => `\`${s}\``).join(" ")}`;
@@ -298,8 +393,8 @@ export function runTestSpec(input: SpecInput): SpecResult {
   let attempts = 0;
   for (;;) {
     const proposal = proposer.next({ files, attempt: attempts + 1, feedback, baseline: null });
-    if ("refuse" in proposal) return { status: "cant", reason: "CANT_DO_YET_NO_VERIFY", attempts };
-    if (attempts >= cap) return { status: "cant", reason: "CANT_DO_YET_CAP", attempts };
+    if ("refuse" in proposal) return { status: "cant", reason: "CANT_DO_YET_NO_VERIFY", attempts, diagnostic: diag("no_verify", first.code, output) };
+    if (attempts >= cap) return { status: "cant", reason: "CANT_DO_YET_CAP", attempts, diagnostic: diag("cap", first.code, output) };
     const edits = proposal.edits.filter((e) => original.has(e.path));
     attempts += 1;
     if (edits.length === 0) {
@@ -308,7 +403,7 @@ export function runTestSpec(input: SpecInput): SpecResult {
     }
     for (const edit of edits) writeFileSync(join(input.root, edit.path), edit.content);
     const again = runSandboxed(input, input.testCommand);
-    if (again.blocked) return { status: "blocked", reason: again.blocked, attempts };
+    if (again.blocked) return { status: "blocked", reason: again.blocked, attempts, diagnostic: diag(again.blocked === "SANDBOX_POISON" ? "sandbox_poison" : "unsafe", null, "") };
     if (again.code !== 0) {
       resetAttempt(input);
       feedback.push({ attempt: attempts, codes: ["TEST_FAIL"], failing, tests: null });
@@ -317,7 +412,7 @@ export function runTestSpec(input: SpecInput): SpecResult {
     const suite = input.originalSuite ? originalSuiteArgv(input.testCommand, input.testFile, input.originalSuite, related) : null;
     if (suite) {
       const ran = runSandboxed(input, suite);
-      if (ran.blocked) return { status: "blocked", reason: ran.blocked, attempts };
+      if (ran.blocked) return { status: "blocked", reason: ran.blocked, attempts, diagnostic: diag(ran.blocked === "SANDBOX_POISON" ? "sandbox_poison" : "unsafe", null, "") };
       if (ran.code !== 0) {
         resetAttempt(input);
         feedback.push({ attempt: attempts, codes: ["TEST_FAIL"], failing, tests: null });
@@ -330,6 +425,6 @@ export function runTestSpec(input: SpecInput): SpecResult {
       feedback.push({ attempt: attempts, codes: ["TEST_FAIL"], failing, tests: null });
       continue;
     }
-    return { status: "diff", diff, attempts, expectations };
+    return { status: "diff", diff, attempts, expectations, diagnostic: diag("verified", 0, output) };
   }
 }

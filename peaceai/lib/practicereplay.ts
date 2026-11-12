@@ -43,6 +43,8 @@ export interface GradedRow {
   gap: boolean;
   /** Absent on a row built before test-as-spec. Those rows are the text form. */
   understanding?: Understanding;
+  /** Test-as-spec only. Sanitized runner facts. No host paths and no environment values. */
+  diagnostic?: { kind: string; code: number | null; command: string[]; lines: string[] };
 }
 
 /** One row. Unmeasured never comes back as pass. A pass requires GATE PASS and fail-before/pass-after. */
@@ -95,7 +97,7 @@ export function replayDocument(rows: readonly GradedRow[]): {
   protectedFile: string;
   protectedWhy: string;
   counts: ReturnType<typeof countsByUnderstanding>;
-  rows: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string }[];
+  rows: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string; diagnostic?: GradedRow["diagnostic"] }[];
 } {
   return {
     schema: REPLAY_SCHEMA,
@@ -105,6 +107,9 @@ export function replayDocument(rows: readonly GradedRow[]): {
     protectedFile: PROTECTED_GATE_FILE,
     protectedWhy: PROTECTED_GATE_WHY,
     counts: countsByUnderstanding(rows),
-    rows: rows.map((row) => ({ repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason })),
+    rows: rows.map((row) => ({
+      repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason,
+      ...(row.diagnostic ? { diagnostic: row.diagnostic } : {}),
+    })),
   };
 }

@@ -140,10 +140,17 @@ export function visibleNodeBin(): string | null {
 }
 
 let gitCover: string | null = null;
+let gitFile: string | null = null;
 function emptyGitCover(): string {
   if (gitCover && existsSync(gitCover)) return gitCover;
   gitCover = mkdtempSync(join(tmpdir(), "peaceai-git-cover-"));
   return gitCover;
+}
+function emptyGitFile(): string {
+  if (gitFile && existsSync(gitFile)) return gitFile;
+  gitFile = join(tmpdir(), "peaceai-git-cover-file");
+  if (!existsSync(gitFile)) writeFileSync(gitFile, "");
+  return gitFile;
 }
 
 function roMount(args: string[], path: string): void {
@@ -177,7 +184,14 @@ export function practiceSandboxArgv(workDir: string, opts: { nodePath?: string |
   }
   args.push("--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp");
   args.push("--bind", workDir, workDir);
-  if (existsSync(join(workDir, ".git"))) args.push("--ro-bind", emptyGitCover(), join(workDir, ".git"));
+  const gitMeta = join(workDir, ".git");
+  if (existsSync(gitMeta)) {
+    // A normal clone has a directory. A worktree has a file (`gitdir: ...`). Mounting a directory
+    // onto that file makes bwrap fail before the test starts.
+    const gitStat = lstatSync(gitMeta);
+    if (gitStat.isDirectory()) args.push("--ro-bind", emptyGitCover(), gitMeta);
+    else if (gitStat.isFile()) args.push("--ro-bind", emptyGitFile(), gitMeta);
+  }
   const modulesLink = join(workDir, "node_modules");
   const modules = opts.nodeModules && existsSync(opts.nodeModules) ? opts.nodeModules : existsSync(modulesLink) ? modulesLink : null;
   if (modules) {

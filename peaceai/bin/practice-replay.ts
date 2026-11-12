@@ -187,8 +187,8 @@ function specOne(tooling: string, coreDir: string, repoDir: string, pair: Practi
       nodeModules: existsSync(modules) ? modules : null,
       restoreTree: () => git(dir, ["checkout", pair.fixSha, "--", pair.testFile]),
     });
-    if (spec.status === "blocked") return unmeasured(spec.reason);
-    if (spec.status === "cant") return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "fail", reason: spec.reason }, gatePass: false, beforeExit: null, afterExit: null }) };
+    if (spec.status === "blocked") return { ...unmeasured(spec.reason), diagnostic: spec.diagnostic };
+    if (spec.status === "cant") return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "fail", reason: spec.reason }, gatePass: false, beforeExit: null, afterExit: null }), diagnostic: spec.diagnostic };
     mkdirSync(join(outDir, "candidates"), { recursive: true });
     writeFileSync(join(outDir, "candidates", "candidate-1.diff"), spec.diff);
     const diffLines = spec.diff.split("\n").filter((line) => /^[+-](?![+-]{2} )/.test(line)).length;
@@ -278,7 +278,10 @@ function main(): void {
   const doc = replayDocument(graded);
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, "replay.json"), JSON.stringify(doc, null, 2) + "\n");
-  const gaps = graded.filter((row) => row.gap).map((row) => JSON.stringify({ repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason }));
+  const gaps = graded.filter((row) => row.gap).map((row) => JSON.stringify({
+    repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason,
+    ...(row.diagnostic ? { diagnostic: row.diagnostic } : {}),
+  }));
   writeFileSync(join(out, "gaps.jsonl"), gaps.join("\n") + (gaps.length ? "\n" : ""));
   console.log("experimental credit=false");
   if (graded.some((row) => row.reason === "GATE_NO_TARGET")) {

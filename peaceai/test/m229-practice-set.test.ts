@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { keptLicense } from "../lib/practicemine.ts";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
   GIT_LOCK_ARGS, cloneRootProblems, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutWatchProblems, installArgv, isSourceFile, isTestFile, manifestProblems,
@@ -250,6 +250,28 @@ test("a correct candidate passes through the sandbox when node_modules is a syml
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("a worktree whose .git is a file still runs inside the sandbox", (t) => {
+  if (!bwrapHere()) { t.skip("bwrap is not installed on this host"); return; }
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const repo = tinyRepo();
+  const wt = mkdtempSync(join(tmpdir(), "practice-wt-"));
+  rmSync(wt, { recursive: true, force: true });
+  try {
+    const added = spawnSync("git", ["-C", repo, "worktree", "add", "--detach", wt, "HEAD"], { encoding: "utf8" });
+    assert.equal(added.status, 0, added.stderr);
+    const gitMeta = join(wt, ".git");
+    assert.equal(lstatSync(gitMeta).isFile(), true);
+    const ran = runInPracticeSandbox(wt, [node, "-e", "process.exit(0)"], 15_000, { capture: true, nodePath: node });
+    assert.equal(ran.unsafe, false, ran.stdout);
+    assert.equal(ran.code, 0, ran.stdout);
+  } finally {
+    spawnSync("git", ["-C", repo, "worktree", "remove", "--force", wt], { stdio: "ignore" });
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(wt, { recursive: true, force: true });
   }
 });
 

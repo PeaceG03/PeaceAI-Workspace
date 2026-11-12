@@ -8,7 +8,7 @@ import test from "node:test";
 import { MAX_CANDIDATES } from "../lib/editpropose.ts";
 import { MAX_ATTEMPTS } from "../lib/loop.ts";
 import { GIT_LOCK_ARGS, practiceGit, practiceGitEnv, practiceSandboxReady, visibleNodeBin } from "../lib/practicemine.ts";
-import { originalSuiteArgv, runTestSpec, SPEC_ATTEMPT_CAP, specTask, type SpecInput } from "../lib/testspec.ts";
+import { classifyRunnerOutput, expectationsIn, originalSuiteArgv, runTestSpec, sanitizeRunnerLines, SPEC_ATTEMPT_CAP, specTask, type SpecInput } from "../lib/testspec.ts";
 
 const PATTERN = "^src/.+\\.ts$";
 
@@ -61,6 +61,59 @@ function specInput(root: string, file: string, extra: Partial<SpecInput> = {}): 
   };
 }
 
+const VITEST_FAIL = [
+  "FAIL  src/num.test.ts > pad",
+  "AssertionError: expected 2 to be 3 // Object.is equality",
+  "- Expected",
+  "+ Received",
+  "- 3",
+  "+ 2",
+].join("\n");
+const NODE_FAIL = [
+  "not ok 1 - pad",
+  "error: |-",
+  "  Expected values to be strictly equal:",
+  "  2 !== 3",
+  "code: 'ERR_ASSERTION'",
+  "name: 'AssertionError'",
+  "operator: 'strictEqual'",
+].join("\n");
+const AVA_FAIL = [
+  "✘ [fail]: pad",
+  "Difference (- actual, + expected):",
+  "- 2",
+  "+ 3",
+  "1 test failed",
+].join("\n");
+
+test("runner output from vitest, node:assert, and ava is told apart from a startup error", () => {
+  assert.equal(classifyRunnerOutput(VITEST_FAIL, 1), "assertion_seen");
+  assert.equal(classifyRunnerOutput(NODE_FAIL, 1), "assertion_seen");
+  assert.equal(classifyRunnerOutput(AVA_FAIL, 1), "assertion_seen");
+  assert.equal(classifyRunnerOutput("bwrap: Can't mkdir <work>/.git: Not a directory", 1), "runner_error");
+  assert.equal(classifyRunnerOutput("Error [ERR_MODULE_NOT_FOUND]: Cannot find module './missing'\nnot ok 1 - file", 1), "runner_error");
+  assert.equal(classifyRunnerOutput("TAP version 13\n# tests 1\n# pass 1\n# fail 0", 0), "no_failure");
+  const lines = sanitizeRunnerLines(`AssertionError: expected 2 to be 3\n at /tmp/secret/src/num.test.ts:3\nTOKEN=hidden`, "/tmp/secret");
+  assert.equal(lines.some((line) => line.includes("/tmp/secret") || line.includes("TOKEN=")), false);
+  assert.ok(lines.some((line) => line.includes("expected 2 to be 3")));
+  const text = [
+    'import { expect, test } from "vitest";',
+    'import testAva from "ava";',
+    'import assert from "node:assert/strict";',
+    'import { pad } from "./num.ts";',
+    'test("pad", () => { expect(pad(2)).toBe(3); expect(pad(1)).toEqual(2); });',
+    'testAva("pad", t => { t.is(pad(2), 3); t.true(pad(1)); t.false(pad(0)); t.throws(() => pad(-1)); });',
+    'test("node", () => { assert.strictEqual(pad(2), 3); assert.equal(pad(0), 0); assert.ok(pad(4)); });',
+  ].join("\n");
+  const found = expectationsIn("src/num.test.ts", text, "^src/.+\\.ts$", [], (path) => path === "src/num.ts");
+  assert.ok(found.some((row) => row.symbol === "pad" && row.expected === "3" && row.input === "2"));
+  assert.ok(found.some((row) => row.expected === "2" && row.input === "1"));
+  assert.ok(found.some((row) => row.kind === "boolean" && row.expected === "true"));
+  assert.ok(found.some((row) => row.kind === "boolean" && row.expected === "false"));
+  assert.ok(found.some((row) => row.kind === "throws"));
+  assert.ok(found.filter((row) => row.symbol === "pad").length >= 5);
+});
+
 test("repair-v2 makes the failing test pass and leaves the other function alone", (t) => {
   if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
   const root = repo({ "src/pad.ts": pad, "src/keep.ts": keep, "src/pad.test.ts": padTest, "src/keep.test.ts": keepTest });
@@ -107,7 +160,7 @@ test("a missing symbol, an irreducible assertion, a string the templates cannot 
     if (noSymbol.status === "cant") assert.equal(noSymbol.reason, "CANT_DO_YET_NO_SYMBOL");
     const irreducible = runTestSpec(specInput(vague, "src/pad.test.ts", { subject: "pad" }));
     assert.equal(irreducible.status, "cant");
-    if (irreducible.status === "cant") assert.equal(irreducible.reason, "CANT_DO_YET_ASSERTION");
+    if (irreducible.status === "cant") assert.equal(irreducible.reason, "CANT_DO_YET_ASSERTION_UNREDUCIBLE");
     const unverified = runTestSpec(specInput(text, "src/tag.test.ts", { subject: "tag drops its prefix" }));
     assert.equal(unverified.status, "cant");
     if (unverified.status === "cant") assert.equal(unverified.reason, "CANT_DO_YET_NO_VERIFY");
