@@ -32,6 +32,102 @@
       "verdictRoute": "pr",
       "workflowPattern": "^\\.github/workflows/tenmin-mode-sim\\.yml$",
       "tsconfigScript": true
+    },
+    "sindresorhus/is": {
+      "sourcePattern": "^source/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.ts$",
+      "testPattern": "^test/.+\\.ts$",
+      "denyPatterns": [
+        "(^|/)\\.",
+        "(^|/)fixtures/",
+        "(^|/)fixture/",
+        "secret",
+        "credential",
+        "token"
+      ],
+      "install": "npm",
+      "originalSuite": "related",
+      "writeEnvironment": null,
+      "verdictRoute": "patch"
+    },
+    "unjs/defu": {
+      "sourcePattern": "^src/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.ts$",
+      "testPattern": "^test/.+\\.test\\.ts$",
+      "denyPatterns": [
+        "(^|/)\\.",
+        "(^|/)fixtures/",
+        "(^|/)fixture/",
+        "secret",
+        "credential",
+        "token"
+      ],
+      "install": "pnpm",
+      "originalSuite": "related",
+      "writeEnvironment": null,
+      "verdictRoute": "patch"
+    },
+    "unjs/scule": {
+      "sourcePattern": "^src/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.ts$",
+      "testPattern": "^test/.+\\.test\\.ts$",
+      "denyPatterns": [
+        "(^|/)\\.",
+        "(^|/)fixtures/",
+        "(^|/)fixture/",
+        "secret",
+        "credential",
+        "token"
+      ],
+      "install": "pnpm",
+      "originalSuite": "related",
+      "writeEnvironment": null,
+      "verdictRoute": "patch"
+    },
+    "unjs/ufo": {
+      "sourcePattern": "^src/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.ts$",
+      "testPattern": "^test/.+\\.test\\.ts$",
+      "denyPatterns": [
+        "(^|/)\\.",
+        "(^|/)fixtures/",
+        "(^|/)fixture/",
+        "secret",
+        "credential",
+        "token"
+      ],
+      "install": "pnpm",
+      "originalSuite": "related",
+      "writeEnvironment": null,
+      "verdictRoute": "patch"
+    },
+    "blakeembrey/change-case": {
+      "sourcePattern": "^packages/[A-Za-z0-9._-]+/src/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.ts$",
+      "testPattern": "\\.spec\\.ts$",
+      "denyPatterns": [
+        "(^|/)\\.",
+        "(^|/)fixtures/",
+        "(^|/)fixture/",
+        "secret",
+        "credential",
+        "token"
+      ],
+      "install": "npm",
+      "originalSuite": "related",
+      "writeEnvironment": null,
+      "verdictRoute": "patch"
+    },
+    "gvergnaud/ts-pattern": {
+      "sourcePattern": "^src/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.ts$",
+      "testPattern": "^tests/.+\\.test\\.ts$",
+      "denyPatterns": [
+        "(^|/)\\.",
+        "(^|/)fixtures/",
+        "(^|/)fixture/",
+        "secret",
+        "credential",
+        "token"
+      ],
+      "install": "npm",
+      "originalSuite": "related",
+      "writeEnvironment": null,
+      "verdictRoute": "patch"
     }
   }
 }

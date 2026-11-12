@@ -11,6 +11,7 @@ import {
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
 import { countBySplit, gradePracticeRow, replayDocument, targetIsScorable } from "../lib/practicereplay.ts";
+import { loadTargets, scopeOf } from "../lib/target.ts";
 
 const repo = join(import.meta.dirname, "../..");
 const read = (path: string) => readFileSync(join(repo, path), "utf8");
@@ -160,10 +161,30 @@ test("replay passes only on GATE PASS plus a failing-then-passing test, and an u
   assert.equal(counts["held-out"].reasons.GATE_NO_TARGET, 1);
 });
 
-test("the real target list cannot score the held-out repos", () => {
+test("each practice repo has a scope, and a third-party target posts a patch instead of opening a PR", () => {
+  const targets = loadTargets();
+  const sample: Record<string, { source: string; test: string }> = {
+    "sindresorhus/is": { source: "source/index.ts", test: "test/test.ts" },
+    "unjs/defu": { source: "src/defu.ts", test: "test/defu.test.ts" },
+    "unjs/scule": { source: "src/index.ts", test: "test/scule.test.ts" },
+    "unjs/ufo": { source: "src/url.ts", test: "test/url.test.ts" },
+    "blakeembrey/change-case": { source: "packages/change-case/src/index.ts", test: "packages/change-case/src/index.spec.ts" },
+    "gvergnaud/ts-pattern": { source: "src/match.ts", test: "tests/chainable.test.ts" },
+  };
   for (const row of manifest.repos) {
-    if (row.name === "PeaceG03/PeaceSTOCKS") assert.equal(targetIsScorable(row.name), true);
-    else assert.equal(targetIsScorable(row.name), false, row.name);
+    const config = targets.targets[row.name];
+    assert.ok(config, row.name);
+    assert.equal(targetIsScorable(row.name), true, row.name);
+    if (row.name === "PeaceG03/PeaceSTOCKS") continue;
+    assert.equal(config.verdictRoute, "patch", row.name);
+    assert.equal(config.writeEnvironment, null, row.name);
+    assert.equal(config.selfZone, undefined, row.name);
+    const scope = scopeOf(config);
+    const paths = sample[row.name]!;
+    assert.equal(scope.isSource(paths.source), true, paths.source);
+    assert.equal(scope.isTest(paths.test), true, paths.test);
+    assert.equal(scope.isDenied("test/fixtures/index.ts"), true, row.name);
+    assert.equal(scope.isDenied("src/.env.ts"), true, row.name);
   }
 });
 
