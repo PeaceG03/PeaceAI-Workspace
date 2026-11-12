@@ -1,0 +1,71 @@
+{
+  "schema": "peaceai-practice-mine-report:v1",
+  "credit": false,
+  "isolation": "bwrap",
+  "admission": "frozen-base install and the sandbox test",
+  "repos": [
+    {
+      "name": "PeaceG03/PeaceSTOCKS",
+      "split": "dev",
+      "candidates": 20,
+      "attempts": 20,
+      "kept": 20,
+      "reason": null
+    },
+    {
+      "name": "sindresorhus/is",
+      "split": "dev",
+      "candidates": 18,
+      "attempts": 18,
+      "kept": 20,
+      "reason": null
+    },
+    {
+      "name": "unjs/defu",
+      "split": "dev",
+      "candidates": 8,
+      "attempts": 8,
+      "kept": 7,
+      "reason": null
+    },
+    {
+      "name": "blakeembrey/change-case",
+      "split": "held-out",
+      "candidates": 16,
+      "attempts": 16,
+      "kept": 16,
+      "reason": null
+    },
+    {
+      "name": "gvergnaud/ts-pattern",
+      "split": "held-out",
+      "candidates": 20,
+      "attempts": 20,
+      "kept": 20,
+      "reason": null
+    },
+    {
+      "name": "gcanti/fp-ts",
+      "split": "held-out",
+      "candidates": 20,
+      "attempts": 20,
+      "kept": 20,
+      "reason": null
+    },
+    {
+      "name": "unjs/listhen",
+      "split": "held-out",
+      "candidates": 3,
+      "attempts": 3,
+      "kept": 3,
+      "reason": null
+    }
+  ],
+  "kept": 106,
+  "excluded": {
+    "FIX_CHANGES_DEPS": 16,
+    "BASE_NOT_FROZEN_INSTALLABLE": 3,
+    "NOT_REPLAY_ADMITTED": 28,
+    "INSTALL_FAILED": 5
+  }
+}
