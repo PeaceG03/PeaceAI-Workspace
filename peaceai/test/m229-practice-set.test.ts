@@ -9,7 +9,7 @@ import { keptLicense } from "../lib/practicemine.ts";
 import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync as readText, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
-  GIT_LOCK_ARGS, cloneRootProblems, ensurePracticeInstall, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutWatchProblems, installArgv, isSourceFile, isTestFile, manifestProblems,
+  GIT_LOCK_ARGS, cloneRootProblems, dependencyFingerprint, ensurePracticeInstall, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutPairHash, heldOutWatchProblems, installArgv, INSTALL_TIMEOUT_MS, installEnv, isSourceFile, isTestFile, manifestProblems, SANDBOX_RAN, sanitizeInstallLines,
   pairFiles, pairProblems, parseRepoToken, poisonChanges, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxArgv, practiceWatchFiles, releaseWorktree, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
@@ -181,7 +181,124 @@ test("a renamed fork with a false corpus root fails closed", () => {
       upstreamRoot: "a".repeat(40),
     },
   });
-  assert.ok(lied.some((p) => p.includes("renamed/fp-ts")), lied.join("\n"));
+  assert.deepEqual(lied, ["FORK_FALSE_ROOT:renamed/fp-ts"]);
+  assert.ok(falseRootProblems(held, { "missing/repo": "c".repeat(40) }, {}).some((p) => p === "CLONE_UNVERIFIED:missing/repo"));
+  const parent = falseRootProblems([], { "good/lib": "c".repeat(40) }, {
+    "good/lib": { remoteUrl: "https://github.com/other/lib.git", root: "c".repeat(40), parent: "someone/up", source: null, upstreamRoot: "c".repeat(40) },
+  });
+  assert.deepEqual(parent, ["REMOTE_NAME:good/lib"]);
+  const mismatch = falseRootProblems([], { "good/lib": "b".repeat(40) }, {
+    "good/lib": { remoteUrl: "https://github.com/good/lib.git", root: "c".repeat(40), parent: null, source: null, upstreamRoot: null },
+  });
+  assert.deepEqual(mismatch, ["ROOT_MISMATCH:good/lib"]);
+  const forkRoot = falseRootProblems([], { "good/lib": "c".repeat(40) }, {
+    "good/lib": { remoteUrl: "https://github.com/good/lib.git", root: "c".repeat(40), parent: "someone/up", source: null, upstreamRoot: "d".repeat(40) },
+  });
+  assert.deepEqual(forkRoot, ["FORK_ROOT:good/lib"]);
+  assert.deepEqual(cloneRootProblems("a/b", "c".repeat(40), { root: "c".repeat(40), upstream: "other/up", upstreamRoot: "d".repeat(40) }), ["FORK_ROOT:a/b"]);
+  const through = heldOutWatchProblems(
+    [{ name: "gcanti/fp-ts", root: "a".repeat(40), upstreams: [] }],
+    [],
+    { "renamed/fp-ts": "b".repeat(40) },
+    {},
+    { "renamed/fp-ts": { remoteUrl: "https://github.com/renamed/fp-ts.git", root: "a".repeat(40), parent: "gcanti/fp-ts", source: "gcanti/fp-ts", upstreamRoot: "a".repeat(40) } },
+  );
+  assert.deepEqual(through, ["FORK_FALSE_ROOT:renamed/fp-ts"]);
+});
+
+test("install logs hide a home directory, and a fingerprint includes the lockfile", () => {
+  const sample = "/" + "ho" + "me/" + "ubuntu/proj";
+  const cleaned = sanitizeInstallLines(`npm ERR! ${sample}\nadded 1\nEUSAGE lock out of date`);
+  assert.ok(cleaned.some((line) => line.includes("EUSAGE")));
+  assert.ok(cleaned.findIndex((line) => line.includes("EUSAGE")) < cleaned.findIndex((line) => line.includes("added")));
+  assert.equal(cleaned.join("\n").includes("ubuntu"), false);
+  const tool = { manager: "npm" as const, managerVersion: "10.9.9", nodeVersion: "v22.23.4" };
+  assert.notEqual(dependencyFingerprint("{}\n", "lock-a", tool), dependencyFingerprint("{}\n", "lock-b", tool));
+  assert.equal(INSTALL_TIMEOUT_MS, 180_000);
+  const home = mkdtempSync(join(tmpdir(), "practice-home-"));
+  try {
+    const node = visibleNodeBin();
+    assert.ok(node);
+    const env = installEnv(node, home, join(home, "store"), "npm");
+    assert.equal(env.HOME, home);
+    assert.equal(env.GIT_SSH_COMMAND, "false");
+    assert.equal(env.HOME === process.env.HOME, false);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+  const mine = read("peaceai/bin/practice-mine.ts");
+  const installFn = mine.slice(mine.indexOf("function install("), mine.indexOf("function runTest("));
+  assert.equal(installFn.includes("installEnv("), true);
+  assert.equal(installFn.includes("mkdtempSync("), true);
+  assert.equal(installFn.includes("scrubEnv("), false);
+  const body = ensurePracticeInstall.toString();
+  assert.equal(body.includes("SANDBOX_RAN"), true);
+  assert.equal(body.includes("is not in the base commit"), false);
+});
+
+test("a fifo or socket named like package-manager config is poison and is not read", { timeout: 5_000 }, () => {
+  const dir = tinyRepo();
+  try {
+    assert.equal(spawnSync("mkfifo", [join(dir, ".npmrc")]).status, 0);
+    const sock = join(dir, "yarn.lock");
+    assert.equal(spawnSync("python3", ["-c", "import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])", sock]).status, 0);
+    const device = join(dir, "package.json");
+    const knotted = spawnSync("mknod", [device, "c", "1", "3"]);
+    const stamp = poisonStamp(dir);
+    assert.equal(stamp[".npmrc"], "special");
+    assert.equal(stamp["yarn.lock"], "special");
+    if (knotted.status === 0) assert.equal(stamp["package.json"], "special");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the sandbox argv covers a .git file with a file and mounts node_modules read-only", () => {
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const dir = mkdtempSync(join(tmpdir(), "practice-argv-"));
+  try {
+    writeFileSync(join(dir, ".git"), "gitdir: /tmp/real\n");
+    mkdirSync(join(dir, "node_modules"));
+    const argv = practiceSandboxArgv(dir, { nodePath: node, nodeModules: join(dir, "node_modules") });
+    assert.ok(argv);
+    const gitAt = argv.indexOf(join(dir, ".git"));
+    assert.equal(argv[gitAt - 2], "--ro-bind");
+    assert.equal(lstatSync(argv[gitAt - 1]!).isFile(), true);
+    const modulesAt = argv.lastIndexOf(join(dir, "node_modules"));
+    assert.equal(argv[modulesAt - 2], "--ro-bind");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("release restores a tracked file, a hook change is poison, and a sandboxed install dir is not reused", () => {
+  const dir = tinyRepo();
+  const cache = mkdtempSync(join(tmpdir(), "practice-ran-"));
+  try {
+    const hook = join(dir, ".git", "hooks", "post-checkout");
+    mkdirSync(join(dir, ".git", "hooks"), { recursive: true });
+    writeFileSync(hook, "#!/bin/sh\n");
+    const before = poisonStamp(dir);
+    writeFileSync(hook, "#!/bin/sh\necho changed\n");
+    writeFileSync(join(dir, "package.json"), "{\"name\":\"changed\"}\n");
+    assert.ok(poisonChanges(before, poisonStamp(dir)).includes(".git/hooks/post-checkout"));
+    const released = releaseWorktree(dir, before);
+    assert.equal(released.clean, true);
+    assert.equal(readText(join(dir, "package.json"), "utf8"), "{\"name\":\"p\"}\n");
+    const node = visibleNodeBin();
+    assert.ok(node);
+    const sha = spawnSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    const tool = { nodePath: node, nodeVersion: "v22.23.4", manager: "none" as const, managerVersion: "none" };
+    const first = ensurePracticeInstall(dir, { repo: "example/fresh", baseSha: sha, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false);
+    assert.equal(first.ok, true, first.lines.join("\n"));
+    writeFileSync(join(cache, "installs", first.fingerprint!, SANDBOX_RAN), "1\n");
+    const again = ensurePracticeInstall(dir, { repo: "example/fresh", baseSha: sha, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false);
+    assert.equal(again.reason, "SANDBOX_POISON");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(cache, { recursive: true, force: true });
+  }
 });
 
 test("the sandbox cannot write git metadata or package-manager config, and cannot read /opt or /var/lib", (t) => {
@@ -363,6 +480,45 @@ test("a full install cache is skipped per row, and the least recently used insta
     assert.equal(names.includes(b.fingerprint!), false);
     assert.equal(names.includes(a.fingerprint!), true);
     assert.equal(names.includes(c.fingerprint!), true);
+    rmSync(join(cache, "installs", a.fingerprint!, ".practice-complete"));
+    writeFileSync(join(cache, "installs", a.fingerprint!, "stale"), "old\n");
+    const rebuilt = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: first, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false, { maxInstalls: 2 });
+    assert.equal(rebuilt.ok, true);
+    assert.equal(existsSync(join(cache, "installs", a.fingerprint!, ".practice-complete")), true);
+    assert.equal(existsSync(join(cache, "installs", a.fingerprint!, "stale")), false);
+    const heldLock = join(cache, "locks", `${c.fingerprint}.lock`);
+    mkdirSync(join(cache, "locks"), { recursive: true });
+    writeFileSync(heldLock, `${process.pid} ${Date.now()}\n`);
+    const fourth = commit("four");
+    const d = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: fourth, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false, { maxInstalls: 1 });
+    assert.equal(d.ok, true);
+    assert.equal(existsSync(join(cache, "installs", c.fingerprint!)), true);
+    rmSync(heldLock, { force: true });
+  } finally {
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(cache, { recursive: true, force: true });
+  }
+});
+
+test("an install that exceeds the timeout is INSTALL_TIMEOUT, and a git+ssh dependency is network_required", { timeout: 60_000 }, () => {
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const origin = tinyRepo();
+  const cache = mkdtempSync(join(tmpdir(), "practice-timeout-"));
+  const tool = { nodePath: node, nodeVersion: "v22.23.4", manager: "npm" as const, managerVersion: "10.9.9" };
+  const commit = (pkg: string) => {
+    writeFileSync(join(origin, "package.json"), pkg);
+    spawnSync("git", ["-C", origin, "add", "package.json"], { stdio: "ignore" });
+    spawnSync("git", ["-C", origin, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "pkg"], { stdio: "ignore" });
+    return spawnSync("git", ["-C", origin, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+  };
+  try {
+    const slow = commit(JSON.stringify({ name: "slow-practice", dependencies: { "has-flag": "4.0.0" } }) + "\n");
+    const timed = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: slow, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false, { timeoutMs: 1 });
+    assert.equal(timed.reason, "INSTALL_TIMEOUT", timed.lines.join("\n"));
+    const sshSha = commit(JSON.stringify({ name: "ssh-practice", dependencies: { missing: "git+ssh://git@github.com/peaceg03/does-not-exist.git" } }) + "\n");
+    const ssh = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: sshSha, toolchain: tool }, join(cache, "ssh"), { npm: false, pnpm: false, yarn: false }, false, { timeoutMs: 20_000 });
+    assert.equal(ssh.reason, "network_required", ssh.lines.join("\n"));
   } finally {
     rmSync(origin, { recursive: true, force: true });
     rmSync(cache, { recursive: true, force: true });
@@ -399,6 +555,10 @@ test("the held-out hash changes when a pin changes, and the committed manifest m
   const dev = moved.repos.find((r) => r.split === "dev" && r.name !== "PeaceG03/PeaceSTOCKS")!;
   dev.commit = "d".repeat(40);
   assert.equal(heldOutHash(moved.repos), moved.heldOutHash, "a dev pin is not part of the held-out hash");
+  const pairs = read("practice/pairs.jsonl").split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line) as PracticePair);
+  const recorded = JSON.parse(read("practice/manifest.json")) as { heldOutPairHash?: string };
+  assert.equal(recorded.heldOutPairHash, heldOutPairHash(pairs));
+  assert.equal(recorded.heldOutPairHash === manifest.heldOutHash, false);
 });
 
 test("a held-out repo, or a fork with the same root, fails the training-exclusion check", () => {
@@ -426,7 +586,9 @@ test("the committed held-out repos and their upstreams are absent from corpus, t
   const hits = exclusionHits(held, sources, rootsFile.roots);
   assert.deepEqual(hits, []);
   const watched = heldOutWatchProblems(held, practiceWatchFiles(repo), rootsFile.roots);
-  assert.deepEqual(watched, [], watched.join("\n"));
+  const named = watched.filter((problem) => !problem.startsWith("CLONE_UNVERIFIED:"));
+  assert.deepEqual(named, [], named.join("\n"));
+  assert.ok(watched.some((problem) => problem.startsWith("CLONE_UNVERIFIED:")), "a root with no clone identity fails closed");
   const devInCorpus = sources.filter((s) => s.name === "PeaceG03/PeaceSTOCKS");
   assert.ok(devInCorpus.length > 0, "PeaceSTOCKS stays a corpus source; it is dev, not held out");
 });

@@ -1,8 +1,9 @@
 {
   "schema": "peaceai-practice-manifest:v1",
   "credit": false,
-  "note": "Split by repository. Held-out upstreams are the origin projects a repo continues; an empty list means none. radashi-org/radashi left because it continues sodiray/radash. egoist/bundle-require left because it kept one pair. The replacement pins were frozen before their pairs were mined.",
+  "note": "Split by repository. Held-out upstreams are the origin projects a repo continues; an empty list means none. radashi-org/radashi left because it continues sodiray/radash. egoist/bundle-require left because it kept one pair. The replacement pins were frozen before their pairs were mined. Pairs were re-admitted on the replay path: a frozen install of the base, then the same sandbox test. A pair stays only when that test fails before the fix and passes after. Fixes that change package.json or a lockfile are excluded as FIX_CHANGES_DEPS. Bases that are not frozen-installable are excluded as BASE_NOT_FROZEN_INSTALLABLE. The repository list and heldOutHash are unchanged. heldOutPairHash is only the held-out pair list.",
   "heldOutHash": "040638a247aafc84964ef92a344b1278f133752ba2b507e5fcecd70029025364",
+  "heldOutPairHash": "7159bee7fbd560417d40709cc7529135997d6ff95aabd5fed6df67388c581828",
   "repos": [
     {
       "name": "PeaceG03/PeaceSTOCKS",

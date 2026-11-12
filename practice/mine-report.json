@@ -2,6 +2,7 @@
   "schema": "peaceai-practice-mine-report:v1",
   "credit": false,
   "isolation": "bwrap",
+  "admission": "frozen-base install and the sandbox test",
   "repos": [
     {
       "name": "PeaceG03/PeaceSTOCKS",
@@ -14,17 +15,17 @@
     {
       "name": "sindresorhus/is",
       "split": "dev",
-      "candidates": 20,
-      "attempts": 20,
-      "kept": 18,
-      "reason": "DROPPED"
+      "candidates": 18,
+      "attempts": 18,
+      "kept": 20,
+      "reason": null
     },
     {
       "name": "unjs/defu",
       "split": "dev",
       "candidates": 8,
       "attempts": 8,
-      "kept": 8,
+      "kept": 7,
       "reason": null
     },
     {
@@ -60,5 +61,11 @@
       "reason": null
     }
   ],
-  "kept": 105
+  "kept": 106,
+  "excluded": {
+    "FIX_CHANGES_DEPS": 16,
+    "BASE_NOT_FROZEN_INSTALLABLE": 3,
+    "NOT_REPLAY_ADMITTED": 28,
+    "INSTALL_FAILED": 5
+  }
 }
