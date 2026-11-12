@@ -1,8 +1,8 @@
 {
   "schema": "peaceai-practice-manifest:v1",
   "credit": false,
-  "note": "Split by repository. The held-out list was re-frozen before the replacement pairs were mined. PeaceG03 repositories are license owner. unjs/ufo and unjs/scule left the held-out list because they already appear in learned rules and plan tasks.",
-  "heldOutHash": "a514e589719b88ae9b13e9d9a2d0d093b53058f3dbc499cc13d5832a5498281c",
+  "note": "Split by repository. Held-out upstreams are the origin projects a repo continues; an empty list means none. radashi-org/radashi left because it continues sodiray/radash. egoist/bundle-require left because it kept one pair. The replacement pins were frozen before their pairs were mined.",
+  "heldOutHash": "040638a247aafc84964ef92a344b1278f133752ba2b507e5fcecd70029025364",
   "repos": [
     {
       "name": "PeaceG03/PeaceSTOCKS",
@@ -34,7 +34,8 @@
       "root": "373f340245f9b2c740affebf9b25498e86945136",
       "license": "MIT",
       "licenseFile": "LICENSE",
-      "split": "held-out"
+      "split": "held-out",
+      "upstreams": []
     },
     {
       "name": "gvergnaud/ts-pattern",
@@ -42,23 +43,26 @@
       "root": "4bf42f9e351df2673b07297693871cd901612f88",
       "license": "MIT",
       "licenseFile": "LICENSE",
-      "split": "held-out"
+      "split": "held-out",
+      "upstreams": []
     },
     {
-      "name": "egoist/bundle-require",
-      "commit": "8ca47fef6353369bc3b49d7ef73fdad239355f0c",
-      "root": "74ed444f952550c2fb438fea915b241287ee0b9f",
+      "name": "gcanti/fp-ts",
+      "commit": "c0a6472121c67a2b083e62fcff13e7d022e39d8f",
+      "root": "508167379aa46c095f015d2bba18031748425d8c",
       "license": "MIT",
       "licenseFile": "LICENSE",
-      "split": "held-out"
+      "split": "held-out",
+      "upstreams": []
     },
     {
-      "name": "radashi-org/radashi",
-      "commit": "0487352eadca0b45039acba073b7841982b3443f",
-      "root": "b073ed7191f32f5c5c3c9d13d86ca8e36d922d4f",
+      "name": "unjs/listhen",
+      "commit": "2466b698997f6d5006c22f36ab54379df277cf5f",
+      "root": "5433d71a0a5e0524ac9da7ce0cf14c96f029a6d2",
       "license": "MIT",
-      "licenseFile": "LICENSE.md",
-      "split": "held-out"
+      "licenseFile": "LICENSE",
+      "split": "held-out",
+      "upstreams": []
     }
   ]
 }

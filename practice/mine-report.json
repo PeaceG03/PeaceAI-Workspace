@@ -42,23 +42,7 @@
       "attempts": 49,
       "kept": 20,
       "reason": null
-    },
-    {
-      "name": "egoist/bundle-require",
-      "split": "held-out",
-      "candidates": 6,
-      "attempts": 6,
-      "kept": 1,
-      "reason": null
-    },
-    {
-      "name": "radashi-org/radashi",
-      "split": "held-out",
-      "candidates": 189,
-      "attempts": 21,
-      "kept": 20,
-      "reason": null
     }
   ],
-  "kept": 105
+  "kept": 84
 }

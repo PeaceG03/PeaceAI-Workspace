@@ -224,6 +224,8 @@ export interface PracticeRepo {
   license: PracticeLicense | null;
   licenseFile: string | null;
   split: Split;
+  /** Origin projects this held-out repo continues. Empty when it has no upstream. */
+  upstreams?: readonly string[];
 }
 
 export interface PracticeManifest {
@@ -233,11 +235,11 @@ export interface PracticeManifest {
   repos: PracticeRepo[];
 }
 
-/** Canonical held-out list. Name, pin, root commit, license, and license file. Order is by name. */
+/** Canonical held-out list. Name, pin, root, license, license file, and sorted upstreams. Order is by name. */
 export function heldOutCanonical(repos: readonly PracticeRepo[]): string {
   const lines = repos
     .filter((r) => r.split === "held-out")
-    .map((r) => [r.name, r.commit, r.root, r.license ?? "", r.licenseFile ?? ""].join("\t"))
+    .map((r) => [r.name, r.commit, r.root, r.license ?? "", r.licenseFile ?? "", [...(r.upstreams ?? [])].sort().join(",")].join("\t"))
     .sort();
   return lines.join("\n") + (lines.length ? "\n" : "");
 }
@@ -270,6 +272,10 @@ export function manifestProblems(value: unknown): string[] {
       if (repo.license !== "owner") problems.push(`repo_license:${repo.name}`);
     } else if (!isSpdx(repo.license)) problems.push(`repo_license:${repo.name}`);
     else if (typeof repo.licenseFile !== "string" || !repo.licenseFile) problems.push(`license_file:${repo.name}`);
+    if (repo.split === "held-out") {
+      if (!Array.isArray(repo.upstreams)) problems.push(`repo_upstreams:${repo.name}`);
+      else for (const upstream of repo.upstreams) if (typeof upstream !== "string" || !REPO.test(upstream)) problems.push(`repo_upstream:${repo.name}`);
+    }
   }
   if (held < 2) problems.push("heldout_count");
   if (stocks !== "dev") problems.push("peacestocks_not_dev");
@@ -530,6 +536,8 @@ export function practiceWatchFiles(root: string): PracticeWatch[] {
   addDir("peaceai/rules/learned", (name) => name.endsWith(".json"));
   addDir("peaceai/plan", (name) => name.startsWith("tasks-") && name.endsWith(".json") || /runs.*\.jsonl$/.test(name));
   addDir("peaceai/spec", (name) => name.endsWith(".md"));
+  addDir("docs", (name) => name.endsWith(".md"));
+  addDir("peaceai/docs", (name) => name.endsWith(".md"));
   return [...rels].sort().map((path) => ({ path, text: readFileSync(join(root, path), "utf8") }));
 }
 
@@ -538,7 +546,7 @@ export function practiceWatchFiles(root: string): PracticeWatch[] {
  * Dev rows of practice/pairs.jsonl count. A fork whose recorded root is not the clone's root fails closed.
  */
 export function heldOutWatchProblems(
-  heldOut: readonly { name: string; root: string }[],
+  heldOut: readonly { name: string; root: string; upstreams?: readonly string[] }[],
   files: readonly PracticeWatch[],
   roots: Readonly<Record<string, string | null>>,
   clones: Readonly<Record<string, CloneMeta | null>> = {},
@@ -553,12 +561,18 @@ export function heldOutWatchProblems(
     for (const bad of refs.bad) problems.push(`BAD_REPO_FORM:${file.path}:${bad}`);
     for (const name of refs.names) sources.push({ name, file: file.path, kind: "corpus" });
     for (const held of heldOut) {
-      const bare = held.name.split("/")[1] ?? "";
-      if (devText.toLowerCase().includes(held.name.toLowerCase())) problems.push(`HELD_OUT_MENTION:${file.path}:${held.name}`);
-      else if (bare && mentionsBare(devText, bare)) problems.push(`HELD_OUT_BARE:${file.path}:${held.name}`);
+      const names = [held.name, ...(held.upstreams ?? [])];
+      for (const name of names) {
+        const bare = name.split("/")[1] ?? "";
+        const label = name === held.name ? held.name : `${held.name} upstream ${name}`;
+        if (devText.toLowerCase().includes(name.toLowerCase())) problems.push(`HELD_OUT_MENTION:${file.path}:${label}`);
+        else if (bare && mentionsBare(devText, bare)) problems.push(`HELD_OUT_BARE:${file.path}:${label}`);
+      }
     }
   }
   for (const hit of exclusionHits(heldOut, sources, roots)) problems.push(`HELD_OUT_${hit.why.toUpperCase()}:${hit.file}:${hit.heldOut}`);
+  const upstreams = heldOut.flatMap((held) => (held.upstreams ?? []).map((name) => ({ name, root: "0".repeat(40) })));
+  for (const hit of exclusionHits(upstreams, sources, roots)) problems.push(`HELD_OUT_UPSTREAM:${hit.file}:${hit.source}`);
   for (const held of heldOut) {
     if (Object.prototype.hasOwnProperty.call(clones, held.name)) problems.push(...cloneRootProblems(held.name, held.root, clones[held.name] ?? null));
   }

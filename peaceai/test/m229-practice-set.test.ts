@@ -21,7 +21,7 @@ const manifest = JSON.parse(read("practice/manifest.json")) as PracticeManifest;
 const rootsFile = JSON.parse(read("practice/corpus-roots.json")) as CorpusRoots;
 
 const repoOf = (over: Partial<PracticeRepo>): PracticeRepo => ({
-  name: "example/lib", commit: "a".repeat(40), root: "b".repeat(40), license: "MIT", licenseFile: "LICENSE", split: "dev", ...over,
+  name: "example/lib", commit: "a".repeat(40), root: "b".repeat(40), license: "MIT", licenseFile: "LICENSE", split: "dev", upstreams: [], ...over,
 });
 
 test("a root LICENSE is kept only when it is one permissive license", () => {
@@ -157,12 +157,12 @@ test("a held-out repo, or a fork with the same root, fails the training-exclusio
   assert.equal(exclusionHits([{ name: "PeaceG03/PeaceSTOCKS", root: "1".repeat(40) }], sources, rootMap)[0]?.why, "name");
 });
 
-test("the committed held-out repos are absent from corpus, learned rules, plans, specs, and dev pairs", () => {
+test("the committed held-out repos and their upstreams are absent from corpus, learned rules, plans, specs, docs, and dev pairs", () => {
   const sources = trainingSources((path) => { try { return read(path); } catch { return null; } });
   assert.ok(!("error" in sources), "error" in sources ? sources.error : "");
   if ("error" in sources) return;
   assert.deepEqual(rootProblems(sources, rootsFile), []);
-  const held = manifest.repos.filter((r) => r.split === "held-out").map((r) => ({ name: r.name, root: r.root }));
+  const held = manifest.repos.filter((r) => r.split === "held-out").map((r) => ({ name: r.name, root: r.root, upstreams: r.upstreams ?? [] }));
   const hits = exclusionHits(held, sources, rootsFile.roots);
   assert.deepEqual(hits, []);
   const watched = heldOutWatchProblems(held, practiceWatchFiles(repo), rootsFile.roots);
@@ -192,6 +192,15 @@ test("a GitHub URL is a repo, a malformed one is rejected, and a wrong clone roo
   assert.deepEqual(cloneRootProblems("a/b", "c".repeat(40), null), ["CLONE_UNVERIFIED:a/b"]);
   assert.deepEqual(cloneRootProblems("a/b", "c".repeat(40), { root: "d".repeat(40), upstream: null, upstreamRoot: null }), ["ROOT_MISMATCH:a/b"]);
   assert.ok(cloneRootProblems("a/b", "c".repeat(40), { root: "c".repeat(40), upstream: "other/up", upstreamRoot: null }).includes("UPSTREAM_ROOT_UNVERIFIED:a/b"));
+});
+
+test("a held-out repo whose upstream appears in docs fails the exclusion check", () => {
+  const problems = heldOutWatchProblems(
+    [{ name: "radashi-org/radashi", root: "a".repeat(40), upstreams: ["sodiray/radash"] }],
+    [{ path: "docs/learn-steps-1-4-evidence.md", text: "PeaceAI learned on sodiray/radash.\n" }],
+    {},
+  );
+  assert.ok(problems.some((p) => p.includes("docs/learn-steps-1-4-evidence.md") && p.includes("sodiray/radash")), problems.join("\n"));
 });
 
 test("a verified pair records the fail-before and pass-after exits", () => {
@@ -245,8 +254,8 @@ test("each practice repo has a scope, and a third-party target posts a patch ins
   const publicTask = new Set(["unjs/defu", "unjs/scule"]);
   const sample: Record<string, { source: string; test: string }> = {
     "sindresorhus/is": { source: "source/index.ts", test: "test/test.ts" },
-    "egoist/bundle-require": { source: "src/index.ts", test: "test/index.test.ts" },
-    "radashi-org/radashi": { source: "src/array/first.ts", test: "tests/array/first.test.ts" },
+    "gcanti/fp-ts": { source: "src/Option.ts", test: "test/Option.ts" },
+    "unjs/listhen": { source: "src/index.ts", test: "test/index.test.ts" },
     "blakeembrey/change-case": { source: "packages/change-case/src/index.ts", test: "packages/change-case/src/index.spec.ts" },
     "gvergnaud/ts-pattern": { source: "src/match.ts", test: "tests/chainable.test.ts" },
   };
