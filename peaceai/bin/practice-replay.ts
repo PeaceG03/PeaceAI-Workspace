@@ -3,7 +3,8 @@
 // --core-archive is the pinned core tar capability-job.ts checks against peaceai/core-pin.json.
 // --clones-dir holds one git clone per repo, named <owner>__<name>, with the recorded commits present.
 // --clones is the same option.
-// Each row gives Job A only the commit subject and the repo at baseSha. The diff and the fix are not shown.
+// Each row gives Job A the commit subject, the test file path, and the repo at baseSha.
+// The diff and the fix are not shown. The test path can name a source file; its contents are not the task.
 // A row passes only when peaceai/bin/gate.ts prints GATE PASS and the recorded test fails before the
 // candidate and passes after it. Unmeasured is never a pass.
 // A repo that targets.json does not name is UNMEASURED GATE_NO_TARGET. gate.ts and scope.ts are not edited.
@@ -94,6 +95,7 @@ function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: st
         PEACEAI_WORKSPACE_DIR: dir,
         PEACEAI_TARGET: pair.repo,
         PEACEAI_TEST_EXISTING: "true",
+        PEACEAI_TEST_FILE: pair.testFile,
         ISSUE_TITLE: pair.subject.slice(0, 200),
         ISSUE_BODY: pair.subject.slice(0, 200),
       },
