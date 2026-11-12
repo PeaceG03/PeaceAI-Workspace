@@ -6,10 +6,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { keptLicense } from "../lib/practicemine.ts";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync as readText, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
-  GIT_LOCK_ARGS, cloneRootProblems, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutWatchProblems, installArgv, isSourceFile, isTestFile, manifestProblems,
+  GIT_LOCK_ARGS, cloneRootProblems, ensurePracticeInstall, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutWatchProblems, installArgv, isSourceFile, isTestFile, manifestProblems,
   pairFiles, pairProblems, parseRepoToken, poisonChanges, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxArgv, practiceWatchFiles, releaseWorktree, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
@@ -250,6 +250,71 @@ test("a correct candidate passes through the sandbox when node_modules is a syml
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("the sandbox covers a .git directory and a worktree .git file", (t) => {
+  if (!bwrapHere()) { t.skip("bwrap is not installed on this host"); return; }
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const repoDir = tinyRepo();
+  const wt = mkdtempSync(join(tmpdir(), "practice-wt-"));
+  rmSync(wt, { recursive: true, force: true });
+  try {
+    assert.equal(lstatSync(join(repoDir, ".git")).isDirectory(), true);
+    const asDir = runInPracticeSandbox(repoDir, [node, "-e", "process.exit(0)"], 15_000, { capture: true, nodePath: node });
+    assert.equal(asDir.unsafe, false, asDir.stdout);
+    assert.equal(asDir.code, 0, asDir.stdout);
+    const added = spawnSync("git", ["-C", repoDir, "worktree", "add", "--detach", wt, "HEAD"], { encoding: "utf8" });
+    assert.equal(added.status, 0, added.stderr);
+    assert.equal(lstatSync(join(wt, ".git")).isFile(), true);
+    const asFile = runInPracticeSandbox(wt, [node, "-e", "process.exit(0)"], 15_000, { capture: true, nodePath: node });
+    assert.equal(asFile.unsafe, false, asFile.stdout);
+    assert.equal(asFile.code, 0, asFile.stdout);
+  } finally {
+    spawnSync("git", ["-C", repoDir, "worktree", "remove", "--force", wt], { stdio: "ignore" });
+    rmSync(repoDir, { recursive: true, force: true });
+    rmSync(wt, { recursive: true, force: true });
+  }
+});
+
+test("a fresh clone with no node_modules is installed from the pinned base and the test runs", () => {
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const origin = tinyRepo();
+  const fresh = mkdtempSync(join(tmpdir(), "practice-fresh-"));
+  const cache = mkdtempSync(join(tmpdir(), "practice-install-cache-"));
+  rmSync(fresh, { recursive: true, force: true });
+  try {
+    writeFileSync(join(origin, "package.json"), JSON.stringify({ name: "fresh-practice", dependencies: { "has-flag": "4.0.0" } }) + "\n");
+    writeFileSync(join(origin, "add.test.js"), "const test = require('node:test'); const assert = require('node:assert'); test('dep', () => { assert.equal(typeof require('has-flag'), 'function'); });\n");
+    spawnSync("git", ["-C", origin, "add", "package.json", "add.test.js"], { stdio: "ignore" });
+    const committed = spawnSync("git", ["-C", origin, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "base"], { encoding: "utf8" });
+    assert.equal(committed.status, 0, committed.stderr);
+    const base = spawnSync("git", ["-C", origin, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    writeFileSync(join(origin, "package.json"), JSON.stringify({ name: "fresh-practice", dependencies: { "has-flag": "4.0.0", "left-pad": "1.3.0" } }) + "\n");
+    spawnSync("git", ["-C", origin, "add", "package.json"], { stdio: "ignore" });
+    spawnSync("git", ["-C", origin, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "fix deps"], { stdio: "ignore" });
+    const cloned = spawnSync("git", ["clone", "--quiet", origin, fresh], { encoding: "utf8" });
+    assert.equal(cloned.status, 0, cloned.stderr);
+    assert.equal(existsSync(join(fresh, "node_modules")), false);
+    const installed = ensurePracticeInstall(fresh, {
+      repo: "example/fresh", baseSha: base,
+      toolchain: { nodePath: node, nodeVersion: "v22.23.4", manager: "npm", managerVersion: "10.9.9" },
+    }, cache, { npm: false, pnpm: false, yarn: false }, false);
+    assert.equal(installed.ok, true, installed.lines.join("\n"));
+    assert.ok(installed.modules);
+    assert.equal(installed.modules.startsWith(join(cache, "example__fresh", base)), true);
+    const cachedPkg = JSON.parse(readText(join(cache, "example__fresh", base, "package.json"), "utf8")) as { dependencies: Record<string, string> };
+    assert.equal(cachedPkg.dependencies["left-pad"], undefined);
+    assert.equal(cachedPkg.dependencies["has-flag"], "4.0.0");
+    const ran = runInPracticeSandbox(fresh, [node, "--test", "add.test.js"], 20_000, { capture: true, nodePath: node, nodeModules: installed.modules });
+    assert.equal(ran.unsafe, false, ran.stdout);
+    assert.equal(ran.code, 0, ran.stdout);
+  } finally {
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(fresh, { recursive: true, force: true });
+    rmSync(cache, { recursive: true, force: true });
   }
 });
 

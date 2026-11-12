@@ -39,6 +39,8 @@ export interface GradedRow {
   status: RowStatus;
   reason: string;
   gap: boolean;
+  /** Sanitized install log. Present only for INSTALL_FAILED. */
+  lines?: string[];
 }
 
 /** One row. Unmeasured never comes back as pass. A pass requires GATE PASS and fail-before/pass-after. */

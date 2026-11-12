@@ -140,10 +140,17 @@ export function visibleNodeBin(): string | null {
 }
 
 let gitCover: string | null = null;
+let gitFile: string | null = null;
 function emptyGitCover(): string {
   if (gitCover && existsSync(gitCover)) return gitCover;
   gitCover = mkdtempSync(join(tmpdir(), "peaceai-git-cover-"));
   return gitCover;
+}
+function emptyGitFile(): string {
+  if (gitFile && existsSync(gitFile)) return gitFile;
+  gitFile = join(tmpdir(), "peaceai-git-cover-file");
+  if (!existsSync(gitFile)) writeFileSync(gitFile, "");
+  return gitFile;
 }
 
 function roMount(args: string[], path: string): void {
@@ -154,8 +161,9 @@ function roMount(args: string[], path: string): void {
 }
 
 /**
- * Allowlist bubblewrap. The host root is not mounted. `.git` is covered by an empty read-only
- * directory so the real git dir stays outside the writable tree. There is no unshare fallback.
+ * Allowlist bubblewrap. The host root is not mounted. A `.git` directory is covered by an empty
+ * read-only directory, and a worktree `.git` file (`gitdir: ...`) by an empty read-only file.
+ * There is no unshare fallback.
  */
 export function practiceSandboxArgv(workDir: string, opts: { nodePath?: string | null; nodeModules?: string | null } = {}): string[] | null {
   if (!isAbsolute(workDir)) return null;
@@ -177,7 +185,14 @@ export function practiceSandboxArgv(workDir: string, opts: { nodePath?: string |
   }
   args.push("--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp");
   args.push("--bind", workDir, workDir);
-  if (existsSync(join(workDir, ".git"))) args.push("--ro-bind", emptyGitCover(), join(workDir, ".git"));
+  const gitMeta = join(workDir, ".git");
+  if (existsSync(gitMeta)) {
+    // A normal clone has a directory. A worktree has a file (`gitdir: ...`). Mounting a directory
+    // onto that file makes bwrap fail before the test starts.
+    const gitStat = lstatSync(gitMeta);
+    if (gitStat.isDirectory()) args.push("--ro-bind", emptyGitCover(), gitMeta);
+    else if (gitStat.isFile()) args.push("--ro-bind", emptyGitFile(), gitMeta);
+  }
   const modulesLink = join(workDir, "node_modules");
   const modules = opts.nodeModules && existsSync(opts.nodeModules) ? opts.nodeModules : existsSync(modulesLink) ? modulesLink : null;
   if (modules) {
@@ -210,6 +225,7 @@ export function runInPracticeSandbox(workDir: string, cmd: readonly string[], ti
   if (opts.bwrap) prefix[0] = opts.bwrap;
   const home = sandboxHome(workDir);
   mkdirSync(home, { recursive: true });
+  writeFileSync(join(workDir, ".practice-sandbox-ran"), "1\n");
   const nodePath = opts.nodePath ?? visibleNodeBin() ?? "/usr/bin/node";
   const env = scrubEnv(process.env, workDir);
   env.HOME = home;
@@ -323,6 +339,98 @@ export function currentToolchain(manager: PracticeToolchain["manager"]): Practic
   const managerVersion = spawnSync(argv[0]!, argv.slice(1), { encoding: "utf8" }).stdout?.trim() ?? "";
   if (!managerVersion || managerVersion.includes("\n")) return null;
   return { nodePath, nodeVersion, manager, managerVersion };
+}
+
+export const SANDBOX_RAN = ".practice-sandbox-ran";
+
+const POISON_INSTALL = [".pnpmfile.cjs", ".npmrc", ".yarnrc", ".yarnrc.yml"];
+
+/** Drop tokens, credentials, and home directories from an install log. */
+export function sanitizeInstallLines(text: string): string[] {
+  const lines: string[] = [];
+  for (const raw of text.split("\n")) {
+    let line = raw.replace(/\u001b\[[0-9;]*m/g, "");
+    line = line.replace(/\/home\/[^/\s]+/g, "/home/user").replace(/\/Users\/[^/\s]+/g, "/Users/user");
+    line = line.replace(/(?:ghp_|github_pat_|npm_|ghs_)[A-Za-z0-9_]+/g, "[redacted]");
+    line = line.replace(/:\/\/[^/\s:@]+:[^@\s/]+@/g, "://");
+    line = line.trim();
+    if (!line) continue;
+    lines.push(line.slice(0, 240));
+    if (lines.length >= 12) break;
+  }
+  return lines;
+}
+
+export function frozenInstallArgv(manager: PracticeToolchain["manager"], locks: LockFiles, yarnModern: boolean): string[] | null {
+  if (manager === "none") return null;
+  if (manager === "pnpm") return ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"];
+  if (manager === "yarn") return yarnModern ? ["corepack", "yarn", "install", "--immutable", "--mode=skip-build"] : ["corepack", "yarn", "install", "--frozen-lockfile", "--ignore-scripts"];
+  if (locks.npm) return ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"];
+  return ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"];
+}
+
+export interface PracticeInstall { ok: boolean; modules: string | null; reason: string | null; lines: string[] }
+
+function installEnv(nodePath: string, home: string): NodeJS.ProcessEnv {
+  mkdirSync(home, { recursive: true });
+  const npmrc = join(home, "npmrc");
+  if (!existsSync(npmrc)) writeFileSync(npmrc, "");
+  const env = scrubEnv(process.env, home);
+  env.HOME = home;
+  env.TMPDIR = home;
+  env.TMP = home;
+  env.TEMP = home;
+  env.PATH = `${dirname(nodePath)}:${env.PATH ?? "/usr/bin:/bin"}`;
+  env.npm_config_userconfig = npmrc;
+  env.NPM_CONFIG_USERCONFIG = npmrc;
+  env.COREPACK_HOME = join(home, "corepack");
+  env.GIT_CONFIG_GLOBAL = join(tmpdir(), "peaceai-practice-gitconfig");
+  env.GIT_CONFIG_NOSYSTEM = "1";
+  env.GIT_CONFIG_SYSTEM = "/dev/null";
+  return env;
+}
+
+/**
+ * Install one pair's dependencies from its pinned base commit, outside any sandbox work tree.
+ * The cache is `<cacheRoot>/<owner>__<name>/<baseSha>/`. A directory a sandboxed test has
+ * written is refused. The lockfile is the one `git archive` extracted from baseSha.
+ */
+export function ensurePracticeInstall(repoDir: string, pair: Pick<PracticePair, "repo" | "baseSha" | "toolchain">, cacheRoot: string, locks: LockFiles, yarnModern: boolean): PracticeInstall {
+  if (!existsSync(pair.toolchain.nodePath)) return { ok: false, modules: null, reason: "TOOLCHAIN_MISSING", lines: [] };
+  const dest = join(cacheRoot, pair.repo.replace("/", "__"), pair.baseSha);
+  const modules = join(dest, "node_modules");
+  const stamp = join(dest, ".practice-base");
+  if (existsSync(modules) && existsSync(stamp) && readFileSync(stamp, "utf8").trim() === pair.baseSha) return { ok: true, modules, reason: null, lines: [] };
+  rmSync(dest, { recursive: true, force: true });
+  mkdirSync(dest, { recursive: true });
+  if (existsSync(join(dest, SANDBOX_RAN))) return { ok: false, modules: null, reason: "SANDBOX_POISON", lines: ["install dir was used by a sandboxed test"] };
+  const pinned = practiceGit(repoDir, ["rev-parse", "--verify", `${pair.baseSha}^{commit}`]);
+  if (!pinned.ok || pinned.out.trim() !== pair.baseSha) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: ["base commit is not in the clone"] };
+  const archived = spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "archive", "--format=tar", pair.baseSha], {
+    env: practiceGitEnv(), maxBuffer: 256 << 20, timeout: 120_000,
+  });
+  if (archived.status !== 0 || !archived.stdout) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: sanitizeInstallLines(`${archived.stderr ?? ""}`) };
+  const extracted = spawnSync("tar", ["-x", "-C", dest], { input: archived.stdout, timeout: 120_000 });
+  if (extracted.status !== 0) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: ["could not extract the base commit"] };
+  for (const name of readdirSync(dest)) {
+    if (!POISON_INSTALL.includes(name) && !name.startsWith(".yarnrc")) continue;
+    const recorded = practiceGit(repoDir, ["cat-file", "-e", `${pair.baseSha}:${name}`]);
+    if (!recorded.ok) return { ok: false, modules: null, reason: "SANDBOX_POISON", lines: [`${name} is not in the base commit`] };
+  }
+  const argv = frozenInstallArgv(pair.toolchain.manager, locks, yarnModern);
+  if (!argv) {
+    writeFileSync(stamp, `${pair.baseSha}\n`);
+    mkdirSync(modules, { recursive: true });
+    return { ok: true, modules, reason: null, lines: [] };
+  }
+  const home = mkdtempSync(join(tmpdir(), "peaceai-install-home-"));
+  const ran = spawnSync(argv[0]!, argv.slice(1), {
+    cwd: dest, env: installEnv(pair.toolchain.nodePath, home), encoding: "utf8", timeout: 180_000, maxBuffer: 8 << 20,
+  });
+  rmSync(home, { recursive: true, force: true });
+  if (ran.status !== 0) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: sanitizeInstallLines(`${ran.error?.message ?? ""}\n${ran.stdout ?? ""}\n${ran.stderr ?? ""}`) };
+  writeFileSync(stamp, `${pair.baseSha}\n`);
+  return { ok: true, modules: existsSync(modules) ? modules : null, reason: existsSync(modules) ? null : "INSTALL_FAILED", lines: existsSync(modules) ? [] : ["install produced no node_modules"] };
 }
 
 export function toolchainProblems(value: unknown): string[] {
