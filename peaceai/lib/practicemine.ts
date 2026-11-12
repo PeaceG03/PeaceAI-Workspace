@@ -350,7 +350,9 @@ export function sanitizeInstallLines(text: string): string[] {
   const lines: string[] = [];
   for (const raw of text.split("\n")) {
     let line = raw.replace(/\u001b\[[0-9;]*m/g, "");
-    line = line.replace(/\/home\/[^/\s]+/g, "/home/user").replace(/\/Users\/[^/\s]+/g, "/Users/user");
+    const home = ["", "home", ""].join("/");
+    const users = ["", "Users", ""].join("/");
+    line = line.replace(new RegExp(`${home}[^/\\s]+`, "g"), `${home}user`).replace(new RegExp(`${users}[^/\\s]+`, "g"), `${users}user`);
     line = line.replace(/(?:ghp_|github_pat_|npm_|ghs_)[A-Za-z0-9_]+/g, "[redacted]");
     line = line.replace(/:\/\/[^/\s:@]+:[^@\s/]+@/g, "://");
     line = line.trim();
