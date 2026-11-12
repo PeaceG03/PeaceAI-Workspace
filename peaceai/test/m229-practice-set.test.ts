@@ -8,7 +8,7 @@ import { keptLicense } from "../lib/practicemine.ts";
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
-  exclusionHits,   cloneRootProblems, heldOutHash, heldOutWatchProblems, installArgv, isSourceFile, isTestFile, manifestProblems,
+  exclusionHits,   cloneRootProblems, extManifestProblems, heldOutHash, heldOutWatchProblems, installArgv, isSourceFile, isTestFile, manifestProblems,
   pairFiles, pairProblems, parseRepoToken, practiceSandboxArgv, practiceWatchFiles, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
@@ -157,7 +157,7 @@ test("a held-out repo, or a fork with the same root, fails the training-exclusio
   assert.equal(exclusionHits([{ name: "PeaceG03/PeaceSTOCKS", root: "1".repeat(40) }], sources, rootMap)[0]?.why, "name");
 });
 
-test("the committed held-out repos and their upstreams are absent from corpus, learned rules, plans, specs, docs, and dev pairs", () => {
+test("the committed held-out repos and their upstreams are absent from corpus, the LM manifest, learned rules, plans, specs, docs, and dev pairs", () => {
   const sources = trainingSources((path) => { try { return read(path); } catch { return null; } });
   assert.ok(!("error" in sources), "error" in sources ? sources.error : "");
   if ("error" in sources) return;
@@ -192,6 +192,30 @@ test("a GitHub URL is a repo, a malformed one is rejected, and a wrong clone roo
   assert.deepEqual(cloneRootProblems("a/b", "c".repeat(40), null), ["CLONE_UNVERIFIED:a/b"]);
   assert.deepEqual(cloneRootProblems("a/b", "c".repeat(40), { root: "d".repeat(40), upstream: null, upstreamRoot: null }), ["ROOT_MISMATCH:a/b"]);
   assert.ok(cloneRootProblems("a/b", "c".repeat(40), { root: "c".repeat(40), upstream: "other/up", upstreamRoot: null }).includes("UPSTREAM_ROOT_UNVERIFIED:a/b"));
+});
+
+test("the LM manifest matches the repo field exactly, so a path that merely contains the name does not count", () => {
+  const part = [
+    JSON.stringify({ repo: "rollup/rollup", path: "test/form/samples/side-effects-pattern-assignment/_config.js" }),
+    JSON.stringify({ repo: "gcanti/fp-ts", path: "src/Option.ts" }),
+  ].join("\n") + "\n";
+  const pathHit = extManifestProblems("peaceai/model/ext-manifest/part-000.jsonl", part, [
+    { name: "gvergnaud/ts-pattern", upstreams: [] },
+  ]);
+  assert.deepEqual(pathHit, []);
+  const repoHit = heldOutWatchProblems(
+    [{ name: "gcanti/fp-ts", root: "a".repeat(40), upstreams: ["sodiray/radash"] }],
+    [{ path: "peaceai/model/ext-manifest/part-000.jsonl", text: part }],
+    {},
+  );
+  assert.ok(repoHit.some((p) => p === "HELD_OUT_MANIFEST:peaceai/model/ext-manifest/part-000.jsonl:gcanti/fp-ts"), repoHit.join("\n"));
+  assert.equal(repoHit.some((p) => p.includes("ts-pattern") || p.includes("side-effects")), false);
+  const upstream = heldOutWatchProblems(
+    [{ name: "radashi-org/radashi", root: "b".repeat(40), upstreams: ["sodiray/radash"] }],
+    [{ path: "peaceai/model/ext-manifest/part-001.jsonl", text: `${JSON.stringify({ repo: "sodiray/radash", path: "src/index.ts" })}\n` }],
+    {},
+  );
+  assert.ok(upstream.some((p) => p.includes("sodiray/radash")), upstream.join("\n"));
 });
 
 test("a held-out repo whose upstream appears in docs fails the exclusion check", () => {

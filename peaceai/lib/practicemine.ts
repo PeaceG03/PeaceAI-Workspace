@@ -538,7 +538,33 @@ export function practiceWatchFiles(root: string): PracticeWatch[] {
   addDir("peaceai/spec", (name) => name.endsWith(".md"));
   addDir("docs", (name) => name.endsWith(".md"));
   addDir("peaceai/docs", (name) => name.endsWith(".md"));
+  addDir("peaceai/model/ext-manifest", (name) => /^part-\d+\.jsonl$/.test(name));
   return [...rels].sort().map((path) => ({ path, text: readFileSync(join(root, path), "utf8") }));
+}
+
+const EXT_MANIFEST = /^peaceai\/model\/ext-manifest\/part-\d+\.jsonl$/;
+
+/**
+ * Exact `repo` values in one LM manifest part. A path such as `side-effects-pattern` is not a repo.
+ * Lines with no `repo` field (the part header) are skipped. A line that does not parse fails closed.
+ */
+export function extManifestProblems(path: string, text: string, heldOut: readonly { name: string; upstreams?: readonly string[] }[]): string[] {
+  const wanted = new Map<string, string>();
+  for (const held of heldOut) {
+    wanted.set(held.name.toLowerCase(), held.name);
+    for (const upstream of held.upstreams ?? []) wanted.set(upstream.toLowerCase(), `${held.name} upstream ${upstream}`);
+  }
+  const problems: string[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    let row: { repo?: unknown };
+    try { row = JSON.parse(line) as { repo?: unknown }; } catch { problems.push(`EXT_MANIFEST_BAD:${path}`); continue; }
+    if (!Object.prototype.hasOwnProperty.call(row, "repo")) continue;
+    if (typeof row.repo !== "string") { problems.push(`EXT_MANIFEST_BAD:${path}`); continue; }
+    const label = wanted.get(row.repo.toLowerCase());
+    if (label) problems.push(`HELD_OUT_MANIFEST:${path}:${label}`);
+  }
+  return [...new Set(problems)];
 }
 
 /**
@@ -554,6 +580,10 @@ export function heldOutWatchProblems(
   const problems: string[] = [];
   const sources: TrainingSource[] = [];
   for (const file of files) {
+    if (EXT_MANIFEST.test(file.path)) {
+      problems.push(...extManifestProblems(file.path, file.text, heldOut));
+      continue;
+    }
     const devText = file.path.endsWith("pairs.jsonl")
       ? file.text.split("\n").filter((line) => { try { return JSON.parse(line).split === "dev"; } catch { return line.trim().length > 0; } }).join("\n")
       : file.text;
