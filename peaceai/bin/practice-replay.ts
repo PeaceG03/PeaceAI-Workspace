@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
-import { pairProblems, scrubEnv, type PracticePair } from "../lib/practicemine.ts";
+import { pairProblems, practiceSandboxReady, runInPracticeSandbox, type PracticePair } from "../lib/practicemine.ts";
 import {
   PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, targetIsScorable,
   type GradedRow,
@@ -51,22 +51,14 @@ function cloneDir(repo: string, clones: string, work: string): string | null {
   return dir;
 }
 
-function runTest(dir: string, cmd: string[], prefix: string[]): number | null {
-  const ran = spawnSync(prefix[0]!, [...prefix.slice(1), ...cmd], {
-    cwd: dir, env: scrubEnv(process.env, dir), timeout: TEST_MS, stdio: "ignore",
-  });
-  if (ran.error && (ran.error as NodeJS.ErrnoException).code === "ETIMEDOUT") return null;
-  return ran.status;
-}
-
-function isolation(): string[] | null {
-  if (spawnSync("unshare", ["-n", "true"], { stdio: "ignore" }).status === 0) return ["unshare", "-n", "--"];
-  if (spawnSync("unshare", ["--user", "--map-root-user", "-n", "true"], { stdio: "ignore" }).status === 0) return ["unshare", "--user", "--map-root-user", "-n", "--"];
-  return null;
+function runTest(dir: string, cmd: string[]): number | null {
+  const ran = runInPracticeSandbox(dir, cmd, TEST_MS);
+  if (ran.unsafe) return null;
+  return ran.code;
 }
 
 /** Apply one candidate on a fresh base, with the recorded test file as the spec. Returns exits, or nulls when the diff does not apply. */
-function gradeCandidate(repoDir: string, pair: PracticePair, diff: string, prefix: string[]): { beforeExit: number | null; afterExit: number | null } {
+function gradeCandidate(repoDir: string, pair: PracticePair, diff: string): { beforeExit: number | null; afterExit: number | null } {
   const dir = mkdtempSync(join(tmpdir(), "peaceai-practice-grade-"));
   const added = spawnSync("git", ["-C", repoDir, "worktree", "add", "--detach", "--quiet", dir, pair.baseSha], { stdio: "ignore", timeout: 60_000 });
   if (added.status !== 0) { rmSync(dir, { recursive: true, force: true }); return { beforeExit: null, afterExit: null }; }
@@ -74,10 +66,10 @@ function gradeCandidate(repoDir: string, pair: PracticePair, diff: string, prefi
     const modules = join(repoDir, "node_modules");
     if (existsSync(modules) && !existsSync(join(dir, "node_modules"))) spawnSync("ln", ["-s", modules, join(dir, "node_modules")], { stdio: "ignore" });
     if (!git(dir, ["checkout", pair.fixSha, "--", pair.testFile])) return { beforeExit: null, afterExit: null };
-    const before = runTest(dir, pair.testCommand, prefix);
+    const before = runTest(dir, pair.testCommand);
     const applied = spawnSync("git", ["-C", dir, "apply", "--whitespace=nowarn", "-"], { input: diff, encoding: "utf8", stdio: ["pipe", "ignore", "ignore"] });
     if (applied.status !== 0) return { beforeExit: before, afterExit: null };
-    const after = runTest(dir, pair.testCommand, prefix);
+    const after = runTest(dir, pair.testCommand);
     return { beforeExit: before, afterExit: after };
   } finally {
     spawnSync("git", ["-C", repoDir, "worktree", "remove", "--force", dir], { stdio: "ignore" });
@@ -85,7 +77,7 @@ function gradeCandidate(repoDir: string, pair: PracticePair, diff: string, prefi
   }
 }
 
-function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: string, pair: PracticePair, prefix: string[]): GradedRow {
+function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: string, pair: PracticePair): GradedRow {
   const scorable = targetIsScorable(pair.repo);
   if (!scorable) return { ...blank(pair), ...gradePracticeRow({ scorable: false, core: "ok", job: null, gatePass: false, beforeExit: null, afterExit: null }) };
   const outDir = mkdtempSync(join(tmpdir(), "peaceai-practice-out-"));
@@ -127,7 +119,7 @@ function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: st
     const summary = JSON.parse(readFileSync(summaryPath, "utf8")) as { candidates?: { file: string }[] };
     for (const candidate of summary.candidates ?? []) {
       const diff = readFileSync(join(outDir, candidate.file), "utf8");
-      const graded = gradeCandidate(repoDir, pair, diff, prefix);
+      const graded = gradeCandidate(repoDir, pair, diff);
       if (beforeExit === null) beforeExit = graded.beforeExit;
       if (graded.beforeExit !== null && graded.beforeExit !== 0 && graded.afterExit === 0) { afterExit = 0; fixed = true; break; }
       if (afterExit === null) afterExit = graded.afterExit;
@@ -169,7 +161,7 @@ function main(): void {
   const tooling = resolve(import.meta.dirname, "../..");
   if (insideRepo(tooling, resolve(out))) { console.log("refused WRITE_IN_TARGET"); process.exit(2); }
   const pairs = readPairs(resolve(pairsPath));
-  const prefix = isolation();
+  const sandbox = practiceSandboxReady();
   let core: "ok" | "missing" = "missing";
   let bundle = "";
   let coreDir = "";
@@ -185,11 +177,11 @@ function main(): void {
     const repos = new Map<string, string | null>();
     for (const pair of pairs) {
       const scorable = targetIsScorable(pair.repo);
-      if (!scorable || core !== "ok" || !prefix) {
+      if (!scorable || core !== "ok" || !sandbox) {
         const row = gradePracticeRow({
           scorable, core: scorable ? core : "ok", job: null, gatePass: false, beforeExit: null, afterExit: null,
         });
-        const reason = !prefix && scorable && core === "ok" ? "UNSAFE_ENV" : row.reason;
+        const reason = !sandbox && scorable && core === "ok" ? "UNSAFE_ENV" : row.reason;
         const status = reason === "UNSAFE_ENV" ? "unmeasured" as const : row.status;
         graded.push({ repo: pair.repo, split: pair.split, fixSha: pair.fixSha, status, reason, gap: true });
         continue;
@@ -200,7 +192,7 @@ function main(): void {
         graded.push({ repo: pair.repo, split: pair.split, fixSha: pair.fixSha, status: "unmeasured", reason: "NO_CLONE", gap: true });
         continue;
       }
-      graded.push(replayOne(tooling, bundle, coreDir, dir, pair, prefix));
+      graded.push(replayOne(tooling, bundle, coreDir, dir, pair));
     }
   } finally {
     dispose();

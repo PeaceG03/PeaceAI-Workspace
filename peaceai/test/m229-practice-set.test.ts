@@ -5,9 +5,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { keptLicense } from "../lib/practicemine.ts";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import {
-  exclusionHits, heldOutHash, installArgv, isolationArgv, isSourceFile, isTestFile, manifestProblems,
-  pairFiles, pairProblems, rootProblems, scrubEnv, testCommandFor, trainingSources,
+  exclusionHits, heldOutHash, installArgv, isSourceFile, isTestFile, manifestProblems,
+  pairFiles, pairProblems, practiceSandboxArgv, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
 import { countBySplit, gradePracticeRow, replayDocument, targetIsScorable } from "../lib/practicereplay.ts";
@@ -51,7 +53,7 @@ test("the test command is an argv for one file, and install hooks are ignored", 
   assert.equal(installArgv({ npm: false, pnpm: false, yarn: false }, false), null);
 });
 
-test("third-party env is an allowlist, and network isolation is refused when unshare cannot build a net namespace", () => {
+test("third-party env is an allowlist, and the sandbox is bubblewrap with no unshare fallback", () => {
   const env = scrubEnv({ PATH: "/usr/bin", HOME: "/home/user", GH_TOKEN: "secret", GITHUB_TOKEN: "secret", AWS_SECRET_ACCESS_KEY: "secret", NPM_TOKEN: "secret", NODE_OPTIONS: "--require pwn" }, "/work");
   assert.equal(env.PATH, "/usr/bin");
   assert.equal(env.HOME, "/home/user");
@@ -61,9 +63,61 @@ test("third-party env is an allowlist, and network isolation is refused when uns
   assert.equal(env.AWS_SECRET_ACCESS_KEY, undefined);
   assert.equal(env.NPM_TOKEN, undefined);
   assert.equal(env.NODE_OPTIONS, undefined);
-  assert.deepEqual(isolationArgv(true, false), ["unshare", "-n", "--"]);
-  assert.deepEqual(isolationArgv(false, true), ["unshare", "--user", "--map-root-user", "-n", "--"]);
-  assert.equal(isolationArgv(false, false), null);
+  const argv = practiceSandboxArgv("/work/pair");
+  assert.ok(argv);
+  assert.equal(argv[0], "bwrap");
+  assert.ok(argv.includes("--ro-bind") && argv.includes("--unshare-net") && argv.includes("--unshare-pid"));
+  assert.ok(argv.includes("--die-with-parent") && argv.includes("--new-session"));
+  assert.equal(argv.includes("unshare"), false);
+  assert.equal(practiceSandboxArgv("relative"), null);
+});
+
+test("the practice sandbox hides a fake home, refuses outside writes, and has no network", () => {
+  const node = visibleNodeBin();
+  assert.ok(node, "a node binary outside the covered paths");
+  const realHome = mkdtempSync(join(tmpdir(), "practice-real-home-"));
+  const work = mkdtempSync(join(tmpdir(), "practice-sbx-"));
+  const outside = `/usr/practice-outside-${process.pid}`;
+  try {
+    mkdirSync(join(realHome, ".config"), { recursive: true });
+    writeFileSync(join(realHome, ".config", "marker"), "SECRET-MARKER");
+    const script = [
+      "const fs = require('fs'); const http = require('http');",
+      "const [home, outside] = process.argv.slice(1);",
+      "let read = 'blocked';",
+      "try { read = fs.readFileSync(home + '/.config/marker', 'utf8').trim(); } catch (e) { read = 'blocked'; }",
+      "let wrote = 'blocked';",
+      "try { fs.writeFileSync(outside, 'x'); wrote = 'wrote'; } catch (e) { wrote = 'blocked'; }",
+      "try { fs.writeFileSync('/tmp/practice-host-leak', 'x'); } catch (e) {}",
+      "const req = http.get('http://example.com', () => { console.log(JSON.stringify({ read, wrote, net: 'up', home: process.env.HOME })); });",
+      "req.on('error', () => { console.log(JSON.stringify({ read, wrote, net: 'down', home: process.env.HOME })); });",
+      "req.setTimeout(1500, () => { req.destroy(); });",
+    ].join("\n");
+    const ran = runInPracticeSandbox(work, [node, "-e", script, realHome, outside], 10_000, { capture: true });
+    assert.equal(ran.unsafe, false);
+    assert.equal(ran.code, 0, ran.stdout);
+    const body = JSON.parse(ran.stdout.trim().split("\n").at(-1)!) as { read: string; wrote: string; net: string; home: string };
+    assert.equal(body.read, "blocked");
+    assert.equal(body.wrote, "blocked");
+    assert.equal(body.net, "down");
+    assert.equal(body.home, sandboxHome(work));
+    assert.equal(existsSync("/tmp/practice-host-leak"), false);
+  } finally {
+    rmSync(realHome, { recursive: true, force: true });
+    rmSync(work, { recursive: true, force: true });
+    rmSync(outside, { force: true });
+  }
+});
+
+test("a missing bwrap is UNSAFE_ENV", () => {
+  const work = mkdtempSync(join(tmpdir(), "practice-nobwrap-"));
+  try {
+    const ran = runInPracticeSandbox(work, ["/bin/true"], 5_000, { bwrap: "bwrap-does-not-exist" });
+    assert.equal(ran.unsafe, true);
+    assert.equal(ran.code, null);
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
 });
 
 test("the held-out hash changes when a pin changes, and the committed manifest matches", () => {

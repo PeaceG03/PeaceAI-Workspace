@@ -1,7 +1,11 @@
 // Mixed practice set. credit: false. Pure checks for the miner, the frozen held-out hash, and the
 // training-exclusion check. Git and process spawning stay in peaceai/bin/practice-mine.ts.
 // Third-party source is never written here.
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join } from "node:path";
 import { classifyLicense, type Spdx } from "./lmcorpus.ts";
 
 export const MANIFEST_SCHEMA = "peaceai-practice-manifest:v1";
@@ -117,14 +121,88 @@ export function scrubEnv(src: NodeJS.ProcessEnv, cwd: string): NodeJS.ProcessEnv
   return out;
 }
 
-/**
- * `unshare -n` when that call works. Without CAP_NET_ADMIN the same network namespace is
- * `unshare --user --map-root-user -n`. If neither works, null: the miner must not run tests.
- */
-export function isolationArgv(plainOk: boolean, userOk: boolean): string[] | null {
-  if (plainOk) return ["unshare", "-n", "--"];
-  if (userOk) return ["unshare", "--user", "--map-root-user", "-n", "--"];
+/** Host directories a practice test must not see. Symlinks are covered at their real path. */
+export const SANDBOX_COVER = ["/home", "/root", "/cursor", "/workspace", "/tmp", "/run"] as const;
+
+export function sandboxCoverPaths(paths: readonly string[] = SANDBOX_COVER): string[] {
+  const out: string[] = [];
+  for (const path of paths) {
+    if (!existsSync(path)) continue;
+    const stat = lstatSync(path);
+    const target = stat.isSymbolicLink() ? realpathSync(path) : path;
+    if (!existsSync(target) || !lstatSync(target).isDirectory()) continue;
+    out.push(target);
+  }
+  return [...new Set(out)];
+}
+
+/** A node binary that stays visible after the sandbox tmpfs covers home and tmp. */
+export function visibleNodeBin(): string | null {
+  const hidden = (path: string) => SANDBOX_COVER.some((root) => path === root || path.startsWith(`${root}/`));
+  for (const path of [process.execPath, "/exec-daemon/node", "/usr/local/bin/node", "/usr/bin/node"]) {
+    if (!path || !existsSync(path) || hidden(path)) continue;
+    return path;
+  }
   return null;
+}
+
+/**
+ * bubblewrap around one work directory. The host root is read-only, the cover paths are empty
+ * tmpfs mounts, and only `workDir` is writable. There is no unshare fallback.
+ */
+export function practiceSandboxArgv(workDir: string, covers: readonly string[] = sandboxCoverPaths()): string[] | null {
+  if (!isAbsolute(workDir)) return null;
+  const args = ["bwrap", "--ro-bind", "/", "/"];
+  for (const cover of covers) args.push("--tmpfs", cover);
+  args.push("--bind", workDir, workDir, "--proc", "/proc", "--dev", "/dev");
+  args.push("--unshare-net", "--unshare-pid", "--die-with-parent", "--new-session", "--chdir", workDir, "--");
+  return args;
+}
+
+export function sandboxHome(workDir: string): string {
+  return join(workDir, ".practice-home");
+}
+
+export interface SandboxRun { unsafe: boolean; code: number | null; stdout: string }
+
+/** Run `cmd` inside the practice sandbox. `unsafe` means bwrap is missing or the sandbox could not be created. */
+export function runInPracticeSandbox(workDir: string, cmd: readonly string[], timeoutMs: number, opts: { bwrap?: string; capture?: boolean } = {}): SandboxRun {
+  const prefix = practiceSandboxArgv(workDir);
+  if (!prefix) return { unsafe: true, code: null, stdout: "" };
+  if (opts.bwrap) prefix[0] = opts.bwrap;
+  const home = sandboxHome(workDir);
+  mkdirSync(home, { recursive: true });
+  const nodeDir = dirname(visibleNodeBin() ?? "/usr/bin/node");
+  const env = scrubEnv(process.env, workDir);
+  env.HOME = home;
+  env.TMPDIR = home;
+  env.TMP = home;
+  env.TEMP = home;
+  env.PATH = `${join(workDir, "node_modules", ".bin")}:${nodeDir}:/usr/bin:/bin`;
+  const ran = spawnSync(prefix[0]!, [...prefix.slice(1), ...cmd], {
+    cwd: workDir, env, timeout: timeoutMs, encoding: "utf8",
+    stdio: opts.capture ? ["ignore", "pipe", "pipe"] : "ignore",
+  });
+  const err = ran.error as NodeJS.ErrnoException | undefined;
+  if (err?.code === "ENOENT" || (ran.status === null && err && err.code !== "ETIMEDOUT")) return { unsafe: true, code: null, stdout: "" };
+  const stdout = opts.capture ? `${ran.stdout ?? ""}${ran.stderr ?? ""}` : "";
+  return { unsafe: false, code: err?.code === "ETIMEDOUT" ? null : ran.status, stdout };
+}
+
+/** True when bwrap can build the sandbox and run a command. Cached for the process. */
+let sandboxReady: boolean | null = null;
+export function practiceSandboxReady(force = false): boolean {
+  if (sandboxReady !== null && !force) return sandboxReady;
+  const node = visibleNodeBin();
+  if (!node) { sandboxReady = false; return false; }
+  const dir = mkdtempSync(join(tmpdir(), "peaceai-sandbox-probe-"));
+  try {
+    const ran = runInPracticeSandbox(dir, [node, "-e", "process.exit(0)"], 15_000);
+    sandboxReady = !ran.unsafe && ran.code === 0;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  return sandboxReady;
 }
 
 export type Split = "dev" | "held-out";

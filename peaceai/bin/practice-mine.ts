@@ -3,15 +3,16 @@
 // Checks the root LICENSE at the pinned commit and keeps MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, and ISC.
 // A pair is a non-merge commit that changes at least one non-test source and exactly one test file,
 // whose test fails at the parent with that test file applied and passes at the fix.
-// Tests run with an allowlisted env and no network (unshare -n, or unshare --user --map-root-user -n).
-// If neither namespace works, tests are not run and the report says UNSAFE_ENV.
+// Tests run inside bubblewrap (read-only /, empty tmpfs on home and the other cover paths,
+// a writable bind of only the work dir, no network). If bwrap cannot build that sandbox,
+// tests are not run and the report says UNSAFE_ENV. There is no unshare fallback.
 // Installs may use the network and always pass --ignore-scripts. Third-party source is not committed.
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  ENV_ALLOW, installArgv, isOwnerRepo, isolationArgv, isTestFile, keptLicense, pairFiles, pairProblems, scrubEnv, testCommandFor,
+  ENV_ALLOW, installArgv, isOwnerRepo, isTestFile, keptLicense, pairFiles, pairProblems, practiceSandboxReady, runInPracticeSandbox, scrubEnv, testCommandFor,
   type LockFiles, type NameStatus, type PkgJson, type PracticeLicense, type PracticeManifest, type PracticePair, type PracticeRepo,
   LICENSE_FILES, MINE_REPORT_SCHEMA,
 } from "../lib/practicemine.ts";
@@ -35,11 +36,6 @@ function flag(name: string, args: string[]): string | undefined {
 function git(dir: string, args: string[], timeout = 60_000): { ok: boolean; out: string } {
   const ran = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8", timeout, maxBuffer: 64 << 20 });
   return { ok: ran.status === 0, out: ran.status === 0 ? ran.stdout : "" };
-}
-
-function probe(argv: string[]): boolean {
-  const ran = spawnSync(argv[0]!, argv.slice(1), { stdio: "ignore", timeout: 10_000 });
-  return ran.status === 0;
 }
 
 interface Candidate { fix: string; base: string; subject: string; testFile: string; files: string[] }
@@ -136,12 +132,10 @@ function install(dir: string, locks: LockFiles, deps: boolean): boolean {
   return true;
 }
 
-function runTest(dir: string, cmd: string[], prefix: string[]): number | null {
-  const ran = spawnSync(prefix[0]!, [...prefix.slice(1), ...cmd], {
-    cwd: dir, env: scrubEnv(process.env, dir), timeout: TEST_MS, stdio: "ignore",
-  });
-  if (ran.error && (ran.error as NodeJS.ErrnoException).code === "ETIMEDOUT") return null;
-  return ran.status;
+function runTest(dir: string, cmd: string[]): number | null {
+  const ran = runInPracticeSandbox(dir, cmd, TEST_MS);
+  if (ran.unsafe) return null;
+  return ran.code;
 }
 
 function licenseAt(dir: string, pin: string): { text: string; file: string } | null {
@@ -177,7 +171,7 @@ function readPairs(path: string): PracticePair[] {
   return rows;
 }
 
-function mineRepo(repo: PracticeRepo, dir: string, prefix: string[] | null, pairs: PracticePair[], seen: Set<string>, totalCap: { n: number }, flush: () => void): RepoReport {
+function mineRepo(repo: PracticeRepo, dir: string, sandbox: boolean, pairs: PracticePair[], seen: Set<string>, totalCap: { n: number }, flush: () => void): RepoReport {
   const report: RepoReport = { name: repo.name, split: repo.split, candidates: 0, attempts: 0, kept: 0, reason: null };
   const head = git(dir, ["rev-parse", repo.commit]);
   if (!head.ok || head.out.trim() !== repo.commit) {
@@ -205,7 +199,7 @@ function mineRepo(repo: PracticeRepo, dir: string, prefix: string[] | null, pair
     }
     license = spdx;
   }
-  if (!prefix) { report.reason = "UNSAFE_ENV"; return report; }
+  if (!sandbox) { report.reason = "UNSAFE_ENV"; return report; }
   installed = "";
   for (const candidate of found) {
     if (report.kept >= KEEP_PER_REPO || report.attempts >= ATTEMPTS_PER_REPO || totalCap.n >= KEEP_TOTAL) break;
@@ -219,14 +213,14 @@ function mineRepo(repo: PracticeRepo, dir: string, prefix: string[] | null, pair
     report.attempts++;
     if (!checkout(dir, candidate.fix)) continue;
     if (!install(dir, locks, hasDeps(pkg))) continue;
-    const after = runTest(dir, command, prefix);
+    const after = runTest(dir, command);
     if (after !== 0) continue;
     const baseLocks = locksAt(dir, candidate.base);
     const basePkg = pkgAt(dir, candidate.base);
     if (!checkout(dir, candidate.base)) continue;
     if (!applyTest(dir, candidate.fix, candidate.testFile)) continue;
     if (!install(dir, baseLocks, basePkg ? hasDeps(basePkg) : true)) continue;
-    const before = runTest(dir, command, prefix);
+    const before = runTest(dir, command);
     if (before === null || before === 0) continue;
     const pair: PracticePair = {
       schema: "peaceai-practice-pair:v1", credit: false, repo: repo.name, license, split: repo.split,
@@ -257,11 +251,9 @@ function main(): void {
   if (!manifestPath || !outPath || !work) { console.log(USAGE); process.exit(2); }
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as PracticeManifest;
   if (only && !manifest.repos.some((repo) => repo.name === only)) { console.log(USAGE); process.exit(2); }
-  const plain = probe(["unshare", "-n", "true"]);
-  const user = plain ? false : probe(["unshare", "--user", "--map-root-user", "-n", "true"]);
-  const prefix = isolationArgv(plain, user);
-  if (!prefix) console.log("UNSAFE_ENV");
-  else console.log(`isolation ${prefix.join(" ")}`);
+  const sandbox = practiceSandboxReady();
+  if (!sandbox) console.log("UNSAFE_ENV");
+  else console.log("isolation bwrap");
   console.log(`env_allow ${ENV_ALLOW.join(",")}`);
   mkdirSync(work, { recursive: true });
   const pairs: PracticePair[] = append ? readPairs(outPath) : [];
@@ -277,7 +269,7 @@ function main(): void {
       console.log(`skip ${repo.name} CLONE_FAILED`);
       continue;
     }
-    const report = mineRepo(repo, dir, prefix, pairs, seen, total, flush);
+    const report = mineRepo(repo, dir, sandbox, pairs, seen, total, flush);
     reports.push(report);
     console.log(`repo ${repo.name} split=${repo.split} candidates=${report.candidates} attempts=${report.attempts} kept=${report.kept} reason=${report.reason ?? "ok"}`);
   }
@@ -289,7 +281,7 @@ function main(): void {
     for (const row of reports) byName.set(row.name, row);
     repoReports = [...byName.values()];
   }
-  const report = { schema: MINE_REPORT_SCHEMA, credit: false as const, isolation: prefix ? prefix.join(" ") : "UNSAFE_ENV", repos: repoReports, kept: pairs.length };
+  const report = { schema: MINE_REPORT_SCHEMA, credit: false as const, isolation: sandbox ? "bwrap" : "UNSAFE_ENV", repos: repoReports, kept: pairs.length };
   if (reportPath) writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n");
   console.log(`credit=false kept=${pairs.length}`);
 }
