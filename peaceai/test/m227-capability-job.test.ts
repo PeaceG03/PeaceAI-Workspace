@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { buildCapabilityReport, type ReplayBind } from "../lib/capabilityreport.ts";
-import { CORE_ENTRY, agreedIssue, boundReplay, classifyJobOutput, commitRef, ownWorkspaceChange, routeReplay, rowUnrunnable } from "../lib/capabilityjob.ts";
+import { CORE_ENTRY, adoptIssueBody, agreedIssue, boundReplay, classifyJobOutput, commitRef, ownWorkspaceChange, replayIssueTitle, routeReplay, rowUnrunnable, selfChangeFailReason } from "../lib/capabilityjob.ts";
+import { cleanIssueText } from "../lib/taskmap.ts";
 import { trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
 import { indexGitTree } from "../lib/coreindex.ts";
 import { archiveSha256, coreStillPinned, extractPinnedCore, gitTreeSha, pinnedKernel, readCorePin, type CorePin } from "../bin/capability-job.ts";
@@ -52,8 +53,15 @@ test("a cited issue is the task only when it is the same learned header, and own
   assert.equal(agreedIssue(asked, issue.replace("src/cart.ts", "src/other.ts"), 4), null);
   const run = routeReplay({ model, asked, changed: "PeaceSTOCKS@abcdef1", issueBody: issue, seq: 4 });
   assert.deepEqual(run, { run: issue });
+  const second = `${issue}\nguard \`other\` in \`src/other.ts\`: throw NEGATIVE_VALUE when n < 0\n`;
+  assert.equal(agreedIssue(asked, second, 4), null);
   const own = routeReplay({ model, asked: "Teach PeaceAI a self-change of the never-zone", changed: "PeaceAI-Workspace@abcdef1", issueBody: null, seq: 4 });
   assert.deepEqual(own, { fail: "SELF_CHANGE" });
+  const named = routeReplay({ model, asked: "Teach PeaceAI a self-change of the never-zone", changed: "PeaceAI-Workspace@abcdef1", issueBody: null, seq: 4, paths: ["peaceai/lib/self-zone.ts"] });
+  assert.match("fail" in named ? named.fail : "", /^SELF_CHANGE: peaceai\/lib\/self-zone\.ts is protected \(/);
+  assert.equal(selfChangeFailReason(undefined), "SELF_CHANGE");
+  assert.equal(selfChangeFailReason(["src/cart.ts"]), "SELF_CHANGE");
+  assert.match(selfChangeFailReason(["peaceai/lib/capabilityjob.ts"]), /^SELF_CHANGE: peaceai\/lib\/capabilityjob\.ts is outside the graded paths$/);
   const misread = routeReplay({ model, asked: "Record the env-fix follow-up in the tooling", changed: "PeaceAI-Workspace@abcdef1", issueBody: null, seq: 4 });
   assert.deepEqual(misread, { fail: "SELF_CHANGE" });
   assert.equal(ownWorkspaceChange("PeaceAI-Workspace#1, PeaceSTOCKS@abcdef1"), false);
@@ -61,6 +69,24 @@ test("a cited issue is the task only when it is the same learned header, and own
   assert.equal(ownWorkspaceChange("PeaceAI-Workspace#107"), true);
   const slots = routeReplay({ model, asked: "Add a chain_followup job after the scan", changed: "PeaceSTOCKS@abcdef1", issueBody: null, seq: 4 });
   assert.equal("fail" in slots ? slots.fail : "", "NO_SLOTS: WORKFLOW_JOB");
+});
+
+test("a characterization trailer that fills the objective budget is dropped when the checks themselves fit", () => {
+  const asked = "add a characterization test for total in src/cart.ts: totals";
+  const header = "add a characterization test for total in src/cart.ts: totals";
+  const check = "- total(1) is 1";
+  const short = [header, check, "", "A short note."].join("\n");
+  assert.equal(adoptIssueBody(asked, short, 9), short);
+  const trailer = `Note. ${"x".repeat(2500)}`;
+  const issue = ["Target: PeaceG03/PeaceSTOCKS", "", header, check, "", trailer].join("\n");
+  assert.equal(cleanIssueText({ title: replayIssueTitle(9), body: issue }).length, 2000);
+  const adopted = adoptIssueBody(asked, issue, 9);
+  assert.equal(adopted, [header, check].join("\n"));
+  const cleaned = cleanIssueText({ title: replayIssueTitle(9), body: adopted ?? "" });
+  assert.ok(cleaned.length < 2000);
+  assert.match(cleaned, /total\(1\) is 1/);
+  const huge = `- total(${"1,".repeat(1200)}1) is 1`;
+  assert.equal(adoptIssueBody(asked, [header, huge].join("\n"), 9), null);
 });
 
 test("a Job A pass counts only when it is bound to the head, tree, and log", () => {

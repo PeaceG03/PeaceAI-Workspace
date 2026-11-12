@@ -45,12 +45,14 @@ export function heldOutRow(seq: number, asked: string): boolean {
 }
 
 /**
- * Code next to a cue. A real path (a letter-led file with a source extension), a call with no space
+ * Code next to a cue. A real path (a letter-led file with a source extension), a bare workflow
+ * file (`nightly.yml`), a tsconfig fragment (`tsconfig.tools.json`) or a typecheck script name
+ * (`typecheck:tools`) — the file shapes those families' own triggers name — a call with no space
  * before the parenthesis, a backticked name, or a snake_case name. Not a brand, a digit-word,
  * a parenthesis in prose, "test file", or a bare "src/".
  */
 const CODE_EXT = "ts|tsx|mts|cts|js|jsx|mjs|cjs|json|py|sh|yml|yaml";
-const CODE_CONTEXT = new RegExp(String.raw`(?:(?:^|[^\w./-])(?:\.{1,2}/)?(?:[A-Za-z_][\w.-]*/)+[A-Za-z_][\w.-]*\.(?:${CODE_EXT})\b|\b[A-Za-z_$][\w$]*\(|\`[A-Za-z_$][\w$]*\`|\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b)`);
+const CODE_CONTEXT = new RegExp(String.raw`(?:(?:^|[^\w./-])(?:\.{1,2}/)?(?:[A-Za-z_][\w.-]*/)+[A-Za-z_][\w.-]*\.(?:${CODE_EXT})\b|\btsconfig\.[\w.-]+\.json\b|\btypecheck:[\w.-]+\b|\b[\w.-]+\.ya?ml\b|\b[A-Za-z_$][\w$]*\(|\`[A-Za-z_$][\w$]*\`|\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b)`);
 
 function contextNear(text: string, start: number, end: number): boolean {
   const from = Math.max(0, start - 96);

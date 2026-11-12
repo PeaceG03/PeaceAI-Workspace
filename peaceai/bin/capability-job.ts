@@ -34,6 +34,13 @@ function gitLine(cwd: string, args: string[]): string | null {
   try { return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return null; }
 }
 
+/** Files the landing commit touched, first parent only. Null when the commit is not in this clone. */
+function commitPaths(src: string, sha: string): string[] | null {
+  const names = gitLine(src, ["diff-tree", "--no-commit-id", "--name-only", "-r", "-m", "--first-parent", sha]);
+  if (names === null) return null;
+  return names.split("\n").filter(Boolean);
+}
+
 /** Drop a caller's repo-locating git env so commands see `cwd`, matching indexGitTree. */
 function gitLocalEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^GIT_(DIR|WORK_TREE|INDEX_FILE|COMMON_DIR|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|NAMESPACE|PREFIX)$/.test(k)));
@@ -290,7 +297,8 @@ function main(): void {
     else {
       const cited = citedIssue(asked);
       const raw = cited ? issueBody(cited) : null;
-      const route = routeReplay({ model, asked, changed, issueBody: raw, seq: r.seq });
+      const paths = target.repo === "PeaceAI-Workspace" ? commitPaths(repo, target.sha) ?? undefined : undefined;
+      const route = routeReplay({ model, asked, changed, issueBody: raw, seq: r.seq, paths });
       if ("fail" in route) rec = boundReplay(r.seq, "fail", route.fail, bind);
       else if (buildError || !bundle) rec = boundReplay(r.seq, "unmeasured", buildError ?? "KERNEL_MISSING", bind);
       else {
