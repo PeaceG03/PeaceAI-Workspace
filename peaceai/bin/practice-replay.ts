@@ -14,9 +14,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
-import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, ensurePracticeInstall, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, yarnIsModern, type InstallDiagKind, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
+import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, ensurePracticeInstall, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
 import {
-  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, publishedFit, publishedInstall, replayDocument, targetIsScorable,
+  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, publishedFit, replayDocument, targetIsScorable,
   type GradedRow, type Understanding,
 } from "../lib/practicereplay.ts";
 import { gradeBehavior, type BehaviorGrade } from "../lib/specgrade.ts";
@@ -265,13 +265,12 @@ function readPairs(path: string): PracticePair[] {
   return rows;
 }
 
-function pushInstall(graded: GradedRow[], pair: PracticePair, reason: string, failure: { kind: InstallDiagKind; code: number | null; lines: string[] }): void {
-  const install = {
-    kind: failure.kind, manager: pair.toolchain.manager, managerVersion: pair.toolchain.managerVersion,
-    code: failure.code, lines: failure.lines.slice(0, 5),
-  };
+function pushInstall(graded: GradedRow[], pair: PracticePair, reason: string, lines: string[]): void {
   for (const understanding of ["text", "test-as-spec"] as const) {
-    graded.push({ repo: pair.repo, split: pair.split, fixSha: pair.fixSha, understanding, status: "unmeasured", reason, gap: true, install });
+    graded.push({
+      repo: pair.repo, split: pair.split, fixSha: pair.fixSha, understanding,
+      status: "unmeasured", reason, gap: true, ...(lines.length ? { lines } : {}),
+    });
   }
 }
 
@@ -336,11 +335,11 @@ function main(): void {
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
         const reason = code === "ENOSPC" ? "INSTALL_SKIPPED_NO_SPACE" : "INSTALL_FAILED";
-        pushInstall(graded, pair, reason, { kind: "other", code: null, lines: [`${(err as Error).message ?? "install"}`.slice(0, 240)] });
+        pushInstall(graded, pair, reason, [`${(err as Error).message ?? "install"}`.slice(0, 240)]);
         continue;
       }
       if (!installed.ok || !installed.modules) {
-        pushInstall(graded, pair, installed.reason ?? "INSTALL_FAILED", { kind: installed.kind ?? "other", code: installed.code ?? null, lines: installed.lines });
+        pushInstall(graded, pair, installed.reason ?? "INSTALL_FAILED", installed.lines);
         continue;
       }
       graded.push(replayOne(tooling, bundle, coreDir, dir, pair, installed.modules));
@@ -352,14 +351,13 @@ function main(): void {
   const doc = replayDocument(graded);
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, "replay.json"), JSON.stringify(doc, null, 2) + "\n");
-  const gaps = graded.filter((row) => row.gap || row.fit || row.install).map((row) => {
+  const gaps = graded.filter((row) => row.gap || row.fit).map((row) => {
     const fit = publishedFit(row);
-    const install = publishedInstall(row);
     return JSON.stringify({
       repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason,
+      ...(row.lines && row.lines.length ? { lines: row.lines } : {}),
       ...(row.diagnostic ? { diagnostic: row.diagnostic } : {}),
       ...(fit ? { shape: fit.shape, examples: fit.examples, behavior: fit.behavior, ...(fit.diff ? { diff: fit.diff } : {}), ...(fit.counterexample ? { counterexample: fit.counterexample } : {}) } : {}),
-      ...(install ? { install } : {}),
     });
   });
   writeFileSync(join(out, "gaps.jsonl"), gaps.join("\n") + (gaps.length ? "\n" : ""));

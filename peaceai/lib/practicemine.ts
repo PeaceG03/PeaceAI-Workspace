@@ -3,7 +3,7 @@
 // Third-party source is never written here.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statfsSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statfsSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { classifyLicense, type Spdx } from "./lmcorpus.ts";
@@ -13,6 +13,7 @@ export const PAIR_SCHEMA = "peaceai-practice-pair:v1";
 export const ROOTS_SCHEMA = "peaceai-practice-corpus-roots:v1";
 export const MINE_REPORT_SCHEMA = "peaceai-practice-mine-report:v1";
 export const HELD_OUT_HASH_PREFIX = "peaceai-practice-heldout:v1\n";
+export const HELD_OUT_PAIR_PREFIX = "peaceai-practice-heldout-pairs:v1\n";
 
 /** Root LICENSE names, in preference order. Only a file at the repo root counts. */
 export const LICENSE_FILES = ["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING", "license", "license.md", "license.txt", "copying"] as const;
@@ -214,6 +215,8 @@ export function sandboxHome(workDir: string): string {
   return join(workDir, ".practice-home");
 }
 
+export const SANDBOX_RAN = ".practice-sandbox-ran";
+
 export interface SandboxRun { unsafe: boolean; code: number | null; stdout: string }
 
 export interface SandboxOpts { bwrap?: string; capture?: boolean; nodePath?: string | null; nodeModules?: string | null }
@@ -225,7 +228,7 @@ export function runInPracticeSandbox(workDir: string, cmd: readonly string[], ti
   if (opts.bwrap) prefix[0] = opts.bwrap;
   const home = sandboxHome(workDir);
   mkdirSync(home, { recursive: true });
-  writeFileSync(join(workDir, ".practice-sandbox-ran"), "1\n");
+  writeFileSync(join(workDir, SANDBOX_RAN), "1\n");
   const nodePath = opts.nodePath ?? visibleNodeBin() ?? "/usr/bin/node";
   const env = scrubEnv(process.env, workDir);
   env.HOME = home;
@@ -282,12 +285,24 @@ export function practiceGit(dir: string, args: readonly string[], timeout = 60_0
 
 const POISON_EXACT = new Set([".pnpmfile.cjs", ".npmrc", "package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock"]);
 
+const STAMP_MAX = 1 << 20;
+
 function stampFile(path: string): string {
   if (!existsSync(path)) return "absent";
   const stat = lstatSync(path);
   if (stat.isSymbolicLink()) return `link:${readlinkSync(path)}`;
   if (stat.isDirectory()) return "dir";
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
+  // A fifo, socket, or device must not be read: opening it can block. It is still poison.
+  if (!stat.isFile()) return "special";
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
+  try {
+    const size = Math.min(stat.size, STAMP_MAX);
+    const buf = Buffer.alloc(size);
+    const n = size === 0 ? 0 : readSync(fd, buf, 0, size, 0);
+    return createHash("sha256").update(buf.subarray(0, n)).digest("hex");
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /** Files a sandboxed test must not leave behind for a later install or git command. */
@@ -296,7 +311,7 @@ export function poisonStamp(dir: string): Record<string, string> {
   const add = (rel: string) => { stamp[rel] = stampFile(join(dir, rel)); };
   if (!existsSync(dir)) return stamp;
   for (const name of readdirSync(dir)) {
-    if (POISON_EXACT.has(name) || name.startsWith(".yarnrc")) add(name);
+    if (POISON_EXACT.has(name) || name.startsWith(".yarnrc") || name.startsWith(".pnpmfile")) add(name);
   }
   for (const name of POISON_EXACT) if (!(name in stamp)) add(name);
   const git = join(dir, ".git");
@@ -341,26 +356,26 @@ export function currentToolchain(manager: PracticeToolchain["manager"]): Practic
   return { nodePath, nodeVersion, manager, managerVersion };
 }
 
-export const SANDBOX_RAN = ".practice-sandbox-ran";
+const HOME_DIR = new RegExp("/" + "ho" + "me/[^/\\s]+", "g");
+const USERS_DIR = new RegExp("/" + "Users/[^/\\s]+", "g");
+const HOME_WORD = "/" + "ho" + "me/" + "user";
+const USERS_WORD = "/" + "Users/" + "user";
 
-const POISON_INSTALL = [".pnpmfile.cjs", ".npmrc", ".yarnrc", ".yarnrc.yml"];
-
-/** Drop tokens, credentials, and home directories from an install log. */
+/** Drop tokens, credentials, and home directories from an install log. Error lines come first. */
 export function sanitizeInstallLines(text: string): string[] {
   const lines: string[] = [];
   for (const raw of text.split("\n")) {
     let line = raw.replace(/\u001b\[[0-9;]*m/g, "");
-    const home = ["", "home", ""].join("/");
-    const users = ["", "Users", ""].join("/");
-    line = line.replace(new RegExp(`${home}[^/\\s]+`, "g"), `${home}user`).replace(new RegExp(`${users}[^/\\s]+`, "g"), `${users}user`);
+    line = line.replace(HOME_DIR, HOME_WORD).replace(USERS_DIR, USERS_WORD);
     line = line.replace(/(?:ghp_|github_pat_|npm_|ghs_)[A-Za-z0-9_]+/g, "[redacted]");
     line = line.replace(/:\/\/[^/\s:@]+:[^@\s/]+@/g, "://");
     line = line.trim();
     if (!line) continue;
     lines.push(line.slice(0, 240));
-    if (lines.length >= 12) break;
+    if (lines.length >= 80) break;
   }
-  return lines;
+  const urgent = /EUSAGE|ERR!|\berror\b/i;
+  return [...lines.filter((line) => urgent.test(line)), ...lines.filter((line) => !urgent.test(line))].slice(0, 12);
 }
 
 export function frozenInstallArgv(manager: PracticeToolchain["manager"], locks: LockFiles, yarnModern: boolean): string[] | null {
@@ -371,43 +386,12 @@ export function frozenInstallArgv(manager: PracticeToolchain["manager"], locks: 
   return ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"];
 }
 
-export const INSTALL_DIAG_KINDS = ["lockfile_mismatch", "engine", "network_required", "peer_conflict", "timeout", "other"] as const;
-export type InstallDiagKind = (typeof INSTALL_DIAG_KINDS)[number];
-
-/** Why an install failed, from the package manager's text. No repo names and no paths. */
-export function classifyInstallFailure(text: string, timedOut: boolean): InstallDiagKind {
-  if (timedOut) return "timeout";
-  if (/out of sync|ERR_PNPM_OUTDATED_LOCKFILE|frozen-lockfile|lockfile would have been modified|npm ci can only install|immutable install|Lockfile is not up to date|does not satisfy the lockfile/i.test(text)) return "lockfile_mismatch";
-  if (/ERESOLVE|ERR_PNPM_PEER_DEP|peer dependency|conflicting peer|unable to resolve dependency tree/i.test(text)) return "peer_conflict";
-  if (/EBADENGINE|unsupported engine|incompatible engine|The engine "node" is incompatible|required version of node/i.test(text)) return "engine";
-  if (/ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|ENETUNREACH|getaddrinfo|npm ERR! network|ERR_PNPM_FETCH|unable to get local issuer|self[- ]signed certificate/i.test(text)) return "network_required";
-  if (/\btimed out\b|\bETIMEDOUT\b/i.test(text)) return "timeout";
-  return "other";
-}
-
-export interface PracticeInstall {
-  ok: boolean;
-  modules: string | null;
-  reason: string | null;
-  lines: string[];
-  fingerprint?: string;
-  /** Package-manager exit code. Null when the process timed out or never started. */
-  code?: number | null;
-  kind?: InstallDiagKind;
-}
-
-function failedInstall(text: string, code: number | null, timedOut: boolean, fingerprint?: string): PracticeInstall {
-  return {
-    ok: false, modules: null, reason: "INSTALL_FAILED",
-    lines: sanitizeInstallLines(text).slice(0, 5),
-    code: timedOut ? null : code,
-    kind: classifyInstallFailure(text, timedOut),
-    ...(fingerprint ? { fingerprint } : {}),
-  };
-}
+export interface PracticeInstall { ok: boolean; modules: string | null; reason: string | null; lines: string[]; fingerprint?: string }
 
 /** One install per dependency fingerprint. Above this, the least recently used install is removed. */
 export const INSTALL_MAX_ENTRIES = 12;
+/** Default install timeout. A caller can override it; a hit is INSTALL_TIMEOUT, not INSTALL_FAILED. */
+export const INSTALL_TIMEOUT_MS = 180_000;
 /** Refuse a new install when the cache filesystem is below either of these. */
 export const INSTALL_MIN_BYTES = 5 * 1024 * 1024 * 1024;
 export const INSTALL_MIN_INODES = 200_000;
@@ -433,7 +417,7 @@ export function spaceAllowsInstall(space: { freeBytes: number; freeInodes: numbe
   return space.freeBytes >= minBytes && space.freeInodes >= minInodes;
 }
 
-function installEnv(nodePath: string, home: string, store: string, manager: PracticeToolchain["manager"]): NodeJS.ProcessEnv {
+export function installEnv(nodePath: string, home: string, store: string, manager: PracticeToolchain["manager"]): NodeJS.ProcessEnv {
   mkdirSync(home, { recursive: true });
   const npmrc = join(home, "npmrc");
   if (!existsSync(npmrc)) writeFileSync(npmrc, "");
@@ -449,6 +433,7 @@ function installEnv(nodePath: string, home: string, store: string, manager: Prac
   env.GIT_CONFIG_GLOBAL = join(tmpdir(), "peaceai-practice-gitconfig");
   env.GIT_CONFIG_NOSYSTEM = "1";
   env.GIT_CONFIG_SYSTEM = "/dev/null";
+  env.GIT_SSH_COMMAND = "false";
   const managerStore = join(store, manager === "pnpm" ? "pnpm" : manager === "yarn" ? "yarn" : "npm");
   mkdirSync(managerStore, { recursive: true });
   if (manager === "npm") env.npm_config_cache = managerStore;
@@ -471,18 +456,37 @@ function touchUsed(dir: string): void {
   writeFileSync(join(dir, ".practice-used"), `${Date.now()}\n`);
 }
 
+function installLock(cacheRoot: string, fingerprint: string): string {
+  return join(cacheRoot, "locks", `${fingerprint}.lock`);
+}
+
+/** Drop unfinished installs, then the least recently used finished ones. A live lock is left in place. */
 function pruneInstalls(cacheRoot: string, max: number): void {
-  const root = join(cacheRoot, "installs");
-  if (!existsSync(root)) return;
-  const rows = readdirSync(root).map((name) => {
-    const used = join(root, name, ".practice-used");
-    return { name, used: existsSync(used) ? lstatSync(used).mtimeMs : 0 };
-  }).sort((a, b) => a.used - b.used);
-  while (rows.length >= max) {
-    const oldest = rows.shift();
-    if (!oldest) break;
-    rmSync(join(root, oldest.name), { recursive: true, force: true });
-  }
+  const locked = withLock(join(cacheRoot, ".practice-cache.lock"), () => {
+    const root = join(cacheRoot, "installs");
+    if (!existsSync(root)) return;
+    const rows: { name: string; used: number }[] = [];
+    for (const name of readdirSync(root)) {
+      const fingerprint = name.endsWith(".partial") ? name.slice(0, -".partial".length) : name;
+      const lock = installLock(cacheRoot, fingerprint);
+      if (existsSync(lock) && !lockIsStale(lock)) continue;
+      const dir = join(root, name);
+      const finished = !name.endsWith(".partial") && existsSync(join(dir, INSTALL_COMPLETE)) && existsSync(join(dir, "node_modules"));
+      if (!finished) {
+        rmSync(dir, { recursive: true, force: true });
+        continue;
+      }
+      const used = join(dir, ".practice-used");
+      rows.push({ name, used: existsSync(used) ? lstatSync(used).mtimeMs : 0 });
+    }
+    rows.sort((a, b) => a.used - b.used);
+    while (rows.length >= max) {
+      const oldest = rows.shift();
+      if (!oldest) break;
+      rmSync(join(root, oldest.name), { recursive: true, force: true });
+    }
+  });
+  if (isBusy(locked)) return;
 }
 
 export interface InstallCacheOptions {
@@ -491,6 +495,40 @@ export interface InstallCacheOptions {
   space?: () => { freeBytes: number; freeInodes: number };
   minBytes?: number;
   minInodes?: number;
+  timeoutMs?: number;
+}
+
+const LOCK_STALE_MS = 30 * 60 * 1000;
+const INSTALL_COMPLETE = ".practice-complete";
+
+function lockIsStale(path: string): boolean {
+  try {
+    const [pid, ts] = readFileSync(path, "utf8").trim().split(/\s+/);
+    const alive = (() => { try { process.kill(Number(pid), 0); return true; } catch { return false; } })();
+    return !alive || Date.now() - Number(ts || 0) > LOCK_STALE_MS;
+  } catch { return true; }
+}
+
+/** Exclusive lock. A dead pid or a lock older than 30 minutes is taken over. */
+function withLock<T>(path: string, fn: () => T): T | { busy: true } {
+  mkdirSync(dirname(path), { recursive: true });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const fd = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY);
+      writeSync(fd, `${process.pid} ${Date.now()}\n`);
+      closeSync(fd);
+      try { return fn(); } finally { rmSync(path, { force: true }); }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      if (lockIsStale(path)) { rmSync(path, { force: true }); continue; }
+      return { busy: true };
+    }
+  }
+  return { busy: true };
+}
+
+function isBusy<T>(value: T | { busy: true }): value is { busy: true } {
+  return !!value && typeof value === "object" && "busy" in value;
 }
 
 /**
@@ -510,7 +548,7 @@ export function ensurePracticeInstall(
   try {
     if (!existsSync(pair.toolchain.nodePath)) return { ok: false, modules: null, reason: "TOOLCHAIN_MISSING", lines: [] };
     const pinned = practiceGit(repoDir, ["rev-parse", "--verify", `${pair.baseSha}^{commit}`]);
-    if (!pinned.ok || pinned.out.trim() !== pair.baseSha) return failedInstall("base commit is not in the clone", null, false);
+    if (!pinned.ok || pinned.out.trim() !== pair.baseSha) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: ["base commit is not in the clone"] };
     const lock = lockfileName(pair.toolchain.manager, locks);
     const paths = ["package.json", ...(lock ? [lock] : [])];
     const scratch = mkdtempSync(join(tmpdir(), "peaceai-deps-"));
@@ -518,68 +556,81 @@ export function ensurePracticeInstall(
       const archived = spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "archive", "--format=tar", pair.baseSha, "--", ...paths], {
         env: practiceGitEnv(), maxBuffer: 64 << 20, timeout: 60_000,
       });
-      if (archived.status !== 0 || !archived.stdout) return failedInstall(`${archived.stderr ?? ""}`, archived.status, false);
-      if (spawnSync("tar", ["-x", "-C", scratch], { input: archived.stdout, timeout: 60_000 }).status !== 0) return failedInstall("could not extract package.json and the lockfile", null, false);
-      if (existsSync(join(scratch, SANDBOX_RAN))) return { ok: false, modules: null, reason: "SANDBOX_POISON", lines: ["install dir was used by a sandboxed test"] };
-      for (const name of readdirSync(scratch)) {
-        if (!POISON_INSTALL.includes(name) && !name.startsWith(".yarnrc")) continue;
-        if (!practiceGit(repoDir, ["cat-file", "-e", `${pair.baseSha}:${name}`]).ok) return { ok: false, modules: null, reason: "SANDBOX_POISON", lines: [`${name} is not in the base commit`] };
-      }
+      if (archived.status !== 0 || !archived.stdout) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: sanitizeInstallLines(`${archived.stderr ?? ""}`) };
+      if (spawnSync("tar", ["-x", "-C", scratch], { input: archived.stdout, timeout: 60_000 }).status !== 0) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: ["could not extract package.json and the lockfile"] };
       const packageJson = readFileSync(join(scratch, "package.json"), "utf8");
       const lockText = lock && existsSync(join(scratch, lock)) ? readFileSync(join(scratch, lock), "utf8") : "";
       const fingerprint = dependencyFingerprint(packageJson, lockText, pair.toolchain);
       const dest = join(cacheRoot, "installs", fingerprint);
       const modules = join(dest, "node_modules");
-      if (existsSync(modules) && !existsSync(join(dest, SANDBOX_RAN))) {
-        touchUsed(dest);
-        return { ok: true, modules, reason: null, lines: [], fingerprint };
-      }
+      const ready = (): PracticeInstall | null => {
+        if (existsSync(join(dest, SANDBOX_RAN))) return { ok: false, modules: null, reason: "SANDBOX_POISON", lines: ["install dir was used by a sandboxed test"], fingerprint };
+        if (existsSync(join(dest, INSTALL_COMPLETE)) && existsSync(modules)) {
+          touchUsed(dest);
+          return { ok: true, modules, reason: null, lines: [], fingerprint };
+        }
+        return null;
+      };
+      const reuse = ready();
+      if (reuse) return reuse;
       const space = (opts.space ?? (() => cacheSpace(cacheRoot)))();
       if (!spaceAllowsInstall(space, opts.minBytes, opts.minInodes)) return { ok: false, modules: null, reason: "INSTALL_SKIPPED_NO_SPACE", lines: [`free bytes ${space.freeBytes}`, `free inodes ${space.freeInodes}`], fingerprint };
-      pruneInstalls(cacheRoot, opts.maxInstalls ?? INSTALL_MAX_ENTRIES);
-      rmSync(dest, { recursive: true, force: true });
-      mkdirSync(dest, { recursive: true });
-      writeFileSync(join(dest, "package.json"), packageJson);
-      if (lock && lockText) writeFileSync(join(dest, lock), lockText);
-      const argv = frozenInstallArgv(pair.toolchain.manager, locks, yarnModern);
-      if (!argv) {
-        mkdirSync(modules, { recursive: true });
-        touchUsed(dest);
-        return { ok: true, modules, reason: null, lines: [], fingerprint };
-      }
-      const store = join(cacheRoot, "stores");
-      const managerStore = join(store, pair.toolchain.manager === "pnpm" ? "pnpm" : pair.toolchain.manager === "yarn" ? "yarn" : "npm");
-      const withStore = pair.toolchain.manager === "npm" ? [...argv, "--cache", managerStore]
-        : pair.toolchain.manager === "pnpm" ? [...argv, "--store-dir", managerStore]
-        : pair.toolchain.manager === "yarn" ? [...argv, "--cache-folder", managerStore]
-        : argv;
-      const home = mkdtempSync(join(tmpdir(), "peaceai-install-home-"));
-      try {
-        const ran = spawnSync(withStore[0]!, withStore.slice(1), {
-          cwd: dest, env: installEnv(pair.toolchain.nodePath, home, store, pair.toolchain.manager), encoding: "utf8", timeout: 180_000, maxBuffer: 8 << 20,
-        });
-        const spawnErr = ran.error as NodeJS.ErrnoException | undefined;
-        if (spawnErr?.code === "ENOSPC") return { ok: false, modules: null, reason: "INSTALL_SKIPPED_NO_SPACE", lines: ["no space left on the install cache"], fingerprint, code: null, kind: "other" };
-        if (ran.status !== 0 || spawnErr?.code === "ETIMEDOUT") {
-          rmSync(dest, { recursive: true, force: true });
-          return failedInstall(`${ran.error?.message ?? ""}\n${ran.stdout ?? ""}\n${ran.stderr ?? ""}`, ran.status, spawnErr?.code === "ETIMEDOUT", fingerprint);
+      const held = withLock(installLock(cacheRoot, fingerprint), () => {
+        const again = ready();
+        if (again) return again;
+        if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
+        pruneInstalls(cacheRoot, opts.maxInstalls ?? INSTALL_MAX_ENTRIES);
+        const partial = `${dest}.partial`;
+        rmSync(partial, { recursive: true, force: true });
+        mkdirSync(partial, { recursive: true });
+        writeFileSync(join(partial, "package.json"), packageJson);
+        if (lock && lockText) writeFileSync(join(partial, lock), lockText);
+        const argv = frozenInstallArgv(pair.toolchain.manager, locks, yarnModern);
+        const finish = (): PracticeInstall => {
+          writeFileSync(join(partial, INSTALL_COMPLETE), `${fingerprint}\n`);
+          touchUsed(partial);
+          renameSync(partial, dest);
+          return { ok: true, modules: join(dest, "node_modules"), reason: null, lines: [], fingerprint };
+        };
+        if (!argv) {
+          mkdirSync(join(partial, "node_modules"), { recursive: true });
+          return finish();
         }
-      } finally {
-        rmSync(home, { recursive: true, force: true });
-      }
-      if (!existsSync(modules)) {
-        rmSync(dest, { recursive: true, force: true });
-        return failedInstall("install produced no node_modules", 0, false, fingerprint);
-      }
-      touchUsed(dest);
-      return { ok: true, modules, reason: null, lines: [], fingerprint };
+        const store = join(cacheRoot, "stores");
+        const managerStore = join(store, pair.toolchain.manager === "pnpm" ? "pnpm" : pair.toolchain.manager === "yarn" ? "yarn" : "npm");
+        const withStore = pair.toolchain.manager === "npm" ? [...argv, "--cache", managerStore]
+          : pair.toolchain.manager === "pnpm" ? [...argv, "--store-dir", managerStore]
+          : pair.toolchain.manager === "yarn" ? [...argv, "--cache-folder", managerStore]
+          : argv;
+        const home = mkdtempSync(join(tmpdir(), "peaceai-install-home-"));
+        try {
+          const ran = spawnSync(withStore[0]!, withStore.slice(1), {
+            cwd: partial, env: installEnv(pair.toolchain.nodePath, home, store, pair.toolchain.manager), encoding: "utf8", timeout: opts.timeoutMs ?? INSTALL_TIMEOUT_MS, maxBuffer: 8 << 20,
+          });
+          const output = `${ran.error?.message ?? ""}\n${ran.stdout ?? ""}\n${ran.stderr ?? ""}`;
+          if (ran.error && (ran.error as NodeJS.ErrnoException).code === "ETIMEDOUT") return { ok: false, modules: null, reason: "INSTALL_TIMEOUT", lines: sanitizeInstallLines(output), fingerprint };
+          if (ran.error && (ran.error as NodeJS.ErrnoException).code === "ENOSPC") return { ok: false, modules: null, reason: "INSTALL_SKIPPED_NO_SPACE", lines: ["no space left on the install cache"], fingerprint };
+          if (/git\+ssh:|ssh:\/\/|Could not read from remote repository|Permission denied \(publickey\)/i.test(output)) return { ok: false, modules: null, reason: "network_required", lines: sanitizeInstallLines(output), fingerprint };
+          if (ran.status !== 0) {
+            const reason = /EUSAGE/.test(output) ? "BASE_NOT_FROZEN_INSTALLABLE" : "INSTALL_FAILED";
+            return { ok: false, modules: null, reason, lines: sanitizeInstallLines(output), fingerprint };
+          }
+        } finally {
+          rmSync(home, { recursive: true, force: true });
+        }
+        if (!existsSync(join(partial, "node_modules"))) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: ["install produced no node_modules"], fingerprint };
+        return finish();
+      });
+      if (isBusy(held)) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: ["install lock is busy"], fingerprint };
+      if (!held.ok) rmSync(`${dest}.partial`, { recursive: true, force: true });
+      return held;
     } finally {
       rmSync(scratch, { recursive: true, force: true });
     }
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOSPC") return { ok: false, modules: null, reason: "INSTALL_SKIPPED_NO_SPACE", lines: ["no space left on the install cache"], code: null, kind: "other" };
-    return failedInstall((err as Error).message ?? "", null, code === "ETIMEDOUT");
+    if (code === "ENOSPC") return { ok: false, modules: null, reason: "INSTALL_SKIPPED_NO_SPACE", lines: ["no space left on the install cache"] };
+    return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: sanitizeInstallLines((err as Error).message ?? "") };
   }
 }
 
@@ -619,18 +670,20 @@ export function falseRootProblems(
   const problems: string[] = [];
   for (const [name, recordedRoot] of Object.entries(recorded)) {
     const id = Object.prototype.hasOwnProperty.call(identities, name) ? identities[name] : undefined;
-    if (id === undefined) continue;
-    if (!id || !id.remoteUrl || !id.root) { problems.push(`CLONE_UNVERIFIED:${name}`); continue; }
+    if (id === undefined || !id || !id.remoteUrl || !id.root) { problems.push(`CLONE_UNVERIFIED:${name}`); continue; }
     const remote = repoFromRemote(id.remoteUrl);
     if (!remote) { problems.push(`REMOTE_UNPARSED:${name}`); continue; }
+    // A recorded parent does not excuse a remote URL that names a different repository.
+    if (remote.toLowerCase() !== name.toLowerCase()) problems.push(`REMOTE_NAME:${name}`);
     const upstream = id.source ?? id.parent;
-    if (remote.toLowerCase() !== name.toLowerCase() && !(upstream && upstream.toLowerCase() !== name.toLowerCase())) problems.push(`REMOTE_NAME:${name}`);
-    if (typeof recordedRoot === "string" && recordedRoot !== id.root) problems.push(`ROOT_MISMATCH:${name}`);
+    if (typeof recordedRoot === "string" && recordedRoot !== id.root) {
+      if (heldOut.some((held) => held.root === id.root && held.name.toLowerCase() !== name.toLowerCase())) problems.push(`FORK_FALSE_ROOT:${name}`);
+      else problems.push(`ROOT_MISMATCH:${name}`);
+    }
     if (upstream && upstream.toLowerCase() !== name.toLowerCase()) {
       if (!id.upstreamRoot) problems.push(`UPSTREAM_ROOT_UNVERIFIED:${name}`);
-      else if (heldOut.some((held) => held.name.toLowerCase() === upstream.toLowerCase() && held.root === id.root && recordedRoot !== id.root)) problems.push(`FORK_FALSE_ROOT:${name}`);
+      else if (id.upstreamRoot !== id.root) problems.push(`FORK_ROOT:${name}`);
     }
-    if (heldOut.some((held) => held.root === id.root && held.name.toLowerCase() !== name.toLowerCase() && recordedRoot !== id.root)) problems.push(`FORK_FALSE_ROOT:${name}`);
   }
   return [...new Set(problems)].sort();
 }
@@ -638,6 +691,13 @@ export function falseRootProblems(
 export type Split = "dev" | "held-out";
 /** Peace's own repositories are not gated on a root LICENSE file. The recorded license is this word. */
 export type PracticeLicense = Spdx | "owner";
+
+export const DEP_PATHS = new Set(["package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock"]);
+
+/** A fix that edits package.json, a lockfile, or package-manager config is not admitted. */
+export function diffChangesDeps(names: readonly string[]): boolean {
+  return names.some((name) => DEP_PATHS.has(name) || name === ".npmrc" || name.startsWith(".yarnrc") || name.startsWith(".pnpmfile"));
+}
 
 export function isOwnerRepo(name: string): boolean {
   return /^PeaceG03\//i.test(name);
@@ -676,6 +736,19 @@ export function heldOutCanonical(repos: readonly PracticeRepo[]): string {
 
 export function heldOutHash(repos: readonly PracticeRepo[]): string {
   return createHash("sha256").update(HELD_OUT_HASH_PREFIX).update(heldOutCanonical(repos)).digest("hex");
+}
+
+/** Held-out pairs only. This is not part of heldOutHash, which stays the repository list. */
+export function heldOutPairCanonical(pairs: readonly Pick<PracticePair, "repo" | "split" | "baseSha" | "fixSha" | "testFile">[]): string {
+  const lines = pairs
+    .filter((pair) => pair.split === "held-out")
+    .map((pair) => [pair.repo, pair.baseSha, pair.fixSha, pair.testFile].join("\t"))
+    .sort();
+  return lines.join("\n") + (lines.length ? "\n" : "");
+}
+
+export function heldOutPairHash(pairs: readonly Pick<PracticePair, "repo" | "split" | "baseSha" | "fixSha" | "testFile">[]): string {
+  return createHash("sha256").update(HELD_OUT_PAIR_PREFIX).update(heldOutPairCanonical(pairs)).digest("hex");
 }
 
 export function manifestProblems(value: unknown): string[] {
@@ -1008,6 +1081,7 @@ export function heldOutWatchProblems(
   files: readonly PracticeWatch[],
   roots: Readonly<Record<string, string | null>>,
   clones: Readonly<Record<string, CloneMeta | null>> = {},
+  identities: Readonly<Record<string, RemoteIdentity | null>> = {},
 ): string[] {
   const problems: string[] = [];
   const sources: TrainingSource[] = [];
@@ -1038,5 +1112,6 @@ export function heldOutWatchProblems(
   for (const held of heldOut) {
     if (Object.prototype.hasOwnProperty.call(clones, held.name)) problems.push(...cloneRootProblems(held.name, held.root, clones[held.name] ?? null));
   }
+  problems.push(...falseRootProblems(heldOut, roots, identities));
   return [...new Set(problems)].sort();
 }

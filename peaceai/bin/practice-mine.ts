@@ -1,18 +1,18 @@
 // Mixed practice miner. credit: false.
 //   tsx peaceai/bin/practice-mine.ts --manifest practice/manifest.json --out practice/pairs.jsonl --work <dir outside this repo>
 // Checks the root LICENSE at the pinned commit and keeps MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, and ISC.
-// A pair is a non-merge commit that changes at least one non-test source and exactly one test file,
-// whose test fails at the parent with that test file applied and passes at the fix.
+// A pair is a non-merge commit that changes at least one non-test source and exactly one test file.
+// It is admitted only by the replay path: a frozen install of the base, then the sandbox test,
+// which must fail before the fix and pass after. A fix that changes dependencies is not admitted.
 // Tests run inside an allowlist bubblewrap: /usr, /bin, /lib*, a minimal /etc, the node binary,
 // the work tree, and a read-only node_modules. .git is not writable. If bwrap cannot build that
 // sandbox, tests are not run and the report says UNSAFE_ENV. There is no unshare fallback.
 // Installs may use the network and always pass --ignore-scripts. Third-party source is not committed.
-import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  ENV_ALLOW, GIT_LOCK_ARGS, currentToolchain, installArgv, isOwnerRepo, isTestFile, keptLicense, pairFiles, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, scrubEnv, testCommandFor, visibleNodeBin, yarnIsModern,
+  ENV_ALLOW, GIT_LOCK_ARGS, currentToolchain, diffChangesDeps, ensurePracticeInstall, isOwnerRepo, isTestFile, keptLicense, pairFiles, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, testCommandFor, visibleNodeBin, yarnIsModern,
   type LockFiles, type NameStatus, type PkgJson, type PracticeLicense, type PracticeManifest, type PracticePair, type PracticeRepo,
   LICENSE_FILES, MINE_REPORT_SCHEMA,
 } from "../lib/practicemine.ts";
@@ -21,7 +21,6 @@ const ATTEMPTS_PER_REPO = 80;
 const KEEP_PER_REPO = 20;
 const KEEP_TOTAL = 100;
 const TEST_MS = 45_000;
-const INSTALL_MS = 180_000;
 
 const USAGE = "usage: practice-mine.ts --manifest <file> --out <pairs.jsonl> --work <dir> [--report <file>] [--clones <dir>] [--only owner/repo] [--append]";
 
@@ -97,15 +96,6 @@ function hasDeps(pkg: PkgJson): boolean {
   return Object.keys(pkg.dependencies ?? {}).length + Object.keys(pkg.devDependencies ?? {}).length > 0;
 }
 
-function fingerprint(dir: string): string {
-  const hash = createHash("sha256");
-  for (const name of ["package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock"]) {
-    hash.update(name);
-    hash.update(existsSync(join(dir, name)) ? readFileSync(join(dir, name)) : "");
-  }
-  return hash.digest("hex");
-}
-
 function checkout(dir: string, rev: string): boolean {
   return git(dir, ["-c", "advice.detachedHead=false", "checkout", "-f", "--detach", rev], 120_000).ok;
 }
@@ -113,23 +103,6 @@ function checkout(dir: string, rev: string): boolean {
 function applyTest(dir: string, fix: string, testFile: string): boolean {
   if (!isTestFile(testFile)) return false;
   return git(dir, ["checkout", fix, "--", testFile]).ok;
-}
-
-let installed = "";
-
-function install(dir: string, locks: LockFiles, deps: boolean, modernYarn: boolean): boolean {
-  const argv = installArgv(locks, deps, modernYarn);
-  const fp = fingerprint(dir);
-  if (!argv) { installed = fp; return true; }
-  if (installed === fp && existsSync(join(dir, "node_modules"))) return true;
-  const env = scrubEnv(process.env, dir);
-  const ran = spawnSync(argv[0]!, argv.slice(1), { cwd: dir, env, timeout: INSTALL_MS, stdio: "ignore" });
-  if (ran.status !== 0 && argv[0] === "npm" && argv[1] === "ci") {
-    const fallback = spawnSync("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: dir, env, timeout: INSTALL_MS, stdio: "ignore" });
-    if (fallback.status !== 0) return false;
-  } else if (ran.status !== 0) return false;
-  installed = fp;
-  return true;
 }
 
 function runTest(dir: string, cmd: string[], nodePath: string): { code: number | null; poison: string[]; clean: boolean } {
@@ -175,7 +148,7 @@ function readPairs(path: string): PracticePair[] {
   return rows;
 }
 
-function mineRepo(repo: PracticeRepo, dir: string, sandbox: boolean, pairs: PracticePair[], seen: Set<string>, totalCap: { n: number }, flush: () => void): RepoReport {
+function mineRepo(repo: PracticeRepo, dir: string, sandbox: boolean, pairs: PracticePair[], seen: Set<string>, totalCap: { n: number }, flush: () => void, cache: string): RepoReport {
   const report: RepoReport = { name: repo.name, split: repo.split, candidates: 0, attempts: 0, kept: 0, reason: null };
   const head = git(dir, ["rev-parse", repo.commit]);
   if (!head.ok || head.out.trim() !== repo.commit) {
@@ -206,7 +179,6 @@ function mineRepo(repo: PracticeRepo, dir: string, sandbox: boolean, pairs: Prac
   if (!sandbox) { report.reason = "UNSAFE_ENV"; return report; }
   const nodePath = visibleNodeBin();
   if (!nodePath) { report.reason = "TOOLCHAIN_MISSING"; return report; }
-  installed = "";
   for (const candidate of found) {
     if (report.kept >= KEEP_PER_REPO || report.attempts >= ATTEMPTS_PER_REPO || totalCap.n >= KEEP_TOTAL) break;
     if (!candidate.subject) continue;
@@ -220,66 +192,60 @@ function mineRepo(repo: PracticeRepo, dir: string, sandbox: boolean, pairs: Prac
     const toolchain = currentToolchain(manager);
     if (!toolchain || toolchain.nodePath !== nodePath) continue;
     report.attempts++;
-    if (!checkout(dir, candidate.fix)) continue;
-    if (!install(dir, locks, hasDeps(pkg), yarnIsModern(pkg))) continue;
-    const after = runTest(dir, command, nodePath);
-    if (!after.clean) { report.reason = "SANDBOX_CLEAN_FAILED"; return report; }
-    if (after.poison.length) { console.log(`poison ${repo.name} ${after.poison[0]}`); continue; }
-    if (after.code !== 0) continue;
-    const baseLocks = locksAt(dir, candidate.base);
-    const basePkg = pkgAt(dir, candidate.base);
-    if (!checkout(dir, candidate.base)) continue;
-    if (!applyTest(dir, candidate.fix, candidate.testFile)) continue;
-    if (!install(dir, baseLocks, basePkg ? hasDeps(basePkg) : true, yarnIsModern(basePkg))) continue;
-    const before = runTest(dir, command, nodePath);
-    if (!before.clean) { report.reason = "SANDBOX_CLEAN_FAILED"; return report; }
-    if (before.poison.length) { console.log(`poison ${repo.name} ${before.poison[0]}`); continue; }
-    if (before.code === null || before.code === 0) continue;
-    const pair: PracticePair = {
+    const draft: PracticePair = {
       schema: "peaceai-practice-pair:v1", credit: false, repo: repo.name, license, split: repo.split,
       baseSha: candidate.base, fixSha: candidate.fix, testFile: candidate.testFile, testCommand: command,
-      beforeExit: before.code, afterExit: after.code, files: candidate.files, subject: candidate.subject, toolchain,
+      beforeExit: 1, afterExit: 0, files: candidate.files, subject: candidate.subject, toolchain,
     };
-    if (pairProblems(pair).length) continue;
+    const admitted = reverifyRepo(repo, dir, [draft], cache);
+    if (admitted.reason) { report.reason = admitted.reason; return report; }
+    const pair = admitted.kept[0];
+    if (!pair) continue;
     pairs.push(pair);
     seen.add(`${repo.name}\t${candidate.fix}`);
     report.kept++;
     totalCap.n++;
     flush();
-    console.log(`kept ${repo.name} ${candidate.fix} before=${before} after=${after}`);
   }
   return report;
 }
 
-function reverifyRepo(repo: PracticeRepo, dir: string, rows: PracticePair[]): { kept: PracticePair[]; dropped: number; reason: string | null } {
+function linkModules(modules: string, dir: string): void {
+  const dest = join(dir, "node_modules");
+  if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
+  spawnSync("ln", ["-s", modules, dest], { stdio: "ignore" });
+}
+
+function reverifyRepo(repo: PracticeRepo, dir: string, rows: PracticePair[], cache: string): { kept: PracticePair[]; excluded: { fixSha: string; reason: string }[]; reason: string | null } {
   const kept: PracticePair[] = [];
-  let dropped = 0;
-  installed = "";
+  const excluded: { fixSha: string; reason: string }[] = [];
+  const drop = (fixSha: string, reason: string) => { excluded.push({ fixSha, reason }); console.log(`drop ${repo.name} ${fixSha} ${reason}`); };
   for (const pair of rows) {
-    const pkg = pkgAt(dir, pair.fixSha);
-    if (!pkg) { dropped++; console.log(`drop ${pair.repo} ${pair.fixSha} NO_PKG`); continue; }
-    const locks = locksAt(dir, pair.fixSha);
-    const manager = locks.pnpm ? "pnpm" as const : locks.yarn ? "yarn" as const : locks.npm || hasDeps(pkg) ? "npm" as const : "none" as const;
-    const toolchain = currentToolchain(manager);
-    if (!toolchain) { dropped++; console.log(`drop ${pair.repo} ${pair.fixSha} TOOLCHAIN_MISSING`); continue; }
-    if (!checkout(dir, pair.fixSha)) { dropped++; console.log(`drop ${pair.repo} ${pair.fixSha} CHECKOUT`); continue; }
-    if (!install(dir, locks, hasDeps(pkg), yarnIsModern(pkg))) { dropped++; console.log(`drop ${pair.repo} ${pair.fixSha} INSTALL`); continue; }
-    const after = runTest(dir, pair.testCommand, toolchain.nodePath);
-    if (!after.clean) return { kept, dropped, reason: "SANDBOX_CLEAN_FAILED" };
-    if (after.poison.length || after.code !== 0) { dropped++; console.log(`drop ${pair.repo} ${pair.fixSha} after=${after.code} poison=${after.poison.join(",")}`); continue; }
+    const names = git(dir, ["diff", "--name-only", pair.baseSha, pair.fixSha]).out.split("\n").filter(Boolean);
+    if (diffChangesDeps(names)) { drop(pair.fixSha, "FIX_CHANGES_DEPS"); continue; }
     const basePkg = pkgAt(dir, pair.baseSha);
-    const baseLocks = locksAt(dir, pair.baseSha);
-    if (!checkout(dir, pair.baseSha) || !applyTest(dir, pair.fixSha, pair.testFile)) { dropped++; console.log(`drop ${pair.repo} ${pair.fixSha} BASE`); continue; }
-    if (!install(dir, baseLocks, basePkg ? hasDeps(basePkg) : true, yarnIsModern(basePkg))) { dropped++; console.log(`drop ${pair.repo} ${pair.fixSha} BASE_INSTALL`); continue; }
+    const locks = locksAt(dir, pair.baseSha);
+    const manager = locks.pnpm ? "pnpm" as const : locks.yarn ? "yarn" as const : locks.npm || (basePkg && hasDeps(basePkg)) ? "npm" as const : "none" as const;
+    const toolchain = currentToolchain(manager) ?? pair.toolchain;
+    if (!toolchain) { drop(pair.fixSha, "TOOLCHAIN_MISSING"); continue; }
+    const installed = ensurePracticeInstall(dir, { ...pair, toolchain }, cache, locks, yarnIsModern(basePkg));
+    if (!installed.ok || !installed.modules) { drop(pair.fixSha, installed.reason ?? "INSTALL_FAILED"); continue; }
+    if (!checkout(dir, pair.baseSha) || !applyTest(dir, pair.fixSha, pair.testFile)) { drop(pair.fixSha, "CHECKOUT"); continue; }
+    linkModules(installed.modules, dir);
     const before = runTest(dir, pair.testCommand, toolchain.nodePath);
-    if (!before.clean) return { kept, dropped, reason: "SANDBOX_CLEAN_FAILED" };
-    if (before.poison.length || before.code === null || before.code === 0) { dropped++; console.log(`drop ${pair.repo} ${pair.fixSha} before=${before.code} poison=${before.poison.join(",")}`); continue; }
+    if (!before.clean) return { kept, excluded, reason: "SANDBOX_CLEAN_FAILED" };
+    if (before.poison.length || before.code === null || before.code === 0) { drop(pair.fixSha, "NOT_REPLAY_ADMITTED"); continue; }
+    if (!checkout(dir, pair.fixSha)) { drop(pair.fixSha, "CHECKOUT"); continue; }
+    linkModules(installed.modules, dir);
+    const after = runTest(dir, pair.testCommand, toolchain.nodePath);
+    if (!after.clean) return { kept, excluded, reason: "SANDBOX_CLEAN_FAILED" };
+    if (after.poison.length || after.code !== 0) { drop(pair.fixSha, "NOT_REPLAY_ADMITTED"); continue; }
     const next: PracticePair = { ...pair, beforeExit: before.code, afterExit: 0, toolchain };
-    if (pairProblems(next).length) { dropped++; continue; }
+    if (pairProblems(next).length) { drop(pair.fixSha, "PAIR_SHAPE"); continue; }
     kept.push(next);
     console.log(`kept ${pair.repo} ${pair.fixSha} before=${before.code} after=0`);
   }
-  return { kept, dropped, reason: null };
+  return { kept, excluded, reason: null };
 }
 
 function main(): void {
@@ -302,7 +268,16 @@ function main(): void {
       byRepo.set(pair.repo, list);
     }
     const kept: PracticePair[] = [];
+    const excluded: { repo: string; split: string; fixSha: string; reason: string }[] = [];
+    const seenExcluded = new Set<string>();
+    const pushExcluded = (repo: string, split: string, fixSha: string, reason: string) => {
+      const key = `${repo}\t${fixSha}\t${reason}`;
+      if (seenExcluded.has(key)) return;
+      seenExcluded.add(key);
+      excluded.push({ repo, split, fixSha, reason });
+    };
     const reports: RepoReport[] = [];
+    const cache = join(work, "install-cache");
     for (const repo of manifest.repos) {
       const rows = byRepo.get(repo.name) ?? [];
       const dir = join(work, repo.name.replace("/", "__"));
@@ -311,15 +286,56 @@ function main(): void {
         reports.push({ name: repo.name, split: repo.split, candidates: rows.length, attempts: rows.length, kept: 0, reason: "CLONE_FAILED" });
         continue;
       }
-      const result = reverifyRepo(repo, dir, rows);
+      const result = reverifyRepo(repo, dir, rows, cache);
       kept.push(...result.kept);
-      reports.push({ name: repo.name, split: repo.split, candidates: rows.length, attempts: rows.length, kept: result.kept.length, reason: result.reason ?? (result.dropped ? "DROPPED" : null) });
+      for (const row of result.excluded) pushExcluded(repo.name, repo.split, row.fixSha, row.reason);
+      reports.push({ name: repo.name, split: repo.split, candidates: rows.length, attempts: rows.length, kept: result.kept.length, reason: result.reason });
       console.log(`repo ${repo.name} was=${rows.length} kept=${result.kept.length} reason=${result.reason ?? "ok"}`);
       if (result.reason) break;
     }
-    writeFileSync(outPath, kept.map((pair) => JSON.stringify(pair)).join("\n") + (kept.length ? "\n" : ""));
-    if (reportPath) writeFileSync(reportPath, JSON.stringify({ schema: MINE_REPORT_SCHEMA, credit: false, isolation: "bwrap", repos: reports, kept: kept.length }, null, 2) + "\n");
-    console.log(`credit=false kept=${kept.length}`);
+    const writeRows = () => {
+      writeFileSync(outPath, kept.map((pair) => JSON.stringify(pair)).join("\n") + (kept.length ? "\n" : ""));
+      writeFileSync(outPath.replace(/pairs\.jsonl$/, "excluded.jsonl"), excluded.map((row) => JSON.stringify(row)).join("\n") + (excluded.length ? "\n" : ""));
+    };
+    writeRows();
+    for (const repo of manifest.repos) {
+      const have = kept.filter((pair) => pair.repo === repo.name);
+      if (have.length >= KEEP_PER_REPO) continue;
+      const dir = join(work, repo.name.replace("/", "__"));
+      if (!existsSync(join(dir, ".git"))) continue;
+      const seen = new Set([...have.map((pair) => pair.fixSha), ...excluded.filter((row) => row.repo === repo.name).map((row) => row.fixSha)]);
+      const extras: PracticePair[] = [];
+      let attempts = 0;
+      for (const candidate of candidatesOf(dir, repo.commit)) {
+        if (have.length + extras.length >= KEEP_PER_REPO || attempts >= 30) break;
+        if (seen.has(candidate.fix) || !candidate.subject) continue;
+        const pkg = pkgAt(dir, candidate.fix);
+        const command = pkg ? testCommandFor(pkg, candidate.testFile) : null;
+        if (!pkg || !command) continue;
+        const locks = locksAt(dir, candidate.fix);
+        const manager = locks.pnpm ? "pnpm" as const : locks.yarn ? "yarn" as const : "npm" as const;
+        const toolchain = currentToolchain(manager);
+        if (!toolchain) continue;
+        attempts++;
+        const draft: PracticePair = {
+          schema: "peaceai-practice-pair:v1", credit: false, repo: repo.name, license: repo.license === "owner" ? "owner" : (repo.license ?? "MIT"), split: repo.split,
+          baseSha: candidate.base, fixSha: candidate.fix, testFile: candidate.testFile, testCommand: command,
+          beforeExit: 1, afterExit: 0, files: candidate.files, subject: candidate.subject, toolchain,
+        };
+        const added = reverifyRepo(repo, dir, [draft], cache);
+        for (const row of added.excluded) pushExcluded(repo.name, repo.split, row.fixSha, row.reason);
+        if (added.kept[0]) { extras.push(added.kept[0]); seen.add(candidate.fix); }
+      }
+      kept.push(...extras);
+      const report = reports.find((row) => row.name === repo.name);
+      if (report) report.kept = have.length + extras.length;
+      console.log(`top-up ${repo.name} attempts=${attempts} added=${extras.length}`);
+    }
+    writeRows();
+    const excludedByReason: Record<string, number> = {};
+    for (const row of excluded) excludedByReason[row.reason] = (excludedByReason[row.reason] ?? 0) + 1;
+    if (reportPath) writeFileSync(reportPath, JSON.stringify({ schema: MINE_REPORT_SCHEMA, credit: false, isolation: "bwrap", admission: "frozen-base install and the sandbox test", repos: reports, kept: kept.length, excluded: excludedByReason }, null, 2) + "\n");
+    console.log(`credit=false kept=${kept.length} excluded=${excluded.length}`);
     return;
   }
   const manifestPath = flag("--manifest", args);
@@ -350,7 +366,7 @@ function main(): void {
       console.log(`skip ${repo.name} CLONE_FAILED`);
       continue;
     }
-    const report = mineRepo(repo, dir, sandbox, pairs, seen, total, flush);
+    const report = mineRepo(repo, dir, sandbox, pairs, seen, total, flush, join(work, "install-cache"));
     reports.push(report);
     console.log(`repo ${repo.name} split=${repo.split} candidates=${report.candidates} attempts=${report.attempts} kept=${report.kept} reason=${report.reason ?? "ok"}`);
   }
