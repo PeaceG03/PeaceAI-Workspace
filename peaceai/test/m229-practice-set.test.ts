@@ -270,12 +270,18 @@ test("replay passes only on GATE PASS plus a failing-then-passing test, and an u
   assert.equal(doc.credit, false);
   assert.equal(doc.protectedFunction, "checkCandidateScope");
   assert.equal(doc.protectedFile, "peaceai/lib/scope.ts");
-  assert.equal(doc.counts["held-out"].unmeasured, 1);
-  assert.equal(doc.counts["held-out"].pass, 0);
-  assert.equal(doc.counts.dev.pass, 1);
+  assert.equal(doc.counts.text["held-out"].unmeasured, 1);
+  assert.equal(doc.counts.text["held-out"].pass, 0);
+  assert.equal(doc.counts.text.dev.pass, 1);
+  assert.equal(doc.counts["test-as-spec"].dev.pass, 0);
+  assert.equal(doc.rows[0]?.understanding, "text");
   assert.equal(JSON.stringify(doc).includes("diff"), false);
   const counts = countBySplit(rows);
   assert.equal(counts["held-out"].reasons.GATE_NO_TARGET, 1);
+  const spec = replayDocument([...rows, { repo: "sindresorhus/is", split: "dev", fixSha: "d".repeat(40), status: "fail", reason: "CANT_DO_YET_NO_SYMBOL", gap: true, understanding: "test-as-spec" }]);
+  assert.equal(spec.counts.text.dev.pass, 1);
+  assert.equal(spec.counts["test-as-spec"].dev.fail, 1);
+  assert.equal(spec.counts["test-as-spec"].dev.reasons.CANT_DO_YET_NO_SYMBOL, 1);
 });
 
 test("each practice repo has a scope, and a third-party target posts a patch instead of opening a PR", () => {

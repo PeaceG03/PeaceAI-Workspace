@@ -16,6 +16,8 @@ export const PROTECTED_GATE_FILE = "peaceai/lib/scope.ts";
 export const PROTECTED_GATE_WHY = "peaceai/bin/gate.ts refuses a target that is not in peaceai/targets.json before it calls gateCandidate. checkCandidateScope (peaceai/lib/scope.ts) is the function that would have to score any other repository; its default is WORKSPACE_SCOPE, which only allows ^src/…\\.ts$. generate.ts throws the same missing-target error, so Job A does not produce a candidate the gate can accept. Neither protected file was edited.";
 
 export type RowStatus = "pass" | "fail" | "unmeasured";
+/** Which task form this row was graded as. Text is the subject alone. Test-as-spec is the failing test. */
+export type Understanding = "text" | "test-as-spec";
 
 export interface GradeInput {
   /** True only when this repo is a key of peaceai/targets.json. */
@@ -39,6 +41,8 @@ export interface GradedRow {
   status: RowStatus;
   reason: string;
   gap: boolean;
+  /** Absent on a row built before test-as-spec. Those rows are the text form. */
+  understanding?: Understanding;
 }
 
 /** One row. Unmeasured never comes back as pass. A pass requires GATE PASS and fail-before/pass-after. */
@@ -74,6 +78,14 @@ export function countBySplit(rows: readonly Pick<GradedRow, "split" | "status" |
   return out;
 }
 
+/** Text rows and test-as-spec rows stay in separate counts. A row with no form is text. */
+export function countsByUnderstanding(rows: readonly Pick<GradedRow, "split" | "status" | "reason" | "understanding">[]): Record<Understanding, ReturnType<typeof countBySplit>> {
+  return {
+    text: countBySplit(rows.filter((row) => (row.understanding ?? "text") === "text")),
+    "test-as-spec": countBySplit(rows.filter((row) => row.understanding === "test-as-spec")),
+  };
+}
+
 /** Public replay file. Counts, reasons, and the protected-function note. No diffs, subjects, or core text. */
 export function replayDocument(rows: readonly GradedRow[]): {
   schema: typeof REPLAY_SCHEMA;
@@ -82,8 +94,8 @@ export function replayDocument(rows: readonly GradedRow[]): {
   protectedFunction: string;
   protectedFile: string;
   protectedWhy: string;
-  counts: ReturnType<typeof countBySplit>;
-  rows: { repo: string; split: GradedRow["split"]; fixSha: string; status: RowStatus; reason: string }[];
+  counts: ReturnType<typeof countsByUnderstanding>;
+  rows: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string }[];
 } {
   return {
     schema: REPLAY_SCHEMA,
@@ -92,7 +104,7 @@ export function replayDocument(rows: readonly GradedRow[]): {
     protectedFunction: PROTECTED_GATE_FUNCTION,
     protectedFile: PROTECTED_GATE_FILE,
     protectedWhy: PROTECTED_GATE_WHY,
-    counts: countBySplit(rows),
-    rows: rows.map((row) => ({ repo: row.repo, split: row.split, fixSha: row.fixSha, status: row.status, reason: row.reason })),
+    counts: countsByUnderstanding(rows),
+    rows: rows.map((row) => ({ repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason })),
   };
 }
