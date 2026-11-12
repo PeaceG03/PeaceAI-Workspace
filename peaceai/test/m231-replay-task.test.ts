@@ -81,6 +81,63 @@ test("a titled budget cut is a different check and is not adopted", () => {
   assert.equal(adoptIssueBody(ASKED, body, seq), null);
 });
 
+const PROBE_HEADER = "add a characterization test for total in src/cart.ts: totals";
+const PROBE_CHECK = "- total(1) is 1";
+const PROBE_TRAILER = `Note. ${"x".repeat(2500)}`;
+const PROBE_SEQ = 9;
+
+function probeChecks(body: string): { expr: string; value?: string; code?: string }[] | null {
+  const task = parseExistingTestTask(TEST_EXISTING_TRIGGER, cleanIssueText({ title: replayIssueTitle(PROBE_SEQ), body }));
+  return task ? task.checks.map((c) => ({ expr: c.expr, ...(c.value !== undefined ? { value: c.value } : {}), ...(c.code !== undefined ? { code: c.code } : {}) })) : null;
+}
+
+test("a quoted or backticked check after the last plain bullet stays in the adopted set", () => {
+  for (const hidden of ["> - total(2) is 99", "`- total(2) is 99`"]) {
+    const body = [PROBE_HEADER, PROBE_CHECK, hidden, "", PROBE_TRAILER].join("\n");
+    const full = cleanIssueText({ title: replayIssueTitle(PROBE_SEQ), body });
+    assert.equal(full.length, MAX_OBJECTIVE_CHARS, hidden);
+    const adopted = adoptIssueBody(ASKED, body, PROBE_SEQ);
+    assert.ok(adopted, hidden);
+    const cleaned = cleanIssueText({ title: replayIssueTitle(PROBE_SEQ), body: adopted! });
+    assert.ok(full.startsWith(cleaned), hidden);
+    assert.deepEqual(probeChecks(adopted!), [
+      { expr: "total(1)", value: "1" },
+      { expr: "total(2)", value: "99" },
+    ], hidden);
+  }
+});
+
+test("a check hidden in a comment or a fence is not revealed by dropping the trailer", () => {
+  const hidden = [
+    ["<!--", "- total(2) is 99", "-->"],
+    ["```", "- total(2) is 99", "```"],
+  ];
+  for (const wrap of hidden) {
+    const body = [PROBE_HEADER, PROBE_CHECK, ...wrap, "", PROBE_TRAILER].join("\n");
+    assert.equal(cleanIssueText({ title: replayIssueTitle(PROBE_SEQ), body }).length, MAX_OBJECTIVE_CHARS);
+    assert.equal(adoptIssueBody(ASKED, body, PROBE_SEQ), null);
+  }
+});
+
+test("a fenced header and check are not adopted when the trailer fills the budget", () => {
+  const body = ["```", PROBE_HEADER, "- total(2) is 99", "```", "", PROBE_TRAILER].join("\n");
+  assert.equal(cleanIssueText({ title: replayIssueTitle(PROBE_SEQ), body }).length, MAX_OBJECTIVE_CHARS);
+  assert.equal(probeChecks(["```", PROBE_HEADER, "- total(2) is 99", "```"].join("\n")), null);
+  assert.equal(adoptIssueBody(ASKED, body, PROBE_SEQ), null);
+});
+
+test("a fix line in the preamble or the trailer is not removed to force an adoption", () => {
+  const fix = `Fix: ${"ab".repeat(20)}`;
+  for (const body of [
+    [fix, PROBE_HEADER, PROBE_CHECK, "", PROBE_TRAILER].join("\n"),
+    [PROBE_HEADER, PROBE_CHECK, fix, "", PROBE_TRAILER].join("\n"),
+    [PROBE_HEADER, PROBE_CHECK, "", PROBE_TRAILER, fix].join("\n"),
+  ]) {
+    assert.equal(cleanIssueText({ title: replayIssueTitle(PROBE_SEQ), body }).length, MAX_OBJECTIVE_CHARS);
+    assert.equal(adoptIssueBody(ASKED, body, PROBE_SEQ), null);
+  }
+});
+
 test("a body just under the titled budget is adopted, and the seq picks that title", () => {
   const header = "add a characterization test for total in src/cart.ts: totals";
   const check = "- total(1) is 2";

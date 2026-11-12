@@ -7,7 +7,7 @@ import { EXISTING_EDIT_TRIGGER } from "./learned-edit-existing.ts";
 import { FUNCTION_TRIGGER } from "./learned-function.ts";
 import { GUARD_TOP_TRIGGER, GUARD_TRIGGER } from "./learned-guard.ts";
 import { REPLACE_TRIGGER } from "./learned-body.ts";
-import { TEST_TRIGGER } from "./learned-test.ts";
+import { FIX_LINE, TEST_TRIGGER } from "./learned-test.ts";
 import { DERIVE_WIRE_TRIGGER } from "./derive-wire.ts";
 import { DERIVE_WIRE_V2_TRIGGER } from "./derive-wire-v2.ts";
 import { parseExistingTestTask, TEST_EXISTING_TRIGGER } from "./learned-test-existing.ts";
@@ -76,19 +76,19 @@ export function replayIssueTitle(seq: number): string {
 }
 
 /**
- * From the characterization header through its last check bullet. A prose trailer after that
- * last bullet is not part of the task, and it is what pushes a short list of checks past the
- * objective budget. Lines between the header and the last bullet stay: dropping them would
- * hide a check the budget cut had already changed.
+ * What one raw line becomes after the same cleaning the parser reads. A quote marker, a
+ * backtick, or a hash can hide a bullet on the raw line and reveal it here.
  */
-function characterizationLines(issueBody: string): string | null {
-  const lines = issueBody.split("\n");
-  const headerIdx = lines.findIndex((l) => TASK_HEADER.test(l.trim()));
-  if (headerIdx < 0) return null;
-  let lastBullet = -1;
-  for (let i = headerIdx + 1; i < lines.length; i++) if (/^[-*] /.test(lines[i]!.trim())) lastBullet = i;
-  if (lastBullet < 0) return null;
-  return lines.slice(headerIdx, lastBullet + 1).join("\n").trim();
+function cleanedLine(line: string): string {
+  return cleanIssueText({ title: "", body: line });
+}
+
+/** A cleaned line the characterization parser treats as part of a task: a bullet, a fix line, or a learned header. */
+function cleanedTaskLine(line: string): boolean {
+  const cleaned = cleanedLine(line);
+  if (!cleaned) return false;
+  if (/^[-*] /.test(cleaned) || FIX_LINE.test(cleaned)) return true;
+  return TASK_HEADERS.some((h) => new RegExp(h.source, "i").test(cleaned));
 }
 
 /**
@@ -96,9 +96,9 @@ function characterizationLines(issueBody: string): string | null {
  * named and the approved rule can parse its checks. Anything else is refused and the log line stands.
  * Validation uses the same title generate will see. A cleaned text that fills the objective budget
  * may have sliced a check into a different value, so the whole body is refused. A prose trailer
- * after the last check is not part of the task: when dropping only that trailer leaves the header
- * and checks under the budget, that shorter body is what Job A cleans again. Lines before the last
- * check stay, so a check the budget had already cut is still refused.
+ * after the last cleaned task line may be dropped only when the adopted clean text is a prefix of
+ * that full clean text, and no dropped line cleans into a bullet, a fix line, or a task header.
+ * A fence or an HTML comment is not dropped: those spans are not one line, so the cut is refused.
  */
 export function adoptIssueBody(asked: string, issueBody: string, seq: number): string | null {
   if (!issueBody.trim() || issueBody.length > 8000) return null;
@@ -108,12 +108,10 @@ export function adoptIssueBody(asked: string, issueBody: string, seq: number): s
   let body = issueBody;
   let cleaned = cleanIssueText({ title: replayIssueTitle(seq), body });
   if (cleaned.length === MAX_OBJECTIVE_CHARS) {
-    const onlyTask = characterizationLines(issueBody);
-    if (!onlyTask) return null;
-    const trimmed = cleanIssueText({ title: replayIssueTitle(seq), body: onlyTask });
-    if (trimmed.length === MAX_OBJECTIVE_CHARS) return null;
-    body = onlyTask;
-    cleaned = trimmed;
+    const cut = cutTrailer(issueBody, seq);
+    if (!cut) return null;
+    body = cut.body;
+    cleaned = cut.cleaned;
   }
   if (!isCanonical(cleaned)) return null;
   const task = parseExistingTestTask(TEST_EXISTING_TRIGGER, cleaned);
@@ -122,6 +120,36 @@ export function adoptIssueBody(asked: string, issueBody: string, seq: number): s
   const sym = new RegExp(`\\b${named.symbol.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")}\\b`);
   if (!task.checks.every((c) => sym.test(c.expr))) return null;
   return body;
+}
+
+/**
+ * Drop a raw suffix that cleaning does not turn into a task line. The cut is the last raw line
+ * whose clean form is a bullet, a fix line, or a learned header. The adopted clean text has to be
+ * a prefix of the full clean text, so a quote, a backtick, or a hash cannot hide a check that the
+ * cut then deletes, and an unclosed fence cannot reveal one. Fences and HTML comments are refused.
+ */
+function cutTrailer(issueBody: string, seq: number): { body: string; cleaned: string } | null {
+  if (issueBody.includes("```") || issueBody.includes("<!--")) return null;
+  const lines = issueBody.split("\n");
+  let first = -1;
+  let last = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (!cleanedTaskLine(lines[i]!)) continue;
+    if (first < 0) first = i;
+    last = i;
+  }
+  if (first < 0 || last < 0) return null;
+  for (let i = 0; i < lines.length; i++) {
+    if (i >= first && i <= last) continue;
+    if (cleanedTaskLine(lines[i]!)) return null;
+  }
+  const kept = lines.slice(first, last + 1).join("\n").trim();
+  const title = replayIssueTitle(seq);
+  const trimmed = cleanIssueText({ title, body: kept });
+  if (!trimmed || trimmed.length === MAX_OBJECTIVE_CHARS) return null;
+  const full = cleanIssueText({ title, body: issueBody });
+  if (!full.startsWith(trimmed)) return null;
+  return { body: kept, cleaned: trimmed };
 }
 
 /** One learned-rule header. The source is that rule's own trigger, not a builder-log row. */
