@@ -1,6 +1,7 @@
 // Mixed practice set. credit is false. The held-out hash and the training-exclusion check live here
 // because the corpus and pair source lists are in files this change does not edit.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -72,7 +73,11 @@ test("third-party env is an allowlist, and the sandbox is bubblewrap with no uns
   assert.equal(practiceSandboxArgv("relative"), null);
 });
 
-test("the practice sandbox hides a fake home, refuses outside writes, and has no network", () => {
+test("the practice sandbox hides a fake home, refuses outside writes, and has no network", (t) => {
+  if (spawnSync("bwrap", ["--version"], { stdio: "ignore" }).error) {
+    t.skip("bwrap is not installed on this host");
+    return;
+  }
   const node = visibleNodeBin();
   assert.ok(node, "a node binary outside the covered paths");
   const realHome = mkdtempSync(join(tmpdir(), "practice-real-home-"));
