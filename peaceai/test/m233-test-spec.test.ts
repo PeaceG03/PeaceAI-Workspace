@@ -7,24 +7,14 @@ import { join } from "node:path";
 import test from "node:test";
 import { MAX_CANDIDATES } from "../lib/editpropose.ts";
 import { MAX_ATTEMPTS } from "../lib/loop.ts";
-import { originalSuiteArgv, runTestSpec, SPEC_ATTEMPT_CAP, specTask, type SpecRun } from "../lib/testspec.ts";
+import { GIT_LOCK_ARGS, practiceGit, practiceGitEnv, practiceSandboxReady, visibleNodeBin } from "../lib/practicemine.ts";
+import { originalSuiteArgv, runTestSpec, SPEC_ATTEMPT_CAP, specTask, type SpecInput } from "../lib/testspec.ts";
 
 const PATTERN = "^src/.+\\.ts$";
-const node = process.execPath;
-
-function run(root: string, cmd: readonly string[]): SpecRun {
-  const env = { ...process.env };
-  for (const key of Object.keys(env)) if (key.startsWith("NODE_TEST") || key === "NODE_CHANNEL_FD") delete env[key];
-  const ran = spawnSync(cmd[0]!, cmd.slice(1), { cwd: root, encoding: "utf8", env });
-  return { code: ran.status, stdout: `${ran.stdout ?? ""}\n${ran.stderr ?? ""}` };
-}
 
 function git(root: string, args: string[]): void {
-  const ran = spawnSync("git", ["-C", root, ...args], {
-    encoding: "utf8",
-    env: { ...process.env, GIT_AUTHOR_NAME: "Fixture", GIT_AUTHOR_EMAIL: "fixture@example.com", GIT_COMMITTER_NAME: "Fixture", GIT_COMMITTER_EMAIL: "fixture@example.com" },
-  });
-  if (ran.status !== 0) throw new Error(ran.stderr || ran.stdout);
+  const ran = practiceGit(root, ["-c", "user.email=fixture@example.com", "-c", "user.name=Fixture", ...args]);
+  if (!ran.ok) throw new Error(ran.out || "git failed");
 }
 
 function repo(files: Record<string, string>): string {
@@ -53,33 +43,49 @@ test("the attempt cap stays inside the loop and the proposer caps", () => {
     originalSuiteArgv(["node", "--test", "src/pad.test.ts"], "src/pad.test.ts", "related", ["src/keep.test.ts"]),
     ["node", "--test", "src/pad.test.ts", "src/keep.test.ts"],
   );
-  assert.equal(readFileSync(join(import.meta.dirname, "../lib/testspec.ts"), "utf8").includes("git push"), false);
+  const source = readFileSync(join(import.meta.dirname, "../lib/testspec.ts"), "utf8");
+  assert.equal(source.includes("git push"), false);
+  assert.equal(source.includes("runInPracticeSandbox"), true);
+  assert.equal(source.includes("practiceGit"), true);
+  assert.equal(source.includes("poisonStamp"), true);
+  assert.equal(source.includes("spawnSync"), false);
 });
 
-test("repair-v2 makes the failing test pass and leaves the other function alone", () => {
+function specInput(root: string, file: string, extra: Partial<SpecInput> = {}): SpecInput {
+  const nodePath = visibleNodeBin();
+  if (!nodePath) throw new Error("no visible node");
+  return {
+    root, subject: "fixture", testFile: file,
+    testCommand: [nodePath, "--experimental-strip-types", "--test", file],
+    sourcePattern: PATTERN, toolchain: { nodePath }, ...extra,
+  };
+}
+
+test("repair-v2 makes the failing test pass and leaves the other function alone", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
   const root = repo({ "src/pad.ts": pad, "src/keep.ts": keep, "src/pad.test.ts": padTest, "src/keep.test.ts": keepTest });
   try {
-    const cmd = [node, "--experimental-strip-types", "--test", "src/pad.test.ts"];
-    const got = runTestSpec({
-      root, subject: "pad is short by one", testFile: "src/pad.test.ts", testCommand: cmd,
-      sourcePattern: PATTERN, originalSuite: "related", relatedTests: ["src/keep.test.ts"], run: (c) => run(root, c),
-    });
-    assert.equal(got.status, "diff", got.status === "cant" ? got.reason : "");
+    const got = runTestSpec(specInput(root, "src/pad.test.ts", {
+      subject: "pad is short by one", originalSuite: "related", relatedTests: ["src/keep.test.ts"],
+    }));
+    assert.equal(got.status, "diff", got.status === "diff" ? "" : got.reason);
     if (got.status !== "diff") return;
     assert.match(got.diff, /n \+ 0/);
     assert.match(got.diff, /n \+ 1/);
     assert.equal(got.diff.includes("keep"), false);
     assert.equal(readFileSync(join(root, "src/pad.ts"), "utf8").includes("n + 0"), true);
-    const applied = spawnSync("git", ["-C", root, "apply", "--whitespace=nowarn", "-"], { input: got.diff, encoding: "utf8" });
+    const applied = spawnSync("git", ["-C", root, ...GIT_LOCK_ARGS, "apply", "--whitespace=nowarn", "-"], { input: got.diff, encoding: "utf8", env: practiceGitEnv() });
     assert.equal(applied.status, 0, applied.stderr);
-    const after = run(root, [node, "--experimental-strip-types", "--test", "src/pad.test.ts", "src/keep.test.ts"]);
-    assert.equal(after.code, 0, after.stdout);
+    const nodePath = visibleNodeBin()!;
+    const after = spawnSync(nodePath, ["--experimental-strip-types", "--test", "src/pad.test.ts", "src/keep.test.ts"], { cwd: root, encoding: "utf8" });
+    assert.equal(after.status, 0, `${after.stdout ?? ""}\n${after.stderr ?? ""}`);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("a missing symbol, an irreducible assertion, a string the templates cannot edit, and the cap are refusals", () => {
+test("a missing symbol, an irreducible assertion, a string the templates cannot edit, and the cap are refusals", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
   const bare = repo({
     "src/pad.ts": pad,
     "src/keep.ts": keep,
@@ -95,21 +101,19 @@ test("a missing symbol, an irreducible assertion, a string the templates cannot 
     "src/tag.test.ts": `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { tag } from "./tag.ts";\ntest("tag", () => { assert.equal(tag("a"), "a"); });\n`,
   });
   const capped = repo({ "src/pad.ts": pad, "src/keep.ts": keep, "src/pad.test.ts": padTest, "src/keep.test.ts": keepTest });
-  const cmd = (file: string) => [node, "--experimental-strip-types", "--test", file];
   try {
-    const noSymbol = runTestSpec({ root: bare, subject: "numbers", testFile: "src/bare.test.ts", testCommand: cmd("src/bare.test.ts"), sourcePattern: PATTERN, run: (c) => run(bare, c) });
+    const noSymbol = runTestSpec(specInput(bare, "src/bare.test.ts", { subject: "numbers" }));
     assert.equal(noSymbol.status, "cant");
     if (noSymbol.status === "cant") assert.equal(noSymbol.reason, "CANT_DO_YET_NO_SYMBOL");
-    const irreducible = runTestSpec({ root: vague, subject: "pad", testFile: "src/pad.test.ts", testCommand: cmd("src/pad.test.ts"), sourcePattern: PATTERN, run: (c) => run(vague, c) });
+    const irreducible = runTestSpec(specInput(vague, "src/pad.test.ts", { subject: "pad" }));
     assert.equal(irreducible.status, "cant");
     if (irreducible.status === "cant") assert.equal(irreducible.reason, "CANT_DO_YET_ASSERTION");
-    const unverified = runTestSpec({ root: text, subject: "tag drops its prefix", testFile: "src/tag.test.ts", testCommand: cmd("src/tag.test.ts"), sourcePattern: PATTERN, run: (c) => run(text, c) });
+    const unverified = runTestSpec(specInput(text, "src/tag.test.ts", { subject: "tag drops its prefix" }));
     assert.equal(unverified.status, "cant");
     if (unverified.status === "cant") assert.equal(unverified.reason, "CANT_DO_YET_NO_VERIFY");
-    const cap = runTestSpec({
-      root: capped, subject: "pad is short by one", testFile: "src/pad.test.ts", testCommand: cmd("src/pad.test.ts"),
-      sourcePattern: PATTERN, originalSuite: "related", relatedTests: ["src/keep.test.ts"], maxAttempts: 1, run: (c) => run(capped, c),
-    });
+    const cap = runTestSpec(specInput(capped, "src/pad.test.ts", {
+      subject: "pad is short by one", originalSuite: "related", relatedTests: ["src/keep.test.ts"], maxAttempts: 1,
+    }));
     assert.equal(cap.status, "cant");
     if (cap.status === "cant") assert.equal(cap.reason, "CANT_DO_YET_CAP");
     assert.equal(readFileSync(join(capped, "src/pad.ts"), "utf8").includes("n + 0"), true);

@@ -6,7 +6,7 @@
     {
       "name": "PeaceG03/PeaceSTOCKS",
       "split": "dev",
-      "candidates": 151,
+      "candidates": 20,
       "attempts": 20,
       "kept": 20,
       "reason": null
@@ -14,51 +14,51 @@
     {
       "name": "sindresorhus/is",
       "split": "dev",
-      "candidates": 79,
-      "attempts": 32,
-      "kept": 20,
-      "reason": null
+      "candidates": 20,
+      "attempts": 20,
+      "kept": 18,
+      "reason": "DROPPED"
     },
     {
       "name": "unjs/defu",
       "split": "dev",
-      "candidates": 16,
-      "attempts": 16,
+      "candidates": 8,
+      "attempts": 8,
       "kept": 8,
       "reason": null
     },
     {
       "name": "blakeembrey/change-case",
       "split": "held-out",
-      "candidates": 27,
-      "attempts": 20,
+      "candidates": 16,
+      "attempts": 16,
       "kept": 16,
       "reason": null
     },
     {
       "name": "gvergnaud/ts-pattern",
       "split": "held-out",
-      "candidates": 120,
-      "attempts": 49,
+      "candidates": 20,
+      "attempts": 20,
       "kept": 20,
       "reason": null
     },
     {
       "name": "gcanti/fp-ts",
       "split": "held-out",
-      "candidates": 756,
-      "attempts": 23,
+      "candidates": 20,
+      "attempts": 20,
       "kept": 20,
       "reason": null
     },
     {
       "name": "unjs/listhen",
       "split": "held-out",
-      "candidates": 16,
-      "attempts": 16,
+      "candidates": 3,
+      "attempts": 3,
       "kept": 3,
       "reason": null
     }
   ],
-  "kept": 107
+  "kept": 105
 }

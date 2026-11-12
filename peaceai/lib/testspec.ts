@@ -1,18 +1,20 @@
 // Test-as-spec. credit: false.
 // The failing test is the spec. The subject is context only: "make this failing test pass, context: <subject>".
 // The test file is the one the grader checks out from the fix onto the base. The fix diff and the fix's
-// source files are not inputs. A run uses the practice sandbox when the replay drives it.
+// source files are not inputs. Every test runs in the practice sandbox with the recorded node.
+// Git outside that sandbox uses the locked hooks, fsmonitor, and isolated config, and only after
+// the poison check.
 // Symbols come from the test's own imports and calls, kept only when the path matches sourcePattern.
 // Edits come from the loop-v2 repair proposer (the catalog of templates). Attempts stay within that
 // loop's MAX_ATTEMPTS and the proposer's MAX_CANDIDATES. A diff is returned only when the given test
 // passes and the original suite still passes. Nothing here pushes.
-import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import ts from "typescript";
 import { isTestPath, openRepo } from "./codesearch.ts";
 import { MAX_CANDIDATES, repairProposer, type RepairFeedback } from "./editpropose.ts";
 import { MAX_ATTEMPTS } from "./loop.ts";
+import { poisonChanges, poisonStamp, practiceGit, releaseWorktree, runInPracticeSandbox, type PracticeToolchain } from "./practicemine.ts";
 
 export const SPEC_SCHEMA = "peaceai-test-spec:v1";
 export const UNDERSTANDINGS = ["text", "test-as-spec"] as const;
@@ -28,9 +30,6 @@ export type SpecCant = (typeof SPEC_CANT)[number];
 
 /** The attempt cap. It cannot rise above the loop's cap or the proposer's candidate cap. */
 export const SPEC_ATTEMPT_CAP = Math.min(MAX_ATTEMPTS, MAX_CANDIDATES);
-
-export interface SpecRun { code: number | null; stdout: string }
-export type SpecRunner = (cmd: readonly string[]) => SpecRun;
 
 export interface Expectation {
   kind: "equal" | "throws" | "type";
@@ -49,14 +48,25 @@ export interface SpecInput {
   /** "full" drops the test-file argument. "related" runs the given test plus these extra files. */
   originalSuite?: "full" | "related";
   relatedTests?: readonly string[];
-  run: SpecRunner;
+  /** The pair's recorded node. The sandbox refuses any other interpreter. */
+  toolchain: Pick<PracticeToolchain, "nodePath">;
+  /** Clone node_modules to bind read-only. Null when the repo has none. */
+  nodeModules?: string | null;
+  /**
+   * Puts the spec test back after the sandbox reset. The reset checks out HEAD, which drops
+   * a test that was taken from the fix. Replay passes a guarded git checkout of that one file.
+   */
+  restoreTree?: () => boolean;
   /** Defaults to SPEC_ATTEMPT_CAP. Larger values are clamped down. */
   maxAttempts?: number;
 }
 
+export type SpecBlock = "UNSAFE_ENV" | "SANDBOX_POISON";
+
 export type SpecResult =
   | { status: "diff"; diff: string; attempts: number; expectations: Expectation[] }
-  | { status: "cant"; reason: SpecCant; attempts: number };
+  | { status: "cant"; reason: SpecCant; attempts: number }
+  | { status: "blocked"; reason: SpecBlock; attempts: number };
 
 export function specTask(subject: string): string {
   const context = subject.replace(/\s+/g, " ").trim().slice(0, 200);
@@ -211,8 +221,31 @@ export function originalSuiteArgv(testCommand: readonly string[], testFile: stri
 
 function gitDiff(root: string, paths: readonly string[]): string {
   if (!paths.length) return "";
-  const ran = spawnSync("git", ["-C", root, "diff", "--no-color", "--no-ext-diff", "--no-renames", "--", ...paths], { encoding: "utf8" });
-  return ran.status === 0 ? ran.stdout : "";
+  const ran = practiceGit(root, ["diff", "--no-color", "--no-ext-diff", "--no-renames", "--", ...paths]);
+  return ran.ok ? ran.out : "";
+}
+
+type SandboxHit = { blocked: SpecBlock } | { blocked: null; code: number | null; stdout: string };
+
+/** One test inside the practice sandbox. A poison or unsafe result is cleaned and blocks the next git step. */
+function runSandboxed(input: SpecInput, cmd: readonly string[]): SandboxHit {
+  const before = poisonStamp(input.root);
+  const modules = input.nodeModules && existsSync(input.nodeModules) ? input.nodeModules : existsSync(join(input.root, "node_modules")) ? join(input.root, "node_modules") : null;
+  const ran = runInPracticeSandbox(input.root, cmd, 60_000, { capture: true, nodePath: input.toolchain.nodePath, nodeModules: modules });
+  const poison = poisonChanges(before, poisonStamp(input.root));
+  if (ran.unsafe || poison.length > 0) {
+    releaseWorktree(input.root, before);
+    input.restoreTree?.();
+    return { blocked: ran.unsafe ? "UNSAFE_ENV" : "SANDBOX_POISON" };
+  }
+  return { blocked: null, code: ran.code, stdout: ran.stdout };
+}
+
+/** Drop the attempt's edit. The poison check already passed, so this git step is allowed. */
+function resetAttempt(input: SpecInput): void {
+  const before = poisonStamp(input.root);
+  releaseWorktree(input.root, before);
+  input.restoreTree?.();
 }
 
 function read(root: string, path: string): string | null {
@@ -226,7 +259,8 @@ function read(root: string, path: string): string | null {
 export function runTestSpec(input: SpecInput): SpecResult {
   const cap = Math.min(SPEC_ATTEMPT_CAP, Math.max(1, Math.floor(input.maxAttempts ?? SPEC_ATTEMPT_CAP)));
   const deny = input.denyPatterns ?? [];
-  const first = input.run(input.testCommand);
+  const first = runSandboxed(input, input.testCommand);
+  if (first.blocked) return { status: "blocked", reason: first.blocked, attempts: 0 };
   const output = first.stdout;
   if (!assertionFailure(output, first.code)) return { status: "cant", reason: "CANT_DO_YET_ASSERTION", attempts: 0 };
   const testText = read(input.root, input.testFile);
@@ -261,44 +295,41 @@ export function runTestSpec(input: SpecInput): SpecResult {
   proposer.prepare(repo, { request, failing, baseFailing: failing });
   const files = [...original.entries()].map(([path, content]) => ({ path, content }));
   const feedback: RepairFeedback[] = [];
-  const restore = () => { for (const [path, text] of original) writeFileSync(join(input.root, path), text); };
   let attempts = 0;
-  try {
-    for (;;) {
-      const proposal = proposer.next({ files, attempt: attempts + 1, feedback, baseline: null });
-      if ("refuse" in proposal) return { status: "cant", reason: "CANT_DO_YET_NO_VERIFY", attempts };
-      if (attempts >= cap) return { status: "cant", reason: "CANT_DO_YET_CAP", attempts };
-      const edits = proposal.edits.filter((e) => original.has(e.path));
-      attempts += 1;
-      if (edits.length === 0) {
-        feedback.push({ attempt: attempts, codes: ["TEST_FAIL"], failing, tests: null });
-        continue;
-      }
-      for (const edit of edits) writeFileSync(join(input.root, edit.path), edit.content);
-      const again = input.run(input.testCommand);
-      if (again.code !== 0) {
-        restore();
-        feedback.push({ attempt: attempts, codes: ["TEST_FAIL"], failing, tests: null });
-        continue;
-      }
-      const suite = input.originalSuite ? originalSuiteArgv(input.testCommand, input.testFile, input.originalSuite, related) : null;
-      if (suite) {
-        const ran = input.run(suite);
-        if (ran.code !== 0) {
-          restore();
-          feedback.push({ attempt: attempts, codes: ["TEST_FAIL"], failing, tests: null });
-          continue;
-        }
-      }
-      const diff = gitDiff(input.root, edits.map((e) => e.path));
-      restore();
-      if (!diff.trim()) {
-        feedback.push({ attempt: attempts, codes: ["TEST_FAIL"], failing, tests: null });
-        continue;
-      }
-      return { status: "diff", diff, attempts, expectations };
+  for (;;) {
+    const proposal = proposer.next({ files, attempt: attempts + 1, feedback, baseline: null });
+    if ("refuse" in proposal) return { status: "cant", reason: "CANT_DO_YET_NO_VERIFY", attempts };
+    if (attempts >= cap) return { status: "cant", reason: "CANT_DO_YET_CAP", attempts };
+    const edits = proposal.edits.filter((e) => original.has(e.path));
+    attempts += 1;
+    if (edits.length === 0) {
+      feedback.push({ attempt: attempts, codes: ["TEST_FAIL"], failing, tests: null });
+      continue;
     }
-  } finally {
-    restore();
+    for (const edit of edits) writeFileSync(join(input.root, edit.path), edit.content);
+    const again = runSandboxed(input, input.testCommand);
+    if (again.blocked) return { status: "blocked", reason: again.blocked, attempts };
+    if (again.code !== 0) {
+      resetAttempt(input);
+      feedback.push({ attempt: attempts, codes: ["TEST_FAIL"], failing, tests: null });
+      continue;
+    }
+    const suite = input.originalSuite ? originalSuiteArgv(input.testCommand, input.testFile, input.originalSuite, related) : null;
+    if (suite) {
+      const ran = runSandboxed(input, suite);
+      if (ran.blocked) return { status: "blocked", reason: ran.blocked, attempts };
+      if (ran.code !== 0) {
+        resetAttempt(input);
+        feedback.push({ attempt: attempts, codes: ["TEST_FAIL"], failing, tests: null });
+        continue;
+      }
+    }
+    const diff = gitDiff(input.root, edits.map((e) => e.path));
+    resetAttempt(input);
+    if (!diff.trim()) {
+      feedback.push({ attempt: attempts, codes: ["TEST_FAIL"], failing, tests: null });
+      continue;
+    }
+    return { status: "diff", diff, attempts, expectations };
   }
 }
