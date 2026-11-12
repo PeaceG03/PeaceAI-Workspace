@@ -323,7 +323,24 @@ export function readJsonl(path: string, evalLabels = false): { text: string; lab
 
 // ---- parsing
 
-export type Refusal = "EMPTY" | "NO_MODEL" | "NO_FAMILY" | "AMBIGUOUS" | "NOT_SUPPORTED" | "RULE_NOT_APPROVED" | "WIDENS" | "PARTIAL_PLAN" | "TOO_MANY_STEPS" | "BAD_VALUE";
+export type Refusal = "EMPTY" | "NO_MODEL" | "NO_FAMILY" | "AMBIGUOUS" | "NOT_SUPPORTED" | "RULE_NOT_APPROVED" | "WIDENS" | "PARTIAL_PLAN" | "TOO_MANY_STEPS" | "BAD_VALUE" | "SELF_CHANGE";
+
+/**
+ * PeaceAI's own tooling, same cues as requestfamily.ts `selfChangeRequest`. Kept here so nlparse does not
+ * import that module: nlparse is in the protected import closure, and a new import would enter the never-zone.
+ */
+const OWN_TOOLING: readonly RegExp[] = [
+  /\bself[- ]changes?\b/i,
+  /\bPEACEAI_SELF_CHANGE\b/,
+  /\bbuilder-log\b/i,
+  /\bteach PeaceAI\b/i,
+  /\bnever-zone\b/i,
+  /\bsafe zone\b/i,
+  /\bapprove-rule\b/i,
+  /\bpeaceai\/(?:bin|lib|rules|model)\//i,
+  /\bpeaceai\/self\//i,
+];
+const ownTooling = (text: string) => OWN_TOOLING.some((re) => re.test(text));
 export type ParseResult =
   | { status: "canonical"; objective: string }
   | { status: "parsed"; objective: string; steps: { family: Family; text: string }[]; withTests: boolean }
@@ -419,7 +436,12 @@ export function parseTask(task: { title: string; body: string }, opts: ParseOpti
   for (const c of parts) {
     if (TEST_ONLY.test(c)) { if (steps.length === 0) return { status: "unsure", reason: "PARTIAL_PLAN", hint: null }; testAfter[steps.length - 1] = true; withTests = true; continue; }
     const d = decide(c, opts);
-    if ("refuse" in d) return { status: "unsure", reason: parts.length > 1 && steps.length > 0 ? "PARTIAL_PLAN" : d.refuse, hint: d.hint };
+    if ("refuse" in d) {
+      const reason = parts.length > 1 && steps.length > 0 ? "PARTIAL_PLAN" : d.refuse;
+      // Own tooling is a precise refusal. An edit grammar that already matched is left alone.
+      if ((reason === "NO_FAMILY" || reason === "NOT_SUPPORTED") && ownTooling(source)) return { status: "unsure", reason: "SELF_CHANGE", hint: null };
+      return { status: "unsure", reason, hint: d.hint };
+    }
     steps.push({ family: d.family, text: d.text });
     if (d.withTests) { testAfter[steps.length - 1] = true; withTests = true; }
   }
@@ -464,6 +486,7 @@ const REASON_TEXT: Record<Refusal, string> = {
   PARTIAL_PLAN: "At least one step couldn't be parsed, and a partial plan is never run.",
   TOO_MANY_STEPS: `Plans can have at most ${MAX_PLAN_STEPS} steps.`,
   BAD_VALUE: "A value in the task doesn't fit the edit it asks for.",
+  SELF_CHANGE: "This asks for a change to PeaceAI's own tooling, which this parser does not run as an edit.",
 };
 /** The comment posted when the parser is unsure. Fixed strings and the static phrasing list only. */
 export function refusalComment(reason: Refusal, hint: Family | null): string {

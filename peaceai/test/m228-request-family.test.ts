@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
-import { canonicalRequest, guessFamily, heldOutRow, scoreFamilies, thresholdOnDev, trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
+import { canonicalRequest, guessFamily, heldOutRow, scoreFamilies, selfChangeRequest, thresholdOnDev, trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
 
 const log = readFileSync(resolve(import.meta.dirname, "../../builder-log/tasks.jsonl"), "utf8");
 const rows: FamilyRow[] = log.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l) as FamilyRow);
@@ -49,7 +49,7 @@ test("an ordinary sentence does not pick a family, and dev accepted answers are 
     TEST_CASE_APPEND: "append a test",
     TEST_CASE: "regression tests",
     METHOD_GUARD: "with a method",
-    THROW_GUARD: "guard",
+    THROW_GUARD: "guard the door: throw",
     ENV_FIX: "environment variable",
     IMPORT_EDIT: "import",
     DERIVE_FROM_BEHAVIOR: "derive",
@@ -86,7 +86,22 @@ test("an ordinary sentence does not pick a family, and dev accepted answers are 
   assert.ok(dev.correct > 0);
 });
 
+test("a throw line, a date function and a self-change each take one route", () => {
+  const model = trainRequestModel(rows);
+  assert.equal(guessFamily(model, "guard total in src/cart.ts: throw NEGATIVE_VALUE when n < 0").family, "THROW_GUARD");
+  assert.equal(guessFamily(model, "add date function dayKey(d: Date): string to src/cart.ts").family, "COMPLEX_FUNCTION");
+  assert.equal(guessFamily(model, "add function pad(n: number): string to src/cart.ts returning String(n)").family, "ADD_FUNCTION");
+  const own = guessFamily(model, "Teach PeaceAI a self-change of the never-zone");
+  assert.equal(own.family, null);
+  assert.equal(own.refusal, "SELF_CHANGE");
+  assert.equal(selfChangeRequest("please guard total in src/cart.ts: throw NEGATIVE_VALUE when n < 0"), false);
+  for (const sentence of ["Update the builder-log figure", "The never-zone stays closed", "Record the safe zone flag", "approve-rule the proposal", "Edit peaceai/lib/cart.ts", "Edit peaceai/self/notes.json", "PEACEAI_SELF_CHANGE stays protected"]) {
+    assert.equal(selfChangeRequest(sentence), true, sentence);
+  }
+});
+
 test("held-out is scored only after the cues are frozen", () => {
   const held = scoreFamilies(trainRequestModel(rows), rows, true);
-  assert.deepEqual(held, { rows: 39, correct: 16, wrong: 0, refused: 23 });
+  assert.equal(held.wrong, 0);
+  assert.deepEqual(held, { rows: 39, correct: 17, wrong: 0, refused: 22 });
 });

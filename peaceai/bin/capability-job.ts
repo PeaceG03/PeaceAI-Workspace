@@ -14,8 +14,8 @@ import { LOG_PATH, type Entry } from "../../builder-log/check.ts";
 import { makeGitOnMainChecker, denverYmd } from "../../builder-log/coverage.ts";
 import { parseLogEntries } from "../../builder-log/coverage.ts";
 import { buildCapabilityReport, inputDigest, type ReplayBind } from "../lib/capabilityreport.ts";
-import { CORE_ENTRY, adoptIssueBody, boundReplay, citedIssue, classifyJobOutput, commitRef, landingParent, replayIssueTitle, type CommitRef } from "../lib/capabilityjob.ts";
-import { canonicalRequest, guessFamily, scoreFamilies, trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
+import { CORE_ENTRY, boundReplay, citedIssue, classifyJobOutput, commitRef, landingParent, replayIssueTitle, routeReplay, type CommitRef } from "../lib/capabilityjob.ts";
+import { scoreFamilies, trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
 
 const ROW_MS = 45_000;
 
@@ -288,20 +288,14 @@ function main(): void {
     let rec;
     if ("reason" in target) rec = boundReplay(r.seq, "unmeasured", target.reason, bind);
     else {
-      const g = guessFamily(model, asked);
-      if (g.none) rec = boundReplay(r.seq, "fail", "NOT_CODE_FAMILY", bind);
-      else if (!g.family) rec = boundReplay(r.seq, "fail", "CLASSIFIER_UNSURE", bind);
+      const cited = citedIssue(asked);
+      const raw = cited ? issueBody(cited) : null;
+      const route = routeReplay({ model, asked, changed, issueBody: raw, seq: r.seq });
+      if ("fail" in route) rec = boundReplay(r.seq, "fail", route.fail, bind);
+      else if (buildError || !bundle) rec = boundReplay(r.seq, "unmeasured", buildError ?? "KERNEL_MISSING", bind);
       else {
-        const canon = canonicalRequest(g.family, asked);
-        if (!canon) rec = boundReplay(r.seq, "fail", `NO_SLOTS: ${g.family}`, bind);
-        else if (buildError || !bundle) rec = boundReplay(r.seq, "unmeasured", buildError ?? "KERNEL_MISSING", bind);
-        else {
-          const n = g.family === "TEST_CASE_EXISTING" ? citedIssue(asked) : null;
-          const raw = n ? issueBody(n) : null;
-          const adopted = raw ? adoptIssueBody(asked, raw, r.seq) : null;
-          const ran = runOne(repo, bundle, target, adopted ?? canon, r.seq, "error" in built ? "" : built.coreDir);
-          rec = boundReplay(r.seq, ran.status, ran.reason, bind);
-        }
+        const ran = runOne(repo, bundle, target, route.run, r.seq, "error" in built ? "" : built.coreDir);
+        rec = boundReplay(r.seq, ran.status, ran.reason, bind);
       }
     }
     console.log(`row ${r.seq} ${rec.status} ${rec.reason}`);
