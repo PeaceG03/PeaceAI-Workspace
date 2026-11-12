@@ -435,8 +435,9 @@ test("a fresh clone with no node_modules is installed from the pinned base and t
     }, cache, { npm: false, pnpm: false, yarn: false }, false);
     assert.equal(again.modules, installed.modules);
     assert.equal(readdirSync(join(cache, "installs")).length, 1);
+    if (!bwrapHere()) return;
     const ran = runInPracticeSandbox(fresh, [node, "--test", "add.test.js"], 20_000, { capture: true, nodePath: node, nodeModules: installed.modules });
-    assert.equal(ran.unsafe, false, ran.stdout);
+    assert.equal(ran.unsafe, false, ran.stdout || "sandbox did not start");
     assert.equal(ran.code, 0, ran.stdout);
   } finally {
     rmSync(origin, { recursive: true, force: true });
