@@ -227,10 +227,10 @@ test("install logs hide a home directory, and a fingerprint includes the lockfil
     rmSync(home, { recursive: true, force: true });
   }
   const mine = read("peaceai/bin/practice-mine.ts");
-  const installFn = mine.slice(mine.indexOf("function install("), mine.indexOf("function runTest("));
-  assert.equal(installFn.includes("installEnv("), true);
-  assert.equal(installFn.includes("mkdtempSync("), true);
-  assert.equal(installFn.includes("scrubEnv("), false);
+  const mineFn = mine.slice(mine.indexOf("function mineRepo("), mine.indexOf("function linkModules("));
+  assert.equal(mineFn.includes("reverifyRepo("), true);
+  assert.equal(mine.includes("scrubEnv("), false);
+  assert.equal(mine.includes("npm install"), false);
   const body = ensurePracticeInstall.toString();
   assert.equal(body.includes("SANDBOX_RAN"), true);
   assert.equal(body.includes("is not in the base commit"), false);
@@ -267,6 +267,17 @@ test("the sandbox argv covers a .git file with a file and mounts node_modules re
     assert.equal(lstatSync(argv[gitAt - 1]!).isFile(), true);
     const modulesAt = argv.lastIndexOf(join(dir, "node_modules"));
     assert.equal(argv[modulesAt - 2], "--ro-bind");
+    rmSync(join(dir, "node_modules"), { recursive: true, force: true });
+    const outside = mkdtempSync(join(tmpdir(), "practice-nm-"));
+    try {
+      spawnSync("ln", ["-s", outside, join(dir, "node_modules")], { stdio: "ignore" });
+      const linked = practiceSandboxArgv(dir, { nodePath: node, nodeModules: join(dir, "node_modules") });
+      assert.ok(linked);
+      const realAt = linked.indexOf(outside);
+      assert.equal(linked[realAt - 1], "--ro-bind");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

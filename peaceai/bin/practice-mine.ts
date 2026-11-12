@@ -1,19 +1,18 @@
 // Mixed practice miner. credit: false.
 //   tsx peaceai/bin/practice-mine.ts --manifest practice/manifest.json --out practice/pairs.jsonl --work <dir outside this repo>
 // Checks the root LICENSE at the pinned commit and keeps MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, and ISC.
-// A pair is a non-merge commit that changes at least one non-test source and exactly one test file,
-// whose test fails at the parent with that test file applied and passes at the fix.
+// A pair is a non-merge commit that changes at least one non-test source and exactly one test file.
+// It is admitted only by the replay path: a frozen install of the base, then the sandbox test,
+// which must fail before the fix and pass after. A fix that changes dependencies is not admitted.
 // Tests run inside an allowlist bubblewrap: /usr, /bin, /lib*, a minimal /etc, the node binary,
 // the work tree, and a read-only node_modules. .git is not writable. If bwrap cannot build that
 // sandbox, tests are not run and the report says UNSAFE_ENV. There is no unshare fallback.
 // Installs may use the network and always pass --ignore-scripts. Third-party source is not committed.
-import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  ENV_ALLOW, GIT_LOCK_ARGS, currentToolchain, diffChangesDeps, ensurePracticeInstall, installArgv, installEnv, isOwnerRepo, isTestFile, keptLicense, pairFiles, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, testCommandFor, visibleNodeBin, yarnIsModern,
+  ENV_ALLOW, GIT_LOCK_ARGS, currentToolchain, diffChangesDeps, ensurePracticeInstall, isOwnerRepo, isTestFile, keptLicense, pairFiles, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, testCommandFor, visibleNodeBin, yarnIsModern,
   type LockFiles, type NameStatus, type PkgJson, type PracticeLicense, type PracticeManifest, type PracticePair, type PracticeRepo,
   LICENSE_FILES, MINE_REPORT_SCHEMA,
 } from "../lib/practicemine.ts";
@@ -22,7 +21,6 @@ const ATTEMPTS_PER_REPO = 80;
 const KEEP_PER_REPO = 20;
 const KEEP_TOTAL = 100;
 const TEST_MS = 45_000;
-const INSTALL_MS = 180_000;
 
 const USAGE = "usage: practice-mine.ts --manifest <file> --out <pairs.jsonl> --work <dir> [--report <file>] [--clones <dir>] [--only owner/repo] [--append]";
 
@@ -98,15 +96,6 @@ function hasDeps(pkg: PkgJson): boolean {
   return Object.keys(pkg.dependencies ?? {}).length + Object.keys(pkg.devDependencies ?? {}).length > 0;
 }
 
-function fingerprint(dir: string): string {
-  const hash = createHash("sha256");
-  for (const name of ["package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock"]) {
-    hash.update(name);
-    hash.update(existsSync(join(dir, name)) ? readFileSync(join(dir, name)) : "");
-  }
-  return hash.digest("hex");
-}
-
 function checkout(dir: string, rev: string): boolean {
   return git(dir, ["-c", "advice.detachedHead=false", "checkout", "-f", "--detach", rev], 120_000).ok;
 }
@@ -114,28 +103,6 @@ function checkout(dir: string, rev: string): boolean {
 function applyTest(dir: string, fix: string, testFile: string): boolean {
   if (!isTestFile(testFile)) return false;
   return git(dir, ["checkout", fix, "--", testFile]).ok;
-}
-
-let installed = "";
-
-function install(dir: string, locks: LockFiles, deps: boolean, modernYarn: boolean): boolean {
-  const argv = installArgv(locks, deps, modernYarn);
-  const fp = fingerprint(dir);
-  if (!argv) { installed = fp; return true; }
-  if (installed === fp && existsSync(join(dir, "node_modules"))) return true;
-  const home = mkdtempSync(join(tmpdir(), "peaceai-mine-home-"));
-  const env = installEnv(visibleNodeBin() ?? "/usr/bin/node", home, join(home, "store"), locks.pnpm ? "pnpm" : locks.yarn ? "yarn" : "npm");
-  const ran = spawnSync(argv[0]!, argv.slice(1), { cwd: dir, env, timeout: INSTALL_MS, stdio: "ignore" });
-  rmSync(home, { recursive: true, force: true });
-  if (ran.status !== 0 && argv[0] === "npm" && argv[1] === "ci") {
-    const home2 = mkdtempSync(join(tmpdir(), "peaceai-mine-home-"));
-    const env2 = installEnv(visibleNodeBin() ?? "/usr/bin/node", home2, join(home2, "store"), "npm");
-    const fallback = spawnSync("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: dir, env: env2, timeout: INSTALL_MS, stdio: "ignore" });
-    rmSync(home2, { recursive: true, force: true });
-    if (fallback.status !== 0) return false;
-  } else if (ran.status !== 0) return false;
-  installed = fp;
-  return true;
 }
 
 function runTest(dir: string, cmd: string[], nodePath: string): { code: number | null; poison: string[]; clean: boolean } {
@@ -181,7 +148,7 @@ function readPairs(path: string): PracticePair[] {
   return rows;
 }
 
-function mineRepo(repo: PracticeRepo, dir: string, sandbox: boolean, pairs: PracticePair[], seen: Set<string>, totalCap: { n: number }, flush: () => void): RepoReport {
+function mineRepo(repo: PracticeRepo, dir: string, sandbox: boolean, pairs: PracticePair[], seen: Set<string>, totalCap: { n: number }, flush: () => void, cache: string): RepoReport {
   const report: RepoReport = { name: repo.name, split: repo.split, candidates: 0, attempts: 0, kept: 0, reason: null };
   const head = git(dir, ["rev-parse", repo.commit]);
   if (!head.ok || head.out.trim() !== repo.commit) {
@@ -212,7 +179,6 @@ function mineRepo(repo: PracticeRepo, dir: string, sandbox: boolean, pairs: Prac
   if (!sandbox) { report.reason = "UNSAFE_ENV"; return report; }
   const nodePath = visibleNodeBin();
   if (!nodePath) { report.reason = "TOOLCHAIN_MISSING"; return report; }
-  installed = "";
   for (const candidate of found) {
     if (report.kept >= KEEP_PER_REPO || report.attempts >= ATTEMPTS_PER_REPO || totalCap.n >= KEEP_TOTAL) break;
     if (!candidate.subject) continue;
@@ -226,33 +192,20 @@ function mineRepo(repo: PracticeRepo, dir: string, sandbox: boolean, pairs: Prac
     const toolchain = currentToolchain(manager);
     if (!toolchain || toolchain.nodePath !== nodePath) continue;
     report.attempts++;
-    if (!checkout(dir, candidate.fix)) continue;
-    if (!install(dir, locks, hasDeps(pkg), yarnIsModern(pkg))) continue;
-    const after = runTest(dir, command, nodePath);
-    if (!after.clean) { report.reason = "SANDBOX_CLEAN_FAILED"; return report; }
-    if (after.poison.length) { console.log(`poison ${repo.name} ${after.poison[0]}`); continue; }
-    if (after.code !== 0) continue;
-    const baseLocks = locksAt(dir, candidate.base);
-    const basePkg = pkgAt(dir, candidate.base);
-    if (!checkout(dir, candidate.base)) continue;
-    if (!applyTest(dir, candidate.fix, candidate.testFile)) continue;
-    if (!install(dir, baseLocks, basePkg ? hasDeps(basePkg) : true, yarnIsModern(basePkg))) continue;
-    const before = runTest(dir, command, nodePath);
-    if (!before.clean) { report.reason = "SANDBOX_CLEAN_FAILED"; return report; }
-    if (before.poison.length) { console.log(`poison ${repo.name} ${before.poison[0]}`); continue; }
-    if (before.code === null || before.code === 0) continue;
-    const pair: PracticePair = {
+    const draft: PracticePair = {
       schema: "peaceai-practice-pair:v1", credit: false, repo: repo.name, license, split: repo.split,
       baseSha: candidate.base, fixSha: candidate.fix, testFile: candidate.testFile, testCommand: command,
-      beforeExit: before.code, afterExit: after.code, files: candidate.files, subject: candidate.subject, toolchain,
+      beforeExit: 1, afterExit: 0, files: candidate.files, subject: candidate.subject, toolchain,
     };
-    if (pairProblems(pair).length) continue;
+    const admitted = reverifyRepo(repo, dir, [draft], cache);
+    if (admitted.reason) { report.reason = admitted.reason; return report; }
+    const pair = admitted.kept[0];
+    if (!pair) continue;
     pairs.push(pair);
     seen.add(`${repo.name}\t${candidate.fix}`);
     report.kept++;
     totalCap.n++;
     flush();
-    console.log(`kept ${repo.name} ${candidate.fix} before=${before} after=${after}`);
   }
   return report;
 }
@@ -413,7 +366,7 @@ function main(): void {
       console.log(`skip ${repo.name} CLONE_FAILED`);
       continue;
     }
-    const report = mineRepo(repo, dir, sandbox, pairs, seen, total, flush);
+    const report = mineRepo(repo, dir, sandbox, pairs, seen, total, flush, join(work, "install-cache"));
     reports.push(report);
     console.log(`repo ${repo.name} split=${repo.split} candidates=${report.candidates} attempts=${report.attempts} kept=${report.kept} reason=${report.reason ?? "ok"}`);
   }
