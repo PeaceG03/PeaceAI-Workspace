@@ -52,9 +52,9 @@ test("the test command is an argv for one file, and install hooks are ignored", 
 });
 
 test("third-party env is an allowlist, and network isolation is refused when unshare cannot build a net namespace", () => {
-  const env = scrubEnv({ PATH: "/usr/bin", HOME: "/home/me", GH_TOKEN: "secret", GITHUB_TOKEN: "secret", AWS_SECRET_ACCESS_KEY: "secret", NPM_TOKEN: "secret", NODE_OPTIONS: "--require pwn" }, "/work");
+  const env = scrubEnv({ PATH: "/usr/bin", HOME: "/home/user", GH_TOKEN: "secret", GITHUB_TOKEN: "secret", AWS_SECRET_ACCESS_KEY: "secret", NPM_TOKEN: "secret", NODE_OPTIONS: "--require pwn" }, "/work");
   assert.equal(env.PATH, "/usr/bin");
-  assert.equal(env.HOME, "/home/me");
+  assert.equal(env.HOME, "/home/user");
   assert.equal(env.PWD, "/work");
   assert.equal(env.GH_TOKEN, undefined);
   assert.equal(env.GITHUB_TOKEN, undefined);
