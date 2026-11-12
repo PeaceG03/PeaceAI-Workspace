@@ -10,16 +10,17 @@
 // candidate and passes after it. Unmeasured is never a pass.
 // A repo that targets.json does not name is UNMEASURED GATE_NO_TARGET. gate.ts and scope.ts are not edited.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
 import { GIT_LOCK_ARGS, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, type PracticePair } from "../lib/practicemine.ts";
 import {
-  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, targetIsScorable,
+  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, publishedFit, replayDocument, targetIsScorable,
   type GradedRow, type Understanding,
 } from "../lib/practicereplay.ts";
-import { runTestSpec } from "../lib/testspec.ts";
+import { gradeBehavior, type BehaviorGrade } from "../lib/specgrade.ts";
+import { runTestSpec, type SpecResult } from "../lib/testspec.ts";
 import { loadTargets } from "../lib/target.ts";
 import { pinnedKernel, readCorePin } from "./capability-job.ts";
 
@@ -160,6 +161,37 @@ function blank(pair: PracticePair, understanding: Understanding): Pick<GradedRow
  * with the pair's recorded node. A source diff from repair-v2 then uses the same gate.
  * Nothing is pushed.
  */
+/** The fix's symbol is loaded only here, after the solver has already returned. The solver never sees it. */
+function gradeCandidateBehavior(repoDir: string, dir: string, pair: PracticePair, spec: Extract<SpecResult, { status: "diff" }>): BehaviorGrade {
+  const fixDir = mkdtempSync(join(tmpdir(), "peaceai-practice-fix-"));
+  const unavailable = (): BehaviorGrade => ({ behavior: "diff_unavailable", compared: 0 });
+  let grade = unavailable();
+  try {
+    const added = spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "worktree", "add", "--detach", "--quiet", fixDir, pair.fixSha], { env: practiceGitEnv(), stdio: "ignore", timeout: 60_000 });
+    if (added.status !== 0 || !spec.fit.targets.length) return grade;
+    linkModules(repoDir, fixDir);
+    const linked = join(dir, "node_modules");
+    if (existsSync(linked) && !existsSync(join(fixDir, "node_modules"))) symlinkSync(linked, join(fixDir, "node_modules"));
+    const applied = spawnSync("git", ["-C", dir, ...GIT_LOCK_ARGS, "apply", "--whitespace=nowarn", "-"], { input: spec.diff, encoding: "utf8", env: practiceGitEnv(), stdio: ["pipe", "ignore", "ignore"] });
+    if (applied.status !== 0) return grade;
+    const modules = existsSync(linked) ? linked : null;
+    grade = { behavior: "verified_strict", compared: 0 };
+    for (const target of spec.fit.targets) {
+      const one = gradeBehavior({ candidateRoot: dir, fixRoot: fixDir, target, nodePath: pair.toolchain.nodePath, nodeModules: modules });
+      grade = { behavior: one.behavior, compared: grade.compared + one.compared, ...(one.counterexample ? { counterexample: one.counterexample } : {}) };
+      if (one.behavior !== "verified_strict") break;
+    }
+    return grade;
+  } finally {
+    spawnSync("git", ["-C", dir, ...GIT_LOCK_ARGS, "checkout", "-f"], { env: practiceGitEnv(), stdio: "ignore" });
+    spawnSync("git", ["-C", dir, ...GIT_LOCK_ARGS, "clean", "-fd"], { env: practiceGitEnv(), stdio: "ignore" });
+    linkModules(repoDir, dir);
+    spawnSync("git", ["-C", dir, ...GIT_LOCK_ARGS, "checkout", pair.fixSha, "--", pair.testFile], { env: practiceGitEnv(), stdio: "ignore" });
+    spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "worktree", "remove", "--force", fixDir], { env: practiceGitEnv(), stdio: "ignore" });
+    rmSync(fixDir, { recursive: true, force: true });
+  }
+}
+
 function specOne(tooling: string, coreDir: string, repoDir: string, pair: PracticePair): GradedRow {
   const form = blank(pair, "test-as-spec");
   const outDir = mkdtempSync(join(tmpdir(), "peaceai-practice-spec-"));
@@ -189,6 +221,14 @@ function specOne(tooling: string, coreDir: string, repoDir: string, pair: Practi
     });
     if (spec.status === "blocked") return { ...unmeasured(spec.reason), diagnostic: spec.diagnostic };
     if (spec.status === "cant") return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "fail", reason: spec.reason }, gatePass: false, beforeExit: null, afterExit: null }), diagnostic: spec.diagnostic };
+    const checked = gradeCandidateBehavior(repoDir, dir, pair, spec);
+    const fit = {
+      shape: spec.fit.shape, examples: spec.fit.examples, behavior: checked.behavior, diff: spec.diff,
+      ...(checked.counterexample ? { counterexample: checked.counterexample } : {}),
+    };
+    if (checked.behavior !== "verified_strict") {
+      return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: 1, afterExit: 0, behavior: checked.behavior }), diagnostic: spec.diagnostic, fit };
+    }
     mkdirSync(join(outDir, "candidates"), { recursive: true });
     writeFileSync(join(outDir, "candidates", "candidate-1.diff"), spec.diff);
     const diffLines = spec.diff.split("\n").filter((line) => /^[+-](?![+-]{2} )/.test(line)).length;
@@ -204,9 +244,9 @@ function specOne(tooling: string, coreDir: string, repoDir: string, pair: Practi
     });
     const gateOut = `${gated.stdout ?? ""}\n${gated.stderr ?? ""}`;
     const gatePass = gated.status === 0 && /GATE PASS/.test(gateOut);
-    if (!gatePass) return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: false, beforeExit: null, afterExit: null }) };
+    if (!gatePass) return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: false, beforeExit: null, afterExit: null, behavior: "verified_strict" }), diagnostic: spec.diagnostic, fit };
     const graded = gradeCandidate(repoDir, pair, spec.diff);
-    return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: graded.beforeExit, afterExit: graded.afterExit }) };
+    return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: graded.beforeExit, afterExit: graded.afterExit, behavior: "verified_strict" }), diagnostic: spec.diagnostic, fit };
   } finally {
     spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "worktree", "remove", "--force", dir], { env: practiceGitEnv(), stdio: "ignore" });
     rmSync(dir, { recursive: true, force: true });
@@ -278,15 +318,23 @@ function main(): void {
   const doc = replayDocument(graded);
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, "replay.json"), JSON.stringify(doc, null, 2) + "\n");
-  const gaps = graded.filter((row) => row.gap).map((row) => JSON.stringify({
-    repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason,
-    ...(row.diagnostic ? { diagnostic: row.diagnostic } : {}),
-  }));
+  const gaps = graded.filter((row) => row.gap || row.fit).map((row) => {
+    const fit = publishedFit(row);
+    return JSON.stringify({
+      repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason,
+      ...(row.diagnostic ? { diagnostic: row.diagnostic } : {}),
+      ...(fit ? { shape: fit.shape, examples: fit.examples, behavior: fit.behavior, ...(fit.diff ? { diff: fit.diff } : {}), ...(fit.counterexample ? { counterexample: fit.counterexample } : {}) } : {}),
+    });
+  });
   writeFileSync(join(out, "gaps.jsonl"), gaps.join("\n") + (gaps.length ? "\n" : ""));
   console.log("experimental credit=false");
   if (graded.some((row) => row.reason === "GATE_NO_TARGET")) {
     console.log(`protectedFunction=${PROTECTED_GATE_FUNCTION} protectedFile=${PROTECTED_GATE_FILE}`);
     console.log(PROTECTED_GATE_WHY);
+  }
+  for (const split of ["dev", "held-out"] as const) {
+    const behavior = doc.behavior[split];
+    console.log(`${split} behavior strict=${behavior.verified_strict} test_only=${behavior.verified_test_only} unavailable=${behavior.diff_unavailable}`);
   }
   for (const understanding of ["text", "test-as-spec"] as const) {
     for (const split of ["dev", "held-out"] as const) {

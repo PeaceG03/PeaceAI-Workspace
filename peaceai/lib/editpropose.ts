@@ -41,7 +41,7 @@ export interface RepairInput { files: readonly { path: string; content: string }
 /** M190: `failing` feeds localisation (node:test names only); `baseFailing` (when given) is the baseline's failing test
  *  names for the outcome evidence (M178 / M179 / M191), vitest / jest names included. */
 export interface PrepareInput { request: string; failing: readonly string[]; baseFailing?: readonly string[] }
-export type RepairProposal = { edits: RepairEdit[] } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };
+export type RepairProposal = { edits: RepairEdit[]; kind?: string } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };
 
 export const REPAIR_PROPOSER = "repair-v1";
 export const REPAIR_PROPOSER_V2 = "repair-v2";
@@ -1403,6 +1403,11 @@ export interface RepairOptions { name?: string; order?: (queue: readonly Candida
  * The general repair proposer (repair-v1). prepare() is called once per task by the loop with the search tools on the
  * pinned commit (no team tests) and the baseline's failing test names (node:test only; [] for vitest / jest).
  */
+function editKind(candidate: Candidate): string {
+  const names = [...new Set(candidate.muts.map((mut) => mut.template))];
+  return names.join("+") || "repair";
+}
+
 export function repairProposer(opts: RepairOptions = {}): { name: string; readonly loadRepair: boolean; prepare(search: CodeRepo, input: PrepareInput): void; next(input: RepairInput): RepairProposal } {
   let sites: Site[] | null = null;
   let queue: Candidate[] | null = null;
@@ -1427,7 +1432,7 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
         // a suite that did not load: only load-repair candidates, one per attempt (the other templates have no signal)
         if (!loadQueue) { loadQueue = loadCandidates(input.loadDiagnostics, new Map(input.files.map((f) => [f.path, f.content] as const))); if (loadQueue.length === 0) return { refuse: "NO_EDIT" }; }
         const pick = loadQueue.shift();
-        return pick ? { edits: pick.edits } : { refuse: "NO_MORE_EDITS" };
+        return pick ? { edits: pick.edits, kind: editKind(pick) } : { refuse: "NO_MORE_EDITS" };
       }
       if (opts.order && !queue && (!sites || sites.length === 0)) { queue = opts.order([]); } // M167: the ranking must hold for "nothing located" too
       if (!sites || sites.length === 0) return { refuse: "NO_EDIT" }; // nothing the request names was located: no edit anywhere
@@ -1510,7 +1515,7 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
       if (!pick) return { refuse: "NO_MORE_EDITS" };
       if (pick.anchored) seen.add(pick.key);
       tried.push(pick);
-      return { edits: pick.edits };
+      return { edits: pick.edits, kind: editKind(pick) };
     },
   };
 }

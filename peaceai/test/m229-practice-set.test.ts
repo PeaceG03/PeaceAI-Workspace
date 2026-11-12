@@ -437,7 +437,26 @@ test("replay passes only on GATE PASS plus a failing-then-passing test, and an u
   assert.equal(doc.counts.text.dev.pass, 1);
   assert.equal(doc.counts["test-as-spec"].dev.pass, 0);
   assert.equal(doc.rows[0]?.understanding, "text");
-  assert.equal(JSON.stringify(doc).includes("diff"), false);
+  assert.equal(doc.rows.filter((row) => row.split !== "dev").every((row) => !("diff" in row) && !("counterexample" in row)), true);
+  const heldFit = replayDocument([{
+    repo: "sindresorhus/is", split: "held-out", fixSha: "e".repeat(40), status: "fail", reason: "VERIFIED_TEST_ONLY", gap: true, understanding: "test-as-spec",
+    fit: { shape: "literal", examples: 1, behavior: "verified_test_only", diff: "--- a/src/a.ts\n+++ b/src/a.ts\n", counterexample: { args: "[1]", candidate: "4", fix: "2" } },
+  }]);
+  assert.equal(heldFit.rows[0]?.shape, "literal");
+  assert.equal(heldFit.rows[0]?.examples, 1);
+  assert.equal("diff" in (heldFit.rows[0] ?? {}), false);
+  assert.equal("counterexample" in (heldFit.rows[0] ?? {}), false);
+  const devFit = replayDocument([{
+    repo: "PeaceG03/PeaceSTOCKS", split: "dev", fixSha: "f".repeat(40), status: "fail", reason: "VERIFIED_TEST_ONLY", gap: true, understanding: "test-as-spec",
+    fit: { shape: "comparison", examples: 2, behavior: "verified_test_only", diff: "--- a/src/a.ts\n+++ b/src/a.ts\n", counterexample: { args: "[0]", candidate: "true", fix: "false" } },
+  }]);
+  assert.equal(devFit.rows[0]?.diff?.includes("src/a.ts"), true);
+  assert.equal(devFit.rows[0]?.counterexample?.args, "[0]");
+  assert.equal(gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: 1, afterExit: 0, behavior: "verified_test_only" }).reason, "VERIFIED_TEST_ONLY");
+  assert.equal(gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: 1, afterExit: 0, behavior: "diff_unavailable" }).status, "fail");
+  assert.equal(gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: 1, afterExit: 0, behavior: "verified_strict" }).status, "pass");
+  assert.equal(devFit.behavior.dev.verified_test_only, 1);
+  assert.equal(devFit.behavior.dev.verified_strict, 0);
   const counts = countBySplit(rows);
   assert.equal(counts["held-out"].reasons.GATE_NO_TARGET, 1);
   const spec = replayDocument([...rows, { repo: "sindresorhus/is", split: "dev", fixSha: "d".repeat(40), status: "fail", reason: "CANT_DO_YET_NO_SYMBOL", gap: true, understanding: "test-as-spec" }]);

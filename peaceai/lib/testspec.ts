@@ -95,8 +95,27 @@ export interface SpecInput {
 
 export type SpecBlock = "UNSAFE_ENV" | "SANDBOX_POISON";
 
+export type CallForm = "named" | "default" | "default-prop" | "named-prop";
+
+/** One symbol the candidate added or edited, and the concrete calls the body was fitted to. */
+export interface SpecTarget {
+  symbol: string;
+  file: string;
+  form: CallForm;
+  exportName: string;
+  prop?: string;
+  args: unknown[][];
+}
+
+/** What the solver fitted. The differential grade is not decided here. */
+export interface SpecFit {
+  shape: string;
+  examples: number;
+  targets: SpecTarget[];
+}
+
 export type SpecResult =
-  | { status: "diff"; diff: string; attempts: number; expectations: Expectation[]; diagnostic: SpecDiagnostic }
+  | { status: "diff"; diff: string; attempts: number; expectations: Expectation[]; diagnostic: SpecDiagnostic; fit: SpecFit }
   | { status: "cant"; reason: SpecCant; attempts: number; diagnostic: SpecDiagnostic }
   | { status: "blocked"; reason: SpecBlock; attempts: number; diagnostic: SpecDiagnostic };
 
@@ -371,7 +390,7 @@ export interface MissingSymbol {
 }
 
 export type ScaffoldPlan =
-  | { ok: true; files: { path: string; content: string }[]; symbols: MissingSymbol[]; expectations: Expectation[] }
+  | { ok: true; files: { path: string; content: string }[]; symbols: MissingSymbol[]; expectations: Expectation[]; fit: SpecFit }
   | { ok: false; reason: SpecCant; symbols: MissingSymbol[] };
 
 const PARAMS = ["a", "b", "c", "d", "e", "f"];
@@ -776,7 +795,10 @@ function renderReturn(parts: string[]): string {
 }
 
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string): { body: string; types: string[]; ret: string } | "signature" | "no-body" {
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "project", "sum", "split", "peer"] as const;
+export type BodyShape = (typeof BODY_SHAPES)[number];
+
+function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
   if (!calls.length) return "no-body";
   const arities = new Set(calls.map((call) => call.arity));
   if (arities.size !== 1) return "signature";
@@ -789,27 +811,27 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   if (!concrete.length || reduced.every((call) => call.reduced?.kind === "type")) return "no-body";
   const agree = (value: unknown) => reduced.every((call) => call.reduced?.kind !== "type" || ("expected" in call.reduced && call.reduced.expected === valueType(value)));
   const types = Array.from({ length: arity }, (_, i) => paramType(concrete.map((ex) => ex.args[i])));
-  const options: { body: string; ret: string }[] = [];
-  const keep = (body: string | null, ret: string) => { if (body && agree(concrete[0]!.expected)) options.push({ body, ret }); };
-  if (concrete.every((ex) => JSON.stringify(ex.expected) === JSON.stringify(concrete[0]!.expected))) keep(literalBody(concrete), resultType(concrete.map((ex) => ex.expected)));
-  keep(booleanBody(concrete), "boolean");
-  keep(typeofBody(concrete), resultType(concrete.map((ex) => ex.expected)));
+  const options: { body: string; ret: string; shape: BodyShape }[] = [];
+  const keep = (body: string | null, ret: string, shape: BodyShape) => { if (body && agree(concrete[0]!.expected)) options.push({ body, ret, shape }); };
+  if (concrete.every((ex) => JSON.stringify(ex.expected) === JSON.stringify(concrete[0]!.expected))) keep(literalBody(concrete), resultType(concrete.map((ex) => ex.expected)), "literal");
+  keep(booleanBody(concrete), "boolean", "boolean");
+  keep(typeofBody(concrete), resultType(concrete.map((ex) => ex.expected)), "typeof");
   const gaps = stringBody(concrete);
   if (gaps) {
     const parts: string[] = [];
     if (gaps[0]) parts.push(JSON.stringify(gaps[0]));
     PARAMS.slice(0, arity).forEach((name, i) => { parts.push(name); if (gaps[i + 1]) parts.push(JSON.stringify(gaps[i + 1])); });
-    keep(renderReturn(parts.length ? parts : ['""']), "string");
+    keep(renderReturn(parts.length ? parts : ['""']), "string", "string");
   }
-  keep(comparisonBody(concrete), "boolean");
-  keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)));
-  keep(sumBody(concrete), "number");
-  keep(splitBody(concrete), "string");
+  keep(comparisonBody(concrete), "boolean", "comparison");
+  keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");
+  keep(sumBody(concrete), "number", "sum");
+  keep(splitBody(concrete), "string", "split");
   const peersFit = peers.filter((peer) => peer.name !== symbol && peer.arity === arity);
-  if (peersFit.length === 1) keep(`  return ${peersFit[0]!.name}(${PARAMS.slice(0, arity).join(", ")});`, "unknown");
+  if (peersFit.length === 1) keep(`  return ${peersFit[0]!.name}(${PARAMS.slice(0, arity).join(", ")});`, "unknown", "peer");
   const unique = [...new Map(options.map((option) => [option.body, option])).values()];
   if (unique.length !== 1) return "no-body";
-  return { body: unique[0]!.body, types, ret: unique[0]!.ret };
+  return { body: unique[0]!.body, types, ret: unique[0]!.ret, shape: unique[0]!.shape };
 }
 
 function renderFunction(symbol: string, shape: MissingSymbol["shape"], built: { body: string; types: string[]; ret: string }): string {
@@ -914,6 +936,9 @@ export function scaffoldPlan(testFile: string, text: string, output: string, sou
   }
   const files: { path: string; content: string }[] = [];
   const expectations: Expectation[] = [];
+  const shapes: string[] = [];
+  const targets: SpecTarget[] = [];
+  let examples = 0;
   for (const [path, group] of byFile) {
     if (group.filter((want) => want.shape === "default").length > 1) return { ok: false, reason: "CANT_DO_YET_NO_BODY", symbols };
     if (group.some((want) => want.shape === "default") && group.some((want) => want.shape === "default-prop")) return { ok: false, reason: "CANT_DO_YET_NO_BODY", symbols };
@@ -926,6 +951,10 @@ export function scaffoldPlan(testFile: string, text: string, output: string, sou
       if (built === "signature") return { ok: false, reason: "CANT_DO_YET_SIGNATURE", symbols };
       if (built === "no-body") return { ok: false, reason: "CANT_DO_YET_NO_BODY", symbols };
       chunks.push(renderFunction(want.symbol, want.shape, built));
+      shapes.push(built.shape);
+      const fitted = fittedTarget(want.calls, want.symbol, path, want.shape);
+      examples += fitted.count;
+      targets.push(fitted.target);
       for (const call of want.calls) {
         if (!call.reduced || call.args === null || call.reduced.kind === "throws" || expectations.length >= 32) continue;
         expectations.push({
@@ -943,7 +972,28 @@ export function scaffoldPlan(testFile: string, text: string, output: string, sou
     const addition = chunks.join("\n");
     files.push({ path, content: existing === null ? addition : `${existing.endsWith("\n") ? existing : `${existing}\n`}\n${addition}` });
   }
-  return { ok: true, files, symbols, expectations };
+  const shape = [...new Set(shapes)].join("+") || "literal";
+  return { ok: true, files, symbols, expectations, fit: { shape, examples, targets } };
+}
+
+function fittedTarget(calls: CallFact[], symbol: string, file: string, form: MissingSymbol["shape"]): { count: number; target: SpecTarget } {
+  const seen = new Set<string>();
+  const argSeen = new Set<string>();
+  const args: unknown[][] = [];
+  for (const call of calls) {
+    if (!call.reduced || call.args === null || call.reduced.kind === "throws" || !("expected" in call.reduced)) continue;
+    const key = JSON.stringify({ a: call.args, e: call.reduced.expected });
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const argKey = JSON.stringify(call.args);
+    if (!argSeen.has(argKey)) { argSeen.add(argKey); args.push(call.args); }
+  }
+  const target: SpecTarget = form === "default-prop"
+    ? { symbol, file, form, exportName: "default", prop: symbol, args }
+    : form === "default"
+      ? { symbol, file, form, exportName: symbol, args }
+      : { symbol, file, form: "named", exportName: symbol, args };
+  return { count: seen.size, target };
 }
 
 function symbolTag(symbols: readonly MissingSymbol[]): { symbol: string; module: string } {
@@ -994,13 +1044,45 @@ function finishScaffold(input: SpecInput, output: string, code: number | null, c
   const diff = gitDiff(input.root, plan.files.map((file) => file.path));
   resetAttempt(input);
   if (!diff.trim()) return { status: "cant", reason: "CANT_DO_YET_NO_VERIFY", attempts: 1, diagnostic: note("missing_symbol", code, output) };
-  return { status: "diff", diff, attempts: 1, expectations: plan.expectations, diagnostic: note("verified", 0, output) };
+  return { status: "diff", diff, attempts: 1, expectations: plan.expectations, diagnostic: note("verified", 0, output), fit: plan.fit };
 }
 
 /**
  * Make the failing test pass. The proposer is repair-v2. Each attempt is one of its edits,
  * applied on the original sources, then the given test and the original suite.
  */
+function argsFromSnippet(input: string): unknown[] | null {
+  if (!input.trim()) return [];
+  const sf = ts.createSourceFile("call.ts", `f(${input})`, ts.ScriptTarget.Latest, true);
+  let found: ts.CallExpression | null = null;
+  const visit = (node: ts.Node) => { if (!found && ts.isCallExpression(node)) found = node; else ts.forEachChild(node, visit); };
+  visit(sf);
+  if (!found) return null;
+  const call: ts.CallExpression = found;
+  const args = call.arguments.map((arg) => evalConcrete(unwrap(arg)));
+  if (args.some((arg) => !arg.ok)) return null;
+  return args.map((arg) => arg.ok ? arg.value : null);
+}
+
+function repairFit(expectations: Expectation[], shape: string): SpecFit {
+  const seen = new Set<string>();
+  const by = new Map<string, SpecTarget>();
+  for (const row of expectations) {
+    const key = `${row.file}\0${row.symbol}\0${row.kind}\0${row.input}\0${row.expected}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const id = `${row.file}\0${row.symbol}`;
+    let target = by.get(id);
+    if (!target) {
+      target = { symbol: row.symbol, file: row.file, form: "named", exportName: row.symbol, args: [] };
+      by.set(id, target);
+    }
+    const args = argsFromSnippet(row.input);
+    if (args && !target.args.some((have) => JSON.stringify(have) === JSON.stringify(args))) target.args.push(args);
+  }
+  return { shape, examples: seen.size, targets: [...by.values()] };
+}
+
 export function runTestSpec(input: SpecInput): SpecResult {
   const cap = Math.min(SPEC_ATTEMPT_CAP, Math.max(1, Math.floor(input.maxAttempts ?? SPEC_ATTEMPT_CAP)));
   const deny = input.denyPatterns ?? [];
@@ -1084,6 +1166,6 @@ export function runTestSpec(input: SpecInput): SpecResult {
       feedback.push({ attempt: attempts, codes: ["TEST_FAIL"], failing, tests: null });
       continue;
     }
-    return { status: "diff", diff, attempts, expectations, diagnostic: diag("verified", 0, output) };
+    return { status: "diff", diff, attempts, expectations, diagnostic: diag("verified", 0, output), fit: repairFit(expectations, proposal.kind || "repair") };
   }
 }

@@ -1,6 +1,8 @@
 // Mixed-practice replay grades. credit: false. A pass is only GATE PASS plus the recorded test
-// going from fail to pass. Unmeasured is never a pass. Nothing from the core is stored here.
+// going from fail to pass, and, for a test-as-spec candidate, a strict behavioral match.
+// Unmeasured is never a pass. Held-out rows keep the shape and the counts, not the diff.
 import { loadTargets } from "./target.ts";
+import type { Behavior, BehaviorCounterexample } from "./specgrade.ts";
 
 export const REPLAY_SCHEMA = "peaceai-practice-replay:v1";
 
@@ -32,6 +34,11 @@ export interface GradeInput {
   beforeExit: number | null;
   /** Same test after the candidate was applied. */
   afterExit: number | null;
+  /**
+   * Set only after the given test and the original suite passed. verified_test_only and
+   * diff_unavailable are not passes. Absent on text rows and on rows that produced no candidate.
+   */
+  behavior?: Behavior;
 }
 
 export interface GradedRow {
@@ -45,6 +52,16 @@ export interface GradedRow {
   understanding?: Understanding;
   /** Test-as-spec only. Sanitized runner facts. No host paths and no environment values. */
   diagnostic?: { kind: string; code: number | null; command: string[]; lines: string[] };
+  /** Present when a candidate passed the given test and the original suite. */
+  fit?: {
+    shape: string;
+    examples: number;
+    behavior: Behavior;
+    /** The candidate diff. Replay keeps it for dev rows and drops it for held-out rows. */
+    diff?: string;
+    /** One sanitized input where the candidate and the fix disagreed. Dev rows only. */
+    counterexample?: BehaviorCounterexample;
+  };
 }
 
 /** One row. Unmeasured never comes back as pass. A pass requires GATE PASS and fail-before/pass-after. */
@@ -54,6 +71,8 @@ export function gradePracticeRow(input: GradeInput): { status: RowStatus; reason
   if (!input.job) return { status: "unmeasured", reason: "NOT_RUN", gap: true };
   if (input.job.status === "unmeasured") return { status: "unmeasured", reason: input.job.reason, gap: true };
   if (input.job.status === "fail") return { status: "fail", reason: input.job.reason, gap: true };
+  if (input.behavior === "verified_test_only") return { status: "fail", reason: "VERIFIED_TEST_ONLY", gap: true };
+  if (input.behavior === "diff_unavailable") return { status: "fail", reason: "DIFF_UNAVAILABLE", gap: true };
   if (!input.gatePass) return { status: "fail", reason: "GATE_FAIL", gap: false };
   if (input.beforeExit === null || input.afterExit === null) return { status: "unmeasured", reason: "TEST_NOT_RUN", gap: true };
   if (input.beforeExit === 0) return { status: "unmeasured", reason: "TEST_BASE_NOT_FAILING", gap: true };
@@ -88,7 +107,33 @@ export function countsByUnderstanding(rows: readonly Pick<GradedRow, "split" | "
   };
 }
 
-/** Public replay file. Counts, reasons, and the protected-function note. No diffs, subjects, or core text. */
+export interface BehaviorCounts { verified_strict: number; verified_test_only: number; diff_unavailable: number }
+
+/** Headline passes stay in `counts`. These are the behavioral outcomes, reported separately. */
+export function behaviorBySplit(rows: readonly Pick<GradedRow, "split" | "fit">[]): { dev: BehaviorCounts; "held-out": BehaviorCounts } {
+  const empty = (): BehaviorCounts => ({ verified_strict: 0, verified_test_only: 0, diff_unavailable: 0 });
+  const out = { dev: empty(), "held-out": empty() };
+  for (const row of rows) {
+    const behavior = row.fit?.behavior;
+    if (behavior) out[row.split][behavior] += 1;
+  }
+  return out;
+}
+
+/** Fields safe to publish. Held-out rows keep the shape and the counts, not the diff or a counterexample. */
+export function publishedFit(row: Pick<GradedRow, "split" | "fit">): { shape: string; examples: number; behavior: Behavior; diff?: string; counterexample?: BehaviorCounterexample } | undefined {
+  if (!row.fit) return undefined;
+  const dev = row.split === "dev";
+  return {
+    shape: row.fit.shape,
+    examples: row.fit.examples,
+    behavior: row.fit.behavior,
+    ...(dev && row.fit.diff ? { diff: row.fit.diff } : {}),
+    ...(dev && row.fit.counterexample ? { counterexample: row.fit.counterexample } : {}),
+  };
+}
+
+/** Public replay file. Counts, reasons, and the protected-function note. No subjects or core text. */
 export function replayDocument(rows: readonly GradedRow[]): {
   schema: typeof REPLAY_SCHEMA;
   experimental: true;
@@ -97,7 +142,8 @@ export function replayDocument(rows: readonly GradedRow[]): {
   protectedFile: string;
   protectedWhy: string;
   counts: ReturnType<typeof countsByUnderstanding>;
-  rows: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string; diagnostic?: GradedRow["diagnostic"] }[];
+  behavior: ReturnType<typeof behaviorBySplit>;
+  rows: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string; diagnostic?: GradedRow["diagnostic"]; shape?: string; examples?: number; behavior?: Behavior; diff?: string; counterexample?: BehaviorCounterexample }[];
 } {
   return {
     schema: REPLAY_SCHEMA,
@@ -107,9 +153,14 @@ export function replayDocument(rows: readonly GradedRow[]): {
     protectedFile: PROTECTED_GATE_FILE,
     protectedWhy: PROTECTED_GATE_WHY,
     counts: countsByUnderstanding(rows),
-    rows: rows.map((row) => ({
-      repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason,
-      ...(row.diagnostic ? { diagnostic: row.diagnostic } : {}),
-    })),
+    behavior: behaviorBySplit(rows),
+    rows: rows.map((row) => {
+      const fit = publishedFit(row);
+      return {
+        repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason,
+        ...(row.diagnostic ? { diagnostic: row.diagnostic } : {}),
+        ...(fit ? { shape: fit.shape, examples: fit.examples, behavior: fit.behavior, ...(fit.diff ? { diff: fit.diff } : {}), ...(fit.counterexample ? { counterexample: fit.counterexample } : {}) } : {}),
+      };
+    }),
   };
 }

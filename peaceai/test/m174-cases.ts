@@ -226,7 +226,7 @@ export const CASES: readonly Case[] = [
       const files = [{ path: "src/stock.ts", content: STOCK }];
       const diag = [{ kind: "MISSING_EXPORT" as const, test: "test/unit.test.ts", module: "src/stock.ts", name: "restockLevel", spec: "../src/stock.ts" }];
       const r = p.repairProposer({ v2: true });
-      assert.deepEqual(r.next({ files, attempt: 1, feedback: [], loadDiagnostics: diag }), { edits: [{ path: "src/stock.ts", content: STOCK.replace("\nfunction restockLevel", "\nexport function restockLevel") }] });
+      assert.deepEqual(r.next({ files, attempt: 1, feedback: [], loadDiagnostics: diag }), { edits: [{ path: "src/stock.ts", content: STOCK.replace("\nfunction restockLevel", "\nexport function restockLevel") }], kind: "load-export" });
       assert.deepEqual(r.next({ files, attempt: 2, feedback: [], loadDiagnostics: diag }), { refuse: "NO_MORE_EDITS" });
       assert.deepEqual(p.repairProposer({ v2: true }).next({ files, attempt: 1, feedback: [], loadDiagnostics: [{ ...diag[0]!, name: "reorderDate" }] }), { refuse: "NO_EDIT" });
     },

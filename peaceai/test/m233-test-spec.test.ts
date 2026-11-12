@@ -9,6 +9,7 @@ import { openRepo } from "../lib/codesearch.ts";
 import { CALLEE_DEPTH, locate, MAX_CANDIDATES } from "../lib/editpropose.ts";
 import { MAX_ATTEMPTS } from "../lib/loop.ts";
 import { GIT_LOCK_ARGS, practiceGit, practiceGitEnv, practiceSandboxReady, visibleNodeBin } from "../lib/practicemine.ts";
+import { behaviorInputs, gradeBehavior, INPUT_CAP } from "../lib/specgrade.ts";
 import { classifyRunnerOutput, expectationsIn, originalSuiteArgv, runTestSpec, sanitizeRunnerLines, scaffoldPlan, SPEC_ATTEMPT_CAP, specTask, type SpecInput } from "../lib/testspec.ts";
 
 const PATTERN = "^src/.+\\.ts$";
@@ -346,5 +347,58 @@ test("a missing module is created, and a comparison behind an alias is edited, w
   } finally {
     rmSync(missing, { recursive: true, force: true });
     rmSync(aliased, { recursive: true, force: true });
+  }
+});
+
+test("behavioral inputs repeat and stay within the cap", () => {
+  const examples = [[2], [0], ["Ab"]];
+  const flags = [{ nulls: false, undef: false }];
+  const first = behaviorInputs(examples, flags, "twice");
+  const second = behaviorInputs(examples, flags, "twice");
+  assert.deepEqual(first, second);
+  assert.ok(first.length <= INPUT_CAP);
+  assert.deepEqual(first.slice(0, 3), examples);
+});
+
+test("a constant body is test-only, a matching comparison is strict, and a module that throws on import is unavailable", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const nodePath = visibleNodeBin();
+  if (!nodePath) { t.skip("no visible node"); return; }
+  const tree = (files: Record<string, string>) => {
+    const root = mkdtempSync(join(tmpdir(), "peaceai-behavior-"));
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(join(root, path, ".."), { recursive: true });
+      writeFileSync(join(root, path), text);
+    }
+    return root;
+  };
+  const constant = tree({ "src/twice.ts": "export function twice(n: number): number {\n  return 4;\n}\n" });
+  const real = tree({ "src/twice.ts": "export function twice(n: number): number {\n  return n + n;\n}\n" });
+  const left = tree({ "src/atLeast.ts": "export function atLeast(n: number): boolean {\n  return n >= 1;\n}\n" });
+  const right = tree({ "src/atLeast.ts": "export function atLeast(n: number): boolean {\n  return n >= 1;\n}\n" });
+  const good = tree({ "src/atLeast.ts": "export function atLeast(n: number): boolean {\n  return n >= 1;\n}\n" });
+  const throwing = tree({ "src/atLeast.ts": "throw new Error(\"side effect\");\nexport function atLeast(n: number): boolean {\n  return n >= 1;\n}\n" });
+  try {
+    const thin = gradeBehavior({
+      candidateRoot: constant, fixRoot: real, nodePath,
+      target: { symbol: "twice", file: "src/twice.ts", form: "named", exportName: "twice", args: [[2]] },
+    });
+    assert.equal(thin.behavior, "verified_test_only");
+    assert.ok(thin.counterexample);
+    assert.equal(thin.counterexample?.candidate === thin.counterexample?.fix, false);
+    const match = gradeBehavior({
+      candidateRoot: left, fixRoot: right, nodePath,
+      target: { symbol: "atLeast", file: "src/atLeast.ts", form: "named", exportName: "atLeast", args: [[1], [0]] },
+    });
+    assert.equal(match.behavior, "verified_strict");
+    assert.equal(match.counterexample, undefined);
+    const unavailable = gradeBehavior({
+      candidateRoot: good, fixRoot: throwing, nodePath,
+      target: { symbol: "atLeast", file: "src/atLeast.ts", form: "named", exportName: "atLeast", args: [[1]] },
+    });
+    assert.equal(unavailable.behavior, "diff_unavailable");
+    assert.equal(unavailable.counterexample, undefined);
+  } finally {
+    for (const root of [constant, real, left, right, good, throwing]) rmSync(root, { recursive: true, force: true });
   }
 });
