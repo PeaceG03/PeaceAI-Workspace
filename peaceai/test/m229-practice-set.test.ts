@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { keptLicense } from "../lib/practicemine.ts";
-import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync as readText, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync as readText, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
   GIT_LOCK_ARGS, cloneRootProblems, ensurePracticeInstall, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutWatchProblems, installArgv, isSourceFile, isTestFile, manifestProblems,
@@ -292,6 +292,10 @@ test("a fresh clone with no node_modules is installed from the pinned base and t
     const committed = spawnSync("git", ["-C", origin, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "base"], { encoding: "utf8" });
     assert.equal(committed.status, 0, committed.stderr);
     const base = spawnSync("git", ["-C", origin, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    writeFileSync(join(origin, "add.test.js"), "const test = require('node:test'); const assert = require('node:assert'); test('dep', () => { assert.equal(typeof require('has-flag'), 'function'); });\n// same deps\n");
+    spawnSync("git", ["-C", origin, "add", "add.test.js"], { stdio: "ignore" });
+    spawnSync("git", ["-C", origin, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "same lock"], { stdio: "ignore" });
+    const same = spawnSync("git", ["-C", origin, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
     writeFileSync(join(origin, "package.json"), JSON.stringify({ name: "fresh-practice", dependencies: { "has-flag": "4.0.0", "left-pad": "1.3.0" } }) + "\n");
     spawnSync("git", ["-C", origin, "add", "package.json"], { stdio: "ignore" });
     spawnSync("git", ["-C", origin, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "fix deps"], { stdio: "ignore" });
@@ -304,16 +308,63 @@ test("a fresh clone with no node_modules is installed from the pinned base and t
     }, cache, { npm: false, pnpm: false, yarn: false }, false);
     assert.equal(installed.ok, true, installed.lines.join("\n"));
     assert.ok(installed.modules);
-    assert.equal(installed.modules.startsWith(join(cache, "example__fresh", base)), true);
-    const cachedPkg = JSON.parse(readText(join(cache, "example__fresh", base, "package.json"), "utf8")) as { dependencies: Record<string, string> };
+    assert.equal(installed.modules.startsWith(join(cache, "installs")), true);
+    const cachedPkg = JSON.parse(readText(join(installed.modules, "..", "package.json"), "utf8")) as { dependencies: Record<string, string> };
     assert.equal(cachedPkg.dependencies["left-pad"], undefined);
     assert.equal(cachedPkg.dependencies["has-flag"], "4.0.0");
+    const again = ensurePracticeInstall(fresh, {
+      repo: "example/fresh", baseSha: same,
+      toolchain: { nodePath: node, nodeVersion: "v22.23.4", manager: "npm", managerVersion: "10.9.9" },
+    }, cache, { npm: false, pnpm: false, yarn: false }, false);
+    assert.equal(again.modules, installed.modules);
+    assert.equal(readdirSync(join(cache, "installs")).length, 1);
     const ran = runInPracticeSandbox(fresh, [node, "--test", "add.test.js"], 20_000, { capture: true, nodePath: node, nodeModules: installed.modules });
     assert.equal(ran.unsafe, false, ran.stdout);
     assert.equal(ran.code, 0, ran.stdout);
   } finally {
     rmSync(origin, { recursive: true, force: true });
     rmSync(fresh, { recursive: true, force: true });
+    rmSync(cache, { recursive: true, force: true });
+  }
+});
+
+test("a full install cache is skipped per row, and the least recently used install is pruned", () => {
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const origin = tinyRepo();
+  const cache = mkdtempSync(join(tmpdir(), "practice-prune-"));
+  const tool = { nodePath: node, nodeVersion: "v22.23.4", manager: "none" as const, managerVersion: "none" };
+  const commit = (name: string) => {
+    writeFileSync(join(origin, "package.json"), JSON.stringify({ name }) + "\n");
+    spawnSync("git", ["-C", origin, "add", "package.json"], { stdio: "ignore" });
+    spawnSync("git", ["-C", origin, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", name], { stdio: "ignore" });
+    return spawnSync("git", ["-C", origin, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+  };
+  try {
+    const skipped = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: commit("low"), toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false, {
+      space: () => ({ freeBytes: 1, freeInodes: 1 }),
+    });
+    assert.equal(skipped.reason, "INSTALL_SKIPPED_NO_SPACE");
+    assert.equal(skipped.ok, false);
+    assert.equal(existsSync(join(cache, "installs")), false);
+    const first = commit("one");
+    const second = commit("two");
+    const third = commit("three");
+    const a = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: first, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false, { maxInstalls: 2 });
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    const b = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: second, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false, { maxInstalls: 2 });
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: first, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false, { maxInstalls: 2 });
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    const c = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: third, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false, { maxInstalls: 2 });
+    assert.equal(a.ok && b.ok && c.ok, true);
+    const names = readdirSync(join(cache, "installs"));
+    assert.equal(names.length, 2);
+    assert.equal(names.includes(b.fingerprint!), false);
+    assert.equal(names.includes(a.fingerprint!), true);
+    assert.equal(names.includes(c.fingerprint!), true);
+  } finally {
+    rmSync(origin, { recursive: true, force: true });
     rmSync(cache, { recursive: true, force: true });
   }
 });

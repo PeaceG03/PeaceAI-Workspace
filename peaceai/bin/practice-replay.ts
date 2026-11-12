@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
-import { GIT_LOCK_ARGS, ensurePracticeInstall, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
+import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, ensurePracticeInstall, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
 import {
   PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, targetIsScorable,
   type GradedRow,
@@ -21,7 +21,7 @@ import { pinnedKernel, readCorePin } from "./capability-job.ts";
 
 const ROW_MS = 45_000;
 const TEST_MS = 60_000;
-const USAGE = "usage: practice-replay.ts --pairs <jsonl> --out <dir> [--core-archive <tar>] [--clones-dir <dir>]";
+const USAGE = "usage: practice-replay.ts --pairs <jsonl> --out <dir> [--core-archive <tar>] [--clones-dir <dir>] [--install-cache <dir>] [--install-max <n>]";
 
 function flag(name: string, args: string[]): string | undefined {
   const i = args.indexOf(name);
@@ -170,6 +170,9 @@ function main(): void {
   const out = flag("--out", args);
   const coreArchive = flag("--core-archive", args);
   const clones = flag("--clones-dir", args) ?? flag("--clones", args) ?? "";
+  const installCache = flag("--install-cache", args);
+  const installMax = Number(flag("--install-max", args) ?? INSTALL_MAX_ENTRIES);
+  if (!Number.isInteger(installMax) || installMax < 1) { console.log(USAGE); process.exit(2); }
   if (!pairsPath || !out) { console.log(USAGE); process.exit(2); }
   const tooling = resolve(import.meta.dirname, "../..");
   if (insideRepo(tooling, resolve(out))) { console.log("refused WRITE_IN_TARGET"); process.exit(2); }
@@ -188,7 +191,7 @@ function main(): void {
   const graded: GradedRow[] = [];
   try {
     const repos = new Map<string, string | null>();
-    const cacheRoot = join(out, "install-cache");
+    const cacheRoot = installCache ? resolve(installCache) : join(out, "install-cache");
     for (const pair of pairs) {
       const scorable = targetIsScorable(pair.repo);
       if (!scorable || core !== "ok" || !sandbox) {
@@ -215,7 +218,18 @@ function main(): void {
         pnpm: shown("pnpm-lock.yaml").ok,
         yarn: shown("yarn.lock").ok,
       };
-      const installed = ensurePracticeInstall(dir, pair, cacheRoot, locks, yarnIsModern(pkg));
+      let installed;
+      try {
+        installed = ensurePracticeInstall(dir, pair, cacheRoot, locks, yarnIsModern(pkg), { maxInstalls: installMax });
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        graded.push({
+          repo: pair.repo, split: pair.split, fixSha: pair.fixSha, status: "unmeasured", gap: true,
+          reason: code === "ENOSPC" ? "INSTALL_SKIPPED_NO_SPACE" : "INSTALL_FAILED",
+          lines: [`${(err as Error).message ?? "install"}`.slice(0, 240)],
+        });
+        continue;
+      }
       if (!installed.ok || !installed.modules) {
         graded.push({ repo: pair.repo, split: pair.split, fixSha: pair.fixSha, status: "unmeasured", reason: installed.reason ?? "INSTALL_FAILED", gap: true, lines: installed.lines });
         continue;

@@ -3,7 +3,7 @@
 // Third-party source is never written here.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statfsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { classifyLicense, type Spdx } from "./lmcorpus.ts";
@@ -369,9 +369,36 @@ export function frozenInstallArgv(manager: PracticeToolchain["manager"], locks: 
   return ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"];
 }
 
-export interface PracticeInstall { ok: boolean; modules: string | null; reason: string | null; lines: string[] }
+export interface PracticeInstall { ok: boolean; modules: string | null; reason: string | null; lines: string[]; fingerprint?: string }
 
-function installEnv(nodePath: string, home: string): NodeJS.ProcessEnv {
+/** One install per dependency fingerprint. Above this, the least recently used install is removed. */
+export const INSTALL_MAX_ENTRIES = 12;
+/** Refuse a new install when the cache filesystem is below either of these. */
+export const INSTALL_MIN_BYTES = 5 * 1024 * 1024 * 1024;
+export const INSTALL_MIN_INODES = 200_000;
+
+export function dependencyFingerprint(packageJson: string, lockfile: string, toolchain: Pick<PracticeToolchain, "manager" | "managerVersion" | "nodeVersion">): string {
+  return createHash("sha256")
+    .update("peaceai-practice-deps:v1\n")
+    .update(toolchain.manager).update("\0")
+    .update(toolchain.managerVersion).update("\0")
+    .update(toolchain.nodeVersion).update("\0")
+    .update(packageJson).update("\0")
+    .update(lockfile)
+    .digest("hex");
+}
+
+export function cacheSpace(path: string): { freeBytes: number; freeInodes: number } {
+  mkdirSync(path, { recursive: true });
+  const stat = statfsSync(path);
+  return { freeBytes: Number(stat.bavail) * Number(stat.bsize), freeInodes: Number(stat.ffree) };
+}
+
+export function spaceAllowsInstall(space: { freeBytes: number; freeInodes: number }, minBytes = INSTALL_MIN_BYTES, minInodes = INSTALL_MIN_INODES): boolean {
+  return space.freeBytes >= minBytes && space.freeInodes >= minInodes;
+}
+
+function installEnv(nodePath: string, home: string, store: string, manager: PracticeToolchain["manager"]): NodeJS.ProcessEnv {
   mkdirSync(home, { recursive: true });
   const npmrc = join(home, "npmrc");
   if (!existsSync(npmrc)) writeFileSync(npmrc, "");
@@ -387,50 +414,137 @@ function installEnv(nodePath: string, home: string): NodeJS.ProcessEnv {
   env.GIT_CONFIG_GLOBAL = join(tmpdir(), "peaceai-practice-gitconfig");
   env.GIT_CONFIG_NOSYSTEM = "1";
   env.GIT_CONFIG_SYSTEM = "/dev/null";
+  const managerStore = join(store, manager === "pnpm" ? "pnpm" : manager === "yarn" ? "yarn" : "npm");
+  mkdirSync(managerStore, { recursive: true });
+  if (manager === "npm") env.npm_config_cache = managerStore;
+  if (manager === "pnpm") env.npm_config_store_dir = managerStore;
+  if (manager === "yarn") env.YARN_CACHE_FOLDER = managerStore;
   return env;
 }
 
+function lockfileName(manager: PracticeToolchain["manager"], locks: LockFiles): string | null {
+  if (manager === "pnpm" && locks.pnpm) return "pnpm-lock.yaml";
+  if (manager === "yarn" && locks.yarn) return "yarn.lock";
+  if (manager === "npm" && locks.npm) return "package-lock.json";
+  if (locks.pnpm) return "pnpm-lock.yaml";
+  if (locks.yarn) return "yarn.lock";
+  if (locks.npm) return "package-lock.json";
+  return null;
+}
+
+function touchUsed(dir: string): void {
+  writeFileSync(join(dir, ".practice-used"), `${Date.now()}\n`);
+}
+
+function pruneInstalls(cacheRoot: string, max: number): void {
+  const root = join(cacheRoot, "installs");
+  if (!existsSync(root)) return;
+  const rows = readdirSync(root).map((name) => {
+    const used = join(root, name, ".practice-used");
+    return { name, used: existsSync(used) ? lstatSync(used).mtimeMs : 0 };
+  }).sort((a, b) => a.used - b.used);
+  while (rows.length >= max) {
+    const oldest = rows.shift();
+    if (!oldest) break;
+    rmSync(join(root, oldest.name), { recursive: true, force: true });
+  }
+}
+
+export interface InstallCacheOptions {
+  maxInstalls?: number;
+  /** Override the filesystem check. Tests use this to simulate a full disk. */
+  space?: () => { freeBytes: number; freeInodes: number };
+  minBytes?: number;
+  minInodes?: number;
+}
+
 /**
- * Install one pair's dependencies from its pinned base commit, outside any sandbox work tree.
- * The cache is `<cacheRoot>/<owner>__<name>/<baseSha>/`. A directory a sandboxed test has
- * written is refused. The lockfile is the one `git archive` extracted from baseSha.
+ * Install dependencies for one fingerprint, outside any sandbox work tree.
+ * Layout: `<cacheRoot>/stores/<npm|pnpm|yarn>` is the shared download store, and
+ * `<cacheRoot>/installs/<fingerprint>/` holds only package.json, the lockfile, and node_modules.
+ * The files come from `git archive` of the base commit, not from a later fix.
  */
-export function ensurePracticeInstall(repoDir: string, pair: Pick<PracticePair, "repo" | "baseSha" | "toolchain">, cacheRoot: string, locks: LockFiles, yarnModern: boolean): PracticeInstall {
-  if (!existsSync(pair.toolchain.nodePath)) return { ok: false, modules: null, reason: "TOOLCHAIN_MISSING", lines: [] };
-  const dest = join(cacheRoot, pair.repo.replace("/", "__"), pair.baseSha);
-  const modules = join(dest, "node_modules");
-  const stamp = join(dest, ".practice-base");
-  if (existsSync(modules) && existsSync(stamp) && readFileSync(stamp, "utf8").trim() === pair.baseSha) return { ok: true, modules, reason: null, lines: [] };
-  rmSync(dest, { recursive: true, force: true });
-  mkdirSync(dest, { recursive: true });
-  if (existsSync(join(dest, SANDBOX_RAN))) return { ok: false, modules: null, reason: "SANDBOX_POISON", lines: ["install dir was used by a sandboxed test"] };
-  const pinned = practiceGit(repoDir, ["rev-parse", "--verify", `${pair.baseSha}^{commit}`]);
-  if (!pinned.ok || pinned.out.trim() !== pair.baseSha) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: ["base commit is not in the clone"] };
-  const archived = spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "archive", "--format=tar", pair.baseSha], {
-    env: practiceGitEnv(), maxBuffer: 256 << 20, timeout: 120_000,
-  });
-  if (archived.status !== 0 || !archived.stdout) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: sanitizeInstallLines(`${archived.stderr ?? ""}`) };
-  const extracted = spawnSync("tar", ["-x", "-C", dest], { input: archived.stdout, timeout: 120_000 });
-  if (extracted.status !== 0) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: ["could not extract the base commit"] };
-  for (const name of readdirSync(dest)) {
-    if (!POISON_INSTALL.includes(name) && !name.startsWith(".yarnrc")) continue;
-    const recorded = practiceGit(repoDir, ["cat-file", "-e", `${pair.baseSha}:${name}`]);
-    if (!recorded.ok) return { ok: false, modules: null, reason: "SANDBOX_POISON", lines: [`${name} is not in the base commit`] };
+export function ensurePracticeInstall(
+  repoDir: string,
+  pair: Pick<PracticePair, "repo" | "baseSha" | "toolchain">,
+  cacheRoot: string,
+  locks: LockFiles,
+  yarnModern: boolean,
+  opts: InstallCacheOptions = {},
+): PracticeInstall {
+  try {
+    if (!existsSync(pair.toolchain.nodePath)) return { ok: false, modules: null, reason: "TOOLCHAIN_MISSING", lines: [] };
+    const pinned = practiceGit(repoDir, ["rev-parse", "--verify", `${pair.baseSha}^{commit}`]);
+    if (!pinned.ok || pinned.out.trim() !== pair.baseSha) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: ["base commit is not in the clone"] };
+    const lock = lockfileName(pair.toolchain.manager, locks);
+    const paths = ["package.json", ...(lock ? [lock] : [])];
+    const scratch = mkdtempSync(join(tmpdir(), "peaceai-deps-"));
+    try {
+      const archived = spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "archive", "--format=tar", pair.baseSha, "--", ...paths], {
+        env: practiceGitEnv(), maxBuffer: 64 << 20, timeout: 60_000,
+      });
+      if (archived.status !== 0 || !archived.stdout) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: sanitizeInstallLines(`${archived.stderr ?? ""}`) };
+      if (spawnSync("tar", ["-x", "-C", scratch], { input: archived.stdout, timeout: 60_000 }).status !== 0) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: ["could not extract package.json and the lockfile"] };
+      if (existsSync(join(scratch, SANDBOX_RAN))) return { ok: false, modules: null, reason: "SANDBOX_POISON", lines: ["install dir was used by a sandboxed test"] };
+      for (const name of readdirSync(scratch)) {
+        if (!POISON_INSTALL.includes(name) && !name.startsWith(".yarnrc")) continue;
+        if (!practiceGit(repoDir, ["cat-file", "-e", `${pair.baseSha}:${name}`]).ok) return { ok: false, modules: null, reason: "SANDBOX_POISON", lines: [`${name} is not in the base commit`] };
+      }
+      const packageJson = readFileSync(join(scratch, "package.json"), "utf8");
+      const lockText = lock && existsSync(join(scratch, lock)) ? readFileSync(join(scratch, lock), "utf8") : "";
+      const fingerprint = dependencyFingerprint(packageJson, lockText, pair.toolchain);
+      const dest = join(cacheRoot, "installs", fingerprint);
+      const modules = join(dest, "node_modules");
+      if (existsSync(modules) && !existsSync(join(dest, SANDBOX_RAN))) {
+        touchUsed(dest);
+        return { ok: true, modules, reason: null, lines: [], fingerprint };
+      }
+      const space = (opts.space ?? (() => cacheSpace(cacheRoot)))();
+      if (!spaceAllowsInstall(space, opts.minBytes, opts.minInodes)) return { ok: false, modules: null, reason: "INSTALL_SKIPPED_NO_SPACE", lines: [`free bytes ${space.freeBytes}`, `free inodes ${space.freeInodes}`], fingerprint };
+      pruneInstalls(cacheRoot, opts.maxInstalls ?? INSTALL_MAX_ENTRIES);
+      rmSync(dest, { recursive: true, force: true });
+      mkdirSync(dest, { recursive: true });
+      writeFileSync(join(dest, "package.json"), packageJson);
+      if (lock && lockText) writeFileSync(join(dest, lock), lockText);
+      const argv = frozenInstallArgv(pair.toolchain.manager, locks, yarnModern);
+      if (!argv) {
+        mkdirSync(modules, { recursive: true });
+        touchUsed(dest);
+        return { ok: true, modules, reason: null, lines: [], fingerprint };
+      }
+      const store = join(cacheRoot, "stores");
+      const managerStore = join(store, pair.toolchain.manager === "pnpm" ? "pnpm" : pair.toolchain.manager === "yarn" ? "yarn" : "npm");
+      const withStore = pair.toolchain.manager === "npm" ? [...argv, "--cache", managerStore]
+        : pair.toolchain.manager === "pnpm" ? [...argv, "--store-dir", managerStore]
+        : pair.toolchain.manager === "yarn" ? [...argv, "--cache-folder", managerStore]
+        : argv;
+      const home = mkdtempSync(join(tmpdir(), "peaceai-install-home-"));
+      try {
+        const ran = spawnSync(withStore[0]!, withStore.slice(1), {
+          cwd: dest, env: installEnv(pair.toolchain.nodePath, home, store, pair.toolchain.manager), encoding: "utf8", timeout: 180_000, maxBuffer: 8 << 20,
+        });
+        if (ran.error && (ran.error as NodeJS.ErrnoException).code === "ENOSPC") return { ok: false, modules: null, reason: "INSTALL_SKIPPED_NO_SPACE", lines: ["no space left on the install cache"], fingerprint };
+        if (ran.status !== 0) {
+          rmSync(dest, { recursive: true, force: true });
+          return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: sanitizeInstallLines(`${ran.error?.message ?? ""}\n${ran.stdout ?? ""}\n${ran.stderr ?? ""}`), fingerprint };
+        }
+      } finally {
+        rmSync(home, { recursive: true, force: true });
+      }
+      if (!existsSync(modules)) {
+        rmSync(dest, { recursive: true, force: true });
+        return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: ["install produced no node_modules"], fingerprint };
+      }
+      touchUsed(dest);
+      return { ok: true, modules, reason: null, lines: [], fingerprint };
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOSPC") return { ok: false, modules: null, reason: "INSTALL_SKIPPED_NO_SPACE", lines: ["no space left on the install cache"] };
+    return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: sanitizeInstallLines((err as Error).message ?? "") };
   }
-  const argv = frozenInstallArgv(pair.toolchain.manager, locks, yarnModern);
-  if (!argv) {
-    writeFileSync(stamp, `${pair.baseSha}\n`);
-    mkdirSync(modules, { recursive: true });
-    return { ok: true, modules, reason: null, lines: [] };
-  }
-  const home = mkdtempSync(join(tmpdir(), "peaceai-install-home-"));
-  const ran = spawnSync(argv[0]!, argv.slice(1), {
-    cwd: dest, env: installEnv(pair.toolchain.nodePath, home), encoding: "utf8", timeout: 180_000, maxBuffer: 8 << 20,
-  });
-  rmSync(home, { recursive: true, force: true });
-  if (ran.status !== 0) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: sanitizeInstallLines(`${ran.error?.message ?? ""}\n${ran.stdout ?? ""}\n${ran.stderr ?? ""}`) };
-  writeFileSync(stamp, `${pair.baseSha}\n`);
-  return { ok: true, modules: existsSync(modules) ? modules : null, reason: existsSync(modules) ? null : "INSTALL_FAILED", lines: existsSync(modules) ? [] : ["install produced no node_modules"] };
 }
 
 export function toolchainProblems(value: unknown): string[] {
