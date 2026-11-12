@@ -1,5 +1,8 @@
 // Mixed practice replay. credit: false. Experimental.
-//   tsx peaceai/bin/practice-replay.ts --pairs <jsonl> --out <dir outside this repo> [--core-archive <file>]
+//   tsx peaceai/bin/practice-replay.ts --pairs <jsonl> --out <dir outside this repo> --core-archive <tar> --clones-dir <dir>
+// --core-archive is the pinned core tar capability-job.ts checks against peaceai/core-pin.json.
+// --clones-dir holds one git clone per repo, named <owner>__<name>, with the recorded commits present.
+// --clones is the same option.
 // Each row gives Job A only the commit subject and the repo at baseSha. The diff and the fix are not shown.
 // A row passes only when peaceai/bin/gate.ts prints GATE PASS and the recorded test fails before the
 // candidate and passes after it. Unmeasured is never a pass.
@@ -18,7 +21,7 @@ import { pinnedKernel, readCorePin } from "./capability-job.ts";
 
 const ROW_MS = 45_000;
 const TEST_MS = 60_000;
-const USAGE = "usage: practice-replay.ts --pairs <jsonl> --out <dir> [--core-archive <file>] [--clones <dir>]";
+const USAGE = "usage: practice-replay.ts --pairs <jsonl> --out <dir> [--core-archive <tar>] [--clones-dir <dir>]";
 
 function flag(name: string, args: string[]): string | undefined {
   const i = args.indexOf(name);
@@ -161,7 +164,7 @@ function main(): void {
   const pairsPath = flag("--pairs", args);
   const out = flag("--out", args);
   const coreArchive = flag("--core-archive", args);
-  const clones = flag("--clones", args) ?? "";
+  const clones = flag("--clones-dir", args) ?? flag("--clones", args) ?? "";
   if (!pairsPath || !out) { console.log(USAGE); process.exit(2); }
   const tooling = resolve(import.meta.dirname, "../..");
   if (insideRepo(tooling, resolve(out))) { console.log("refused WRITE_IN_TARGET"); process.exit(2); }
@@ -207,8 +210,11 @@ function main(): void {
   writeFileSync(join(out, "replay.json"), JSON.stringify(doc, null, 2) + "\n");
   const gaps = graded.filter((row) => row.gap).map((row) => JSON.stringify({ repo: row.repo, split: row.split, fixSha: row.fixSha, status: row.status, reason: row.reason }));
   writeFileSync(join(out, "gaps.jsonl"), gaps.join("\n") + (gaps.length ? "\n" : ""));
-  console.log(`experimental credit=false protectedFunction=${PROTECTED_GATE_FUNCTION} protectedFile=${PROTECTED_GATE_FILE}`);
-  console.log(PROTECTED_GATE_WHY);
+  console.log("experimental credit=false");
+  if (graded.some((row) => row.reason === "GATE_NO_TARGET")) {
+    console.log(`protectedFunction=${PROTECTED_GATE_FUNCTION} protectedFile=${PROTECTED_GATE_FILE}`);
+    console.log(PROTECTED_GATE_WHY);
+  }
   for (const split of ["dev", "held-out"] as const) {
     const bag = doc.counts[split];
     console.log(`${split} pass=${bag.pass} fail=${bag.fail} unmeasured=${bag.unmeasured}`);
