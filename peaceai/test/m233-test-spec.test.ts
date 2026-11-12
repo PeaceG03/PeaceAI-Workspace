@@ -350,6 +350,23 @@ test("a missing module is created, and a comparison behind an alias is edited, w
   }
 });
 
+test("a command that needs node_modules without an install is INSTALL_UNAVAILABLE", () => {
+  const root = repo({ "src/pad.ts": pad, "src/pad.test.ts": padTest });
+  try {
+    const got = runTestSpec(specInput(root, "src/pad.test.ts", {
+      testCommand: ["./node_modules/.bin/tsx", "--test", "src/pad.test.ts"],
+      nodeModules: null,
+    }));
+    assert.equal(got.status, "cant");
+    if (got.status === "cant") {
+      assert.equal(got.reason, "INSTALL_UNAVAILABLE");
+      assert.equal(got.diagnostic.kind, "install_unavailable");
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("behavioral inputs repeat and stay within the cap", () => {
   const examples = [[2], [0], ["Ab"]];
   const flags = [{ nulls: false, undef: false }];

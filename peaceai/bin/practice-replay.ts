@@ -10,13 +10,13 @@
 // candidate and passes after it. Unmeasured is never a pass.
 // A repo that targets.json does not name is UNMEASURED GATE_NO_TARGET. gate.ts and scope.ts are not edited.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
-import { GIT_LOCK_ARGS, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, type PracticePair } from "../lib/practicemine.ts";
+import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, ensurePracticeInstall, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, yarnIsModern, type InstallDiagKind, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
 import {
-  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, publishedFit, replayDocument, targetIsScorable,
+  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, publishedFit, publishedInstall, replayDocument, targetIsScorable,
   type GradedRow, type Understanding,
 } from "../lib/practicereplay.ts";
 import { gradeBehavior, type BehaviorGrade } from "../lib/specgrade.ts";
@@ -26,7 +26,7 @@ import { pinnedKernel, readCorePin } from "./capability-job.ts";
 
 const ROW_MS = 45_000;
 const TEST_MS = 60_000;
-const USAGE = "usage: practice-replay.ts --pairs <jsonl> --out <dir> [--core-archive <tar>] [--clones-dir <dir>]";
+const USAGE = "usage: practice-replay.ts --pairs <jsonl> --out <dir> [--core-archive <tar>] [--clones-dir <dir>] [--install-cache <dir>] [--install-max <n>]";
 
 function flag(name: string, args: string[]): string | undefined {
   const i = args.indexOf(name);
@@ -56,14 +56,14 @@ function cloneDir(repo: string, clones: string, work: string): string | null {
   return dir;
 }
 
-function linkModules(repoDir: string, dir: string): void {
-  const modules = join(repoDir, "node_modules");
-  if (existsSync(modules) && !existsSync(join(dir, "node_modules"))) spawnSync("ln", ["-s", modules, join(dir, "node_modules")], { stdio: "ignore" });
+function linkModules(modules: string, dir: string): void {
+  const dest = join(dir, "node_modules");
+  if (!existsSync(modules) || existsSync(dest)) return;
+  spawnSync("ln", ["-s", modules, dest], { stdio: "ignore" });
 }
 
-function runTest(dir: string, cmd: string[], nodePath: string): { code: number | null; blocked: boolean } {
+function runTest(dir: string, cmd: string[], nodePath: string, modules: string): { code: number | null; blocked: boolean } {
   const before = poisonStamp(dir);
-  const modules = existsSync(join(dir, "node_modules")) ? join(dir, "node_modules") : null;
   const ran = runInPracticeSandbox(dir, cmd, TEST_MS, { nodePath, nodeModules: modules });
   const released = releaseWorktree(dir, before);
   if (ran.unsafe || released.poison.length > 0 || !released.clean) return { code: null, blocked: true };
@@ -71,21 +71,21 @@ function runTest(dir: string, cmd: string[], nodePath: string): { code: number |
 }
 
 /** Apply one candidate on a fresh base, with the recorded test file as the spec. Returns exits, or nulls when the diff does not apply. */
-function gradeCandidate(repoDir: string, pair: PracticePair, diff: string): { beforeExit: number | null; afterExit: number | null } {
+function gradeCandidate(repoDir: string, pair: PracticePair, diff: string, modules: string): { beforeExit: number | null; afterExit: number | null } {
   const dir = mkdtempSync(join(tmpdir(), "peaceai-practice-grade-"));
   const added = spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "worktree", "add", "--detach", "--quiet", dir, pair.baseSha], { env: practiceGitEnv(), stdio: "ignore", timeout: 60_000 });
   if (added.status !== 0) { rmSync(dir, { recursive: true, force: true }); return { beforeExit: null, afterExit: null }; }
   try {
     if (!existsSync(pair.toolchain.nodePath)) return { beforeExit: null, afterExit: null };
-    linkModules(repoDir, dir);
+    linkModules(modules, dir);
     if (!git(dir, ["checkout", pair.fixSha, "--", pair.testFile])) return { beforeExit: null, afterExit: null };
-    const before = runTest(dir, pair.testCommand, pair.toolchain.nodePath);
+    const before = runTest(dir, pair.testCommand, pair.toolchain.nodePath, modules);
     if (before.blocked) return { beforeExit: before.code, afterExit: null };
-    linkModules(repoDir, dir);
+    linkModules(modules, dir);
     if (!git(dir, ["checkout", pair.fixSha, "--", pair.testFile])) return { beforeExit: before.code, afterExit: null };
     const applied = spawnSync("git", ["-C", dir, ...GIT_LOCK_ARGS, "apply", "--whitespace=nowarn", "-"], { input: diff, encoding: "utf8", env: practiceGitEnv(), stdio: ["pipe", "ignore", "ignore"] });
     if (applied.status !== 0) return { beforeExit: before.code, afterExit: null };
-    const after = runTest(dir, pair.testCommand, pair.toolchain.nodePath);
+    const after = runTest(dir, pair.testCommand, pair.toolchain.nodePath, modules);
     if (after.blocked) return { beforeExit: before.code, afterExit: null };
     return { beforeExit: before.code, afterExit: after.code };
   } finally {
@@ -94,7 +94,7 @@ function gradeCandidate(repoDir: string, pair: PracticePair, diff: string): { be
   }
 }
 
-function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: string, pair: PracticePair): GradedRow {
+function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: string, pair: PracticePair, modules: string): GradedRow {
   const scorable = targetIsScorable(pair.repo);
   if (!scorable) return { ...blank(pair, "text"), ...gradePracticeRow({ scorable: false, core: "ok", job: null, gatePass: false, beforeExit: null, afterExit: null }) };
   const outDir = mkdtempSync(join(tmpdir(), "peaceai-practice-out-"));
@@ -137,7 +137,7 @@ function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: st
     const summary = JSON.parse(readFileSync(summaryPath, "utf8")) as { candidates?: { file: string }[] };
     for (const candidate of summary.candidates ?? []) {
       const diff = readFileSync(join(outDir, candidate.file), "utf8");
-      const graded = gradeCandidate(repoDir, pair, diff);
+      const graded = gradeCandidate(repoDir, pair, diff, modules);
       if (beforeExit === null) beforeExit = graded.beforeExit;
       if (graded.beforeExit !== null && graded.beforeExit !== 0 && graded.afterExit === 0) { afterExit = 0; fixed = true; break; }
       if (afterExit === null) afterExit = graded.afterExit;
@@ -162,19 +162,17 @@ function blank(pair: PracticePair, understanding: Understanding): Pick<GradedRow
  * Nothing is pushed.
  */
 /** The fix's symbol is loaded only here, after the solver has already returned. The solver never sees it. */
-function gradeCandidateBehavior(repoDir: string, dir: string, pair: PracticePair, spec: Extract<SpecResult, { status: "diff" }>): BehaviorGrade {
+function gradeCandidateBehavior(repoDir: string, dir: string, pair: PracticePair, spec: Extract<SpecResult, { status: "diff" }>, modules: string): BehaviorGrade {
   const fixDir = mkdtempSync(join(tmpdir(), "peaceai-practice-fix-"));
   const unavailable = (): BehaviorGrade => ({ behavior: "diff_unavailable", compared: 0 });
   let grade = unavailable();
   try {
     const added = spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "worktree", "add", "--detach", "--quiet", fixDir, pair.fixSha], { env: practiceGitEnv(), stdio: "ignore", timeout: 60_000 });
     if (added.status !== 0 || !spec.fit.targets.length) return grade;
-    linkModules(repoDir, fixDir);
-    const linked = join(dir, "node_modules");
-    if (existsSync(linked) && !existsSync(join(fixDir, "node_modules"))) symlinkSync(linked, join(fixDir, "node_modules"));
+    linkModules(modules, fixDir);
+    linkModules(modules, dir);
     const applied = spawnSync("git", ["-C", dir, ...GIT_LOCK_ARGS, "apply", "--whitespace=nowarn", "-"], { input: spec.diff, encoding: "utf8", env: practiceGitEnv(), stdio: ["pipe", "ignore", "ignore"] });
     if (applied.status !== 0) return grade;
-    const modules = existsSync(linked) ? linked : null;
     grade = { behavior: "verified_strict", compared: 0 };
     for (const target of spec.fit.targets) {
       const one = gradeBehavior({ candidateRoot: dir, fixRoot: fixDir, target, nodePath: pair.toolchain.nodePath, nodeModules: modules });
@@ -185,14 +183,14 @@ function gradeCandidateBehavior(repoDir: string, dir: string, pair: PracticePair
   } finally {
     spawnSync("git", ["-C", dir, ...GIT_LOCK_ARGS, "checkout", "-f"], { env: practiceGitEnv(), stdio: "ignore" });
     spawnSync("git", ["-C", dir, ...GIT_LOCK_ARGS, "clean", "-fd"], { env: practiceGitEnv(), stdio: "ignore" });
-    linkModules(repoDir, dir);
+    linkModules(modules, dir);
     spawnSync("git", ["-C", dir, ...GIT_LOCK_ARGS, "checkout", pair.fixSha, "--", pair.testFile], { env: practiceGitEnv(), stdio: "ignore" });
     spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "worktree", "remove", "--force", fixDir], { env: practiceGitEnv(), stdio: "ignore" });
     rmSync(fixDir, { recursive: true, force: true });
   }
 }
 
-function specOne(tooling: string, coreDir: string, repoDir: string, pair: PracticePair): GradedRow {
+function specOne(tooling: string, coreDir: string, repoDir: string, pair: PracticePair, modules: string): GradedRow {
   const form = blank(pair, "test-as-spec");
   const outDir = mkdtempSync(join(tmpdir(), "peaceai-practice-spec-"));
   const dir = mkdtempSync(join(tmpdir(), "peaceai-practice-spec-base-"));
@@ -201,12 +199,12 @@ function specOne(tooling: string, coreDir: string, repoDir: string, pair: Practi
     const added = spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "worktree", "add", "--detach", "--quiet", dir, pair.baseSha], { env: practiceGitEnv(), stdio: "ignore", timeout: 60_000 });
     if (added.status !== 0) return unmeasured("CHECKOUT_FAILED");
     if (!existsSync(pair.toolchain.nodePath)) return unmeasured("UNSAFE_ENV");
-    linkModules(repoDir, dir);
+    if (!existsSync(modules)) return unmeasured("INSTALL_UNAVAILABLE");
+    linkModules(modules, dir);
     if (!git(dir, ["checkout", pair.fixSha, "--", pair.testFile])) return unmeasured("CHECKOUT_FAILED");
     const key = Object.keys(loadTargets().targets).find((name) => name.toLowerCase() === pair.repo.toLowerCase());
     const config = key ? loadTargets().targets[key] : undefined;
     if (!config) return { ...form, ...gradePracticeRow({ scorable: false, core: "ok", job: null, gatePass: false, beforeExit: null, afterExit: null }) };
-    const modules = join(dir, "node_modules");
     const spec = runTestSpec({
       root: dir,
       subject: pair.subject,
@@ -216,12 +214,12 @@ function specOne(tooling: string, coreDir: string, repoDir: string, pair: Practi
       denyPatterns: config.denyPatterns,
       originalSuite: config.originalSuite,
       toolchain: pair.toolchain,
-      nodeModules: existsSync(modules) ? modules : null,
+      nodeModules: modules,
       restoreTree: () => git(dir, ["checkout", pair.fixSha, "--", pair.testFile]),
     });
     if (spec.status === "blocked") return { ...unmeasured(spec.reason), diagnostic: spec.diagnostic };
     if (spec.status === "cant") return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "fail", reason: spec.reason }, gatePass: false, beforeExit: null, afterExit: null }), diagnostic: spec.diagnostic };
-    const checked = gradeCandidateBehavior(repoDir, dir, pair, spec);
+    const checked = gradeCandidateBehavior(repoDir, dir, pair, spec, modules);
     const fit = {
       shape: spec.fit.shape, examples: spec.fit.examples, behavior: checked.behavior, diff: spec.diff,
       ...(checked.counterexample ? { counterexample: checked.counterexample } : {}),
@@ -245,7 +243,7 @@ function specOne(tooling: string, coreDir: string, repoDir: string, pair: Practi
     const gateOut = `${gated.stdout ?? ""}\n${gated.stderr ?? ""}`;
     const gatePass = gated.status === 0 && /GATE PASS/.test(gateOut);
     if (!gatePass) return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: false, beforeExit: null, afterExit: null, behavior: "verified_strict" }), diagnostic: spec.diagnostic, fit };
-    const graded = gradeCandidate(repoDir, pair, spec.diff);
+    const graded = gradeCandidate(repoDir, pair, spec.diff, modules);
     return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: graded.beforeExit, afterExit: graded.afterExit, behavior: "verified_strict" }), diagnostic: spec.diagnostic, fit };
   } finally {
     spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "worktree", "remove", "--force", dir], { env: practiceGitEnv(), stdio: "ignore" });
@@ -267,6 +265,16 @@ function readPairs(path: string): PracticePair[] {
   return rows;
 }
 
+function pushInstall(graded: GradedRow[], pair: PracticePair, reason: string, failure: { kind: InstallDiagKind; code: number | null; lines: string[] }): void {
+  const install = {
+    kind: failure.kind, manager: pair.toolchain.manager, managerVersion: pair.toolchain.managerVersion,
+    code: failure.code, lines: failure.lines.slice(0, 5),
+  };
+  for (const understanding of ["text", "test-as-spec"] as const) {
+    graded.push({ repo: pair.repo, split: pair.split, fixSha: pair.fixSha, understanding, status: "unmeasured", reason, gap: true, install });
+  }
+}
+
 function main(): void {
   const args = process.argv.slice(2);
   if (args.includes("-h") || args.includes("--help")) { console.log(USAGE); return; }
@@ -274,6 +282,9 @@ function main(): void {
   const out = flag("--out", args);
   const coreArchive = flag("--core-archive", args);
   const clones = flag("--clones-dir", args) ?? flag("--clones", args) ?? "";
+  const installCache = flag("--install-cache", args);
+  const installMax = Number(flag("--install-max", args) ?? INSTALL_MAX_ENTRIES);
+  if (!Number.isInteger(installMax) || installMax < 1) { console.log(USAGE); process.exit(2); }
   if (!pairsPath || !out) { console.log(USAGE); process.exit(2); }
   const tooling = resolve(import.meta.dirname, "../..");
   if (insideRepo(tooling, resolve(out))) { console.log("refused WRITE_IN_TARGET"); process.exit(2); }
@@ -292,6 +303,7 @@ function main(): void {
   const graded: GradedRow[] = [];
   try {
     const repos = new Map<string, string | null>();
+    const cacheRoot = installCache ? resolve(installCache) : join(out, "install-cache");
     for (const pair of pairs) {
       const scorable = targetIsScorable(pair.repo);
       if (!scorable || core !== "ok" || !sandbox) {
@@ -309,8 +321,30 @@ function main(): void {
         for (const understanding of ["text", "test-as-spec"] as const) graded.push({ repo: pair.repo, split: pair.split, fixSha: pair.fixSha, understanding, status: "unmeasured", reason: "NO_CLONE", gap: true });
         continue;
       }
-      graded.push(replayOne(tooling, bundle, coreDir, dir, pair));
-      graded.push(specOne(tooling, coreDir, dir, pair));
+      const shown = (path: string) => practiceGit(dir, ["show", `${pair.baseSha}:${path}`]);
+      const pkgShow = shown("package.json");
+      let pkg: { packageManager?: string; dependencies?: object; devDependencies?: object } = {};
+      try { pkg = JSON.parse(pkgShow.out) as typeof pkg; } catch { pkg = {}; }
+      const locks: LockFiles = {
+        npm: shown("package-lock.json").ok || shown("npm-shrinkwrap.json").ok,
+        pnpm: shown("pnpm-lock.yaml").ok,
+        yarn: shown("yarn.lock").ok,
+      };
+      let installed;
+      try {
+        installed = ensurePracticeInstall(dir, pair, cacheRoot, locks, yarnIsModern(pkg), { maxInstalls: installMax });
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        const reason = code === "ENOSPC" ? "INSTALL_SKIPPED_NO_SPACE" : "INSTALL_FAILED";
+        pushInstall(graded, pair, reason, { kind: "other", code: null, lines: [`${(err as Error).message ?? "install"}`.slice(0, 240)] });
+        continue;
+      }
+      if (!installed.ok || !installed.modules) {
+        pushInstall(graded, pair, installed.reason ?? "INSTALL_FAILED", { kind: installed.kind ?? "other", code: installed.code ?? null, lines: installed.lines });
+        continue;
+      }
+      graded.push(replayOne(tooling, bundle, coreDir, dir, pair, installed.modules));
+      graded.push(specOne(tooling, coreDir, dir, pair, installed.modules));
     }
   } finally {
     dispose();
@@ -318,12 +352,14 @@ function main(): void {
   const doc = replayDocument(graded);
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, "replay.json"), JSON.stringify(doc, null, 2) + "\n");
-  const gaps = graded.filter((row) => row.gap || row.fit).map((row) => {
+  const gaps = graded.filter((row) => row.gap || row.fit || row.install).map((row) => {
     const fit = publishedFit(row);
+    const install = publishedInstall(row);
     return JSON.stringify({
       repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason,
       ...(row.diagnostic ? { diagnostic: row.diagnostic } : {}),
       ...(fit ? { shape: fit.shape, examples: fit.examples, behavior: fit.behavior, ...(fit.diff ? { diff: fit.diff } : {}), ...(fit.counterexample ? { counterexample: fit.counterexample } : {}) } : {}),
+      ...(install ? { install } : {}),
     });
   });
   writeFileSync(join(out, "gaps.jsonl"), gaps.join("\n") + (gaps.length ? "\n" : ""));

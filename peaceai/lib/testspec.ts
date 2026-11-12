@@ -35,6 +35,7 @@ export const SPEC_CANT = [
   "CANT_DO_YET_SIGNATURE",
   "CANT_DO_YET_NOT_A_FUNCTION",
   "CANT_DO_YET_NO_MODULE",
+  "INSTALL_UNAVAILABLE",
 ] as const;
 export type SpecCant = (typeof SPEC_CANT)[number];
 
@@ -54,7 +55,7 @@ export interface Expectation {
 export const SPEC_DIAG_KINDS = [
   "runner_error", "no_failure", "assertion_unparsed", "assertion_unreducible",
   "reduced", "verified", "no_symbol", "no_verify", "cap", "sandbox_poison", "unsafe",
-  "missing_symbol",
+  "missing_symbol", "install_unavailable",
 ] as const;
 export type SpecDiagKind = (typeof SPEC_DIAG_KINDS)[number];
 
@@ -358,7 +359,7 @@ type SandboxHit = { blocked: SpecBlock } | { blocked: null; code: number | null;
 /** One test inside the practice sandbox. A poison or unsafe result is cleaned and blocks the next git step. */
 function runSandboxed(input: SpecInput, cmd: readonly string[]): SandboxHit {
   const before = poisonStamp(input.root);
-  const modules = input.nodeModules && existsSync(input.nodeModules) ? input.nodeModules : existsSync(join(input.root, "node_modules")) ? join(input.root, "node_modules") : null;
+  const modules = input.nodeModules && existsSync(input.nodeModules) ? input.nodeModules : null;
   const ran = runInPracticeSandbox(input.root, cmd, 60_000, { capture: true, nodePath: input.toolchain.nodePath, nodeModules: modules });
   const poison = poisonChanges(before, poisonStamp(input.root));
   if (ran.unsafe || poison.length > 0) {
@@ -1083,10 +1084,17 @@ function repairFit(expectations: Expectation[], shape: string): SpecFit {
   return { shape, examples: seen.size, targets: [...by.values()] };
 }
 
+export function commandNeedsInstall(command: readonly string[]): boolean {
+  return command.some((part) => part.includes("node_modules"));
+}
+
 export function runTestSpec(input: SpecInput): SpecResult {
   const cap = Math.min(SPEC_ATTEMPT_CAP, Math.max(1, Math.floor(input.maxAttempts ?? SPEC_ATTEMPT_CAP)));
   const deny = input.denyPatterns ?? [];
   const diag = (kind: SpecDiagKind, code: number | null, output: string) => specDiagnostic(kind, code, input.testCommand, output, input.root);
+  if (commandNeedsInstall(input.testCommand) && !(input.nodeModules && existsSync(input.nodeModules))) {
+    return { status: "cant", reason: "INSTALL_UNAVAILABLE", attempts: 0, diagnostic: diag("install_unavailable", null, "") };
+  }
   const first = runSandboxed(input, input.testCommand);
   if (first.blocked) return { status: "blocked", reason: first.blocked, attempts: 0, diagnostic: diag(first.blocked === "SANDBOX_POISON" ? "sandbox_poison" : "unsafe", null, "") };
   const output = first.stdout;

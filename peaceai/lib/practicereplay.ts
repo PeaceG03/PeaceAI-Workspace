@@ -1,8 +1,9 @@
 // Mixed-practice replay grades. credit: false. A pass is only GATE PASS plus the recorded test
 // going from fail to pass, and, for a test-as-spec candidate, a strict behavioral match.
 // Unmeasured is never a pass. Held-out rows keep the shape and the counts, not the diff.
-import { loadTargets } from "./target.ts";
 import type { Behavior, BehaviorCounterexample } from "./specgrade.ts";
+import type { InstallDiagKind } from "./practicemine.ts";
+import { loadTargets } from "./target.ts";
 
 export const REPLAY_SCHEMA = "peaceai-practice-replay:v1";
 
@@ -61,6 +62,15 @@ export interface GradedRow {
     diff?: string;
     /** One sanitized input where the candidate and the fix disagreed. Dev rows only. */
     counterexample?: BehaviorCounterexample;
+  };
+  /** Present when the dependency install did not produce a usable tree. */
+  install?: {
+    kind: InstallDiagKind;
+    manager: string;
+    managerVersion: string;
+    code: number | null;
+    /** Sanitized stderr. Kept for dev rows only. */
+    lines?: string[];
   };
 }
 
@@ -133,6 +143,16 @@ export function publishedFit(row: Pick<GradedRow, "split" | "fit">): { shape: st
   };
 }
 
+/** Install facts safe to publish. Stderr lines stay on dev rows and are dropped for held-out rows. */
+export function publishedInstall(row: Pick<GradedRow, "split" | "install">): GradedRow["install"] | undefined {
+  if (!row.install) return undefined;
+  const { kind, manager, managerVersion, code, lines } = row.install;
+  return {
+    kind, manager, managerVersion, code,
+    ...(row.split === "dev" && lines && lines.length ? { lines: lines.slice(0, 5) } : {}),
+  };
+}
+
 /** Public replay file. Counts, reasons, and the protected-function note. No subjects or core text. */
 export function replayDocument(rows: readonly GradedRow[]): {
   schema: typeof REPLAY_SCHEMA;
@@ -143,7 +163,7 @@ export function replayDocument(rows: readonly GradedRow[]): {
   protectedWhy: string;
   counts: ReturnType<typeof countsByUnderstanding>;
   behavior: ReturnType<typeof behaviorBySplit>;
-  rows: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string; diagnostic?: GradedRow["diagnostic"]; shape?: string; examples?: number; behavior?: Behavior; diff?: string; counterexample?: BehaviorCounterexample }[];
+  rows: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string; diagnostic?: GradedRow["diagnostic"]; shape?: string; examples?: number; behavior?: Behavior; diff?: string; counterexample?: BehaviorCounterexample; install?: GradedRow["install"] }[];
 } {
   return {
     schema: REPLAY_SCHEMA,
@@ -156,10 +176,12 @@ export function replayDocument(rows: readonly GradedRow[]): {
     behavior: behaviorBySplit(rows),
     rows: rows.map((row) => {
       const fit = publishedFit(row);
+      const install = publishedInstall(row);
       return {
         repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason,
         ...(row.diagnostic ? { diagnostic: row.diagnostic } : {}),
         ...(fit ? { shape: fit.shape, examples: fit.examples, behavior: fit.behavior, ...(fit.diff ? { diff: fit.diff } : {}), ...(fit.counterexample ? { counterexample: fit.counterexample } : {}) } : {}),
+        ...(install ? { install } : {}),
       };
     }),
   };
