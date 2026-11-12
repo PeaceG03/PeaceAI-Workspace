@@ -82,8 +82,10 @@ test("an ordinary sentence does not pick a family, and dev accepted answers are 
     for (const hole of holes) assert.equal(guessFamily(model, `please ${cue} ${hole}`).family, null, `${family}: ${hole}`);
   }
   const dev = scoreFamilies(model, rows, false);
-  assert.equal(dev.wrong, 0);
-  assert.ok(dev.correct > 0);
+  assert.deepEqual(dev, { rows: 152, correct: 83, wrong: 0, refused: 69 });
+  assert.equal(guessFamily(model, "add a typecheck script beside tsconfig.tools.json").family, "TSCONFIG_SCRIPT");
+  assert.equal(guessFamily(model, "add a job to nightly.yml").family, "WORKFLOW_JOB");
+  assert.equal(guessFamily(model, "please typecheck on page4").family, null);
 });
 
 test("a throw line, a date function and a self-change each take one route", () => {

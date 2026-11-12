@@ -7,7 +7,7 @@ import { EXISTING_EDIT_TRIGGER } from "./learned-edit-existing.ts";
 import { FUNCTION_TRIGGER } from "./learned-function.ts";
 import { GUARD_TOP_TRIGGER, GUARD_TRIGGER } from "./learned-guard.ts";
 import { REPLACE_TRIGGER } from "./learned-body.ts";
-import { TEST_TRIGGER } from "./learned-test.ts";
+import { FIX_LINE, TEST_TRIGGER } from "./learned-test.ts";
 import { DERIVE_WIRE_TRIGGER } from "./derive-wire.ts";
 import { DERIVE_WIRE_V2_TRIGGER } from "./derive-wire-v2.ts";
 import { parseExistingTestTask, TEST_EXISTING_TRIGGER } from "./learned-test-existing.ts";
@@ -19,6 +19,7 @@ import { TSCONFIG_SCRIPT_TRIGGER } from "./tsconfig-script.ts";
 import { WORKFLOW_JOB_TRIGGER } from "./workflow-job.ts";
 import { isCanonical } from "./nlparse.ts";
 import { canonicalRequest, guessFamily, type RequestModel } from "./requestfamily.ts";
+import { inSafeZone, selfProtectedReason } from "./self-zone.ts";
 import { cleanIssueText, MAX_OBJECTIVE_CHARS } from "./taskmap.ts";
 
 export const CORE_ENTRY = "packages/coding-kernel/src/ActionsKernel.ts";
@@ -75,26 +76,80 @@ export function replayIssueTitle(seq: number): string {
 }
 
 /**
+ * What one raw line becomes after the same cleaning the parser reads. A quote marker, a
+ * backtick, or a hash can hide a bullet on the raw line and reveal it here.
+ */
+function cleanedLine(line: string): string {
+  return cleanIssueText({ title: "", body: line });
+}
+
+/** A cleaned line the characterization parser treats as part of a task: a bullet, a fix line, or a learned header. */
+function cleanedTaskLine(line: string): boolean {
+  const cleaned = cleanedLine(line);
+  if (!cleaned) return false;
+  if (/^[-*] /.test(cleaned) || FIX_LINE.test(cleaned)) return true;
+  return TASK_HEADERS.some((h) => new RegExp(h.source, "i").test(cleaned));
+}
+
+/**
  * The issue body Job A should read, only when it is the same characterization task the log already
  * named and the approved rule can parse its checks. Anything else is refused and the log line stands.
  * Validation uses the same title generate will see. A cleaned text that fills the objective budget
- * may have sliced a check into a different value, so it is refused. The raw body is returned only
- * when that titled text is uncut and the same task.
+ * may have sliced a check into a different value, so the whole body is refused. A prose trailer
+ * after the last cleaned task line may be dropped only when the adopted clean text is a prefix of
+ * that full clean text, and no dropped line cleans into a bullet, a fix line, or a task header.
+ * A fence or an HTML comment is not dropped: those spans are not one line, so the cut is refused.
  */
 export function adoptIssueBody(asked: string, issueBody: string, seq: number): string | null {
   if (!issueBody.trim() || issueBody.length > 8000) return null;
   const header = canonicalRequest("TEST_CASE_EXISTING", asked);
   const named = header ? TASK_HEADER.exec(header)?.groups : undefined;
   if (!named?.symbol || !named.file) return null;
-  const cleaned = cleanIssueText({ title: replayIssueTitle(seq), body: issueBody });
-  if (cleaned.length === MAX_OBJECTIVE_CHARS) return null;
+  let body = issueBody;
+  let cleaned = cleanIssueText({ title: replayIssueTitle(seq), body });
+  if (cleaned.length === MAX_OBJECTIVE_CHARS) {
+    const cut = cutTrailer(issueBody, seq);
+    if (!cut) return null;
+    body = cut.body;
+    cleaned = cut.cleaned;
+  }
   if (!isCanonical(cleaned)) return null;
   const task = parseExistingTestTask(TEST_EXISTING_TRIGGER, cleaned);
   if (!task || task.symbol !== named.symbol || task.file !== named.file || task.checks.length < 1) return null;
   // A check that never names the logged function is a different task. Substring matches (`total` inside `totality`) do not count.
   const sym = new RegExp(`\\b${named.symbol.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")}\\b`);
   if (!task.checks.every((c) => sym.test(c.expr))) return null;
-  return issueBody;
+  return body;
+}
+
+/**
+ * Drop a raw suffix that cleaning does not turn into a task line. The cut is the last raw line
+ * whose clean form is a bullet, a fix line, or a learned header. The adopted clean text has to be
+ * a prefix of the full clean text, so a quote, a backtick, or a hash cannot hide a check that the
+ * cut then deletes, and an unclosed fence cannot reveal one. Fences and HTML comments are refused.
+ */
+function cutTrailer(issueBody: string, seq: number): { body: string; cleaned: string } | null {
+  if (issueBody.includes("```") || issueBody.includes("<!--")) return null;
+  const lines = issueBody.split("\n");
+  let first = -1;
+  let last = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (!cleanedTaskLine(lines[i]!)) continue;
+    if (first < 0) first = i;
+    last = i;
+  }
+  if (first < 0 || last < 0) return null;
+  for (let i = 0; i < lines.length; i++) {
+    if (i >= first && i <= last) continue;
+    if (cleanedTaskLine(lines[i]!)) return null;
+  }
+  const kept = lines.slice(first, last + 1).join("\n").trim();
+  const title = replayIssueTitle(seq);
+  const trimmed = cleanIssueText({ title, body: kept });
+  if (!trimmed || trimmed.length === MAX_OBJECTIVE_CHARS) return null;
+  const full = cleanIssueText({ title, body: issueBody });
+  if (!full.startsWith(trimmed)) return null;
+  return { body: kept, cleaned: trimmed };
 }
 
 /** One learned-rule header. The source is that rule's own trigger, not a builder-log row. */
@@ -178,10 +233,32 @@ export function agreedIssue(asked: string, issueBody: string, seq: number): stri
   if (!issueBody.trim() || issueBody.length > 8000) return null;
   const cleaned = cleanIssueText({ title: replayIssueTitle(seq), body: issueBody });
   if (!cleaned || cleaned.length === MAX_OBJECTIVE_CHARS || !isCanonical(cleaned)) return null;
-  const hits = headersIn(cleaned).filter((h) => sameTask(asked, h));
-  const keys = new Set(hits.map((h) => `${h.family}\0${h.file}\0${h.symbol}`));
+  const hits = headersIn(cleaned);
+  const agreed = hits.filter((h) => sameTask(asked, h));
+  const keys = new Set(agreed.map((h) => `${h.family}\0${h.file}\0${h.symbol}`));
   if (keys.size !== 1) return null;
+  const key = [...keys][0]!;
+  // A header for a different file, symbol, or family is a second task, even when the summary only names one of them.
+  if (hits.some((h) => `${h.family}\0${h.file}\0${h.symbol}` !== key)) return null;
   return issueBody;
+}
+
+/**
+ * Why an own-repo row stays a self-change. A protected path is named. A path the leak/scope gate
+ * cannot score (not `src/` and not the safe zone) is named too. Anything else, including a row
+ * whose files were not looked up, stays the bare refusal: there is no approved rule to run.
+ */
+export function selfChangeFailReason(paths: readonly string[] | null | undefined): string {
+  if (!paths?.length) return "SELF_CHANGE";
+  const ordered = [...paths].sort();
+  for (const p of ordered) {
+    const why = selfProtectedReason(p);
+    if (why) return `SELF_CHANGE: ${p} is protected (${why})`;
+  }
+  for (const p of ordered) {
+    if (!/^src\//.test(p) && !inSafeZone(p)) return `SELF_CHANGE: ${p} is outside the graded paths`;
+  }
+  return "SELF_CHANGE";
 }
 
 /** Every repo ref in the landing record is PeaceAI-Workspace: the change is to this repo's own code. */
@@ -195,9 +272,10 @@ export type ReplayRoute = { run: string } | { fail: string };
 /**
  * What the production replay should do with one row. A cited issue that is the same learned
  * task is handed to Job A. PeaceAI's own tooling, with no such task, is a self-change refusal.
- * The characterization path keeps its own adoption check.
+ * `paths` are the files the landing commit touched. A protected file, or a file the existing
+ * gate cannot score, is named in the refusal. The characterization path keeps its own adoption check.
  */
-export function routeReplay(o: { model: RequestModel; asked: string; changed: string; issueBody: string | null; seq: number }): ReplayRoute {
+export function routeReplay(o: { model: RequestModel; asked: string; changed: string; issueBody: string | null; seq: number; paths?: readonly string[] }): ReplayRoute {
   const g = guessFamily(o.model, o.asked);
   const canon = g.family ? canonicalRequest(g.family, o.asked) : null;
   if (g.family === "TEST_CASE_EXISTING" && canon) {
@@ -207,7 +285,7 @@ export function routeReplay(o: { model: RequestModel; asked: string; changed: st
   const adopted = o.issueBody ? agreedIssue(o.asked, o.issueBody, o.seq) : null;
   if (adopted) return { run: adopted };
   if (canon) return { run: canon };
-  if (g.refusal === "SELF_CHANGE" || ownWorkspaceChange(o.changed)) return { fail: "SELF_CHANGE" };
+  if (g.refusal === "SELF_CHANGE" || ownWorkspaceChange(o.changed)) return { fail: selfChangeFailReason(o.paths) };
   if (g.none) return { fail: "NOT_CODE_FAMILY" };
   if (!g.family) return { fail: "CLASSIFIER_UNSURE" };
   return { fail: `NO_SLOTS: ${g.family}` };
