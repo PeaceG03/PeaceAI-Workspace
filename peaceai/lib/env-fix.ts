@@ -10,9 +10,17 @@
 //         `Number(X ?? "N")` (N a plain-digit string literal) and `Number(X) || D` (D an integer literal, an
 //         identifier, or a product of integer literals such as `5 * 3_600_000`); the default must be >= 1 when literal.
 //         Refused: env_fix_bad_default (non-numeric / zero / fractional default), env_fix_mixed_reads (any other read).
+// v3 (public-env-fix-v3, params.name = "task-or-sibling-convention"): the helper NAME is no longer always strictNAME.
+//         1. the task names it: `... as a flag via \`fooBar\`` (the optional `via` group of the v3 trigger);
+//         2. else the file's own convention: every one-parameter function DECLARED in the file and called on an env
+//            read (`parseX(process.env.Y)`) is read as prefix + kept tokens of Y (a dropped leading namespace, e.g.
+//            APP_, must equal NAME's own leading tokens), with the sibling's spelling of each token (MYAPP ->
+//            MyApp). Each sibling votes for a name for NAME; most votes wins, ties prefer fewer dropped tokens,
+//            and a remaining tie (or no sibling) abstains;
+//         3. else strictNAME as in v1/v2. A v1/v2 spec (no `name` param) ignores both and is unchanged.
 // Plus ONE new test file with the value table (blank, 0/1 or in-range, and the fail-closed values).
 // Refused (short codes): env_fix_read_not_found, env_fix_mixed_reads (any other read of X in the file),
-// env_fix_helper_taken, env_fix_bad_max, path_not_plain, protected_path, target_missing, env_fix_test_exists.
+// env_fix_helper_taken, env_fix_bad_helper (v3: not a plain lower-camel name, or reserved), env_fix_bad_max, path_not_plain, protected_path, target_missing, env_fix_test_exists.
 import ts from "typescript";
 import { PROTECTED_SELF } from "./selfchange.ts";
 
@@ -26,8 +34,11 @@ export const ENV_FIX_VOCAB: Record<(typeof ENV_FIX_PARAM_KEYS)[number], readonly
 };
 /** v2 only: optional `int` param. Absent = v1 (ternary shape only); a v1 spec's hash and behaviour are unchanged. */
 export const ENV_FIX_INT_VOCAB = ["ternary-nullish-or"] as const;
+/** v3 only: optional `name` param (helper name from the task text, else the file's sibling convention). */
+export const ENV_FIX_NAME_VOCAB = ["task-or-sibling-convention"] as const;
 export function validEnvFixParams(p: Record<string, unknown>): boolean {
-  const keys = Object.keys(p).filter((k) => k !== "int");
+  if ("name" in p && !(typeof p.name === "string" && (ENV_FIX_NAME_VOCAB as readonly string[]).includes(p.name))) return false;
+  const keys = Object.keys(p).filter((k) => k !== "int" && k !== "name");
   if (keys.sort().join(",") !== [...ENV_FIX_PARAM_KEYS].sort().join(",")) return false;
   if (!ENV_FIX_PARAM_KEYS.every((k) => typeof p[k] === "string" && ENV_FIX_VOCAB[k].includes(p[k] as string))) return false;
   return !("int" in p) || (typeof p.int === "string" && (ENV_FIX_INT_VOCAB as readonly string[]).includes(p.int));
@@ -36,7 +47,9 @@ const ENVNAME = String.raw`[A-Z][A-Z0-9_]{1,60}`;
 const FILE = String.raw`[\w./-]+\.ts`;
 /** make env NAME strict in src/FILE.ts as a flag | as an integer 1..MAX */
 export const ENV_FIX_TRIGGER = String.raw`^make (?:the )?env(?:ironment variable)? \x60?(?<name>${ENVNAME})\x60? strict in \x60?(?<file>${FILE})\x60? as (?:a |an )?(?:(?<flag>flag)|integer 1\.\.(?<max>\d{1,9}))\.?$`;
-export interface EnvFixTask { name: string; file: string; mode: "flag" | "int"; max: number }
+/** v3: the v2 phrase plus an optional ` via \`helperName\`` (the exported helper the change adds). */
+export const ENV_FIX_TRIGGER_V3 = ENV_FIX_TRIGGER.replace(String.raw`)\.?$`, String.raw`)(?: via (?:helper )?\x60?(?<helper>[a-z][A-Za-z0-9]{2,60})\x60?)?\.?$`);
+export interface EnvFixTask { name: string; file: string; mode: "flag" | "int"; max: number; helper?: string }
 const plainPath = (p: string) => !p.startsWith("/") && !p.split("/").some((x) => x === "" || x === "." || x === ".." || x.startsWith("."));
 const isProtected = (p: string) => PROTECTED_SELF.some((x) => x.pattern.test(p));
 
@@ -46,7 +59,8 @@ export function parseEnvFixTask(trigger: string, objective: string): EnvFixTask 
   if (heads.length !== 1) return null;
   const g = re.exec(heads[0]!)!.groups ?? {};
   if (!g.name || !g.file) return null;
-  return g.flag ? { name: g.name, file: g.file, mode: "flag", max: 0 } : { name: g.name, file: g.file, mode: "int", max: Number(g.max) };
+  const t: EnvFixTask = g.flag ? { name: g.name, file: g.file, mode: "flag", max: 0 } : { name: g.name, file: g.file, mode: "int", max: Number(g.max) };
+  return g.helper ? { ...t, helper: g.helper } : t;
 }
 
 export const helperName = (name: string) => "strict" + name.toLowerCase().split("_").filter(Boolean).map((w) => w[0]!.toUpperCase() + w.slice(1)).join("");
@@ -55,6 +69,60 @@ const isEnvObj = (e: ts.Expression) => (ts.isPropertyAccessExpression(e) && ts.i
 const isRead = (n: ts.Node, name: string): n is ts.PropertyAccessExpression | ts.ElementAccessExpression =>
   (ts.isPropertyAccessExpression(n) && n.name.text === name && isEnvObj(n.expression)) ||
   (ts.isElementAccessExpression(n) && (ts.isStringLiteral(n.argumentExpression) || ts.isNoSubstitutionTemplateLiteral(n.argumentExpression)) && n.argumentExpression.text === name && isEnvObj(n.expression));
+const envReadName = (n: ts.Node): string | null =>
+  ts.isPropertyAccessExpression(n) && isEnvObj(n.expression) ? n.name.text
+  : ts.isElementAccessExpression(n) && isEnvObj(n.expression) && (ts.isStringLiteral(n.argumentExpression) || ts.isNoSubstitutionTemplateLiteral(n.argumentExpression)) ? n.argumentExpression.text : null;
+const RESERVED = new Set(["break", "case", "catch", "class", "const", "continue", "debugger", "default", "delete", "do", "else", "enum", "export", "extends", "false", "finally", "for", "function", "if", "import", "in", "instanceof", "new", "null", "return", "super", "switch", "this", "throw", "true", "try", "typeof", "var", "void", "while", "with", "let", "static", "yield", "await", "implements", "interface", "package", "private", "protected", "public", "undefined", "process", "env", "value"]);
+
+/**
+ * v3: the helper name the file's own env-parsing siblings imply for NAME, or null (abstain). A sibling is a
+ * one-parameter function declared at the top level of this file and called as `fn(<env read of Y>)`, Y != NAME.
+ * fn must end with Y's tokens minus k leading ones (case-insensitive; the rest of fn is a lower-camel prefix, maybe
+ * empty), and NAME must start with the same k dropped tokens. The sibling then votes for prefix + NAME's kept
+ * tokens, spelled as the sibling spells shared tokens (MYAPP -> MyApp) and Capitalized otherwise.
+ */
+export function siblingHelperName(name: string, content: string): string | null {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const declared = new Set<string>();
+  for (const s of sf.statements) if (ts.isFunctionDeclaration(s) && s.name && s.parameters.length === 1) declared.add(s.name.text);
+  const toks = name.split("_").filter(Boolean);
+  const votes = new Map<string, { n: number; d: number }>();
+  const seen = new Set<string>();
+  const visit = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && declared.has(n.expression.text) && n.arguments.length === 1) {
+      const fn = n.expression.text;
+      const y = envReadName(n.arguments[0]!);
+      if (y && y !== name && !seen.has(`${fn}|${y}`)) {
+        seen.add(`${fn}|${y}`);
+        const ys = y.split("_").filter(Boolean);
+        for (let d = 0; d < ys.length; d += 1) {
+          const kept = ys.slice(d);
+          const tail = kept.join("").toLowerCase();
+          if (!fn.toLowerCase().endsWith(tail)) continue;
+          const prefix = fn.slice(0, fn.length - tail.length);
+          if (prefix && !/^[a-z][A-Za-z0-9]*$/.test(prefix)) break;
+          if (d >= toks.length || ys.slice(0, d).some((t, i) => toks[i] !== t)) break;
+          const spell = new Map<string, string>();
+          let i = prefix.length;
+          for (const t of kept) { spell.set(t, fn.slice(i, i + t.length)); i += t.length; }
+          const parts = toks.slice(d).map((t) => { const w = spell.get(t) ?? t[0]! + t.slice(1).toLowerCase(); return w[0]!.toUpperCase() + w.slice(1); });
+          const joined = parts.join("");
+          const out = prefix ? prefix + joined : joined[0]!.toLowerCase() + joined.slice(1);
+          const v = votes.get(out) ?? { n: 0, d };
+          v.n += 1;
+          votes.set(out, v);
+          break;
+        }
+      }
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  const ranked = [...votes.entries()].sort((a, b) => b[1].n - a[1].n || a[1].d - b[1].d);
+  if (!ranked.length) return null;
+  if (ranked.length > 1 && ranked[0]![1].n === ranked[1]![1].n && ranked[0]![1].d === ranked[1]![1].d) return null;
+  return ranked[0]![0];
+}
 const isOneLit = (e: ts.Expression) => ts.isStringLiteral(e) && e.text === "1";
 const numberOf = (e: ts.Expression, name: string) => ts.isCallExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === "Number" && e.arguments.length === 1 && isRead(e.arguments[0]!, name);
 
@@ -66,14 +134,15 @@ function intDefault(e: ts.Expression): boolean {
   return ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.AsteriskToken && intDefault(e.left) && intDefault(e.right) && !ts.isIdentifier(e.left) && !ts.isIdentifier(e.right);
 }
 
-export function buildEnvFix(task: EnvFixTask, files: readonly { path: string; content: string }[], why?: { reason?: string }, wide = false): { path: string; content: string; extra: { path: string; content: string; create: true }[]; selfGrade: true } | null {
+export function buildEnvFix(task: EnvFixTask, files: readonly { path: string; content: string }[], why?: { reason?: string }, wide = false, named = false): { path: string; content: string; extra: { path: string; content: string; create: true }[]; selfGrade: true } | null {
   const no = (r: string) => { if (why) why.reason = r; return null; };
   if (!plainPath(task.file) || !task.file.startsWith("src/") || /\.test\.ts$/.test(task.file)) return no("path_not_plain");
   if (isProtected(task.file)) return no("protected_path");
   const cur = files.find((f) => f.path === task.file);
   if (!cur) return no("target_missing");
   if (task.mode === "int" && (!Number.isSafeInteger(task.max) || task.max < 1)) return no("env_fix_bad_max");
-  const helper = helperName(task.name);
+  const helper = named ? task.helper ?? siblingHelperName(task.name, cur.content) ?? helperName(task.name) : helperName(task.name);
+  if (!/^[a-z][A-Za-z0-9]{2,60}$/.test(helper) || RESERVED.has(helper)) return no("env_fix_bad_helper");
   if (new RegExp(`\\b${helper}\\b`).test(cur.content)) return no("env_fix_helper_taken");
   const sf = ts.createSourceFile("m.ts", cur.content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const reads: ts.Expression[] = [];
@@ -161,7 +230,7 @@ export function runEnvFixRule(trigger: string, params: Record<string, string | s
   if (!validParams(params)) { if (why) why.reason = "bad_rule_params"; return null; }
   const task = parseEnvFixTask(trigger, objective);
   if (!task) { if (why) why.reason = "task_unparsed"; return null; }
-  return buildEnvFix(task, files, why, params.int === "ternary-nullish-or");
+  return buildEnvFix(task, files, why, params.int === "ternary-nullish-or", params.name === "task-or-sibling-convention");
 }
 export function applyEnvFixRule(trigger: string, params: Record<string, string | string[]>, objective: string, files: readonly { path: string; content: string }[], env: Record<string, string | undefined> = process.env, why?: { reason?: string }) {
   return envFixEnabled(env) ? runEnvFixRule(trigger, params, objective, files, why) : null;
