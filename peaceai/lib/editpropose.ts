@@ -122,6 +122,36 @@ function declarationsNamed(sf: ts.SourceFile, name: string): ts.Node[] {
   return out;
 }
 
+/**
+ * Where a property or assignment named `name` actually runs, in this file.
+ * An object literal `{ name: fn }` and `obj.name = fn` do not contain the body when `fn` is another
+ * binding. A const arrow and an inline function do. Repair-v2 follows these; the property alias itself
+ * has nothing to edit.
+ */
+function aliasBodies(sf: ts.SourceFile, name: string): ts.Node[] {
+  const tops = topFunctions(sf);
+  const out: ts.Node[] = [];
+  const add = (node: ts.Node) => { if (!out.includes(node)) out.push(node); };
+  const follow = (expr: ts.Expression) => {
+    if (ts.isIdentifier(expr)) { const fn = tops.get(expr.text); if (fn) add(fn); return; }
+    if (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)) add(expr);
+  };
+  const visit = (n: ts.Node) => {
+    if (ts.isPropertyAssignment(n) && propName(n.name) === name) follow(n.initializer);
+    else if (ts.isShorthandPropertyAssignment(n) && n.name.text === name) { const fn = tops.get(n.name.text); if (fn) add(fn); }
+    else if (ts.isMethodDeclaration(n) && propName(n.name) === name && n.parent && ts.isObjectLiteralExpression(n.parent)) add(n);
+    else if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(n.left) && propName(n.left.name) === name) follow(n.right);
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return out;
+}
+function propName(name: ts.Node | undefined): string | null {
+  if (!name) return null;
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
+  return null;
+}
+
 /** Top-level functions (declarations and const arrow / function expressions) of a file, by name. */
 function topFunctions(sf: ts.SourceFile): Map<string, ts.Node> {
   const m = new Map<string, ts.Node>();
@@ -250,7 +280,17 @@ export function locate(search: CodeRepo, input: PrepareInput, depth: number = CA
           else viaReExport(target, im.name);
         }
       };
-      for (const d of declarationsNamed(sf, name)) {
+      const decls = declarationsNamed(sf, name);
+      // A property `{ name: other }` or `obj.name = other` does not contain the function. Follow it
+      // only when that body sits outside every declaration of `name` (an inline arrow is already inside
+      // the property, and counting it twice would spend a site).
+      if (depth >= 2) for (const body of aliasBodies(sf, name)) {
+        const start = body.getStart(sf);
+        const end = body.getEnd();
+        if (decls.some((d) => start >= d.getStart(sf) && end <= d.getEnd())) continue;
+        push({ path: p, name, start, end, tier: 0 });
+      }
+      for (const d of decls) {
         push({ path: p, name, start: d.getStart(sf), end: d.getEnd(), tier: 0 });
         // one level of same-file callees (the fault is often one call below the named entry point)
         const callees: string[] = [];
