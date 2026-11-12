@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
-import { pairProblems, practiceSandboxReady, runInPracticeSandbox, type PracticePair } from "../lib/practicemine.ts";
+import { GIT_LOCK_ARGS, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, type PracticePair } from "../lib/practicemine.ts";
 import {
   PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, targetIsScorable,
   type GradedRow,
@@ -38,7 +38,7 @@ function insideRepo(root: string, target: string): boolean {
 }
 
 function git(dir: string, args: string[], timeout = 60_000): boolean {
-  return spawnSync("git", ["-C", dir, ...args], { stdio: "ignore", timeout }).status === 0;
+  return practiceGit(dir, args, timeout).ok;
 }
 
 function cloneDir(repo: string, clones: string, work: string): string | null {
@@ -47,32 +47,44 @@ function cloneDir(repo: string, clones: string, work: string): string | null {
   if (existsSync(join(dir, ".git"))) return dir;
   const src = cached && existsSync(join(cached, ".git")) ? cached : "";
   if (!src) return null;
-  if (spawnSync("git", ["clone", "--quiet", src, dir], { stdio: "ignore", timeout: 180_000 }).status !== 0) return null;
+  if (spawnSync("git", [...GIT_LOCK_ARGS, "clone", "--quiet", src, dir], { env: practiceGitEnv(), stdio: "ignore", timeout: 180_000 }).status !== 0) return null;
   return dir;
 }
 
-function runTest(dir: string, cmd: string[]): number | null {
-  const ran = runInPracticeSandbox(dir, cmd, TEST_MS);
-  if (ran.unsafe) return null;
-  return ran.code;
+function linkModules(repoDir: string, dir: string): void {
+  const modules = join(repoDir, "node_modules");
+  if (existsSync(modules) && !existsSync(join(dir, "node_modules"))) spawnSync("ln", ["-s", modules, join(dir, "node_modules")], { stdio: "ignore" });
+}
+
+function runTest(dir: string, cmd: string[], nodePath: string): { code: number | null; blocked: boolean } {
+  const before = poisonStamp(dir);
+  const modules = existsSync(join(dir, "node_modules")) ? join(dir, "node_modules") : null;
+  const ran = runInPracticeSandbox(dir, cmd, TEST_MS, { nodePath, nodeModules: modules });
+  const released = releaseWorktree(dir, before);
+  if (ran.unsafe || released.poison.length > 0 || !released.clean) return { code: null, blocked: true };
+  return { code: ran.code, blocked: false };
 }
 
 /** Apply one candidate on a fresh base, with the recorded test file as the spec. Returns exits, or nulls when the diff does not apply. */
 function gradeCandidate(repoDir: string, pair: PracticePair, diff: string): { beforeExit: number | null; afterExit: number | null } {
   const dir = mkdtempSync(join(tmpdir(), "peaceai-practice-grade-"));
-  const added = spawnSync("git", ["-C", repoDir, "worktree", "add", "--detach", "--quiet", dir, pair.baseSha], { stdio: "ignore", timeout: 60_000 });
+  const added = spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "worktree", "add", "--detach", "--quiet", dir, pair.baseSha], { env: practiceGitEnv(), stdio: "ignore", timeout: 60_000 });
   if (added.status !== 0) { rmSync(dir, { recursive: true, force: true }); return { beforeExit: null, afterExit: null }; }
   try {
-    const modules = join(repoDir, "node_modules");
-    if (existsSync(modules) && !existsSync(join(dir, "node_modules"))) spawnSync("ln", ["-s", modules, join(dir, "node_modules")], { stdio: "ignore" });
+    if (!existsSync(pair.toolchain.nodePath)) return { beforeExit: null, afterExit: null };
+    linkModules(repoDir, dir);
     if (!git(dir, ["checkout", pair.fixSha, "--", pair.testFile])) return { beforeExit: null, afterExit: null };
-    const before = runTest(dir, pair.testCommand);
-    const applied = spawnSync("git", ["-C", dir, "apply", "--whitespace=nowarn", "-"], { input: diff, encoding: "utf8", stdio: ["pipe", "ignore", "ignore"] });
-    if (applied.status !== 0) return { beforeExit: before, afterExit: null };
-    const after = runTest(dir, pair.testCommand);
-    return { beforeExit: before, afterExit: after };
+    const before = runTest(dir, pair.testCommand, pair.toolchain.nodePath);
+    if (before.blocked) return { beforeExit: before.code, afterExit: null };
+    linkModules(repoDir, dir);
+    if (!git(dir, ["checkout", pair.fixSha, "--", pair.testFile])) return { beforeExit: before.code, afterExit: null };
+    const applied = spawnSync("git", ["-C", dir, ...GIT_LOCK_ARGS, "apply", "--whitespace=nowarn", "-"], { input: diff, encoding: "utf8", env: practiceGitEnv(), stdio: ["pipe", "ignore", "ignore"] });
+    if (applied.status !== 0) return { beforeExit: before.code, afterExit: null };
+    const after = runTest(dir, pair.testCommand, pair.toolchain.nodePath);
+    if (after.blocked) return { beforeExit: before.code, afterExit: null };
+    return { beforeExit: before.code, afterExit: after.code };
   } finally {
-    spawnSync("git", ["-C", repoDir, "worktree", "remove", "--force", dir], { stdio: "ignore" });
+    spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "worktree", "remove", "--force", dir], { env: practiceGitEnv(), stdio: "ignore" });
     rmSync(dir, { recursive: true, force: true });
   }
 }
@@ -83,7 +95,7 @@ function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: st
   const outDir = mkdtempSync(join(tmpdir(), "peaceai-practice-out-"));
   const dir = mkdtempSync(join(tmpdir(), "peaceai-practice-base-"));
   try {
-    const added = spawnSync("git", ["-C", repoDir, "worktree", "add", "--detach", "--quiet", dir, pair.baseSha], { stdio: "ignore", timeout: 60_000 });
+    const added = spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "worktree", "add", "--detach", "--quiet", dir, pair.baseSha], { env: practiceGitEnv(), stdio: "ignore", timeout: 60_000 });
     if (added.status !== 0) return { ...blank(pair), ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "unmeasured", reason: "CHECKOUT_FAILED" }, gatePass: false, beforeExit: null, afterExit: null }) };
     const ran = spawnSync(join(tooling, "node_modules/.bin/tsx"), [join(tooling, "peaceai/bin/generate.ts")], {
       cwd: tooling, encoding: "utf8", timeout: ROW_MS,
@@ -127,7 +139,7 @@ function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: st
     if (!fixed && afterExit === null) afterExit = null;
     return { ...blank(pair), ...gradePracticeRow({ scorable: true, core: "ok", job, gatePass: true, beforeExit, afterExit: fixed ? 0 : afterExit }) };
   } finally {
-    spawnSync("git", ["-C", repoDir, "worktree", "remove", "--force", dir], { stdio: "ignore" });
+    spawnSync("git", ["-C", repoDir, ...GIT_LOCK_ARGS, "worktree", "remove", "--force", dir], { env: practiceGitEnv(), stdio: "ignore" });
     rmSync(dir, { recursive: true, force: true });
     rmSync(outDir, { recursive: true, force: true });
   }

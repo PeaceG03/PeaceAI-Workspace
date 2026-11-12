@@ -9,8 +9,8 @@ import { keptLicense } from "../lib/practicemine.ts";
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
-  exclusionHits,   cloneRootProblems, extManifestProblems, heldOutHash, heldOutWatchProblems, installArgv, isSourceFile, isTestFile, manifestProblems,
-  pairFiles, pairProblems, parseRepoToken, practiceSandboxArgv, practiceWatchFiles, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
+  GIT_LOCK_ARGS, cloneRootProblems, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutWatchProblems, installArgv, isSourceFile, isTestFile, manifestProblems,
+  pairFiles, pairProblems, parseRepoToken, poisonChanges, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxArgv, practiceWatchFiles, releaseWorktree, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
 import { countBySplit, gradePracticeRow, replayDocument, targetIsScorable } from "../lib/practicereplay.ts";
@@ -51,6 +51,7 @@ test("the test command is an argv for one file, and install hooks are ignored", 
   assert.equal(testCommandFor({ scripts: { test: "make test" } }, "test/a.test.ts"), null);
   assert.deepEqual(installArgv({ npm: true, pnpm: false, yarn: false }, true), ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"]);
   assert.deepEqual(installArgv({ npm: false, pnpm: true, yarn: false }, true), ["pnpm", "install", "--ignore-scripts"]);
+  assert.deepEqual(installArgv({ npm: false, pnpm: false, yarn: true }, true, true), ["corepack", "yarn", "install", "--mode=skip-build"]);
   assert.equal(installArgv({ npm: false, pnpm: false, yarn: false }, false), null);
 });
 
@@ -67,9 +68,10 @@ test("third-party env is an allowlist, and the sandbox is bubblewrap with no uns
   const argv = practiceSandboxArgv("/work/pair");
   assert.ok(argv);
   assert.equal(argv[0], "bwrap");
-  assert.ok(argv.includes("--ro-bind") && argv.includes("--unshare-net") && argv.includes("--unshare-pid"));
+  assert.ok(argv.includes("--ro-bind") && argv.includes("/usr") && argv.includes("--unshare-net") && argv.includes("--unshare-pid"));
   assert.ok(argv.includes("--die-with-parent") && argv.includes("--new-session"));
   assert.equal(argv.includes("unshare"), false);
+  assert.equal(argv.some((arg, i) => (argv[i - 1] === "--ro-bind" || argv[i - 1] === "--bind") && arg === "/"), false);
   assert.equal(practiceSandboxArgv("relative"), null);
 });
 
@@ -111,6 +113,143 @@ test("the practice sandbox hides a fake home, refuses outside writes, and has no
     rmSync(realHome, { recursive: true, force: true });
     rmSync(work, { recursive: true, force: true });
     rmSync(outside, { force: true });
+  }
+});
+
+function bwrapHere(): boolean {
+  return !spawnSync("bwrap", ["--version"], { stdio: "ignore" }).error;
+}
+
+function tinyRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), "practice-poison-"));
+  spawnSync("git", ["init", "-q", dir], { stdio: "ignore" });
+  writeFileSync(join(dir, "package.json"), "{\"name\":\"p\"}\n");
+  spawnSync("git", ["-C", dir, "add", "package.json"], { stdio: "ignore" });
+  spawnSync("git", ["-C", dir, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "init"], { stdio: "ignore" });
+  return dir;
+}
+
+test("git outside the sandbox ignores hooks and fsmonitor, and poison files refuse the next step", () => {
+  assert.ok(GIT_LOCK_ARGS.includes("core.hooksPath=/dev/null"));
+  assert.ok(GIT_LOCK_ARGS.includes("core.fsmonitor=false"));
+  const env = practiceGitEnv();
+  assert.equal(env.GIT_CONFIG_NOSYSTEM, "1");
+  assert.ok(env.GIT_CONFIG_GLOBAL && env.GIT_CONFIG_GLOBAL.length > 0);
+  const dir = tinyRepo();
+  try {
+    const hook = join(dir, ".git", "hooks", "post-checkout");
+    mkdirSync(join(dir, ".git", "hooks"), { recursive: true });
+    const marker = join(dir, "hook-ran");
+    writeFileSync(hook, `#!/bin/sh\necho ran > ${JSON.stringify(marker)}\n`);
+    spawnSync("chmod", ["+x", hook], { stdio: "ignore" });
+    const monitor = join(dir, "fsmonitor");
+    writeFileSync(monitor, `#!/bin/sh\necho ran > ${JSON.stringify(join(dir, "monitor-ran"))}\n`);
+    spawnSync("chmod", ["+x", monitor], { stdio: "ignore" });
+    practiceGit(dir, ["config", "core.fsmonitor", monitor]);
+    assert.equal(practiceGit(dir, ["checkout", "-f", "HEAD"]).ok, true);
+    assert.equal(existsSync(marker), false);
+    assert.equal(existsSync(join(dir, "monitor-ran")), false);
+    const before = poisonStamp(dir);
+    writeFileSync(join(dir, ".pnpmfile.cjs"), "throw new Error('poison')\n");
+    writeFileSync(join(dir, ".npmrc"), "ignore-scripts=false\n");
+    writeFileSync(join(dir, ".yarnrc.yml"), "yarnPath: ./evil.js\n");
+    writeFileSync(join(dir, "package.json"), "{\"name\":\"changed\"}\n");
+    const changes = poisonChanges(before, poisonStamp(dir));
+    assert.ok(changes.includes(".pnpmfile.cjs"));
+    assert.ok(changes.includes(".npmrc"));
+    assert.ok(changes.includes(".yarnrc.yml"));
+    assert.ok(changes.includes("package.json"));
+    const released = releaseWorktree(dir, before);
+    assert.ok(released.poison.includes(".pnpmfile.cjs"));
+    assert.equal(released.clean, true);
+    assert.equal(existsSync(join(dir, ".pnpmfile.cjs")), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a renamed fork with a false corpus root fails closed", () => {
+  const held = [{ name: "gcanti/fp-ts", root: "a".repeat(40) }];
+  const recorded = { "renamed/fp-ts": "b".repeat(40) };
+  assert.ok(falseRootProblems(held, recorded, { "renamed/fp-ts": null }).some((p) => p.startsWith("CLONE_UNVERIFIED")));
+  const lied = falseRootProblems(held, recorded, {
+    "renamed/fp-ts": {
+      remoteUrl: "https://github.com/renamed/fp-ts.git",
+      root: "a".repeat(40),
+      parent: "gcanti/fp-ts",
+      source: "gcanti/fp-ts",
+      upstreamRoot: "a".repeat(40),
+    },
+  });
+  assert.ok(lied.some((p) => p.includes("renamed/fp-ts")), lied.join("\n"));
+});
+
+test("the sandbox cannot write git metadata or package-manager config, and cannot read /opt or /var/lib", (t) => {
+  if (!bwrapHere()) { t.skip("bwrap is not installed on this host"); return; }
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const dir = tinyRepo();
+  const outside = mkdtempSync(join(tmpdir(), "practice-nm-"));
+  try {
+    writeFileSync(join(outside, "helper.js"), "module.exports = { answer: 7 };\n");
+    spawnSync("ln", ["-s", outside, join(dir, "node_modules")], { stdio: "ignore" });
+    const script = [
+      "const fs = require('fs');",
+      "const out = {};",
+      "function see(p){ try { return fs.readFileSync(p,'utf8').slice(0,20); } catch(e){ return e.code; } }",
+      "out.opt = see('/opt/sand-managed/marker');",
+      "out.varlib = see('/var/lib/sand-box-runtime/marker');",
+      "try { fs.mkdirSync('.git/hooks',{recursive:true}); fs.writeFileSync('.git/hooks/post-checkout','#!/bin/sh\\n'); out.hook='wrote'; } catch(e){ out.hook=e.code; }",
+      "try { fs.appendFileSync('.git/config','\\n[core]\\n\\tfsmonitor=/tmp/evil\\n'); out.monitor='wrote'; } catch(e){ out.monitor=e.code; }",
+      "fs.writeFileSync('.pnpmfile.cjs','throw 1\\n');",
+      "fs.writeFileSync('.yarnrc.yml','yarnPath: ./evil.js\\n');",
+      "fs.writeFileSync('.npmrc','ignore-scripts=false\\n');",
+      "out.helper = require('helper').answer;",
+      "console.log(JSON.stringify(out));",
+    ].join("\n");
+    const before = poisonStamp(dir);
+    const ran = runInPracticeSandbox(dir, [node, "-e", script], 15_000, { capture: true, nodePath: node, nodeModules: join(dir, "node_modules") });
+    assert.equal(ran.unsafe, false, ran.stdout);
+    assert.equal(ran.code, 0, ran.stdout);
+    const body = JSON.parse(ran.stdout.trim().split("\n").at(-1)!) as { opt: string; varlib: string; hook: string; monitor: string; helper: number };
+    assert.equal(body.opt, "ENOENT");
+    assert.equal(body.varlib, "ENOENT");
+    assert.notEqual(body.hook, "wrote");
+    assert.notEqual(body.monitor, "wrote");
+    assert.equal(body.helper, 7);
+    const changes = poisonChanges(before, poisonStamp(dir));
+    assert.ok(changes.includes(".pnpmfile.cjs") && changes.includes(".yarnrc.yml") && changes.includes(".npmrc"));
+    assert.equal(changes.some((p) => p.startsWith(".git")), false);
+    const released = releaseWorktree(dir, before);
+    assert.ok(released.poison.length > 0);
+    assert.equal(existsSync(join(dir, ".pnpmfile.cjs")), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("a correct candidate passes through the sandbox when node_modules is a symlink outside the work tree", (t) => {
+  if (!bwrapHere()) { t.skip("bwrap is not installed on this host"); return; }
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const dir = tinyRepo();
+  const outside = mkdtempSync(join(tmpdir(), "practice-nm-"));
+  try {
+    writeFileSync(join(outside, "helper.js"), "module.exports = { add: (a, b) => a + b };\n");
+    spawnSync("ln", ["-s", outside, join(dir, "node_modules")], { stdio: "ignore" });
+    writeFileSync(join(dir, "src.js"), "module.exports = () => 0;\n");
+    writeFileSync(join(dir, "src.test.js"), "const test = require('node:test'); const assert = require('node:assert'); const fn = require('./src'); test('adds', () => assert.equal(fn(), require('helper').add(1, 1)));\n");
+    const fail = runInPracticeSandbox(dir, [node, "--test", "src.test.js"], 15_000, { nodePath: node, nodeModules: join(dir, "node_modules") });
+    assert.equal(fail.unsafe, false);
+    assert.notEqual(fail.code, 0);
+    writeFileSync(join(dir, "src.js"), "module.exports = () => 2;\n");
+    const pass = runInPracticeSandbox(dir, [node, "--test", "src.test.js"], 15_000, { nodePath: node, nodeModules: join(dir, "node_modules") });
+    assert.equal(pass.unsafe, false);
+    assert.equal(pass.code, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
   }
 });
 
@@ -237,6 +376,7 @@ test("a verified pair records the fail-before and pass-after exits", () => {
     schema: "peaceai-practice-pair:v1", credit: false, repo: "unjs/ufo", license: "MIT", split: "held-out",
     baseSha: "a".repeat(40), fixSha: "b".repeat(40), testFile: "test/a.test.ts", testCommand: ["node", "--test", "test/a.test.ts"],
     beforeExit: 1, afterExit: 0, files: ["src/a.ts", "test/a.test.ts"], subject: "Fix the parser",
+    toolchain: { nodePath: "/usr/bin/node", nodeVersion: "v22.23.4", manager: "npm", managerVersion: "10.0.0" },
   };
   assert.deepEqual(pairProblems(pair), []);
   const bad = { ...pair, beforeExit: 0 };

@@ -3,7 +3,7 @@
 // Third-party source is never written here.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { classifyLicense, type Spdx } from "./lmcorpus.ts";
@@ -63,6 +63,7 @@ export interface PkgJson {
   scripts?: Record<string, string>;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  packageManager?: string;
 }
 
 function hasDep(pkg: PkgJson, name: string): boolean {
@@ -96,12 +97,19 @@ export function testCommandFor(pkg: PkgJson, testFile: string): string[] | null 
 export interface LockFiles { npm: boolean; pnpm: boolean; yarn: boolean }
 
 /** Install argv. `--ignore-scripts` so a package's install hooks do not run. Null when there is nothing to install. */
-export function installArgv(locks: LockFiles, hasDeps: boolean): string[] | null {
+export function installArgv(locks: LockFiles, hasDeps: boolean, yarnModern = false): string[] | null {
   if (!hasDeps && !locks.npm && !locks.pnpm && !locks.yarn) return null;
   if (locks.pnpm) return ["pnpm", "install", "--ignore-scripts"];
-  if (locks.yarn) return ["yarn", "install", "--ignore-scripts"];
+  if (locks.yarn) return yarnModern ? ["corepack", "yarn", "install", "--mode=skip-build"] : ["corepack", "yarn", "install", "--ignore-scripts"];
   if (locks.npm) return ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"];
   return ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"];
+}
+
+/** Yarn 2 and later reject `--ignore-scripts`. `packageManager: yarn@2+` selects the corepack mode that skips builds. */
+export function yarnIsModern(pkg: { packageManager?: string } | null | undefined): boolean {
+  const spec = pkg?.packageManager ?? "";
+  const match = /^yarn@(\d+)/.exec(spec);
+  return match !== null && Number(match[1]) >= 2;
 }
 
 /**
@@ -121,40 +129,68 @@ export function scrubEnv(src: NodeJS.ProcessEnv, cwd: string): NodeJS.ProcessEnv
   return out;
 }
 
-/** Host directories a practice test must not see. Symlinks are covered at their real path. */
-export const SANDBOX_COVER = ["/home", "/root", "/cursor", "/workspace", "/tmp", "/run"] as const;
-
-export function sandboxCoverPaths(paths: readonly string[] = SANDBOX_COVER): string[] {
-  const out: string[] = [];
-  for (const path of paths) {
-    if (!existsSync(path)) continue;
-    const stat = lstatSync(path);
-    const target = stat.isSymbolicLink() ? realpathSync(path) : path;
-    if (!existsSync(target) || !lstatSync(target).isDirectory()) continue;
-    out.push(target);
-  }
-  return [...new Set(out)];
-}
-
-/** A node binary that stays visible after the sandbox tmpfs covers home and tmp. */
+/** A node binary whose directory we can mount without mounting /home or /opt. Node 22 is preferred: listhen's https tests fail on Node 24. */
 export function visibleNodeBin(): string | null {
-  const hidden = (path: string) => SANDBOX_COVER.some((root) => path === root || path.startsWith(`${root}/`));
-  for (const path of [process.execPath, "/exec-daemon/node", "/usr/local/bin/node", "/usr/bin/node"]) {
-    if (!path || !existsSync(path) || hidden(path)) continue;
+  const hidden = (path: string) => path.startsWith("/home/") || path.startsWith("/root/") || path.startsWith("/opt/") || path.startsWith("/var/");
+  for (const path of ["/exec-daemon/node", process.execPath, "/usr/local/bin/node", "/usr/bin/node"]) {
+    if (!path || !isAbsolute(path) || !existsSync(path) || hidden(path)) continue;
     return path;
   }
   return null;
 }
 
+let gitCover: string | null = null;
+function emptyGitCover(): string {
+  if (gitCover && existsSync(gitCover)) return gitCover;
+  gitCover = mkdtempSync(join(tmpdir(), "peaceai-git-cover-"));
+  return gitCover;
+}
+
+function roMount(args: string[], path: string): void {
+  if (!existsSync(path)) return;
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink()) args.push("--symlink", readlinkSync(path), path);
+  else if (stat.isDirectory()) args.push("--ro-bind", path, path);
+}
+
 /**
- * bubblewrap around one work directory. The host root is read-only, the cover paths are empty
- * tmpfs mounts, and only `workDir` is writable. There is no unshare fallback.
+ * Allowlist bubblewrap. The host root is not mounted. `.git` is covered by an empty read-only
+ * directory so the real git dir stays outside the writable tree. There is no unshare fallback.
  */
-export function practiceSandboxArgv(workDir: string, covers: readonly string[] = sandboxCoverPaths()): string[] | null {
+export function practiceSandboxArgv(workDir: string, opts: { nodePath?: string | null; nodeModules?: string | null } = {}): string[] | null {
   if (!isAbsolute(workDir)) return null;
-  const args = ["bwrap", "--ro-bind", "/", "/"];
-  for (const cover of covers) args.push("--tmpfs", cover);
-  args.push("--bind", workDir, workDir, "--proc", "/proc", "--dev", "/dev");
+  const nodePath = opts.nodePath ?? visibleNodeBin();
+  if (!nodePath || !isAbsolute(nodePath) || !existsSync(nodePath)) return null;
+  const args = ["bwrap"];
+  roMount(args, "/usr");
+  roMount(args, "/bin");
+  roMount(args, "/lib");
+  roMount(args, "/lib64");
+  args.push("--dir", "/etc");
+  for (const file of ["/etc/passwd", "/etc/group", "/etc/nsswitch.conf", "/etc/hosts", "/etc/resolv.conf"]) {
+    if (existsSync(file) && lstatSync(file).isFile()) args.push("--ro-bind", file, file);
+  }
+  if (existsSync("/etc/ssl") && lstatSync("/etc/ssl").isDirectory()) args.push("--ro-bind", "/etc/ssl", "/etc/ssl");
+  const nodeDir = dirname(nodePath);
+  if (!nodeDir.startsWith("/usr/") && nodeDir !== "/usr") {
+    args.push("--dir", nodeDir, "--ro-bind", nodePath, nodePath);
+  }
+  args.push("--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp");
+  args.push("--bind", workDir, workDir);
+  if (existsSync(join(workDir, ".git"))) args.push("--ro-bind", emptyGitCover(), join(workDir, ".git"));
+  const modulesLink = join(workDir, "node_modules");
+  const modules = opts.nodeModules && existsSync(opts.nodeModules) ? opts.nodeModules : existsSync(modulesLink) ? modulesLink : null;
+  if (modules) {
+    const source = realpathSync(modules);
+    const linkStat = existsSync(modulesLink) ? lstatSync(modulesLink) : null;
+    if (linkStat?.isSymbolicLink()) args.push("--ro-bind", source, source);
+    else args.push("--ro-bind", source, modulesLink);
+    for (const cache of [".vite", ".vitest", ".cache"]) {
+      const cacheDir = join(source, cache);
+      mkdirSync(cacheDir, { recursive: true });
+      args.push("--tmpfs", cacheDir);
+    }
+  }
   args.push("--unshare-net", "--unshare-pid", "--die-with-parent", "--new-session", "--chdir", workDir, "--");
   return args;
 }
@@ -165,20 +201,22 @@ export function sandboxHome(workDir: string): string {
 
 export interface SandboxRun { unsafe: boolean; code: number | null; stdout: string }
 
+export interface SandboxOpts { bwrap?: string; capture?: boolean; nodePath?: string | null; nodeModules?: string | null }
+
 /** Run `cmd` inside the practice sandbox. `unsafe` means bwrap is missing or the sandbox could not be created. */
-export function runInPracticeSandbox(workDir: string, cmd: readonly string[], timeoutMs: number, opts: { bwrap?: string; capture?: boolean } = {}): SandboxRun {
-  const prefix = practiceSandboxArgv(workDir);
+export function runInPracticeSandbox(workDir: string, cmd: readonly string[], timeoutMs: number, opts: SandboxOpts = {}): SandboxRun {
+  const prefix = practiceSandboxArgv(workDir, { nodePath: opts.nodePath, nodeModules: opts.nodeModules });
   if (!prefix) return { unsafe: true, code: null, stdout: "" };
   if (opts.bwrap) prefix[0] = opts.bwrap;
   const home = sandboxHome(workDir);
   mkdirSync(home, { recursive: true });
-  const nodeDir = dirname(visibleNodeBin() ?? "/usr/bin/node");
+  const nodePath = opts.nodePath ?? visibleNodeBin() ?? "/usr/bin/node";
   const env = scrubEnv(process.env, workDir);
   env.HOME = home;
   env.TMPDIR = home;
   env.TMP = home;
   env.TEMP = home;
-  env.PATH = `${join(workDir, "node_modules", ".bin")}:${nodeDir}:/usr/bin:/bin`;
+  env.PATH = `${join(workDir, "node_modules", ".bin")}:${dirname(nodePath)}:/usr/bin:/bin`;
   const ran = spawnSync(prefix[0]!, [...prefix.slice(1), ...cmd], {
     cwd: workDir, env, timeout: timeoutMs, encoding: "utf8",
     stdio: opts.capture ? ["ignore", "pipe", "pipe"] : "ignore",
@@ -203,6 +241,140 @@ export function practiceSandboxReady(force = false): boolean {
     rmSync(dir, { recursive: true, force: true });
   }
   return sandboxReady;
+}
+
+/** Git outside the sandbox never runs hooks or an fsmonitor, and never reads the host or repo git config. */
+export const GIT_LOCK_ARGS = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"] as const;
+
+export function practiceGitEnv(): NodeJS.ProcessEnv {
+  const file = join(tmpdir(), "peaceai-practice-gitconfig");
+  if (!existsSync(file)) writeFileSync(file, "");
+  const env = scrubEnv(process.env, tmpdir());
+  env.GIT_CONFIG_GLOBAL = file;
+  env.GIT_CONFIG_NOSYSTEM = "1";
+  env.GIT_CONFIG_SYSTEM = "/dev/null";
+  return env;
+}
+
+export function practiceGit(dir: string, args: readonly string[], timeout = 60_000): { ok: boolean; out: string; status: number | null } {
+  const ran = spawnSync("git", ["-C", dir, ...GIT_LOCK_ARGS, ...args], {
+    encoding: "utf8", timeout, maxBuffer: 64 << 20, env: practiceGitEnv(),
+  });
+  const err = ran.error as NodeJS.ErrnoException | undefined;
+  return { ok: ran.status === 0 && !err, out: ran.status === 0 ? ran.stdout ?? "" : "", status: err ? null : ran.status };
+}
+
+const POISON_EXACT = new Set([".pnpmfile.cjs", ".npmrc", "package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock"]);
+
+function stampFile(path: string): string {
+  if (!existsSync(path)) return "absent";
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink()) return `link:${readlinkSync(path)}`;
+  if (stat.isDirectory()) return "dir";
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+/** Files a sandboxed test must not leave behind for a later install or git command. */
+export function poisonStamp(dir: string): Record<string, string> {
+  const stamp: Record<string, string> = {};
+  const add = (rel: string) => { stamp[rel] = stampFile(join(dir, rel)); };
+  if (!existsSync(dir)) return stamp;
+  for (const name of readdirSync(dir)) {
+    if (POISON_EXACT.has(name) || name.startsWith(".yarnrc")) add(name);
+  }
+  for (const name of POISON_EXACT) if (!(name in stamp)) add(name);
+  const git = join(dir, ".git");
+  add(".git");
+  add(".git/config");
+  const hooks = join(git, "hooks");
+  if (existsSync(hooks) && lstatSync(hooks).isDirectory()) {
+    for (const name of readdirSync(hooks)) add(`.git/hooks/${name}`);
+  }
+  return stamp;
+}
+
+export function poisonChanges(before: Readonly<Record<string, string>>, after: Readonly<Record<string, string>>): string[] {
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  return [...keys].filter((key) => before[key] !== after[key]).sort();
+}
+
+/** Reset a work tree after a sandboxed test. A poison path refuses the next outside step. */
+export function releaseWorktree(dir: string, before: Readonly<Record<string, string>>): { poison: string[]; clean: boolean } {
+  const poison = poisonChanges(before, poisonStamp(dir));
+  const clean = practiceGit(dir, ["clean", "-ffdx"]).ok;
+  const checkout = practiceGit(dir, ["checkout", "-f"]).ok;
+  return { poison, clean: clean && checkout };
+}
+
+export interface PracticeToolchain {
+  nodePath: string;
+  nodeVersion: string;
+  manager: "npm" | "pnpm" | "yarn" | "none";
+  managerVersion: string;
+}
+
+export function currentToolchain(manager: PracticeToolchain["manager"]): PracticeToolchain | null {
+  const nodePath = visibleNodeBin();
+  if (!nodePath) return null;
+  const nodeVersion = spawnSync(nodePath, ["-p", "process.version"], { encoding: "utf8" }).stdout?.trim() ?? "";
+  if (!/^v\d+\.\d+\.\d+/.test(nodeVersion)) return null;
+  if (manager === "none") return { nodePath, nodeVersion, manager, managerVersion: "none" };
+  const argv = manager === "yarn" ? ["corepack", "yarn", "--version"] : [manager, "--version"];
+  const managerVersion = spawnSync(argv[0]!, argv.slice(1), { encoding: "utf8" }).stdout?.trim() ?? "";
+  if (!managerVersion || managerVersion.includes("\n")) return null;
+  return { nodePath, nodeVersion, manager, managerVersion };
+}
+
+export function toolchainProblems(value: unknown): string[] {
+  if (!value || typeof value !== "object") return ["pair_toolchain"];
+  const tool = value as Partial<PracticeToolchain>;
+  const problems: string[] = [];
+  if (typeof tool.nodePath !== "string" || !isAbsolute(tool.nodePath) || /[\0\n]/.test(tool.nodePath)) problems.push("pair_node_path");
+  if (typeof tool.nodeVersion !== "string" || !/^v\d+\.\d+\.\d+/.test(tool.nodeVersion)) problems.push("pair_node_version");
+  if (tool.manager !== "npm" && tool.manager !== "pnpm" && tool.manager !== "yarn" && tool.manager !== "none") problems.push("pair_manager");
+  if (typeof tool.managerVersion !== "string" || tool.managerVersion.length < 1 || tool.managerVersion.includes("\n")) problems.push("pair_manager_version");
+  return problems;
+}
+
+export interface RemoteIdentity {
+  remoteUrl: string | null;
+  root: string | null;
+  parent: string | null;
+  source: string | null;
+  upstreamRoot: string | null;
+}
+
+export function repoFromRemote(url: string): string | null {
+  const match = url.trim().replace(/\.git$/, "").match(/github\.com[:/]([\w.-]+\/[\w.-]+)$/i);
+  return match ? match[1]! : null;
+}
+
+/**
+ * A corpus root is trusted only when a clone's remote and root agree with it.
+ * A renamed fork whose recorded root is not the clone's root fails closed, as does a missing clone.
+ */
+export function falseRootProblems(
+  heldOut: readonly { name: string; root: string }[],
+  recorded: Readonly<Record<string, string | null>>,
+  identities: Readonly<Record<string, RemoteIdentity | null>>,
+): string[] {
+  const problems: string[] = [];
+  for (const [name, recordedRoot] of Object.entries(recorded)) {
+    const id = Object.prototype.hasOwnProperty.call(identities, name) ? identities[name] : undefined;
+    if (id === undefined) continue;
+    if (!id || !id.remoteUrl || !id.root) { problems.push(`CLONE_UNVERIFIED:${name}`); continue; }
+    const remote = repoFromRemote(id.remoteUrl);
+    if (!remote) { problems.push(`REMOTE_UNPARSED:${name}`); continue; }
+    const upstream = id.source ?? id.parent;
+    if (remote.toLowerCase() !== name.toLowerCase() && !(upstream && upstream.toLowerCase() !== name.toLowerCase())) problems.push(`REMOTE_NAME:${name}`);
+    if (typeof recordedRoot === "string" && recordedRoot !== id.root) problems.push(`ROOT_MISMATCH:${name}`);
+    if (upstream && upstream.toLowerCase() !== name.toLowerCase()) {
+      if (!id.upstreamRoot) problems.push(`UPSTREAM_ROOT_UNVERIFIED:${name}`);
+      else if (heldOut.some((held) => held.name.toLowerCase() === upstream.toLowerCase() && held.root === id.root && recordedRoot !== id.root)) problems.push(`FORK_FALSE_ROOT:${name}`);
+    }
+    if (heldOut.some((held) => held.root === id.root && held.name.toLowerCase() !== name.toLowerCase() && recordedRoot !== id.root)) problems.push(`FORK_FALSE_ROOT:${name}`);
+  }
+  return [...new Set(problems)].sort();
 }
 
 export type Split = "dev" | "held-out";
@@ -298,6 +470,7 @@ export interface PracticePair {
   afterExit: number;
   files: string[];
   subject: string;
+  toolchain: PracticeToolchain;
 }
 
 export function pairProblems(value: unknown): string[] {
@@ -319,6 +492,7 @@ export function pairProblems(value: unknown): string[] {
   if (p.afterExit !== 0) problems.push("pair_after");
   if (!Array.isArray(p.files) || p.files.length < 2 || p.files.some((f) => typeof f !== "string")) problems.push("pair_files");
   if (typeof p.subject !== "string" || p.subject.length < 1 || p.subject.length > 200 || p.subject.includes("\n")) problems.push("pair_subject");
+  problems.push(...toolchainProblems(p.toolchain));
   return problems;
 }
 
