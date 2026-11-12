@@ -3,7 +3,7 @@
 // Third-party source is never written here.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { classifyLicense, type Spdx } from "./lmcorpus.ts";
@@ -442,4 +442,125 @@ export function exclusionHits(
     }
   }
   return hits.sort((a, b) => a.heldOut.localeCompare(b.heldOut) || a.file.localeCompare(b.file) || a.why.localeCompare(b.why));
+}
+
+const REPO_TOKEN = /^[\w.-]+\/[\w.-]+$/;
+
+/**
+ * A repository reference. A GitHub URL is the owner/repo it names, not something to skip.
+ * Anything that looks like a repository but is not `owner/repo` is rejected.
+ */
+export function parseRepoToken(raw: string): { name: string } | { bad: string } | null {
+  const trimmed = raw.trim().replace(/\.git$/i, "");
+  if (!trimmed || trimmed.includes("$")) return null;
+  const body = trimmed
+    .replace(/^git\+/i, "")
+    .replace(/^ssh:\/\/git@github\.com\//i, "")
+    .replace(/^git@github\.com:/i, "")
+    .replace(/^https?:\/\/(?:www\.)?github\.com\//i, "")
+    .replace(/^(?:www\.)?github\.com[:/]/i, "")
+    .split(/[?#]/)[0]!;
+  const parts = body.split("/").filter(Boolean);
+  if (parts.length >= 2) {
+    const name = `${parts[0]}/${parts[1]}`;
+    return REPO_TOKEN.test(name) && !parts[1]!.startsWith(".") ? { name } : { bad: trimmed.slice(0, 160) };
+  }
+  if (/github\.com|@github\.com/i.test(trimmed)) return { bad: trimmed.slice(0, 160) };
+  if (REPO_TOKEN.test(trimmed)) return { name: trimmed };
+  if (trimmed.includes("/")) return { bad: trimmed.slice(0, 160) };
+  return null;
+}
+
+export interface CloneMeta { root: string | null; upstream: string | null; upstreamRoot: string | null }
+
+/** A missing clone, a root that is not the clone's root, or an upstream we cannot read fails closed. */
+export function cloneRootProblems(name: string, recorded: string, meta: CloneMeta | null): string[] {
+  if (!meta || meta.root === null) return [`CLONE_UNVERIFIED:${name}`];
+  const problems: string[] = [];
+  if (meta.root !== recorded) problems.push(`ROOT_MISMATCH:${name}`);
+  if (meta.upstream && meta.upstream.toLowerCase() !== name.toLowerCase()) {
+    if (meta.upstreamRoot === null) problems.push(`UPSTREAM_ROOT_UNVERIFIED:${name}`);
+    else if (meta.upstreamRoot !== meta.root) problems.push(`FORK_ROOT:${name}`);
+  }
+  return problems;
+}
+
+function takeRepo(raw: string, names: string[], bad: string[]): void {
+  const parsed = parseRepoToken(raw);
+  if (!parsed) return;
+  if ("bad" in parsed) bad.push(parsed.bad);
+  else names.push(parsed.name);
+}
+
+/** Repo references in one watched file. URL forms are kept. A malformed repository entry is `bad`. */
+export function refsInPracticeFile(path: string, text: string): { names: string[]; bad: string[] } {
+  const names: string[] = [];
+  const bad: string[] = [];
+  for (const match of text.matchAll(/github\.com[:/][^\s"'`<>)]+/gi)) takeRepo(match[0]!, names, bad);
+  if (path.endsWith(".json") || path.endsWith(".jsonl")) {
+    for (const match of text.matchAll(/"(?:repo|name|full_name)"\s*:\s*"([^"]*)"/g)) takeRepo(match[1]!, names, bad);
+    for (const match of text.matchAll(/"repos"\s*:\s*\[(.*?)\]/g)) {
+      for (const item of match[1]!.matchAll(/"([^"]*)"/g)) takeRepo(item[1]!, names, bad);
+    }
+  }
+  if (path.endsWith("corpus-roots.json")) {
+    try {
+      const roots = JSON.parse(text) as { roots?: Record<string, unknown> };
+      for (const key of Object.keys(roots.roots ?? {})) takeRepo(key, names, bad);
+    } catch { bad.push("corpus-roots"); }
+  }
+  return { names, bad };
+}
+
+function mentionsBare(text: string, bare: string): boolean {
+  const escaped = bare.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^A-Za-z0-9_.-])${escaped}(?:$|[^A-Za-z0-9_.-])`, "i").test(text);
+}
+
+export interface PracticeWatch { path: string; text: string }
+
+/** Files the held-out list must stay out of, plus the corpus and pair source lists. */
+export function practiceWatchFiles(root: string): PracticeWatch[] {
+  const rels = new Set<string>([...CORPUS_SOURCE_FILES, ...PAIR_SOURCE_FILES, "practice/corpus-roots.json", "practice/pairs.jsonl"]);
+  const addDir = (dir: string, pred: (name: string) => boolean) => {
+    const abs = join(root, dir);
+    if (!existsSync(abs)) return;
+    for (const name of readdirSync(abs)) if (pred(name)) rels.add(`${dir}/${name}`);
+  };
+  addDir("peaceai/rules/learned", (name) => name.endsWith(".json"));
+  addDir("peaceai/plan", (name) => name.startsWith("tasks-") && name.endsWith(".json") || /runs.*\.jsonl$/.test(name));
+  addDir("peaceai/spec", (name) => name.endsWith(".md"));
+  return [...rels].sort().map((path) => ({ path, text: readFileSync(join(root, path), "utf8") }));
+}
+
+/**
+ * Why a held-out repo is not cleanly absent from the watched files.
+ * Dev rows of practice/pairs.jsonl count. A fork whose recorded root is not the clone's root fails closed.
+ */
+export function heldOutWatchProblems(
+  heldOut: readonly { name: string; root: string }[],
+  files: readonly PracticeWatch[],
+  roots: Readonly<Record<string, string | null>>,
+  clones: Readonly<Record<string, CloneMeta | null>> = {},
+): string[] {
+  const problems: string[] = [];
+  const sources: TrainingSource[] = [];
+  for (const file of files) {
+    const devText = file.path.endsWith("pairs.jsonl")
+      ? file.text.split("\n").filter((line) => { try { return JSON.parse(line).split === "dev"; } catch { return line.trim().length > 0; } }).join("\n")
+      : file.text;
+    const refs = refsInPracticeFile(file.path, devText);
+    for (const bad of refs.bad) problems.push(`BAD_REPO_FORM:${file.path}:${bad}`);
+    for (const name of refs.names) sources.push({ name, file: file.path, kind: "corpus" });
+    for (const held of heldOut) {
+      const bare = held.name.split("/")[1] ?? "";
+      if (devText.toLowerCase().includes(held.name.toLowerCase())) problems.push(`HELD_OUT_MENTION:${file.path}:${held.name}`);
+      else if (bare && mentionsBare(devText, bare)) problems.push(`HELD_OUT_BARE:${file.path}:${held.name}`);
+    }
+  }
+  for (const hit of exclusionHits(heldOut, sources, roots)) problems.push(`HELD_OUT_${hit.why.toUpperCase()}:${hit.file}:${hit.heldOut}`);
+  for (const held of heldOut) {
+    if (Object.prototype.hasOwnProperty.call(clones, held.name)) problems.push(...cloneRootProblems(held.name, held.root, clones[held.name] ?? null));
+  }
+  return [...new Set(problems)].sort();
 }

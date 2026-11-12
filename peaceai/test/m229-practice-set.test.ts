@@ -8,8 +8,8 @@ import { keptLicense } from "../lib/practicemine.ts";
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
-  exclusionHits, heldOutHash, installArgv, isSourceFile, isTestFile, manifestProblems,
-  pairFiles, pairProblems, practiceSandboxArgv, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
+  exclusionHits,   cloneRootProblems, heldOutHash, heldOutWatchProblems, installArgv, isSourceFile, isTestFile, manifestProblems,
+  pairFiles, pairProblems, parseRepoToken, practiceSandboxArgv, practiceWatchFiles, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
 import { countBySplit, gradePracticeRow, replayDocument, targetIsScorable } from "../lib/practicereplay.ts";
@@ -157,7 +157,7 @@ test("a held-out repo, or a fork with the same root, fails the training-exclusio
   assert.equal(exclusionHits([{ name: "PeaceG03/PeaceSTOCKS", root: "1".repeat(40) }], sources, rootMap)[0]?.why, "name");
 });
 
-test("the committed held-out repos are absent from the corpus and pair source lists", () => {
+test("the committed held-out repos are absent from corpus, learned rules, plans, specs, and dev pairs", () => {
   const sources = trainingSources((path) => { try { return read(path); } catch { return null; } });
   assert.ok(!("error" in sources), "error" in sources ? sources.error : "");
   if ("error" in sources) return;
@@ -165,8 +165,33 @@ test("the committed held-out repos are absent from the corpus and pair source li
   const held = manifest.repos.filter((r) => r.split === "held-out").map((r) => ({ name: r.name, root: r.root }));
   const hits = exclusionHits(held, sources, rootsFile.roots);
   assert.deepEqual(hits, []);
+  const watched = heldOutWatchProblems(held, practiceWatchFiles(repo), rootsFile.roots);
+  assert.deepEqual(watched, [], watched.join("\n"));
   const devInCorpus = sources.filter((s) => s.name === "PeaceG03/PeaceSTOCKS");
   assert.ok(devInCorpus.length > 0, "PeaceSTOCKS stays a corpus source; it is dev, not held out");
+});
+
+test("a GitHub URL is a repo, a malformed one is rejected, and a wrong clone root fails closed", () => {
+  assert.deepEqual(parseRepoToken("https://github.com/axios/axios.git"), { name: "axios/axios" });
+  assert.deepEqual(parseRepoToken("git@github.com:axios/axios.git"), { name: "axios/axios" });
+  assert.ok("bad" in (parseRepoToken("https://github.com/") ?? {}));
+  const mentioned = heldOutWatchProblems(
+    [{ name: "someone/hidden", root: "a".repeat(40) }],
+    [{ path: "peaceai/spec/note.md", text: "see https://github.com/someone/hidden/blob/main/src/a.ts" }],
+    {},
+  );
+  assert.ok(mentioned.some((p) => p.includes("someone/hidden")));
+  const bad = heldOutWatchProblems([], [{ path: "peaceai/model/sources.json", text: '{"name":"https://github.com/"}' }], {});
+  assert.ok(bad.some((p) => p.startsWith("BAD_REPO_FORM")));
+  const dev = heldOutWatchProblems(
+    [{ name: "someone/hidden", root: "a".repeat(40) }],
+    [{ path: "practice/pairs.jsonl", text: `${JSON.stringify({ split: "dev", repo: "someone/hidden" })}\n` }],
+    {},
+  );
+  assert.ok(dev.some((p) => p.startsWith("HELD_OUT_MENTION")));
+  assert.deepEqual(cloneRootProblems("a/b", "c".repeat(40), null), ["CLONE_UNVERIFIED:a/b"]);
+  assert.deepEqual(cloneRootProblems("a/b", "c".repeat(40), { root: "d".repeat(40), upstream: null, upstreamRoot: null }), ["ROOT_MISMATCH:a/b"]);
+  assert.ok(cloneRootProblems("a/b", "c".repeat(40), { root: "c".repeat(40), upstream: "other/up", upstreamRoot: null }).includes("UPSTREAM_ROOT_UNVERIFIED:a/b"));
 });
 
 test("a verified pair records the fail-before and pass-after exits", () => {
@@ -220,7 +245,8 @@ test("each practice repo has a scope, and a third-party target posts a patch ins
   const publicTask = new Set(["unjs/defu", "unjs/scule"]);
   const sample: Record<string, { source: string; test: string }> = {
     "sindresorhus/is": { source: "source/index.ts", test: "test/test.ts" },
-    "unjs/ufo": { source: "src/url.ts", test: "test/url.test.ts" },
+    "egoist/bundle-require": { source: "src/index.ts", test: "test/index.test.ts" },
+    "radashi-org/radashi": { source: "src/array/first.ts", test: "tests/array/first.test.ts" },
     "blakeembrey/change-case": { source: "packages/change-case/src/index.ts", test: "packages/change-case/src/index.spec.ts" },
     "gvergnaud/ts-pattern": { source: "src/match.ts", test: "tests/chainable.test.ts" },
   };

@@ -1,7 +1,7 @@
 {
   "schema": "peaceai-practice-mine-report:v1",
   "credit": false,
-  "isolation": "unshare --user --map-root-user -n --",
+  "isolation": "bwrap",
   "repos": [
     {
       "name": "PeaceG03/PeaceSTOCKS",
@@ -42,23 +42,7 @@
       "attempts": 49,
       "kept": 20,
       "reason": null
-    },
-    {
-      "name": "unjs/scule",
-      "split": "held-out",
-      "candidates": 9,
-      "attempts": 9,
-      "kept": 4,
-      "reason": null
-    },
-    {
-      "name": "unjs/ufo",
-      "split": "held-out",
-      "candidates": 71,
-      "attempts": 23,
-      "kept": 20,
-      "reason": null
     }
   ],
-  "kept": 108
+  "kept": 84
 }

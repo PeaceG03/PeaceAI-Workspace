@@ -1,8 +1,8 @@
 {
   "schema": "peaceai-practice-manifest:v1",
   "credit": false,
-  "note": "Split by repository, frozen before any pair was kept or dropped. PeaceSTOCKS is dev. Held-out repos are the ones whose pins and roots the heldOutHash covers. PeaceG03 repositories are recorded as license owner; the LICENSE-file check does not apply to them.",
-  "heldOutHash": "d262688bd2b2692e372913ff3bfed0a1bb66119773bb48cb27c54dff38beefde",
+  "note": "Split by repository. The held-out list was re-frozen before the replacement pairs were mined. PeaceG03 repositories are license owner. unjs/ufo and unjs/scule left the held-out list because they already appear in learned rules and plan tasks.",
+  "heldOutHash": "a514e589719b88ae9b13e9d9a2d0d093b53058f3dbc499cc13d5832a5498281c",
   "repos": [
     {
       "name": "PeaceG03/PeaceSTOCKS",
@@ -45,19 +45,19 @@
       "split": "held-out"
     },
     {
-      "name": "unjs/scule",
-      "commit": "5bc68048caad7c0e7de35842c83a510e8e1a7c4f",
-      "root": "218961494d8dae0c9dbefbba7f0dcdddbc29be02",
+      "name": "egoist/bundle-require",
+      "commit": "8ca47fef6353369bc3b49d7ef73fdad239355f0c",
+      "root": "74ed444f952550c2fb438fea915b241287ee0b9f",
       "license": "MIT",
       "licenseFile": "LICENSE",
       "split": "held-out"
     },
     {
-      "name": "unjs/ufo",
-      "commit": "f06c800d0c59f2a4a1b9ba65eb6cb61a84419be6",
-      "root": "88c021275b0d17326355e201a42c02eafebaf9ee",
+      "name": "radashi-org/radashi",
+      "commit": "0487352eadca0b45039acba073b7841982b3443f",
+      "root": "b073ed7191f32f5c5c3c9d13d86ca8e36d922d4f",
       "license": "MIT",
-      "licenseFile": "LICENSE",
+      "licenseFile": "LICENSE.md",
       "split": "held-out"
     }
   ]

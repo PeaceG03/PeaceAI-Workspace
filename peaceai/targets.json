@@ -49,9 +49,25 @@
       "writeEnvironment": null,
       "verdictRoute": "patch"
     },
-    "unjs/ufo": {
+    "egoist/bundle-require": {
       "sourcePattern": "^src/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.ts$",
       "testPattern": "^test/.+\\.test\\.ts$",
+      "denyPatterns": [
+        "(^|/)\\.",
+        "(^|/)fixtures/",
+        "(^|/)fixture/",
+        "secret",
+        "credential",
+        "token"
+      ],
+      "install": "pnpm",
+      "originalSuite": "related",
+      "writeEnvironment": null,
+      "verdictRoute": "patch"
+    },
+    "radashi-org/radashi": {
+      "sourcePattern": "^src/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.ts$",
+      "testPattern": "^tests/.+\\.test\\.ts$",
       "denyPatterns": [
         "(^|/)\\.",
         "(^|/)fixtures/",
