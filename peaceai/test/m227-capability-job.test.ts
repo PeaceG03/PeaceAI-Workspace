@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { buildCapabilityReport, type ReplayBind } from "../lib/capabilityreport.ts";
-import { CORE_ENTRY, boundReplay, classifyJobOutput, commitRef, rowUnrunnable } from "../lib/capabilityjob.ts";
+import { CORE_ENTRY, agreedIssue, boundReplay, classifyJobOutput, commitRef, ownWorkspaceChange, routeReplay, rowUnrunnable } from "../lib/capabilityjob.ts";
+import { trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
 import { indexGitTree } from "../lib/coreindex.ts";
 import { archiveSha256, coreStillPinned, extractPinnedCore, gitTreeSha, pinnedKernel, readCorePin, type CorePin } from "../bin/capability-job.ts";
 
@@ -32,6 +33,34 @@ test("a row with no repo sha cannot be run, and a candidate is the only pass", (
   assert.match(line.reason, /task_unparsed/);
   assert.equal(classifyJobOutput({ timedOut: true, code: null, candidates: null, stdout: "" }).reason, "TIMEOUT");
   assert.equal(classifyJobOutput({ timedOut: false, code: null, candidates: null, stdout: "" }).reason, "SPAWN_FAILED");
+});
+
+test("a cited issue is the task only when it is the same learned header, and own-repo prose is a self-change", () => {
+  const model = trainRequestModel(log.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l) as FamilyRow));
+  const asked = "Please guard total in src/cart.ts against a negative count (NEGATIVE_VALUE)";
+  const issue = [
+    "Target: PeaceG03/PeaceSTOCKS",
+    "",
+    "guard `total` in `src/cart.ts`: throw NEGATIVE_VALUE when n < 0",
+    "- `total(-1)` throws NEGATIVE_VALUE",
+    "- `total(1)` is 1",
+    "",
+    "(A note that is not a second task.)",
+  ].join("\n");
+  assert.equal(agreedIssue(asked, issue, 4), issue);
+  assert.equal(agreedIssue("Please guard other in src/cart.ts against a negative count", issue, 4), null);
+  assert.equal(agreedIssue(asked, issue.replace("src/cart.ts", "src/other.ts"), 4), null);
+  const run = routeReplay({ model, asked, changed: "PeaceSTOCKS@abcdef1", issueBody: issue, seq: 4 });
+  assert.deepEqual(run, { run: issue });
+  const own = routeReplay({ model, asked: "Teach PeaceAI a self-change of the never-zone", changed: "PeaceAI-Workspace@abcdef1", issueBody: null, seq: 4 });
+  assert.deepEqual(own, { fail: "SELF_CHANGE" });
+  const misread = routeReplay({ model, asked: "Record the env-fix follow-up in the tooling", changed: "PeaceAI-Workspace@abcdef1", issueBody: null, seq: 4 });
+  assert.deepEqual(misread, { fail: "SELF_CHANGE" });
+  assert.equal(ownWorkspaceChange("PeaceAI-Workspace#1, PeaceSTOCKS@abcdef1"), false);
+  assert.equal(ownWorkspaceChange("PeaceAI-Workspace@abcdef1"), true);
+  assert.equal(ownWorkspaceChange("PeaceAI-Workspace#107"), true);
+  const slots = routeReplay({ model, asked: "Add a chain_followup job after the scan", changed: "PeaceSTOCKS@abcdef1", issueBody: null, seq: 4 });
+  assert.equal("fail" in slots ? slots.fail : "", "NO_SLOTS: WORKFLOW_JOB");
 });
 
 test("a Job A pass counts only when it is bound to the head, tree, and log", () => {

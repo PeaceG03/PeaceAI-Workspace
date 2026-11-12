@@ -1,7 +1,8 @@
 // Experimental. credit is false.
 // Maps a request onto a PeaceAI edit family. Each family has a cue taken from its own name
 // and trigger wording, not from any one builder-log row. A cue that mislabels the dev split
-// is dropped. Zero cues or two cues refuse. A hash of seq and asked text holds rows out.
+// is dropped. Zero cues or two cues refuse. A request that names PeaceAI's own tooling, and
+// no edit family, refuses as a self-change. A hash of seq and asked text holds rows out.
 import { createHash } from "node:crypto";
 
 export const REQUEST_FAMILY_SCHEMA = "peaceai-request-family:v1";
@@ -16,16 +17,17 @@ const CUES: readonly { family: string; re: RegExp }[] = [
   { family: "TEST_CASE_APPEND", re: /\bappend(?:ed|ing)? (?:a |an )?test\b/i },
   { family: "TEST_CASE", re: /\b(?:regression|value) tests?\b/i },
   { family: "METHOD_GUARD", re: /\bmethod-guard\b|\bwith a method\b/i },
-  { family: "THROW_GUARD", re: /\bthrow guard\b|\bguard\b/i },
+  // The throw-guard trigger is "guard … : throw", not the bare word. "with a method" is the method-guard trigger.
+  { family: "THROW_GUARD", re: /\bguard\b(?![^\n]{0,200}\bwith a method\b)[^\n]{0,160}:\s*throw\b/i },
   { family: "ENV_FIX", re: /\benv-fix\b|\bmake env\b|\benvironment variable\b/i },
   { family: "IMPORT_EDIT", re: /\bimport\b/i },
   { family: "DERIVE_FROM_BEHAVIOR", re: /\bbehavior-only\b|\bderive\b/i },
   { family: "LOOP_FUNCTION", re: /\bloop function\b|\bretag\b[^\n]*\bloop\b/i },
-  { family: "COMPLEX_FUNCTION", re: /\bcomplex function\b/i },
+  { family: "COMPLEX_FUNCTION", re: /\bcomplex function\b|\bdate function\b/i },
   { family: "WORKFLOW_JOB", re: /\bworkflow\b|\bjob\b/i },
   { family: "WORKFLOW_STEP", re: /\bworkflow-step\b|\bcron\b/i },
   { family: "ADD_FUNCTION_NEW_MODULE", re: /\bnew module\b/i },
-  { family: "ADD_FUNCTION", re: /\badd helper\b/i },
+  { family: "ADD_FUNCTION", re: /\badd helper\b|\badd (?:a )?(?:pure )?function\b/i },
   { family: "TSCONFIG_SCRIPT", re: /\btypecheck\b|\btsconfig\b/i },
   { family: "MODIFY_LOGIC", re: /\bfail closed\b/i },
   { family: "CHECK_OBJECT_LITERAL_ARGS", re: /\bobject-literal\b/i },
@@ -88,12 +90,34 @@ export function trainRequestModel(rows: readonly FamilyRow[]): RequestModel {
   return { schema: REQUEST_FAMILY_SCHEMA, experimental: true, credit: false, families };
 }
 
-export interface FamilyGuess { family: string | null; share: number; none: boolean }
+/**
+ * A change to PeaceAI's own tooling. The words are the family's name and the tooling's own paths.
+ * A characterization test or other edit cue still wins; this only speaks when no edit family matched.
+ * The same cues are inlined in nlparse.ts (that module must not import this file).
+ */
+const SELF_CHANGE_TEXT: readonly RegExp[] = [
+  /\bself[- ]changes?\b/i,
+  /\bPEACEAI_SELF_CHANGE\b/,
+  /\bbuilder-log\b/i,
+  /\bteach PeaceAI\b/i,
+  /\bnever-zone\b/i,
+  /\bsafe zone\b/i,
+  /\bapprove-rule\b/i,
+  /\bpeaceai\/(?:bin|lib|rules|model)\//i,
+  /\bpeaceai\/self\//i,
+];
+
+export function selfChangeRequest(asked: string): boolean {
+  return SELF_CHANGE_TEXT.some((re) => re.test(asked));
+}
+
+export interface FamilyGuess { family: string | null; share: number; none: boolean; refusal?: "SELF_CHANGE" }
 
 export function guessFamily(model: RequestModel, asked: string): FamilyGuess {
   const hit = matched(asked, model.families);
-  if (hit.length !== 1) return { family: null, share: 0, none: false };
-  return { family: hit[0]!, share: 1, none: false };
+  if (hit.length === 1) return { family: hit[0]!, share: 1, none: false };
+  if (hit.length === 0 && selfChangeRequest(asked)) return { family: null, share: 0, none: false, refusal: "SELF_CHANGE" };
+  return { family: null, share: 0, none: false };
 }
 
 export interface FamilyScore { rows: number; correct: number; wrong: number; refused: number }

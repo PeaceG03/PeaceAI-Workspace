@@ -105,6 +105,25 @@ test("canonical wording passes through unchanged (no regression for existing tas
   assert.equal(parseTask({ title: "[test] Add a helper that will normalize a title in src/text.ts", body: "" }, { model, approvedKinds: none }).status, "canonical");
 });
 
+test("a change to PeaceAI's own tooling is a self-change refusal", () => {
+  for (const sentence of [
+    "Teach PeaceAI a self-change of the never-zone",
+    "Update the builder-log figure",
+    "The never-zone stays closed",
+    "Record the safe zone flag",
+    "approve-rule the proposal",
+    "Edit peaceai/lib/cart.ts",
+    "Edit peaceai/self/notes.json",
+    "PEACEAI_SELF_CHANGE stays protected",
+  ]) {
+    const r = parse(sentence);
+    assert.equal(r.status, "unsure", sentence);
+    if (r.status === "unsure") assert.equal(r.reason, "SELF_CHANGE", sentence);
+  }
+  const edit = parse("Add 1 to the array LIMITS");
+  assert.notEqual(edit.status === "unsure" ? edit.reason : "", "SELF_CHANGE");
+});
+
 test("kill switch: PEACEAI_NL_PARSE=off leaves the task text alone", () => {
   assert.deepEqual(nlDecision({ title: "", body: "Make it faster" }, "off", none, model), { status: "off" });
   assert.equal(nlDecision({ title: "", body: "Make it faster" }, undefined, none, model).status, "unsure");
