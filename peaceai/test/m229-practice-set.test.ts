@@ -163,15 +163,19 @@ test("replay passes only on GATE PASS plus a failing-then-passing test, and an u
 
 test("each practice repo has a scope, and a third-party target posts a patch instead of opening a PR", () => {
   const targets = loadTargets();
+  const publicTask = new Set(["unjs/defu", "unjs/scule"]);
   const sample: Record<string, { source: string; test: string }> = {
     "sindresorhus/is": { source: "source/index.ts", test: "test/test.ts" },
-    "unjs/defu": { source: "src/defu.ts", test: "test/defu.test.ts" },
-    "unjs/scule": { source: "src/index.ts", test: "test/scule.test.ts" },
     "unjs/ufo": { source: "src/url.ts", test: "test/url.test.ts" },
     "blakeembrey/change-case": { source: "packages/change-case/src/index.ts", test: "packages/change-case/src/index.spec.ts" },
     "gvergnaud/ts-pattern": { source: "src/match.ts", test: "tests/chainable.test.ts" },
   };
   for (const row of manifest.repos) {
+    if (publicTask.has(row.name)) {
+      assert.equal(targets.targets[row.name], undefined, row.name);
+      assert.equal(targetIsScorable(row.name), false, row.name);
+      continue;
+    }
     const config = targets.targets[row.name];
     assert.ok(config, row.name);
     assert.equal(targetIsScorable(row.name), true, row.name);
