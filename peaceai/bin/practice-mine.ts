@@ -164,7 +164,7 @@ function ensureClone(repo: PracticeRepo, dir: string, clones: string): boolean {
 
 interface RepoReport { name: string; split: string; candidates: number; attempts: number; kept: number; reason: string | null }
 
-function mineRepo(repo: PracticeRepo, dir: string, prefix: string[] | null, pairs: PracticePair[], totalCap: { n: number }): RepoReport {
+function mineRepo(repo: PracticeRepo, dir: string, prefix: string[] | null, pairs: PracticePair[], totalCap: { n: number }, flush: () => void): RepoReport {
   const report: RepoReport = { name: repo.name, split: repo.split, candidates: 0, attempts: 0, kept: 0, reason: null };
   const head = git(dir, ["rev-parse", repo.commit]);
   if (!head.ok || head.out.trim() !== repo.commit) {
@@ -216,6 +216,7 @@ function mineRepo(repo: PracticeRepo, dir: string, prefix: string[] | null, pair
     pairs.push(pair);
     report.kept++;
     totalCap.n++;
+    flush();
     console.log(`kept ${repo.name} ${candidate.fix} before=${before} after=${after}`);
   }
   return report;
@@ -241,6 +242,7 @@ function main(): void {
   const pairs: PracticePair[] = [];
   const reports: RepoReport[] = [];
   const total = { n: 0 };
+  const flush = () => writeFileSync(outPath, pairs.map((p) => JSON.stringify(p)).join("\n") + (pairs.length ? "\n" : ""));
   for (const repo of manifest.repos) {
     const dir = join(work, repo.name.replace("/", "__"));
     if (!ensureClone(repo, dir, clones)) {
@@ -248,11 +250,11 @@ function main(): void {
       console.log(`skip ${repo.name} CLONE_FAILED`);
       continue;
     }
-    const report = mineRepo(repo, dir, prefix, pairs, total);
+    const report = mineRepo(repo, dir, prefix, pairs, total, flush);
     reports.push(report);
     console.log(`repo ${repo.name} split=${repo.split} candidates=${report.candidates} attempts=${report.attempts} kept=${report.kept} reason=${report.reason ?? "ok"}`);
   }
-  writeFileSync(outPath, pairs.map((p) => JSON.stringify(p)).join("\n") + (pairs.length ? "\n" : ""));
+  flush();
   const report = { schema: MINE_REPORT_SCHEMA, credit: false as const, isolation: prefix ? prefix.join(" ") : "UNSAFE_ENV", repos: reports, kept: pairs.length };
   if (reportPath) writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n");
   console.log(`credit=false kept=${pairs.length}`);

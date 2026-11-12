@@ -1,0 +1,64 @@
+{
+  "schema": "peaceai-practice-mine-report:v1",
+  "credit": false,
+  "isolation": "unshare --user --map-root-user -n --",
+  "repos": [
+    {
+      "name": "PeaceG03/PeaceSTOCKS",
+      "split": "dev",
+      "candidates": 151,
+      "attempts": 0,
+      "kept": 0,
+      "reason": "LICENSE_MISSING"
+    },
+    {
+      "name": "sindresorhus/is",
+      "split": "dev",
+      "candidates": 79,
+      "attempts": 32,
+      "kept": 20,
+      "reason": null
+    },
+    {
+      "name": "unjs/defu",
+      "split": "dev",
+      "candidates": 16,
+      "attempts": 16,
+      "kept": 8,
+      "reason": null
+    },
+    {
+      "name": "blakeembrey/change-case",
+      "split": "held-out",
+      "candidates": 27,
+      "attempts": 20,
+      "kept": 16,
+      "reason": null
+    },
+    {
+      "name": "gvergnaud/ts-pattern",
+      "split": "held-out",
+      "candidates": 120,
+      "attempts": 49,
+      "kept": 20,
+      "reason": null
+    },
+    {
+      "name": "unjs/scule",
+      "split": "held-out",
+      "candidates": 9,
+      "attempts": 9,
+      "kept": 4,
+      "reason": null
+    },
+    {
+      "name": "unjs/ufo",
+      "split": "held-out",
+      "candidates": 71,
+      "attempts": 23,
+      "kept": 20,
+      "reason": null
+    }
+  ],
+  "kept": 88
+}
