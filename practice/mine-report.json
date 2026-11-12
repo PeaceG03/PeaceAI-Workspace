@@ -7,9 +7,9 @@
       "name": "PeaceG03/PeaceSTOCKS",
       "split": "dev",
       "candidates": 151,
-      "attempts": 0,
-      "kept": 0,
-      "reason": "LICENSE_MISSING"
+      "attempts": 20,
+      "kept": 20,
+      "reason": null
     },
     {
       "name": "sindresorhus/is",
@@ -60,5 +60,5 @@
       "reason": null
     }
   ],
-  "kept": 88
+  "kept": 108
 }

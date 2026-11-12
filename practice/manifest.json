@@ -1,14 +1,14 @@
 {
   "schema": "peaceai-practice-manifest:v1",
   "credit": false,
-  "note": "Split by repository, frozen before any pair was kept or dropped. PeaceSTOCKS is dev. Held-out repos are the ones whose pins and roots the heldOutHash covers. PeaceSTOCKS has no root LICENSE file, so the miner keeps no pairs from it.",
+  "note": "Split by repository, frozen before any pair was kept or dropped. PeaceSTOCKS is dev. Held-out repos are the ones whose pins and roots the heldOutHash covers. PeaceG03 repositories are recorded as license owner; the LICENSE-file check does not apply to them.",
   "heldOutHash": "d262688bd2b2692e372913ff3bfed0a1bb66119773bb48cb27c54dff38beefde",
   "repos": [
     {
       "name": "PeaceG03/PeaceSTOCKS",
       "commit": "c617e6340a8ace079ca92480fb002c8bf8beb30f",
       "root": "99c0cfb524f96a690d4db5baf2bcf54ddb503d5d",
-      "license": null,
+      "license": "owner",
       "licenseFile": null,
       "split": "dev"
     },

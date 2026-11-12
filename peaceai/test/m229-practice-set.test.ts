@@ -71,6 +71,10 @@ test("the held-out hash changes when a pin changes, and the committed manifest m
   assert.equal(manifest.credit, false);
   assert.equal(manifest.repos.filter((r) => r.split === "held-out").length >= 2, true);
   assert.equal(manifest.repos.find((r) => r.name === "PeaceG03/PeaceSTOCKS")?.split, "dev");
+  assert.equal(manifest.repos.find((r) => r.name === "PeaceG03/PeaceSTOCKS")?.license, "owner");
+  const ownerOnly = structuredClone(manifest);
+  ownerOnly.repos.find((r) => r.name === "PeaceG03/PeaceSTOCKS")!.license = null;
+  assert.equal(heldOutHash(ownerOnly.repos), manifest.heldOutHash, "an owner repo is outside the held-out hash");
   const moved = structuredClone(manifest);
   const held = moved.repos.find((r) => r.split === "held-out")!;
   held.commit = "c".repeat(40);
@@ -119,6 +123,9 @@ test("a verified pair records the fail-before and pass-after exits", () => {
   assert.deepEqual(pairProblems(pair), []);
   const bad = { ...pair, beforeExit: 0 };
   assert.ok(pairProblems(bad).includes("pair_before"));
+  const owned = { ...pair, repo: "PeaceG03/PeaceSTOCKS", license: "owner" as const, split: "dev" as const };
+  assert.deepEqual(pairProblems(owned), []);
+  assert.ok(pairProblems({ ...pair, license: "owner" }).includes("pair_license"));
 });
 
 test("replay passes only on GATE PASS plus a failing-then-passing test, and an unknown repo is unmeasured", () => {
@@ -160,11 +167,16 @@ test("the real target list cannot score the held-out repos", () => {
   }
 });
 
-test("a dev-only repo object still has to be licensed unless it is PeaceSTOCKS", () => {
+test("PeaceG03 repos are recorded as owner, and any other repo still needs a permissive LICENSE", () => {
   const bad = manifestProblems({
     schema: "peaceai-practice-manifest:v1", credit: false, heldOutHash: "ab".repeat(32),
-    repos: [repoOf({ name: "PeaceG03/PeaceSTOCKS", split: "dev", license: null, licenseFile: null }), repoOf({ name: "a/b", split: "held-out" }), repoOf({ name: "c/d", split: "held-out", commit: "e".repeat(40), root: "f".repeat(40) })],
+    repos: [repoOf({ name: "PeaceG03/PeaceSTOCKS", split: "dev", license: "owner", licenseFile: null }), repoOf({ name: "a/b", split: "held-out" }), repoOf({ name: "c/d", split: "held-out", commit: "e".repeat(40), root: "f".repeat(40) })],
   });
   assert.equal(bad.includes("peacestocks_not_dev"), false);
+  assert.equal(bad.includes("repo_license:PeaceG03/PeaceSTOCKS"), false);
   assert.ok(bad.includes("heldout_hash_mismatch"));
+  assert.ok(manifestProblems({
+    schema: "peaceai-practice-manifest:v1", credit: false, heldOutHash: manifest.heldOutHash,
+    repos: [...manifest.repos, repoOf({ name: "other/lib", license: "owner", licenseFile: null })],
+  }).includes("repo_license:other/lib"));
 });

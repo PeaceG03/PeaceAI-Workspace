@@ -11,8 +11,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  ENV_ALLOW, installArgv, isolationArgv, isTestFile, keptLicense, pairFiles, pairProblems, scrubEnv, testCommandFor,
-  type LockFiles, type NameStatus, type PkgJson, type PracticeManifest, type PracticePair, type PracticeRepo,
+  ENV_ALLOW, installArgv, isOwnerRepo, isolationArgv, isTestFile, keptLicense, pairFiles, pairProblems, scrubEnv, testCommandFor,
+  type LockFiles, type NameStatus, type PkgJson, type PracticeLicense, type PracticeManifest, type PracticePair, type PracticeRepo,
   LICENSE_FILES, MINE_REPORT_SCHEMA,
 } from "../lib/practicemine.ts";
 
@@ -22,7 +22,7 @@ const KEEP_TOTAL = 100;
 const TEST_MS = 45_000;
 const INSTALL_MS = 180_000;
 
-const USAGE = "usage: practice-mine.ts --manifest <file> --out <pairs.jsonl> --work <dir> [--report <file>] [--clones <dir>]";
+const USAGE = "usage: practice-mine.ts --manifest <file> --out <pairs.jsonl> --work <dir> [--report <file>] [--clones <dir>] [--only owner/repo] [--append]";
 
 function flag(name: string, args: string[]): string | undefined {
   const i = args.indexOf(name);
@@ -164,7 +164,20 @@ function ensureClone(repo: PracticeRepo, dir: string, clones: string): boolean {
 
 interface RepoReport { name: string; split: string; candidates: number; attempts: number; kept: number; reason: string | null }
 
-function mineRepo(repo: PracticeRepo, dir: string, prefix: string[] | null, pairs: PracticePair[], totalCap: { n: number }, flush: () => void): RepoReport {
+function readPairs(path: string): PracticePair[] {
+  if (!existsSync(path)) return [];
+  const rows: PracticePair[] = [];
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    const row = JSON.parse(line) as PracticePair;
+    const problems = pairProblems(row);
+    if (problems.length) throw new Error(`bad pair: ${problems.join(",")}`);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function mineRepo(repo: PracticeRepo, dir: string, prefix: string[] | null, pairs: PracticePair[], seen: Set<string>, totalCap: { n: number }, flush: () => void): RepoReport {
   const report: RepoReport = { name: repo.name, split: repo.split, candidates: 0, attempts: 0, kept: 0, reason: null };
   const head = git(dir, ["rev-parse", repo.commit]);
   if (!head.ok || head.out.trim() !== repo.commit) {
@@ -179,17 +192,25 @@ function mineRepo(repo: PracticeRepo, dir: string, prefix: string[] | null, pair
   if (roots.length !== 1 || roots[0] !== repo.root) { report.reason = "ROOT_MISMATCH"; return report; }
   const found = candidatesOf(dir, repo.commit);
   report.candidates = found.length;
-  const file = licenseAt(dir, repo.commit);
-  const spdx = keptLicense(file?.text ?? null);
-  if (spdx === null || spdx !== repo.license || file?.file !== repo.licenseFile) {
-    report.reason = spdx === null ? "LICENSE_MISSING" : "LICENSE_MISMATCH";
-    return report;
+  let license: PracticeLicense;
+  if (isOwnerRepo(repo.name)) {
+    if (repo.license !== "owner") { report.reason = "LICENSE_MISMATCH"; return report; }
+    license = "owner";
+  } else {
+    const file = licenseAt(dir, repo.commit);
+    const spdx = keptLicense(file?.text ?? null);
+    if (spdx === null || spdx !== repo.license || file?.file !== repo.licenseFile) {
+      report.reason = spdx === null ? "LICENSE_MISSING" : "LICENSE_MISMATCH";
+      return report;
+    }
+    license = spdx;
   }
   if (!prefix) { report.reason = "UNSAFE_ENV"; return report; }
   installed = "";
   for (const candidate of found) {
     if (report.kept >= KEEP_PER_REPO || report.attempts >= ATTEMPTS_PER_REPO || totalCap.n >= KEEP_TOTAL) break;
     if (!candidate.subject) continue;
+    if (seen.has(`${repo.name}\t${candidate.fix}`)) continue;
     const pkg = pkgAt(dir, candidate.fix);
     if (!pkg) continue;
     const command = testCommandFor(pkg, candidate.testFile);
@@ -208,12 +229,13 @@ function mineRepo(repo: PracticeRepo, dir: string, prefix: string[] | null, pair
     const before = runTest(dir, command, prefix);
     if (before === null || before === 0) continue;
     const pair: PracticePair = {
-      schema: "peaceai-practice-pair:v1", credit: false, repo: repo.name, license: spdx, split: repo.split,
+      schema: "peaceai-practice-pair:v1", credit: false, repo: repo.name, license, split: repo.split,
       baseSha: candidate.base, fixSha: candidate.fix, testFile: candidate.testFile, testCommand: command,
       beforeExit: before, afterExit: after, files: candidate.files, subject: candidate.subject,
     };
     if (pairProblems(pair).length) continue;
     pairs.push(pair);
+    seen.add(`${repo.name}\t${candidate.fix}`);
     report.kept++;
     totalCap.n++;
     flush();
@@ -230,8 +252,11 @@ function main(): void {
   const work = flag("--work", args);
   const reportPath = flag("--report", args);
   const clones = flag("--clones", args) ?? "";
+  const only = flag("--only", args);
+  const append = args.includes("--append");
   if (!manifestPath || !outPath || !work) { console.log(USAGE); process.exit(2); }
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as PracticeManifest;
+  if (only && !manifest.repos.some((repo) => repo.name === only)) { console.log(USAGE); process.exit(2); }
   const plain = probe(["unshare", "-n", "true"]);
   const user = plain ? false : probe(["unshare", "--user", "--map-root-user", "-n", "true"]);
   const prefix = isolationArgv(plain, user);
@@ -239,23 +264,32 @@ function main(): void {
   else console.log(`isolation ${prefix.join(" ")}`);
   console.log(`env_allow ${ENV_ALLOW.join(",")}`);
   mkdirSync(work, { recursive: true });
-  const pairs: PracticePair[] = [];
+  const pairs: PracticePair[] = append ? readPairs(outPath) : [];
+  const seen = new Set(pairs.map((pair) => `${pair.repo}\t${pair.fixSha}`));
   const reports: RepoReport[] = [];
   const total = { n: 0 };
   const flush = () => writeFileSync(outPath, pairs.map((p) => JSON.stringify(p)).join("\n") + (pairs.length ? "\n" : ""));
   for (const repo of manifest.repos) {
+    if (only && repo.name !== only) continue;
     const dir = join(work, repo.name.replace("/", "__"));
     if (!ensureClone(repo, dir, clones)) {
       reports.push({ name: repo.name, split: repo.split, candidates: 0, attempts: 0, kept: 0, reason: "CLONE_FAILED" });
       console.log(`skip ${repo.name} CLONE_FAILED`);
       continue;
     }
-    const report = mineRepo(repo, dir, prefix, pairs, total, flush);
+    const report = mineRepo(repo, dir, prefix, pairs, seen, total, flush);
     reports.push(report);
     console.log(`repo ${repo.name} split=${repo.split} candidates=${report.candidates} attempts=${report.attempts} kept=${report.kept} reason=${report.reason ?? "ok"}`);
   }
   flush();
-  const report = { schema: MINE_REPORT_SCHEMA, credit: false as const, isolation: prefix ? prefix.join(" ") : "UNSAFE_ENV", repos: reports, kept: pairs.length };
+  let repoReports = reports;
+  if (append && reportPath && existsSync(reportPath)) {
+    const prev = JSON.parse(readFileSync(reportPath, "utf8")) as { repos?: RepoReport[] };
+    const byName = new Map((prev.repos ?? []).map((row) => [row.name, row]));
+    for (const row of reports) byName.set(row.name, row);
+    repoReports = [...byName.values()];
+  }
+  const report = { schema: MINE_REPORT_SCHEMA, credit: false as const, isolation: prefix ? prefix.join(" ") : "UNSAFE_ENV", repos: repoReports, kept: pairs.length };
   if (reportPath) writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n");
   console.log(`credit=false kept=${pairs.length}`);
 }

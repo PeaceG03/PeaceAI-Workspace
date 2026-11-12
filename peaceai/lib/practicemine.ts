@@ -128,12 +128,22 @@ export function isolationArgv(plainOk: boolean, userOk: boolean): string[] | nul
 }
 
 export type Split = "dev" | "held-out";
+/** Peace's own repositories are not gated on a root LICENSE file. The recorded license is this word. */
+export type PracticeLicense = Spdx | "owner";
+
+export function isOwnerRepo(name: string): boolean {
+  return /^PeaceG03\//i.test(name);
+}
+
+export function isSpdx(value: unknown): value is Spdx {
+  return value === "MIT" || value === "Apache-2.0" || value === "BSD-2-Clause" || value === "BSD-3-Clause" || value === "ISC";
+}
 
 export interface PracticeRepo {
   name: string;
   commit: string;
   root: string;
-  license: Spdx | null;
+  license: PracticeLicense | null;
   licenseFile: string | null;
   split: Split;
 }
@@ -178,13 +188,10 @@ export function manifestProblems(value: unknown): string[] {
     if (repo.split !== "dev" && repo.split !== "held-out") problems.push(`repo_split:${repo.name}`);
     if (repo.split === "held-out") held++;
     if (repo.name === "PeaceG03/PeaceSTOCKS") stocks = repo.split;
-    const lic = repo.license;
-    const allowed = lic === null || lic === "MIT" || lic === "Apache-2.0" || lic === "BSD-2-Clause" || lic === "BSD-3-Clause" || lic === "ISC";
-    if (!allowed) problems.push(`repo_license:${repo.name}`);
-    if (repo.split === "held-out" && lic === null) problems.push(`heldout_unlicensed:${repo.name}`);
-    if (repo.name !== "PeaceG03/PeaceSTOCKS" && lic === null) problems.push(`repo_unlicensed:${repo.name}`);
-    if (lic === null && repo.licenseFile !== null) problems.push(`license_file:${repo.name}`);
-    if (lic !== null && (typeof repo.licenseFile !== "string" || !repo.licenseFile)) problems.push(`license_file:${repo.name}`);
+    if (isOwnerRepo(repo.name)) {
+      if (repo.license !== "owner") problems.push(`repo_license:${repo.name}`);
+    } else if (!isSpdx(repo.license)) problems.push(`repo_license:${repo.name}`);
+    else if (typeof repo.licenseFile !== "string" || !repo.licenseFile) problems.push(`license_file:${repo.name}`);
   }
   if (held < 2) problems.push("heldout_count");
   if (stocks !== "dev") problems.push("peacestocks_not_dev");
@@ -197,7 +204,7 @@ export interface PracticePair {
   schema: typeof PAIR_SCHEMA;
   credit: false;
   repo: string;
-  license: Spdx;
+  license: PracticeLicense;
   split: Split;
   baseSha: string;
   fixSha: string;
@@ -216,7 +223,8 @@ export function pairProblems(value: unknown): string[] {
   if (p.schema !== PAIR_SCHEMA) problems.push("pair_schema");
   if (p.credit !== false) problems.push("credit_not_false");
   if (typeof p.repo !== "string" || !REPO.test(p.repo)) problems.push("pair_repo");
-  if (p.license !== "MIT" && p.license !== "Apache-2.0" && p.license !== "BSD-2-Clause" && p.license !== "BSD-3-Clause" && p.license !== "ISC") problems.push("pair_license");
+  const ownerPair = typeof p.repo === "string" && isOwnerRepo(p.repo) && p.license === "owner";
+  if (!ownerPair && !isSpdx(p.license)) problems.push("pair_license");
   if (p.split !== "dev" && p.split !== "held-out") problems.push("pair_split");
   if (typeof p.baseSha !== "string" || !SHA.test(p.baseSha)) problems.push("pair_base");
   if (typeof p.fixSha !== "string" || !SHA.test(p.fixSha)) problems.push("pair_fix");
