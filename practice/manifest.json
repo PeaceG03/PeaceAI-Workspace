@@ -1,0 +1,69 @@
+{
+  "schema": "peaceai-practice-manifest:v1",
+  "credit": false,
+  "note": "Split by repository. Held-out upstreams are the origin projects a repo continues; an empty list means none. radashi-org/radashi left because it continues sodiray/radash. egoist/bundle-require left because it kept one pair. The replacement pins were frozen before their pairs were mined. Pairs were re-admitted on the replay path: a frozen install of the base, then the same sandbox test. A pair stays only when that test fails before the fix and passes after. Fixes that change package.json or a lockfile are excluded as FIX_CHANGES_DEPS. Bases that are not frozen-installable are excluded as BASE_NOT_FROZEN_INSTALLABLE. The repository list and heldOutHash are unchanged. heldOutPairHash is only the held-out pair list.",
+  "heldOutHash": "040638a247aafc84964ef92a344b1278f133752ba2b507e5fcecd70029025364",
+  "heldOutPairHash": "7159bee7fbd560417d40709cc7529135997d6ff95aabd5fed6df67388c581828",
+  "repos": [
+    {
+      "name": "PeaceG03/PeaceSTOCKS",
+      "commit": "c617e6340a8ace079ca92480fb002c8bf8beb30f",
+      "root": "99c0cfb524f96a690d4db5baf2bcf54ddb503d5d",
+      "license": "owner",
+      "licenseFile": null,
+      "split": "dev"
+    },
+    {
+      "name": "sindresorhus/is",
+      "commit": "e9c026c611c1160eaad50da00be4e676b626018f",
+      "root": "58abf58f3ab4888a766add1a7ccbfcf501d9de62",
+      "license": "MIT",
+      "licenseFile": "license",
+      "split": "dev"
+    },
+    {
+      "name": "unjs/defu",
+      "commit": "82632b66f5914e9946edce300e10633a3d5c0cb7",
+      "root": "397ce0fea0ddf5a6c9129b46e6ff0d0fedbfe5ef",
+      "license": "MIT",
+      "licenseFile": "LICENSE",
+      "split": "dev"
+    },
+    {
+      "name": "blakeembrey/change-case",
+      "commit": "9d5505c7e807544a18d98052802985069ac190d0",
+      "root": "373f340245f9b2c740affebf9b25498e86945136",
+      "license": "MIT",
+      "licenseFile": "LICENSE",
+      "split": "held-out",
+      "upstreams": []
+    },
+    {
+      "name": "gvergnaud/ts-pattern",
+      "commit": "f11be73acb18e1d653d4f252e7d75981d873a2e6",
+      "root": "4bf42f9e351df2673b07297693871cd901612f88",
+      "license": "MIT",
+      "licenseFile": "LICENSE",
+      "split": "held-out",
+      "upstreams": []
+    },
+    {
+      "name": "gcanti/fp-ts",
+      "commit": "c0a6472121c67a2b083e62fcff13e7d022e39d8f",
+      "root": "508167379aa46c095f015d2bba18031748425d8c",
+      "license": "MIT",
+      "licenseFile": "LICENSE",
+      "split": "held-out",
+      "upstreams": []
+    },
+    {
+      "name": "unjs/listhen",
+      "commit": "2466b698997f6d5006c22f36ab54379df277cf5f",
+      "root": "5433d71a0a5e0524ac9da7ce0cf14c96f029a6d2",
+      "license": "MIT",
+      "licenseFile": "LICENSE",
+      "split": "held-out",
+      "upstreams": []
+    }
+  ]
+}
