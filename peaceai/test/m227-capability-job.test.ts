@@ -2,16 +2,16 @@
 // EXPERIMENTAL. credit is false. No network, no kernel.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { buildCapabilityReport, type ReplayBind } from "../lib/capabilityreport.ts";
+import { buildCapabilityReport, realPercent, type ReplayBind } from "../lib/capabilityreport.ts";
 import { CORE_ENTRY, adoptIssueBody, agreedIssue, boundReplay, classifyJobOutput, commitRef, ownWorkspaceChange, replayIssueTitle, routeReplay, rowUnrunnable, selfChangeFailReason } from "../lib/capabilityjob.ts";
 import { cleanIssueText } from "../lib/taskmap.ts";
 import { trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
 import { indexGitTree } from "../lib/coreindex.ts";
-import { archiveSha256, coreStillPinned, extractPinnedCore, gitTreeSha, pinnedKernel, readCorePin, type CorePin } from "../bin/capability-job.ts";
+import { archiveSha256, classifyGateRun, coreStillPinned, extractPinnedCore, gitTreeSha, jobaWorkDir, pinnedKernel, readCorePin, type CorePin } from "../bin/capability-job.ts";
 
 const repo = resolve(import.meta.dirname, "../..");
 const tsx = join(repo, "node_modules/.bin/tsx");
@@ -222,5 +222,41 @@ test("a pin-checked extract is a git checkout of the pin tree, so gate.ts scores
   } finally {
     rmSync(made.caller, { recursive: true, force: true });
     rmSync(made.archive, { force: true });
+  }
+});
+
+test("a gate timeout, signal, or crash is unmeasured, and a GATE FAIL message is kept", () => {
+  const home = "/" + "ho" + "me" + "/" + "someone";
+  const timeout = classifyGateRun({ status: null, signal: "SIGTERM", error: { code: "ETIMEDOUT" }, stdout: "GATE PASS" });
+  assert.equal(timeout.status, "unmeasured");
+  assert.equal(timeout.reason, "GATE_TIMEOUT");
+  const signal = classifyGateRun({ status: null, signal: "SIGKILL" });
+  assert.deepEqual(signal, { status: "unmeasured", reason: "GATE_SIGNAL:SIGKILL" });
+  const fail = classifyGateRun({ status: 1, stdout: `noise\nGATE FAIL target has no scope ${home}\nGATE FAIL later\n` });
+  assert.equal(fail.status, "fail");
+  assert.equal(fail.reason.startsWith("GATE_FAIL:target has no scope "), true);
+  assert.equal(fail.reason.includes("someone"), false);
+  const crash = classifyGateRun({ status: 1, stderr: "Error: boom" });
+  assert.deepEqual(crash, { status: "unmeasured", reason: "GATE_ERROR:exit 1" });
+  const other = classifyGateRun({ status: 2, stdout: "" });
+  assert.deepEqual(other, { status: "unmeasured", reason: "GATE_ERROR:exit 2" });
+  const pass = classifyGateRun({ status: 0, stdout: "GATE PASS candidates=1\n" }, 1);
+  assert.deepEqual(pass, { status: "pass", reason: "GATE_PASS:1" });
+  for (const row of [timeout, signal, crash, other]) assert.notEqual(row.status, "pass");
+  assert.equal(realPercent(1, 4, 1), null);
+  assert.equal(realPercent(1, 4, 0), 25);
+});
+
+test("two concurrent row directories are distinct", () => {
+  const a = jobaWorkDir(244);
+  const b = jobaWorkDir(244);
+  try {
+    assert.notEqual(a, b);
+    assert.equal(existsSync(a), true);
+    assert.equal(existsSync(b), true);
+    assert.equal(a.includes("peaceai-joba-244-"), true);
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+    rmSync(b, { recursive: true, force: true });
   }
 });
