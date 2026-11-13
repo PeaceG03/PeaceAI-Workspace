@@ -440,6 +440,19 @@ export const INSTALL_TIMEOUT_MS = 180_000;
 export const INSTALL_MIN_BYTES = 5 * 1024 * 1024 * 1024;
 export const INSTALL_MIN_INODES = 200_000;
 
+export function readPairFingerprint(
+  repoDir: string,
+  baseSha: string,
+  toolchain: Pick<PracticeToolchain, "manager" | "managerVersion" | "nodeVersion">,
+  locks: LockFiles,
+): string | null {
+  const pkg = practiceGit(repoDir, ["show", `${baseSha}:package.json`]);
+  if (!pkg.ok) return null;
+  const lock = lockfileName(toolchain.manager, locks);
+  const locked = lock ? practiceGit(repoDir, ["show", `${baseSha}:${lock}`]) : { ok: false, out: "" };
+  return dependencyFingerprint(pkg.out, locked.ok ? locked.out : "", toolchain);
+}
+
 export function dependencyFingerprint(packageJson: string, lockfile: string, toolchain: Pick<PracticeToolchain, "manager" | "managerVersion" | "nodeVersion">): string {
   return createHash("sha256")
     .update("peaceai-practice-deps:v1\n")
