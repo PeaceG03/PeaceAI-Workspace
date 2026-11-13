@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  ENV_ALLOW, GIT_LOCK_ARGS, currentToolchain, diffChangesDeps, ensurePracticeInstall, isOwnerRepo, isTestFile, keptLicense, pairFiles, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, testCommandFor, visibleNodeBin, yarnIsModern,
+  ENV_ALLOW, GIT_LOCK_ARGS, currentToolchain, diffChangesDeps, ensurePracticeInstall, heldOutWatchProblems, identitiesForRoots, isOwnerRepo, isTestFile, keptLicense, pairFiles, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, testCommandFor, visibleNodeBin, yarnIsModern,
   type LockFiles, type NameStatus, type PkgJson, type PracticeLicense, type PracticeManifest, type PracticePair, type PracticeRepo,
   LICENSE_FILES, MINE_REPORT_SCHEMA,
 } from "../lib/practicemine.ts";
@@ -22,7 +22,7 @@ const KEEP_PER_REPO = 20;
 const KEEP_TOTAL = 100;
 const TEST_MS = 45_000;
 
-const USAGE = "usage: practice-mine.ts --manifest <file> --out <pairs.jsonl> --work <dir> [--report <file>] [--clones <dir>] [--only owner/repo] [--append]";
+const USAGE = "usage: practice-mine.ts --manifest <file> --out <pairs.jsonl> --work <dir> [--report <file>] [--clones <dir>] [--only owner/repo] [--append]\n       practice-mine.ts --check-clones <dir> --manifest <file> --roots <corpus-roots.json>";
 
 function flag(name: string, args: string[]): string | undefined {
   const i = args.indexOf(name);
@@ -251,6 +251,18 @@ function reverifyRepo(repo: PracticeRepo, dir: string, rows: PracticePair[], cac
 function main(): void {
   const args = process.argv.slice(2);
   if (args.includes("-h") || args.includes("--help")) { console.log(USAGE); return; }
+  if (args.includes("--check-clones")) {
+    const clones = flag("--check-clones", args);
+    const manifestPath = flag("--manifest", args);
+    const rootsPath = flag("--roots", args);
+    if (!clones || !manifestPath || !rootsPath) { console.log(USAGE); process.exit(2); }
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as PracticeManifest;
+    const recorded = (JSON.parse(readFileSync(rootsPath, "utf8")) as { roots?: Record<string, string | null> }).roots ?? {};
+    const held = manifest.repos.filter((repo) => repo.split === "held-out").map((repo) => ({ name: repo.name, root: repo.root, upstreams: repo.upstreams ?? [] }));
+    const problems = heldOutWatchProblems(held, [], recorded, {}, identitiesForRoots(recorded, clones));
+    for (const problem of problems) console.log(problem);
+    process.exit(problems.length ? 1 : 0);
+  }
   if (args.includes("--reverify")) {
     const manifestPath = flag("--manifest", args);
     const outPath = flag("--out", args);

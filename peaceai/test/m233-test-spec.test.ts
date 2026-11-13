@@ -8,8 +8,8 @@ import test from "node:test";
 import { openRepo } from "../lib/codesearch.ts";
 import { CALLEE_DEPTH, locate, MAX_CANDIDATES } from "../lib/editpropose.ts";
 import { MAX_ATTEMPTS } from "../lib/loop.ts";
-import { GIT_LOCK_ARGS, practiceGit, practiceGitEnv, practiceSandboxReady, visibleNodeBin } from "../lib/practicemine.ts";
-import { behaviorInputs, gradeBehavior, INPUT_CAP } from "../lib/specgrade.ts";
+import { GIT_LOCK_ARGS, materializeSolverTree, practiceGit, practiceGitEnv, practiceSandboxReady, visibleNodeBin, writeCommitFile } from "../lib/practicemine.ts";
+import { behaviorInputs, gradeBehavior, INPUT_CAP, parseProbe, PROBE_SENTINEL } from "../lib/specgrade.ts";
 import { classifyRunnerOutput, expectationsIn, originalSuiteArgv, runTestSpec, sanitizeRunnerLines, scaffoldPlan, SPEC_ATTEMPT_CAP, specTask, type SpecInput } from "../lib/testspec.ts";
 
 const PATTERN = "^src/.+\\.ts$";
@@ -418,4 +418,102 @@ test("a constant body is test-only, a matching comparison is strict, and a modul
   } finally {
     for (const root of [constant, real, left, right, good, throwing]) rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("mutations cover object fields and array lengths, values, and order", () => {
+  const objectInputs = behaviorInputs([[{ a: 1, b: 2 }]], [], "add");
+  assert.ok(objectInputs.some((args) => JSON.stringify(args[0]) !== JSON.stringify({ a: 1, b: 2 })));
+  assert.ok(objectInputs.some((args) => (args[0] as { a: number }).a !== 1));
+  const arrayInputs = behaviorInputs([[[1, 2, 3]]], [], "total");
+  assert.ok(arrayInputs.some((args) => (args[0] as number[]).length !== 3));
+  assert.ok(arrayInputs.some((args) => JSON.stringify(args[0]) === JSON.stringify([3, 2, 1])));
+  assert.ok(arrayInputs.some((args) => Array.isArray(args[0]) && (args[0] as number[])[0] !== 1 && (args[0] as number[]).length === 3));
+});
+
+test("the probe sentinel is not the last brace line", () => {
+  const real = { load: "ok", results: [{ thrown: false, value: { k: "v", v: 2 } }] };
+  const fake = '{"load":"ok","results":[{"thrown":false,"value":{"k":"v","v":1}}]}';
+  const parsed = parseProbe(`${PROBE_SENTINEL}${JSON.stringify(real)}\n${fake}\n`);
+  assert.equal(parsed?.results?.[0]?.value && (parsed.results[0].value as { v: number }).v, 2);
+  assert.equal(parseProbe(fake), null);
+});
+
+test("a solver tree at the base cannot see the fix commit", () => {
+  const origin = repo({ "src/box.ts": "export const n = 1;\n" });
+  const solver = mkdtempSync(join(tmpdir(), "peaceai-solver-"));
+  try {
+    const base = spawnSync("git", ["-C", origin, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    writeFileSync(join(origin, "src/box.ts"), "export const n = 2;\n");
+    writeFileSync(join(origin, "src/box.test.ts"), "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { n } from \"./box.ts\";\ntest(\"n\", () => { assert.equal(n, 2); });\n");
+    git(origin, ["add", "-A"]);
+    git(origin, ["commit", "-q", "-m", "fix"]);
+    const fix = spawnSync("git", ["-C", origin, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    assert.equal(materializeSolverTree(origin, base, solver), true);
+    assert.equal(practiceGit(solver, ["rev-parse", "HEAD"]).out.trim(), base);
+    assert.equal(practiceGit(solver, ["cat-file", "-e", `${fix}^{commit}`]).ok, false);
+    assert.equal(readFileSync(join(solver, "src/box.ts"), "utf8").includes("n = 1"), true);
+    assert.equal(writeCommitFile(origin, fix, "src/box.test.ts", solver), true);
+    assert.equal(readFileSync(join(solver, "src/box.test.ts"), "utf8").includes("n, 2"), true);
+    assert.equal(practiceGit(solver, ["cat-file", "-e", `${fix}^{commit}`]).ok, false);
+    assert.equal(practiceGit(solver, ["rev-parse", "--verify", "--quiet", `${fix}^{commit}`]).ok, false);
+    const refs = practiceGit(solver, ["rev-list", "--all"]);
+    assert.equal(refs.ok, true);
+    assert.equal(refs.out.includes(fix), false);
+  } finally {
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(solver, { recursive: true, force: true });
+  }
+});
+
+test("thin fits are not strict, and a real toy implementation is", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const nodePath = visibleNodeBin();
+  if (!nodePath) { t.skip("no visible node"); return; }
+  const tree = (files: Record<string, string>) => {
+    const root = mkdtempSync(join(tmpdir(), "peaceai-behavior-"));
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(join(root, path, ".."), { recursive: true });
+      writeFileSync(join(root, path), text);
+    }
+    return root;
+  };
+  const named = (body: string, symbol: string) => `export function ${symbol}(...args: never[]): unknown {\n  ${body}\n}\n`;
+  const pair = (file: string, symbol: string, candidateBody: string, fixBody: string, args: unknown[][]) => {
+    const candidate = tree({ [file]: named(candidateBody, symbol) });
+    const fix = tree({ [file]: named(fixBody, symbol) });
+    const grade = gradeBehavior({
+      candidateRoot: candidate, fixRoot: fix, nodePath,
+      target: { symbol, file, form: "named", exportName: symbol, args },
+    });
+    rmSync(candidate, { recursive: true, force: true });
+    rmSync(fix, { recursive: true, force: true });
+    return grade;
+  };
+  const add = pair("src/add.ts", "add", "return 3;", "const o = args[0] as { a: number; b: number }; return o.a + o.b;", [[{ a: 1, b: 2 }]]);
+  assert.notEqual(add.behavior, "verified_strict");
+  assert.equal(add.behavior, "verified_test_only");
+  const doubled = pair("src/dbl.ts", "dbl", "return 1;", "const x = args[0] as number; return x * 2;", [[1]]);
+  const asyncCandidate = tree({ "src/dbl.ts": "export async function dbl(x: number): Promise<number> { return 1; }\n" });
+  const asyncFix = tree({ "src/dbl.ts": "export async function dbl(x: number): Promise<number> { return x * 2; }\n" });
+  const asyncGrade = gradeBehavior({
+    candidateRoot: asyncCandidate, fixRoot: asyncFix, nodePath,
+    target: { symbol: "dbl", file: "src/dbl.ts", form: "named", exportName: "dbl", args: [[1]] },
+  });
+  rmSync(asyncCandidate, { recursive: true, force: true });
+  rmSync(asyncFix, { recursive: true, force: true });
+  assert.notEqual(asyncGrade.behavior, "verified_strict");
+  assert.equal(doubled.behavior, "verified_test_only");
+  const mapped = pair("src/box.ts", "box", "return new Map();", "const x = args[0] as number; return new Map([[x, x]]);", [[1]]);
+  assert.notEqual(mapped.behavior, "verified_strict");
+  const fn = pair("src/make.ts", "make", "return () => 0;", "const x = args[0] as number; return () => x;", [[1]]);
+  assert.equal(fn.behavior, "diff_unavailable");
+  const summed = pair("src/total.ts", "total", "const xs = args[0] as number[]; return xs.length * 2;", "const xs = args[0] as number[]; return xs.reduce((sum, n) => sum + n, 0);", [[[1, 2, 3]]]);
+  assert.notEqual(summed.behavior, "verified_strict");
+  assert.equal(summed.behavior, "verified_test_only");
+  const near = pair("src/gate.ts", "gate", "const n = args[0] as number; return n === 1 || n === 0;", "const n = args[0] as number; return n >= 0;", [[1], [0]]);
+  assert.equal(near.behavior, "verified_test_only");
+  const sameAdd = pair("src/add.ts", "add", "const o = args[0] as { a: number; b: number }; return o.a + o.b;", "const o = args[0] as { a: number; b: number }; return o.a + o.b;", [[{ a: 1, b: 2 }]]);
+  assert.equal(sameAdd.behavior, "verified_strict");
+  const sameTotal = pair("src/total.ts", "total", "const xs = args[0] as number[]; return xs.reduce((sum, n) => sum + n, 0);", "const xs = args[0] as number[]; return xs.reduce((sum, n) => sum + n, 0);", [[[1, 2, 3]]]);
+  assert.equal(sameTotal.behavior, "verified_strict");
 });

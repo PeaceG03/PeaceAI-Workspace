@@ -3,7 +3,8 @@
 // suite, this loads that symbol and the fix's copy of the same symbol in separate sandboxes and
 // compares them on the test's concrete arguments plus general mutations of those arguments.
 // A constant that only matches the thin test comes back verified_test_only. A symbol that cannot be
-// imported on its own comes back diff_unavailable and is never treated as strict.
+// imported on its own, or that returns a function, a class instance, or any other opaque value,
+// comes back diff_unavailable and is never treated as strict.
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
@@ -13,6 +14,8 @@ import type { CallForm } from "./testspec.ts";
 export const INPUT_CAP = 50;
 export const BEHAVIORS = ["verified_strict", "verified_test_only", "diff_unavailable"] as const;
 export type Behavior = (typeof BEHAVIORS)[number];
+/** The probe prints this and then one JSON object. Other `{` lines are ignored. */
+export const PROBE_SENTINEL = "PEACEAI_BEHAVIOR_PROBE_v1 ";
 
 export interface BehaviorTarget {
   symbol: string;
@@ -50,28 +53,45 @@ const untag = (v) => {
   if (v.k === "o") { const o = {}; for (const [key, val] of Object.entries(v.v)) o[key] = untag(val); return o; }
   return v.v;
 };
+const seen = new WeakSet();
 const pack = (value) => {
   if (typeof value === "undefined") return { k: "undef" };
   if (typeof value === "number" && Number.isNaN(value)) return { k: "nan" };
   if (value === null) return { k: "null" };
   if (typeof value === "string" || typeof value === "boolean" || typeof value === "number") return { k: "v", v: value };
+  if (typeof value === "function" || typeof value === "symbol" || typeof value === "bigint") return { k: "opaque", why: typeof value };
+  if (typeof value !== "object") return { k: "opaque", why: typeof value };
+  if (seen.has(value)) return { k: "opaque", why: "cycle" };
+  seen.add(value);
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return { k: "date", v: Number.isNaN(time) ? null : time };
+  }
+  if (value instanceof Map) return { k: "map", v: [...value.entries()].map((pair) => [pack(pair[0]), pack(pair[1])]) };
+  if (value instanceof Set) return { k: "set", v: [...value].map(pack) };
   if (Array.isArray(value)) return { k: "a", v: value.map(pack) };
-  if (typeof value === "object") { const o = {}; for (const [key, val] of Object.entries(value)) o[key] = pack(val); return { k: "o", v: o }; }
-  return { k: "other" };
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return { k: "opaque", why: "instance" };
+  const o = {};
+  for (const key of Object.keys(value).sort()) o[key] = pack(value[key]);
+  return { k: "o", v: o };
 };
 let mod;
 try { mod = await import(pathToFileURL(spec.file).href); }
-catch { console.log(JSON.stringify({ load: "error" })); process.exit(0); }
+catch { console.log(${JSON.stringify(PROBE_SENTINEL)} + JSON.stringify({ load: "error" })); process.exit(0); }
 let fn = spec.form === "default" || spec.form === "default-prop" ? mod.default : mod[spec.exportName];
 if (spec.form === "default-prop" || spec.form === "named-prop") fn = fn?.[spec.prop];
-if (typeof fn !== "function") { console.log(JSON.stringify({ load: "not-a-function" })); process.exit(0); }
+if (typeof fn !== "function") { console.log(${JSON.stringify(PROBE_SENTINEL)} + JSON.stringify({ load: "not-a-function" })); process.exit(0); }
 const results = [];
 for (const args of spec.inputs) {
   const values = args.map(untag);
-  try { results.push({ thrown: false, value: pack(fn(...values)) }); }
-  catch { results.push({ thrown: true }); }
+  try {
+    let value = fn(...values);
+    for (let n = 0; n < 4 && value && typeof value.then === "function"; n++) value = await value;
+    results.push({ thrown: false, value: pack(value) });
+  } catch { results.push({ thrown: true }); }
 }
-console.log(JSON.stringify({ load: "ok", results }));
+console.log(${JSON.stringify(PROBE_SENTINEL)} + JSON.stringify({ load: "ok", results }));
 `;
 
 function tag(value: unknown): unknown {
@@ -120,7 +140,13 @@ function keyOf(args: unknown[]): string {
   return JSON.stringify(args.map(tag));
 }
 
-function mutants(value: unknown, flags: ParamFlags | undefined): unknown[] {
+function plainObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function mutants(value: unknown, flags: ParamFlags | undefined, depth = 0): unknown[] {
   const out: unknown[] = [];
   if (typeof value === "number" && Number.isFinite(value)) out.push(value + 1, value - 1, 0, value === 0 ? -1 : -Math.abs(value), Number.NaN);
   else if (typeof value === "string") {
@@ -129,7 +155,22 @@ function mutants(value: unknown, flags: ParamFlags | undefined): unknown[] {
     if (value.length > 0) out.push(value.slice(0, -1));
   } else if (Array.isArray(value)) {
     out.push([]);
-    if (value.length > 0) out.push([value[0]]);
+    if (value.length > 0) out.push([value[0]], value.slice(1), [...value, value[value.length - 1]]);
+    if (value.length > 1) out.push(value.slice(0, -1), [...value].reverse());
+    if (depth < 2) {
+      value.forEach((item, index) => {
+        for (const next of mutants(item, undefined, depth + 1).slice(0, 4)) {
+          const copy = [...value];
+          copy[index] = next;
+          out.push(copy);
+        }
+      });
+    }
+  } else if (plainObject(value) && depth < 2) {
+    for (const [key, item] of Object.entries(value)) {
+      for (const next of mutants(item, undefined, depth + 1).slice(0, 4)) out.push({ ...value, [key]: next });
+    }
+    out.push({});
   } else if (typeof value === "boolean") out.push(!value);
   if (flags?.nulls) out.push(null);
   if (flags?.undef) out.push(undefined);
@@ -179,12 +220,14 @@ export function behaviorInputs(examples: readonly (readonly unknown[])[], flags:
   return ordered.slice(0, INPUT_CAP);
 }
 
-function parseProbe(stdout: string): { load: string; results?: { thrown: boolean; value?: unknown }[] } | null {
-  const lines = stdout.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("{"));
-  for (let i = lines.length - 1; i >= 0; i--) {
-    try { return JSON.parse(lines[i]!) as { load: string; results?: { thrown: boolean; value?: unknown }[] }; } catch { /* keep looking */ }
+export function parseProbe(stdout: string): { load: string; results?: { thrown: boolean; value?: unknown }[] } | null {
+  let found: { load: string; results?: { thrown: boolean; value?: unknown }[] } | null = null;
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith(PROBE_SENTINEL)) continue;
+    try { found = JSON.parse(trimmed.slice(PROBE_SENTINEL.length)) as { load: string; results?: { thrown: boolean; value?: unknown }[] }; } catch { return null; }
   }
-  return null;
+  return found;
 }
 
 function show(value: unknown): string {
@@ -195,6 +238,16 @@ function sanitize(text: string, roots: readonly string[]): string {
   let out = text;
   for (const root of roots) out = out.split(root).join("<work>");
   return out.replace(/\/(?:tmp|home|opt|usr|var|exec-daemon|Users)\/[^\s'")]+/g, "<path>").slice(0, 240);
+}
+
+function opaque(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const packed = value as { k?: string; v?: unknown };
+  if (packed.k === "opaque") return true;
+  if ((packed.k === "a" || packed.k === "set") && Array.isArray(packed.v)) return packed.v.some(opaque);
+  if (packed.k === "map" && Array.isArray(packed.v)) return packed.v.some((pair) => Array.isArray(pair) && (opaque(pair[0]) || opaque(pair[1])));
+  if (packed.k === "o" && packed.v && typeof packed.v === "object") return Object.values(packed.v as Record<string, unknown>).some(opaque);
+  return false;
 }
 
 function loadSide(root: string, file: string, target: BehaviorTarget, inputs: unknown[][], nodePath: string, nodeModules: string | null): { load: string; results?: { thrown: boolean; value?: unknown }[] } | null {
@@ -221,6 +274,7 @@ function loadSide(root: string, file: string, target: BehaviorTarget, inputs: un
 /**
  * Compare the candidate symbol with the fix's symbol. Neither tree is modified except for a probe
  * file that is removed before this returns. A load failure is diff_unavailable.
+ * verified_strict requires at least one mutated input, not only the test's own arguments.
  */
 export function gradeBehavior(input: {
   candidateRoot: string;
@@ -239,21 +293,27 @@ export function gradeBehavior(input: {
   const fix = loadSide(input.fixRoot, input.target.file, input.target, inputs, input.nodePath, modules);
   if (!candidate || candidate.load !== "ok" || !candidate.results || !fix || fix.load !== "ok" || !fix.results) return { behavior: "diff_unavailable", compared: 0 };
   if (candidate.results.length !== inputs.length || fix.results.length !== inputs.length) return { behavior: "diff_unavailable", compared: 0 };
+  const originalKeys = new Set(input.target.args.map((args) => keyOf([...args])));
+  let mutated = 0;
   for (let i = 0; i < inputs.length; i++) {
     const left = candidate.results[i]!;
     const right = fix.results[i]!;
+    if ((!left.thrown && opaque(left.value)) || (!right.thrown && opaque(right.value))) return { behavior: "diff_unavailable", compared: i };
     const same = left.thrown === right.thrown && (left.thrown || JSON.stringify(left.value) === JSON.stringify(right.value));
-    if (same) continue;
-    const roots = [input.candidateRoot, input.fixRoot];
-    return {
-      behavior: "verified_test_only",
-      compared: inputs.length,
-      counterexample: {
-        args: sanitize(show(inputs[i]), roots),
-        candidate: sanitize(left.thrown ? "thrown" : show(left.value), roots),
-        fix: sanitize(right.thrown ? "thrown" : show(right.value), roots),
-      },
-    };
+    if (!same) {
+      const roots = [input.candidateRoot, input.fixRoot];
+      return {
+        behavior: "verified_test_only",
+        compared: inputs.length,
+        counterexample: {
+          args: sanitize(show(inputs[i]), roots),
+          candidate: sanitize(left.thrown ? "thrown" : show(left.value), roots),
+          fix: sanitize(right.thrown ? "thrown" : show(right.value), roots),
+        },
+      };
+    }
+    if (!originalKeys.has(keyOf(inputs[i]!))) mutated += 1;
   }
+  if (mutated < 1) return { behavior: "verified_test_only", compared: inputs.length };
   return { behavior: "verified_strict", compared: inputs.length };
 }
