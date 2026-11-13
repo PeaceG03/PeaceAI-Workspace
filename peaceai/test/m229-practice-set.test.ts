@@ -6,10 +6,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { keptLicense } from "../lib/practicemine.ts";
-import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync as readText, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync as readText, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
-  GIT_LOCK_ARGS, cloneRootProblems, dependencyFingerprint, diffChangesDeps, ensurePracticeInstall, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutPairHash, heldOutWatchProblems, identitiesForRoots, installArgv, INSTALL_TIMEOUT_MS, installEnv, isSourceFile, isTestFile, manifestProblems, readCloneIdentity, SANDBOX_RAN, sanitizeInstallLines,
+  GIT_LOCK_ARGS, LOCK_EMPTY_GRACE_MS, cloneCheckProblems, cloneRootProblems, dependencyFingerprint, diffChangesDeps, ensurePracticeInstall, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutPairHash, heldOutWatchProblems, identitiesForRoots, installArgv, INSTALL_TIMEOUT_MS, installEnv, isSourceFile, isTestFile, manifestProblems, readCloneIdentity, SANDBOX_RAN, sanitizeInstallLines,
   pairFiles, pairProblems, parseRepoToken, poisonChanges, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxArgv, practiceWatchFiles, releaseWorktree, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
@@ -597,7 +597,7 @@ test("the committed held-out repos and their upstreams are absent from corpus, t
   const held = manifest.repos.filter((r) => r.split === "held-out").map((r) => ({ name: r.name, root: r.root, upstreams: r.upstreams ?? [] }));
   const hits = exclusionHits(held, sources, rootsFile.roots);
   assert.deepEqual(hits, []);
-  const watched = heldOutWatchProblems(held, practiceWatchFiles(repo), rootsFile.roots);
+  const watched = heldOutWatchProblems(held, practiceWatchFiles(repo), rootsFile.roots, {}, identitiesForRoots(rootsFile.roots, join(repo, "practice", "clones")));
   const mentions = watched.filter((problem) => problem.startsWith("HELD_OUT") || problem.startsWith("BAD_REPO"));
   assert.deepEqual(mentions, [], mentions.join("\n"));
   assert.ok(watched.some((problem) => problem.startsWith("CLONE_UNVERIFIED:")), "CLONE_UNVERIFIED stays in the problem list");
@@ -919,8 +919,53 @@ test("a renamed fork x/fpkit at a false root fails the clone check", () => {
     assert.match(ran.stdout, /FORK_FALSE_ROOT:x\/fpkit/);
     const missing = heldOutWatchProblems(held, [], { "x/fpkit": root }, {}, {});
     assert.ok(missing.includes("CLONE_UNVERIFIED:x/fpkit"));
+    assert.ok(cloneCheckProblems(held, recorded, clones).includes("FORK_FALSE_ROOT:x/fpkit"));
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(clones, { recursive: true, force: true });
+  }
+});
+
+test("a live owner's old lock is not stolen, and an empty lock stays busy during the grace period", () => {
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const origin = tinyRepo();
+  const cache = mkdtempSync(join(tmpdir(), "practice-live-lock-"));
+  const tool = { nodePath: node, nodeVersion: "v22.23.4", manager: "none" as const, managerVersion: "none" };
+  try {
+    const sha = spawnSync("git", ["-C", origin, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    const fingerprint = dependencyFingerprint(readText(join(origin, "package.json"), "utf8"), "", tool);
+    const lock = join(cache, "locks", `${fingerprint}.lock`);
+    mkdirSync(join(cache, "locks"), { recursive: true });
+    const owned = `${process.pid} ${Date.now() - 31 * 60 * 1000}\n`;
+    writeFileSync(lock, owned);
+    const live = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: sha, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false);
+    assert.equal(live.reason, "INSTALL_FAILED");
+    assert.ok(live.lines.includes("install lock is busy"));
+    assert.equal(readText(lock, "utf8"), owned);
+    writeFileSync(lock, "");
+    const freshEmpty = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: sha, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false);
+    assert.equal(freshEmpty.reason, "INSTALL_FAILED");
+    assert.equal(readText(lock, "utf8"), "");
+    const old = new Date(Date.now() - LOCK_EMPTY_GRACE_MS - 5_000);
+    utimesSync(lock, old, old);
+    const taken = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: sha, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false);
+    assert.equal(taken.ok, true);
+  } finally {
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(cache, { recursive: true, force: true });
+  }
+});
+
+test("replay refuses to grade when a recorded root has no clone identity", () => {
+  const out = mkdtempSync(join(tmpdir(), "practice-replay-gate-"));
+  try {
+    const ran = spawnSync(join(repo, "node_modules/.bin/tsx"), [
+      join(repo, "peaceai/bin/practice-replay.ts"), "--pairs", "/dev/null", "--out", out,
+    ], { encoding: "utf8" });
+    assert.equal(ran.status, 1);
+    assert.match(`${ran.stdout}`, /CLONE_UNVERIFIED:/);
+  } finally {
+    rmSync(out, { recursive: true, force: true });
   }
 });

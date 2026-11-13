@@ -297,8 +297,24 @@ export function materializeSolverTree(repoDir: string, sha: string, dest: string
   });
   if (fetched.status !== 0) return false;
   if (!practiceGit(dest, ["checkout", "--detach", "FETCH_HEAD"]).ok) return false;
+  sealSolverTree(dest);
   const head = practiceGit(dest, ["rev-parse", "HEAD"]);
   return head.ok && head.out.trim() === sha;
+}
+
+/** Drop the fetch URL, remotes, reflogs, and packed remote refs so the solver cannot ask the clone for fixSha. */
+function sealSolverTree(dest: string): void {
+  const gitDir = join(dest, ".git");
+  rmSync(join(gitDir, "FETCH_HEAD"), { force: true });
+  rmSync(join(gitDir, "logs"), { recursive: true, force: true });
+  rmSync(join(gitDir, "refs", "remotes"), { recursive: true, force: true });
+  const packed = join(gitDir, "packed-refs");
+  if (existsSync(packed)) {
+    const kept = readFileSync(packed, "utf8").split("\n").filter((line) => line.startsWith("#") || (!line.includes("file://") && !line.includes("refs/remotes/")));
+    writeFileSync(packed, kept.filter(Boolean).join("\n") + (kept.some(Boolean) ? "\n" : ""));
+  }
+  const remotes = practiceGit(dest, ["remote"]).out.split("\n").map((name) => name.trim()).filter(Boolean);
+  for (const name of remotes) practiceGit(dest, ["remote", "remove", name]);
 }
 
 /** Write one blob from `sha` into `destDir`. The destination repository does not gain that commit. */
@@ -527,6 +543,8 @@ export interface InstallCacheOptions {
 }
 
 const LOCK_STALE_MS = 30 * 60 * 1000;
+/** An empty lock is busy until this long after its mtime, then it may be taken over. */
+export const LOCK_EMPTY_GRACE_MS = 30_000;
 const INSTALL_COMPLETE = ".practice-complete";
 
 function lockOwnerAlive(pid: number): boolean {
@@ -536,21 +554,23 @@ function lockOwnerAlive(pid: number): boolean {
 }
 
 /**
- * A lock is taken over only when its owner is dead and the lock is older than 30 minutes.
- * A fresh lock is left alone, including when the recorded pid cannot be signalled.
+ * A live owner's lock is never taken over. Age applies only after the owner is dead.
+ * An empty or unwritten lock stays busy until LOCK_EMPTY_GRACE_MS after its mtime.
  */
 function lockIsStale(path: string): boolean {
   try {
-    const [pidText, tsText] = readFileSync(path, "utf8").trim().split(/\s+/);
+    const text = readFileSync(path, "utf8");
+    const mtime = lstatSync(path).mtimeMs;
+    const [pidText, tsText] = text.trim().split(/\s+/);
     const pid = Number(pidText);
     const ts = Number(tsText);
-    if (!Number.isInteger(pid) || pid <= 0 || !Number.isFinite(ts)) return true;
-    if (Date.now() - ts <= LOCK_STALE_MS) return false;
-    return !lockOwnerAlive(pid);
+    if (!text.trim() || !Number.isInteger(pid) || pid <= 0 || !Number.isFinite(ts)) return Date.now() - mtime > LOCK_EMPTY_GRACE_MS;
+    if (lockOwnerAlive(pid)) return false;
+    return Date.now() - ts > LOCK_STALE_MS;
   } catch { return true; }
 }
 
-/** Exclusive lock. A dead pid or a lock older than 30 minutes is taken over. */
+/** Exclusive lock. Only a dead owner's lock, and only after 30 minutes, is taken over. */
 function withLock<T>(path: string, fn: () => T): T | { busy: true } {
   mkdirSync(dirname(path), { recursive: true });
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -722,6 +742,18 @@ export function identitiesForRoots(recorded: Readonly<Record<string, string | nu
   const out: Record<string, RemoteIdentity | null> = {};
   for (const name of Object.keys(recorded)) out[name] = readCloneIdentity(join(clonesDir, name.replaceAll("/", "__")));
   return out;
+}
+
+/** Held-out clone check. A missing clones directory, or a root with no identity, is CLONE_UNVERIFIED. */
+export function cloneCheckProblems(
+  heldOut: readonly { name: string; root: string; upstreams?: readonly string[] }[],
+  recorded: Readonly<Record<string, string | null>>,
+  clonesDir: string,
+): string[] {
+  const identities = clonesDir
+    ? identitiesForRoots(recorded, clonesDir)
+    : Object.fromEntries(Object.keys(recorded).map((name) => [name, null]));
+  return heldOutWatchProblems(heldOut, [], recorded, {}, identities);
 }
 
 /**
