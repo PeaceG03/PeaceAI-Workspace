@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import test from "node:test";
 import { keptLicense } from "../lib/practicemine.ts";
 import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync as readText, rmSync, utimesSync, writeFileSync } from "node:fs";
@@ -14,7 +14,7 @@ import {
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
 import { countBySplit, gapRecord, gradePracticeRow, replayDocument, targetIsScorable, writePracticeOutputs } from "../lib/practicereplay.ts";
-import { openPracticeClone } from "../bin/practice-replay.ts";
+import { openPracticeClone, practiceInstallRoot, releaseHeldPlaces } from "../bin/practice-replay.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 
 const repo = join(import.meta.dirname, "../..");
@@ -1076,6 +1076,8 @@ test("a held-out clone is not left under the replay output directory", () => {
   const origin = mkdtempSync(join(tmpdir(), "practice-held-origin-"));
   const clones = mkdtempSync(join(tmpdir(), "practice-held-clones-"));
   const out = mkdtempSync(join(tmpdir(), "practice-held-out-"));
+  let heldRoot = "";
+  let installRoot = "";
   const git = (args: string[]) => {
     const ran = spawnSync("git", ["-C", origin, ...args], { encoding: "utf8" });
     if (ran.status !== 0) throw new Error(ran.stderr || args.join(" "));
@@ -1090,19 +1092,44 @@ test("a held-out clone is not left under the replay output directory", () => {
     const copied = spawnSync("cp", ["-a", origin, cached], { encoding: "utf8" });
     assert.equal(copied.status, 0, copied.stderr);
     const held = openPracticeClone("example/lib", "held-out", clones, out);
+    heldRoot = held.root;
     assert.ok(held.dir);
     assert.equal(held.dir!.startsWith(out), false);
+    assert.equal(held.root.includes("peaceai-held-clone-"), true);
     assert.equal(existsSync(join(held.dir!, ".git")), true);
     assert.equal(existsSync(join(out, "clones", "example__lib")), false);
-    held.release();
+    releaseHeldPlaces([held]);
+    assert.equal(existsSync(held.root), false);
     assert.equal(existsSync(held.dir!), false);
     const dev = openPracticeClone("example/lib", "dev", clones, out);
     assert.equal(dev.dir, join(out, "clones", "example__lib"));
     assert.equal(existsSync(join(dev.dir!, ".git")), true);
+    const install = practiceInstallRoot("held-out", out);
+    installRoot = install.dir;
+    mkdirSync(join(install.dir, "node_modules", "pkg"), { recursive: true });
+    writeFileSync(join(install.dir, "package.json"), "{}\n");
+    writeFileSync(join(install.dir, "package-lock.json"), "{}\n");
+    writeFileSync(join(install.dir, "node_modules", "pkg", "index.js"), "\n");
+    assert.equal(install.dir.startsWith(out), false);
+    releaseHeldPlaces([install]);
+    assert.equal(existsSync(install.dir), false);
+    const walk = (dir: string): string[] => {
+      if (!existsSync(dir)) return [];
+      const found: string[] = [];
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        if (name === "package.json" || name === "package-lock.json" || name === "yarn.lock" || name === "pnpm-lock.yaml" || name === "node_modules") found.push(path);
+        else if (lstatSync(path).isDirectory()) found.push(...walk(path));
+      }
+      return found;
+    };
+    assert.deepEqual(walk(out).filter((path) => !path.includes(`${sep}clones${sep}`)), []);
   } finally {
     rmSync(origin, { recursive: true, force: true });
     rmSync(clones, { recursive: true, force: true });
     rmSync(out, { recursive: true, force: true });
+    if (heldRoot) rmSync(heldRoot, { recursive: true, force: true });
+    if (installRoot) rmSync(installRoot, { recursive: true, force: true });
   }
 });
 

@@ -167,11 +167,23 @@ function plainObject(value: unknown): value is Record<string, unknown> {
   return proto === Object.prototype || proto === null;
 }
 
-function mutants(value: unknown, flags: ParamFlags | undefined, depth = 0): unknown[] {
+function everyNumericIsInteger(examples: readonly (readonly unknown[])[]): boolean {
+  const walk = (value: unknown): boolean => {
+    if (typeof value === "number") return Number.isInteger(value);
+    if (Array.isArray(value)) return value.every(walk);
+    if (value && typeof value === "object") return Object.values(value as Record<string, unknown>).every(walk);
+    return true;
+  };
+  return examples.every((args) => args.every(walk));
+}
+
+function mutants(value: unknown, flags: ParamFlags | undefined, depth = 0, fractional = false): unknown[] {
   const out: unknown[] = [];
   if (typeof value === "number" && Number.isFinite(value)) {
     out.push(value + 1, value - 1, 0, Object.is(value, 0) ? -0 : -Math.abs(value), Number.NaN);
     if (Object.is(value, 0)) out.push(-0);
+    // Half-steps split integer predicates the ±1 set cannot, such as `>` n, `>=` n+1, and `>=` n+0.5.
+    if (fractional && Number.isInteger(value)) out.push(value + 0.5, value - 0.5, value + 0.25, value - 0.25, 0.5);
   }
   else if (typeof value === "string") {
     const flipped = [...value].map((ch) => ch === ch.toLowerCase() ? ch.toUpperCase() : ch.toLowerCase()).join("");
@@ -183,7 +195,7 @@ function mutants(value: unknown, flags: ParamFlags | undefined, depth = 0): unkn
     if (value.length > 1) out.push(value.slice(0, -1), [...value].reverse());
     if (depth < 2) {
       value.forEach((item, index) => {
-        for (const next of mutants(item, undefined, depth + 1).slice(0, 4)) {
+        for (const next of mutants(item, undefined, depth + 1, fractional).slice(0, 4)) {
           const copy = [...value];
           copy[index] = next;
           out.push(copy);
@@ -192,7 +204,7 @@ function mutants(value: unknown, flags: ParamFlags | undefined, depth = 0): unkn
     }
   } else if (plainObject(value) && depth < 2) {
     for (const [key, item] of Object.entries(value)) {
-      for (const next of mutants(item, undefined, depth + 1).slice(0, 4)) out.push({ ...value, [key]: next });
+      for (const next of mutants(item, undefined, depth + 1, fractional).slice(0, 4)) out.push({ ...value, [key]: next });
     }
     out.push({});
   } else if (typeof value === "boolean") out.push(!value);
@@ -231,9 +243,10 @@ export function behaviorInputs(examples: readonly (readonly unknown[])[], flags:
   };
   for (const example of examples) add(originals, [...example]);
   const varied: unknown[][] = [];
+  const fractional = everyNumericIsInteger(originals);
   for (const example of originals) {
     example.forEach((value, index) => {
-      for (const next of mutants(value, flags[index])) {
+      for (const next of mutants(value, flags[index], 0, fractional)) {
         const args = [...example];
         args[index] = next;
         add(varied, args);

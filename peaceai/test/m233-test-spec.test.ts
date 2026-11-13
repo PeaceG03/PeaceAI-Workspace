@@ -10,7 +10,7 @@ import { CALLEE_DEPTH, locate, MAX_CANDIDATES } from "../lib/editpropose.ts";
 import { MAX_ATTEMPTS } from "../lib/loop.ts";
 import { GIT_LOCK_ARGS, materializeSolverTree, practiceGit, practiceGitEnv, practiceSandboxReady, visibleNodeBin, writeCommitFile } from "../lib/practicemine.ts";
 import { behaviorInputs, gradeBehavior, INPUT_CAP, parseProbe, PROBE_SENTINEL } from "../lib/specgrade.ts";
-import { classifyRunnerOutput, expectationsIn, originalSuiteArgv, runTestSpec, sanitizeRunnerLines, scaffoldPlan, SPEC_ATTEMPT_CAP, specTask, type SpecInput } from "../lib/testspec.ts";
+import { classifyRunnerOutput, expectationsIn, integerCmpClass, originalSuiteArgv, runTestSpec, sanitizeRunnerLines, scaffoldPlan, SPEC_ATTEMPT_CAP, specTask, type SpecInput } from "../lib/testspec.ts";
 
 const PATTERN = "^src/.+\\.ts$";
 
@@ -259,6 +259,33 @@ test("a missing export is scaffolded only when one body fits every reduced call"
   const many = scaffoldPlan("src/high.test.ts", wide, "Cannot find module '/work/src/high.ts'", PATTERN, [], () => null);
   assert.equal(many?.ok, false);
   if (many && !many.ok) assert.equal(many.reason, "CANT_DO_YET_NO_BODY");
+  const fractional = [
+    'import { above } from "./above.ts";',
+    "assert.equal(above(0), false);",
+    "assert.equal(above(-5), false);",
+    "assert.equal(above(1), true);",
+    "assert.equal(above(1.5), true);",
+  ].join("\n");
+  const floats = scaffoldPlan("src/above.test.ts", fractional, "Cannot find module '/work/src/above.ts'", PATTERN, [], () => null);
+  assert.equal(floats?.ok, false);
+  if (floats && !floats.ok) assert.equal(floats.reason, "CANT_DO_YET_NO_BODY");
+  const equalOnly = [
+    'import { same } from "./same.ts";',
+    "assert.equal(same(1), true);",
+    "assert.equal(same(0), false);",
+    "assert.equal(same(-1), false);",
+  ].join("\n");
+  const notGt = scaffoldPlan("src/same.test.ts", equalOnly, "Cannot find module '/work/src/same.ts'", PATTERN, [], () => null);
+  assert.equal(notGt?.ok, false);
+  if (notGt && !notGt.ok) assert.equal(notGt.reason, "CANT_DO_YET_NO_BODY");
+  const M = Number.MAX_SAFE_INTEGER;
+  assert.equal(integerCmpClass("<=", 1), integerCmpClass("<", 2));
+  assert.equal(integerCmpClass("<=", 1), "lt:2");
+  assert.equal(integerCmpClass(">", M - 1), integerCmpClass(">=", M));
+  assert.equal(integerCmpClass(">", M), null);
+  assert.equal(integerCmpClass("<=", M), null);
+  assert.equal(integerCmpClass("===", 1), "eq:1");
+  assert.notEqual(integerCmpClass("===", 1), integerCmpClass(">=", 1));
   const mixed = [
     'import { f } from "./f.ts";',
     "assert.equal(f(1), 1);",
@@ -702,20 +729,73 @@ test("real dev-split functions: a matching guard is strict and a boundary change
   const real = tree(source);
   const again = tree(source);
   const wrong = tree(source.replace("value > 0", "value >= 0"));
+  const half = tree(source.replace("value > 0", "value >= 0.5"));
+  const atLeastOne = tree(source.replace("value > 0", "value >= 1"));
+  const roots = [real, again, wrong, half, atLeastOne];
+  const target = { symbol: "isPositiveNumber", file: "src/is-number.ts", form: "named" as const, exportName: "isPositiveNumber", args: [[-1], [0], [1], [2]] };
   try {
     const match = gradeBehavior({
       candidateRoot: real, fixRoot: again, nodePath,
-      target: { symbol: "isPositiveNumber", file: "src/is-number.ts", form: "named", exportName: "isPositiveNumber", args: [[1], [0], [-1]] },
+      target: { ...target, args: [[1], [0], [-1]] },
     });
     assert.equal(match.behavior, "verified_strict");
     const near = gradeBehavior({
       candidateRoot: wrong, fixRoot: real, nodePath,
-      target: { symbol: "isPositiveNumber", file: "src/is-number.ts", form: "named", exportName: "isPositiveNumber", args: [[1]] },
+      target: { ...target, args: [[1]] },
     });
     assert.equal(near.behavior, "verified_test_only");
+    assert.notEqual(gradeBehavior({ candidateRoot: half, fixRoot: real, nodePath, target }).behavior, "verified_strict");
+    assert.notEqual(gradeBehavior({ candidateRoot: atLeastOne, fixRoot: real, nodePath, target }).behavior, "verified_strict");
+    assert.notEqual(gradeBehavior({ candidateRoot: real, fixRoot: atLeastOne, nodePath, target }).behavior, "verified_strict");
   } finally {
-    rmSync(real, { recursive: true, force: true });
-    rmSync(again, { recursive: true, force: true });
-    rmSync(wrong, { recursive: true, force: true });
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("a scaffolded integer comparison is not strict against a fix the half-step distinguishes", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const nodePath = visibleNodeBin();
+  if (!nodePath) { t.skip("no visible node"); return; }
+  const examples = [[-1], [0], [1], [2]];
+  const inputs = behaviorInputs(examples, [], "above");
+  assert.equal(inputs.some((args) => args[0] === 0.5), true);
+  assert.equal(inputs.some((args) => args[0] === 0.25), true);
+  const text = [
+    'import { above } from "./above.ts";',
+    "assert.equal(above(-1), false);",
+    "assert.equal(above(0), false);",
+    "assert.equal(above(1), true);",
+    "assert.equal(above(2), true);",
+  ].join("\n");
+  const plan = scaffoldPlan("src/above.test.ts", text, "Cannot find module '/work/src/above.ts'", PATTERN, [], () => null);
+  assert.equal(plan?.ok, true);
+  if (!plan?.ok) return;
+  const scaffolded = plan.files[0]!.content;
+  assert.match(scaffolded, /return a > 0|return a >= 1/);
+  const write = (body: string) => {
+    const root = mkdtempSync(join(tmpdir(), "peaceai-cmp-"));
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src/above.ts"), body);
+    return root;
+  };
+  const fn = (expr: string) => `export function above(a: number): boolean {\n  return ${expr};\n}\n`;
+  const grade = (candidateBody: string, fixBody: string) => {
+    const candidate = write(candidateBody);
+    const fix = write(fixBody);
+    try {
+      return gradeBehavior({
+        candidateRoot: candidate, fixRoot: fix, nodePath,
+        target: { symbol: "above", file: "src/above.ts", form: "named", exportName: "above", args: examples },
+      });
+    } finally {
+      rmSync(candidate, { recursive: true, force: true });
+      rmSync(fix, { recursive: true, force: true });
+    }
+  };
+  assert.notEqual(grade(fn("a > 0"), fn("a >= 0.5")).behavior, "verified_strict");
+  assert.notEqual(grade(fn("a > 0"), fn("a >= 1")).behavior, "verified_strict");
+  assert.notEqual(grade(fn("a >= 1"), fn("a > 0")).behavior, "verified_strict");
+  const other = scaffolded.includes(">=") ? fn("a > 0") : fn("a >= 1");
+  assert.notEqual(grade(scaffolded, other).behavior, "verified_strict");
+  assert.notEqual(grade(scaffolded, fn("a >= 0.5")).behavior, "verified_strict");
 });

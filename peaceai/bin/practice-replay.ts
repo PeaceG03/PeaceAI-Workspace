@@ -63,10 +63,24 @@ export function replayClonePlace(split: "dev" | "held-out", outDir: string): { d
   return { dir, release() { rmSync(dir, { recursive: true, force: true }); } };
 }
 
-/** Copy one repo out of --clones-dir. Held-out copies are not created under outDir. */
-export function openPracticeClone(repo: string, split: "dev" | "held-out", clones: string, outDir: string): { dir: string | null; release(): void } {
+/** Copy one repo out of --clones-dir. Held-out copies are not created under outDir. `root` is the directory release deletes. */
+export function openPracticeClone(repo: string, split: "dev" | "held-out", clones: string, outDir: string): { dir: string | null; root: string; release(): void } {
   const place = replayClonePlace(split, outDir);
-  return { dir: cloneDir(repo, clones, place.dir), release: place.release };
+  return { dir: cloneDir(repo, clones, place.dir), root: place.dir, release: place.release };
+}
+
+/** Held-out installs never use a cache under outDir. The returned directory is deleted with the other held-out temps. */
+export function practiceInstallRoot(split: "dev" | "held-out", outDir: string, explicit?: string): { dir: string; release(): void } {
+  if (split === "held-out") {
+    const dir = mkdtempSync(join(tmpdir(), "peaceai-held-install-"));
+    return { dir, release() { rmSync(dir, { recursive: true, force: true }); } };
+  }
+  return { dir: explicit ? resolve(explicit) : join(outDir, "install-cache"), release() {} };
+}
+
+/** Delete every held-out temp this replay owns. A second call is harmless. */
+export function releaseHeldPlaces(places: readonly { release(): void }[]): void {
+  for (const place of places) place.release();
 }
 
 function linkModules(modules: string, dir: string): void {
@@ -317,9 +331,18 @@ function main(): void {
   }
   const graded: GradedRow[] = [];
   const heldScratch: { release(): void }[] = [];
+  const devCache = installCache ? resolve(installCache) : join(out, "install-cache");
+  let heldCache: { dir: string; release(): void } | null = null;
+  const stop = (code: number) => {
+    releaseHeldPlaces(heldScratch);
+    process.exit(code);
+  };
+  const onInt = () => stop(130);
+  const onTerm = () => stop(143);
+  process.on("SIGINT", onInt);
+  process.on("SIGTERM", onTerm);
   try {
     const repos = new Map<string, string | null>();
-    const cacheRoot = installCache ? resolve(installCache) : join(out, "install-cache");
     for (const pair of pairs) {
       const scorable = targetIsScorable(pair.repo);
       if (!scorable || core !== "ok" || !sandbox) {
@@ -340,6 +363,11 @@ function main(): void {
       if (!dir) {
         for (const understanding of ["text", "test-as-spec"] as const) graded.push({ repo: pair.repo, split: pair.split, fixSha: pair.fixSha, understanding, status: "unmeasured", reason: "NO_CLONE", gap: true });
         continue;
+      }
+      let cacheRoot = devCache;
+      if (pair.split === "held-out") {
+        if (!heldCache) { heldCache = practiceInstallRoot("held-out", out); heldScratch.push(heldCache); }
+        cacheRoot = heldCache.dir;
       }
       const shown = (path: string) => practiceGit(dir, ["show", `${pair.baseSha}:${path}`]);
       const pkgShow = shown("package.json");
@@ -367,8 +395,10 @@ function main(): void {
       graded.push(specOne(tooling, coreDir, dir, pair, installed.modules));
     }
   } finally {
+    process.off("SIGINT", onInt);
+    process.off("SIGTERM", onTerm);
     dispose();
-    for (const scratch of heldScratch) scratch.release();
+    releaseHeldPlaces(heldScratch);
   }
   const doc = replayDocument(graded);
   writePracticeOutputs(out, graded);

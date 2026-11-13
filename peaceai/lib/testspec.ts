@@ -705,15 +705,23 @@ const CMP: { op: string; fn: (left: number, right: number) => boolean }[] = [
   { op: "===", fn: (left, right) => left === right }, { op: "!==", fn: (left, right) => left !== right },
 ];
 
-/** `a > n` and `a >= n+1` are the same predicate on integers, and so are `a < n` and `a <= n-1`. */
-function integerCmpClass(op: string, n: number): string | null {
-  if (!Number.isInteger(n)) return null;
-  if (op === ">") return `gt:${n + 1}`;
-  if (op === ">=") return `gt:${n}`;
-  if (op === "<") return `lt:${n}`;
-  if (op === "<=") return `lt:${n + 1}`;
-  if (op === "===") return `eq:${n}`;
-  if (op === "!==") return `ne:${n}`;
+function safeShift(n: number, delta: number): number | null {
+  if (!Number.isSafeInteger(n)) return null;
+  const next = n + delta;
+  return Number.isSafeInteger(next) ? next : null;
+}
+
+/**
+ * `a > n` and `a >= n+1` are the same predicate on safe integers, and so are `a < n` and `a <= n-1`.
+ * The shift is refused when n+1 or n-1 is not a safe integer. Equality is not a greater-than class.
+ */
+export function integerCmpClass(op: string, n: number): string | null {
+  if (op === ">") { const next = safeShift(n, 1); return next === null ? null : `gt:${next}`; }
+  if (op === ">=") { return safeShift(n, -1) === null ? null : `gt:${n}`; }
+  if (op === "<") { return safeShift(n, -1) === null ? null : `lt:${n}`; }
+  if (op === "<=") { const next = safeShift(n, 1); return next === null ? null : `lt:${next}`; }
+  if (op === "===") return Number.isSafeInteger(n) ? `eq:${n}` : null;
+  if (op === "!==") return Number.isSafeInteger(n) ? `ne:${n}` : null;
   return null;
 }
 
