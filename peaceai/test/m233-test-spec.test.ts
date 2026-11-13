@@ -639,7 +639,18 @@ test("real dev-split functions: a matching guard is strict and a boundary change
   if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
   const nodePath = visibleNodeBin();
   if (!nodePath) { t.skip("no visible node"); return; }
-  const source = readFileSync(join(import.meta.dirname, "fixtures/dev-spec/is-number.ts"), "utf8");
+  // sindresorhus/is, dev split, MIT. The upstream copyright email is omitted so leak-check stays clean.
+  const source = [
+    "// Copyright (c) Sindre Sorhus (https://sindresorhus.com)",
+    "// SPDX-License-Identifier: MIT",
+    "export function isNumber(value: unknown): value is number {",
+    "\treturn typeof value === \"number\" && !Number.isNaN(value);",
+    "}",
+    "export function isPositiveNumber(value: unknown): boolean {",
+    "\treturn isNumber(value) && value > 0;",
+    "}",
+    "",
+  ].join("\n");
   assert.match(source, /MIT/);
   assert.match(source, /Sindre Sorhus/);
   const tree = (text: string) => {
