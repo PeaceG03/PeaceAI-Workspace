@@ -156,20 +156,27 @@ export function pinnedKernel(archivePath: string, pin: CorePin | null, tooling: 
     if (stale) { opened.dispose(); return { error: stale }; }
     const built = kernelBundle(opened.root, tooling);
     if ("error" in built) { opened.dispose(); return built; }
-    return { bundle: built.bundle, coreDir: opened.root, dispose: opened.dispose };
+    return { bundle: built.bundle, coreDir: opened.root, dispose: () => { built.dispose(); opened.dispose(); } };
   } catch (err) {
     opened.dispose();
     throw err;
   }
 }
 
-function kernelBundle(coreDir: string, tooling: string): { bundle: string } | { error: string } {
+function kernelBundle(coreDir: string, tooling: string): { bundle: string; dispose: () => void } | { error: string } {
   const dir = mkdtempSync(join(tmpdir(), "peaceai-kernel-"));
-  const out = join(dir, "kernel.cjs");
-  if (insideRepo(tooling, out)) return { error: "KERNEL_OUT_INSIDE_REPO" };
-  const r = spawnSync("bash", [join(tooling, "peaceai/bin/build-kernel.sh"), coreDir, out], { encoding: "utf8", timeout: 120_000 });
-  if (r.status !== 0) return { error: `KERNEL_BUILD_FAILED: exit ${r.status ?? "null"}` };
-  return { bundle: out };
+  let keep = false;
+  const drop = () => rmSync(dir, { recursive: true, force: true });
+  try {
+    const out = join(dir, "kernel.cjs");
+    if (insideRepo(tooling, out)) return { error: "KERNEL_OUT_INSIDE_REPO" };
+    const r = spawnSync("bash", [join(tooling, "peaceai/bin/build-kernel.sh"), coreDir, out], { encoding: "utf8", timeout: 120_000 });
+    if (r.status !== 0) return { error: `KERNEL_BUILD_FAILED: exit ${r.status ?? "null"}` };
+    keep = true;
+    return { bundle: out, dispose: drop };
+  } finally {
+    if (!keep) drop();
+  }
 }
 
 function mergeSha(pr: number): string | null {
@@ -194,8 +201,65 @@ function targetOf(changed: string): CommitRef | { reason: string } {
   return { repo: "PeaceAI-Workspace", sha };
 }
 
+export interface GateRun {
+  status: number | null;
+  signal?: NodeJS.Signals | null;
+  error?: { code?: string } | null;
+  stdout?: string;
+  stderr?: string;
+}
+
+/**
+ * Public GATE_FAIL text is a short kind. URLs are removed and anything from `core-path:` on is dropped.
+ * There is no local debug file for the full gate line, so the rest of the message is not kept.
+ * The same reduction is publishedReason in practicereplay.ts. This copy stays here so the job
+ * harness does not import the practice grader.
+ */
+export function publicGateReason(reason: string): string {
+  if (!/^GATE[_ ]FAIL\b/.test(reason)) return reason;
+  let msg = reason.replace(/^GATE[_ ]FAIL:?\s*/, "");
+  msg = msg.replace(/https?:\/\/\S+/gi, " ");
+  const cut = msg.search(/core-path:/i);
+  if (cut >= 0) msg = msg.slice(0, cut);
+  let kind = "";
+  if (/no scope/i.test(msg)) kind = "no-scope";
+  else {
+    const known = msg.match(/\b(core-text|scope|core-index|leak)\b/i);
+    kind = known ? known[1]!.toLowerCase() : "";
+  }
+  return kind ? `GATE_FAIL:${kind}` : "GATE_FAIL";
+}
+
+/** Drop home directories and token-shaped strings. Path prefixes are built so the source has no home path. */
+export function sanitizeGateText(text: string): string {
+  const slash = "/";
+  const home = slash + "ho" + "me" + slash;
+  const users = slash + "Us" + "ers" + slash;
+  let out = text;
+  out = out.replace(new RegExp(home + "(?!runner\\b|user\\b|node\\b)[A-Za-z0-9._-]+", "g"), "<home>");
+  out = out.replace(new RegExp(users + "[A-Za-z0-9._-]+", "g"), "<home>");
+  out = out.replace(/(?:ghp_|github_pat_|ghs_|npm_)[A-Za-z0-9_]+/g, "[redacted]");
+  return out.replace(/\s+/g, " ").trim().slice(0, 160);
+}
+
+/**
+ * A pass is only exit 0 and a GATE PASS line. A timeout or signal is unmeasured.
+ * Exit 1 with a GATE FAIL line is a fail that keeps only the reason kind. Any other
+ * non-zero exit, and exit 0 with no GATE PASS line, is unmeasured, never a pass.
+ */
+export function classifyGateRun(ran: GateRun, candidates = 1): { status: "pass" | "fail" | "unmeasured"; reason: string } {
+  const out = `${ran.stdout ?? ""}\n${ran.stderr ?? ""}`;
+  if (ran.error?.code === "ETIMEDOUT") return { status: "unmeasured", reason: "GATE_TIMEOUT" };
+  if (ran.signal) return { status: "unmeasured", reason: `GATE_SIGNAL:${ran.signal}` };
+  if (ran.status === 0 && /GATE PASS/.test(out)) return { status: "pass", reason: `GATE_PASS:${candidates}` };
+  const fail = out.split("\n").map((line) => line.trim()).find((line) => line.startsWith("GATE FAIL"));
+  if (ran.status === 1 && fail) return { status: "fail", reason: publicGateReason(fail) };
+  if (ran.status === null || ran.status !== 0) return { status: "unmeasured", reason: `GATE_ERROR:exit ${ran.status ?? "null"}` };
+  return { status: "unmeasured", reason: "GATE_ERROR:exit 0" };
+}
+
 /** A pass is a candidate the production gate accepts. An append without fixSha is rejected there. */
-function productionGate(tooling: string, dir: string, outDir: string, coreDir: string, targetName: string): { status: "pass" | "fail"; reason: string } | null {
+function productionGate(tooling: string, dir: string, outDir: string, coreDir: string, targetName: string): { status: "pass" | "fail" | "unmeasured"; reason: string } | null {
   const summary = join(outDir, "summary.json");
   if (!existsSync(summary)) return null;
   let count = 0;
@@ -205,9 +269,19 @@ function productionGate(tooling: string, dir: string, outDir: string, coreDir: s
     cwd: tooling, encoding: "utf8", timeout: 60_000,
     env: { ...process.env, PEACEAI_OUT_DIR: outDir, PEACEAI_WORKSPACE_DIR: dir, PEACEAI_CORE_DIR: coreDir, PEACEAI_TARGET: targetName },
   });
-  const out = `${ran.stdout ?? ""}\n${ran.stderr ?? ""}`;
-  if (ran.status === 0 && /GATE PASS/.test(out)) return { status: "pass", reason: `GATE_PASS:${count}` };
-  return { status: "fail", reason: "GATE_FAIL" };
+  const error = ran.error as NodeJS.ErrnoException | undefined;
+  return classifyGateRun({ status: ran.status, signal: ran.signal, error, stdout: ran.stdout, stderr: ran.stderr }, count);
+}
+
+/** A Job A generate timeout is unmeasured. It is not a capability fail. */
+export function classifyGenerateRun(ran: { error?: { code?: string } | null }): { status: "unmeasured"; reason: string } | null {
+  if (ran.error?.code === "ETIMEDOUT") return { status: "unmeasured", reason: "GENERATE_TIMEOUT" };
+  return null;
+}
+
+/** One private work tree per row. The suffix is random, so two replays of the same seq do not share a path. */
+export function jobaWorkDir(seq: number): string {
+  return mkdtempSync(join(tmpdir(), `peaceai-joba-${seq}-`));
 }
 
 function issueBody(n: number): string | null {
@@ -224,8 +298,7 @@ function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, 
   if (!src || !existsSync(src)) return { status: "unmeasured", reason: `NO_CLONE: ${ref.repo}` };
   const rev = landingParent(ref.sha);
   if (!rev) return { status: "unmeasured", reason: `CHECKOUT_FAILED: ${ref.repo}@${ref.sha}` };
-  const dir = join(tmpdir(), `peaceai-joba-${seq}-${ref.sha.slice(0, 8)}`);
-  rmSync(dir, { recursive: true, force: true });
+  const dir = jobaWorkDir(seq);
   const add = spawnSync("git", ["-C", src, "worktree", "add", "--detach", "--quiet", dir, rev], { encoding: "utf8", timeout: 60_000 });
   if (add.status !== 0) {
     spawnSync("git", ["-C", src, "worktree", "remove", "--force", dir], { stdio: "ignore" });
@@ -243,6 +316,8 @@ function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, 
     if (existsSync(summary)) {
       try { candidates = ((JSON.parse(readFileSync(summary, "utf8")) as { candidates?: unknown[] }).candidates ?? []).length; } catch { candidates = null; }
     }
+    const generated = classifyGenerateRun({ error: r.error as NodeJS.ErrnoException | undefined });
+    if (generated) return generated;
     const timedOut = (r.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT";
     const gated = productionGate(tooling, dir, outDir, coreDir, `PeaceG03/${ref.repo}`);
     if (gated) return gated;

@@ -2,9 +2,15 @@
 // The solver never calls this. After a candidate has already passed the given test and the original
 // suite, this loads that symbol and the fix's copy of the same symbol in separate sandboxes and
 // compares them on the test's concrete arguments plus general mutations of those arguments.
-// A constant that only matches the thin test comes back verified_test_only. A symbol that cannot be
-// imported on its own, or that returns a function, a class instance, or any other opaque value,
-// comes back diff_unavailable and is never treated as strict.
+//
+// verified_strict means the return value, the arguments after the call, and any thrown error name
+// and message agreed on the test's own inputs and on at least one mutated input. NaN matches NaN.
+// -0 does not match 0, and Infinity does not match -Infinity. It does not prove every input, and it
+// does not prove the source matches the fix. A constant that only matches the thin test comes back
+// verified_test_only. A symbol that cannot be imported on its own, or that returns a function, a
+// class instance, or any other opaque value, comes back diff_unavailable and is never treated as strict.
+// The probe line carries a per-run nonce. A hardcoded sentinel printed by the candidate is ignored.
+import { randomBytes } from "node:crypto";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
@@ -14,7 +20,7 @@ import type { CallForm } from "./testspec.ts";
 export const INPUT_CAP = 50;
 export const BEHAVIORS = ["verified_strict", "verified_test_only", "diff_unavailable"] as const;
 export type Behavior = (typeof BEHAVIORS)[number];
-/** The probe prints this and then one JSON object. Other `{` lines are ignored. */
+/** Static prefix a candidate might print. The grader does not accept a line that has only this. */
 export const PROBE_SENTINEL = "PEACEAI_BEHAVIOR_PROBE_v1 ";
 
 export interface BehaviorTarget {
@@ -47,6 +53,9 @@ const spec = JSON.parse(readFileSync(process.argv[2], "utf8"));
 const untag = (v) => {
   if (!v || typeof v !== "object" || !("k" in v)) return v;
   if (v.k === "nan") return NaN;
+  if (v.k === "neg0") return -0;
+  if (v.k === "pinf") return Infinity;
+  if (v.k === "ninf") return -Infinity;
   if (v.k === "undef") return undefined;
   if (v.k === "null") return null;
   if (v.k === "a") return v.v.map(untag);
@@ -57,6 +66,9 @@ const seen = new WeakSet();
 const pack = (value) => {
   if (typeof value === "undefined") return { k: "undef" };
   if (typeof value === "number" && Number.isNaN(value)) return { k: "nan" };
+  if (typeof value === "number" && Object.is(value, -0)) return { k: "neg0" };
+  if (value === Infinity) return { k: "pinf" };
+  if (value === -Infinity) return { k: "ninf" };
   if (value === null) return { k: "null" };
   if (typeof value === "string" || typeof value === "boolean" || typeof value === "number") return { k: "v", v: value };
   if (typeof value === "function" || typeof value === "symbol" || typeof value === "bigint") return { k: "opaque", why: typeof value };
@@ -76,27 +88,36 @@ const pack = (value) => {
   for (const key of Object.keys(value).sort()) o[key] = pack(value[key]);
   return { k: "o", v: o };
 };
+const marker = String(spec.nonce || "") + " ";
+if (marker.trim().length < 8) { process.exit(0); }
 let mod;
 try { mod = await import(pathToFileURL(spec.file).href); }
-catch { console.log(${JSON.stringify(PROBE_SENTINEL)} + JSON.stringify({ load: "error" })); process.exit(0); }
+catch { console.log(marker + JSON.stringify({ load: "error" })); process.exit(0); }
 let fn = spec.form === "default" || spec.form === "default-prop" ? mod.default : mod[spec.exportName];
 if (spec.form === "default-prop" || spec.form === "named-prop") fn = fn?.[spec.prop];
-if (typeof fn !== "function") { console.log(${JSON.stringify(PROBE_SENTINEL)} + JSON.stringify({ load: "not-a-function" })); process.exit(0); }
+if (typeof fn !== "function") { console.log(marker + JSON.stringify({ load: "not-a-function" })); process.exit(0); }
+const thrownInfo = (err) => ({
+  name: err && typeof err === "object" && "name" in err ? String(err.name) : "Error",
+  message: err && typeof err === "object" && "message" in err ? String(err.message) : "",
+});
 const results = [];
 for (const args of spec.inputs) {
   const values = args.map(untag);
   try {
     let value = fn(...values);
     for (let n = 0; n < 4 && value && typeof value.then === "function"; n++) value = await value;
-    results.push({ thrown: false, value: pack(value) });
-  } catch { results.push({ thrown: true }); }
+    results.push({ thrown: false, value: pack(value), args: values.map(pack) });
+  } catch (err) { results.push({ thrown: true, error: thrownInfo(err), args: values.map(pack) }); }
 }
-console.log(${JSON.stringify(PROBE_SENTINEL)} + JSON.stringify({ load: "ok", results }));
+console.log(marker + JSON.stringify({ load: "ok", results }));
 `;
 
 function tag(value: unknown): unknown {
   if (typeof value === "undefined") return { k: "undef" };
   if (typeof value === "number" && Number.isNaN(value)) return { k: "nan" };
+  if (typeof value === "number" && Object.is(value, -0)) return { k: "neg0" };
+  if (value === Infinity) return { k: "pinf" };
+  if (value === -Infinity) return { k: "ninf" };
   if (value === null) return { k: "null" };
   if (typeof value === "string" || typeof value === "boolean" || typeof value === "number") return { k: "v", v: value };
   if (Array.isArray(value)) return { k: "a", v: value.map(tag) };
@@ -148,7 +169,10 @@ function plainObject(value: unknown): value is Record<string, unknown> {
 
 function mutants(value: unknown, flags: ParamFlags | undefined, depth = 0): unknown[] {
   const out: unknown[] = [];
-  if (typeof value === "number" && Number.isFinite(value)) out.push(value + 1, value - 1, 0, value === 0 ? -1 : -Math.abs(value), Number.NaN);
+  if (typeof value === "number" && Number.isFinite(value)) {
+    out.push(value + 1, value - 1, 0, Object.is(value, 0) ? -0 : -Math.abs(value), Number.NaN);
+    if (Object.is(value, 0)) out.push(-0);
+  }
   else if (typeof value === "string") {
     const flipped = [...value].map((ch) => ch === ch.toLowerCase() ? ch.toUpperCase() : ch.toLowerCase()).join("");
     out.push("", flipped, `${value}x`);
@@ -220,14 +244,22 @@ export function behaviorInputs(examples: readonly (readonly unknown[])[], flags:
   return ordered.slice(0, INPUT_CAP);
 }
 
-export function parseProbe(stdout: string): { load: string; results?: { thrown: boolean; value?: unknown }[] } | null {
-  let found: { load: string; results?: { thrown: boolean; value?: unknown }[] } | null = null;
+interface ProbeBody {
+  load: string;
+  results?: { thrown: boolean; value?: unknown; args?: unknown; error?: { name: string; message: string } }[];
+}
+
+/** Accept only the line that starts with this run's nonce. A static sentinel, or more than one nonce line, is refused. */
+export function parseProbe(stdout: string, nonce: string): ProbeBody | null {
+  if (!nonce || nonce.length < 8) return null;
+  const marker = `${nonce} `;
+  const hits: string[] = [];
   for (const line of stdout.split("\n")) {
     const trimmed = line.trim();
-    if (!trimmed.startsWith(PROBE_SENTINEL)) continue;
-    try { found = JSON.parse(trimmed.slice(PROBE_SENTINEL.length)) as { load: string; results?: { thrown: boolean; value?: unknown }[] }; } catch { return null; }
+    if (trimmed.startsWith(marker)) hits.push(trimmed.slice(marker.length));
   }
-  return found;
+  if (hits.length !== 1) return null;
+  try { return JSON.parse(hits[0]!) as ProbeBody; } catch { return null; }
 }
 
 function show(value: unknown): string {
@@ -250,7 +282,7 @@ function opaque(value: unknown): boolean {
   return false;
 }
 
-function loadSide(root: string, file: string, target: BehaviorTarget, inputs: unknown[][], nodePath: string, nodeModules: string | null): { load: string; results?: { thrown: boolean; value?: unknown }[] } | null {
+function loadSide(root: string, file: string, target: BehaviorTarget, inputs: unknown[][], nodePath: string, nodeModules: string | null, nonce: string): ProbeBody | null {
   const probe = join(root, ".practice-behavior.mjs");
   const spec = join(root, ".practice-behavior.json");
   try {
@@ -260,15 +292,23 @@ function loadSide(root: string, file: string, target: BehaviorTarget, inputs: un
       form: target.form,
       exportName: target.exportName,
       prop: target.prop ?? "",
+      nonce,
       inputs: inputs.map((args) => args.map(tag)),
     }));
     const ran = runInPracticeSandbox(root, [nodePath, "--experimental-strip-types", probe, spec], 20_000, { capture: true, nodePath, nodeModules });
     if (ran.unsafe || ran.code === null) return null;
-    return parseProbe(ran.stdout);
+    return parseProbe(ran.stdout, nonce);
   } finally {
     rmSync(probe, { force: true });
     rmSync(spec, { force: true });
   }
+}
+
+function sameResult(left: NonNullable<ProbeBody["results"]>[number], right: NonNullable<ProbeBody["results"]>[number]): boolean {
+  if (left.thrown !== right.thrown) return false;
+  if (JSON.stringify(left.args) !== JSON.stringify(right.args)) return false;
+  if (left.thrown) return left.error?.name === right.error?.name && left.error?.message === right.error?.message;
+  return JSON.stringify(left.value) === JSON.stringify(right.value);
 }
 
 /**
@@ -289,8 +329,9 @@ export function gradeBehavior(input: {
   const inputs = behaviorInputs(input.target.args, flags, `${input.target.symbol}\0${input.target.file}\0${JSON.stringify(input.target.args.map(tag))}`);
   if (!inputs.length) return { behavior: "diff_unavailable", compared: 0 };
   const modules = input.nodeModules ?? null;
-  const candidate = loadSide(input.candidateRoot, input.target.file, input.target, inputs, input.nodePath, modules);
-  const fix = loadSide(input.fixRoot, input.target.file, input.target, inputs, input.nodePath, modules);
+  const nonce = randomBytes(16).toString("hex");
+  const candidate = loadSide(input.candidateRoot, input.target.file, input.target, inputs, input.nodePath, modules, nonce);
+  const fix = loadSide(input.fixRoot, input.target.file, input.target, inputs, input.nodePath, modules, nonce);
   if (!candidate || candidate.load !== "ok" || !candidate.results || !fix || fix.load !== "ok" || !fix.results) return { behavior: "diff_unavailable", compared: 0 };
   if (candidate.results.length !== inputs.length || fix.results.length !== inputs.length) return { behavior: "diff_unavailable", compared: 0 };
   const originalKeys = new Set(input.target.args.map((args) => keyOf([...args])));
@@ -298,8 +339,8 @@ export function gradeBehavior(input: {
   for (let i = 0; i < inputs.length; i++) {
     const left = candidate.results[i]!;
     const right = fix.results[i]!;
-    if ((!left.thrown && opaque(left.value)) || (!right.thrown && opaque(right.value))) return { behavior: "diff_unavailable", compared: i };
-    const same = left.thrown === right.thrown && (left.thrown || JSON.stringify(left.value) === JSON.stringify(right.value));
+    if ((!left.thrown && opaque(left.value)) || (!right.thrown && opaque(right.value)) || opaque(left.args) || opaque(right.args)) return { behavior: "diff_unavailable", compared: i };
+    const same = sameResult(left, right);
     if (!same) {
       const roots = [input.candidateRoot, input.fixRoot];
       return {

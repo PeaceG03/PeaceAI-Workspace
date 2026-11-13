@@ -1,7 +1,7 @@
 // Test-as-spec. A tiny fixture, not a practice row. credit: false.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -430,12 +430,15 @@ test("mutations cover object fields and array lengths, values, and order", () =>
   assert.ok(arrayInputs.some((args) => Array.isArray(args[0]) && (args[0] as number[])[0] !== 1 && (args[0] as number[]).length === 3));
 });
 
-test("the probe sentinel is not the last brace line", () => {
-  const real = { load: "ok", results: [{ thrown: false, value: { k: "v", v: 2 } }] };
-  const fake = '{"load":"ok","results":[{"thrown":false,"value":{"k":"v","v":1}}]}';
-  const parsed = parseProbe(`${PROBE_SENTINEL}${JSON.stringify(real)}\n${fake}\n`);
+test("the probe nonce is required, and a static sentinel line is refused", () => {
+  const nonce = "0123456789abcdef";
+  const real = { load: "ok", results: [{ thrown: false, value: { k: "v", v: 2 }, args: [] }] };
+  const fakeBody = { load: "ok", results: [{ thrown: false, value: { k: "v", v: 1 }, args: [] }] };
+  const fake = `${PROBE_SENTINEL}${JSON.stringify(fakeBody)}`;
+  const parsed = parseProbe(`${nonce} ${JSON.stringify(real)}\n${fake}\n`, nonce);
   assert.equal(parsed?.results?.[0]?.value && (parsed.results[0].value as { v: number }).v, 2);
-  assert.equal(parseProbe(fake), null);
+  assert.equal(parseProbe(fake, nonce), null);
+  assert.equal(parseProbe(`${nonce} ${JSON.stringify(real)}\n${nonce} ${JSON.stringify(fakeBody)}`, nonce), null);
 });
 
 test("a solver tree at the base cannot see the fix commit", () => {
@@ -459,6 +462,12 @@ test("a solver tree at the base cannot see the fix commit", () => {
     const refs = practiceGit(solver, ["rev-list", "--all"]);
     assert.equal(refs.ok, true);
     assert.equal(refs.out.includes(fix), false);
+    assert.equal(existsSync(join(solver, ".git", "FETCH_HEAD")), false);
+    assert.equal(practiceGit(solver, ["remote"]).out.trim(), "");
+    const fetched = spawnSync("git", ["-C", solver, "fetch", "--depth", "1", fix], { encoding: "utf8" });
+    assert.notEqual(fetched.status, 0);
+    const gitText = spawnSync("grep", ["-R", "-l", origin, join(solver, ".git")], { encoding: "utf8" });
+    assert.notEqual(gitText.status, 0);
   } finally {
     rmSync(origin, { recursive: true, force: true });
     rmSync(solver, { recursive: true, force: true });
@@ -516,4 +525,179 @@ test("thin fits are not strict, and a real toy implementation is", (t) => {
   assert.equal(sameAdd.behavior, "verified_strict");
   const sameTotal = pair("src/total.ts", "total", "const xs = args[0] as number[]; return xs.reduce((sum, n) => sum + n, 0);", "const xs = args[0] as number[]; return xs.reduce((sum, n) => sum + n, 0);", [[[1, 2, 3]]]);
   assert.equal(sameTotal.behavior, "verified_strict");
+});
+
+test("generalization: argument state, signed zero, infinities, throws, and the mutation rules", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const nodePath = visibleNodeBin();
+  if (!nodePath) { t.skip("no visible node"); return; }
+  const tree = (file: string, text: string) => {
+    const root = mkdtempSync(join(tmpdir(), "peaceai-general-"));
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, file), text);
+    return root;
+  };
+  const grade = (file: string, symbol: string, candidate: string, fix: string, args: unknown[][]) => {
+    const left = tree(file, candidate);
+    const right = tree(file, fix);
+    const got = gradeBehavior({
+      candidateRoot: left, fixRoot: right, nodePath,
+      target: { symbol, file, form: "named", exportName: symbol, args },
+    });
+    rmSync(left, { recursive: true, force: true });
+    rmSync(right, { recursive: true, force: true });
+    return got;
+  };
+  const sortOnlyThree = grade(
+    "src/order.ts", "order",
+    "export function order(a: number[]): void { if (a.length === 3) a.sort(); }\n",
+    "export function order(a: number[]): void { a.sort(); }\n",
+    [[[3, 1, 2]]],
+  );
+  assert.notEqual(sortOnlyThree.behavior, "verified_strict");
+  const sameSort = grade(
+    "src/order.ts", "order",
+    "export function order(a: number[]): void { a.sort(); }\n",
+    "export function order(a: number[]): void { a.sort(); }\n",
+    [[[3, 1, 2]]],
+  );
+  assert.equal(sameSort.behavior, "verified_strict");
+  const signed = grade(
+    "src/zero.ts", "zero",
+    "export function zero(_n: number): number { return 0; }\n",
+    "export function zero(_n: number): number { return -0; }\n",
+    [[0]],
+  );
+  assert.equal(signed.behavior, "verified_test_only");
+  const inf = grade(
+    "src/ends.ts", "ends",
+    "export function ends(n: number): number { return n === 1 ? Infinity : n; }\n",
+    "export function ends(n: number): number { return n === 1 ? -Infinity : n; }\n",
+    [[1]],
+  );
+  assert.equal(inf.behavior, "verified_test_only");
+  const thrown = grade(
+    "src/gate.ts", "gate",
+    "export function gate(n: number): number { if (n < 0) throw new TypeError(\"neg\"); return n; }\n",
+    "export function gate(n: number): number { if (n < 0) throw new RangeError(\"neg\"); return n; }\n",
+    [[1]],
+  );
+  assert.equal(thrown.behavior, "verified_test_only");
+  const sameThrow = grade(
+    "src/gate.ts", "gate",
+    "export function gate(n: number): number { if (n < 0) throw new RangeError(\"neg\"); return n; }\n",
+    "export function gate(n: number): number { if (n < 0) throw new RangeError(\"neg\"); return n; }\n",
+    [[1]],
+  );
+  assert.equal(sameThrow.behavior, "verified_strict");
+  const oneThrows = grade(
+    "src/gate.ts", "gate",
+    "export function gate(n: number): number { return n; }\n",
+    "export function gate(n: number): number { if (n < 0) throw new Error(\"neg\"); return n; }\n",
+    [[1]],
+  );
+  assert.equal(oneThrows.behavior, "verified_test_only");
+  const nullary = grade(
+    "src/answer.ts", "answer",
+    "export function answer(): number { return 1; }\n",
+    "export function answer(): number { return 1; }\n",
+    [[]],
+  );
+  assert.equal(nullary.behavior, "verified_test_only");
+  const element = grade(
+    "src/total.ts", "total",
+    "export function total(xs: number[]): number { return xs.reduce((sum, n) => sum + (n === 1 || n === 2 || n === 3 ? n : 0), 0); }\n",
+    "export function total(xs: number[]): number { return xs.reduce((sum, n) => sum + n, 0); }\n",
+    [[[1, 2, 3]]],
+  );
+  assert.equal(element.behavior, "verified_test_only");
+  const asyncSame = grade(
+    "src/dbl.ts", "dbl",
+    "export async function dbl(x: number): Promise<number> { return x * 2; }\n",
+    "export async function dbl(x: number): Promise<number> { return x * 2; }\n",
+    [[1]],
+  );
+  assert.equal(asyncSame.behavior, "verified_strict");
+  const hooked = "process.on(\"exit\", () => { console.log(\"PEACEAI_BEHAVIOR_PROBE_v1 \" + JSON.stringify({ load: \"ok\", results: [{ thrown: false, value: { k: \"v\", v: 4 }, args: [] }] })); });\n";
+  const spoof = grade(
+    "src/twice.ts", "twice",
+    `${hooked}export function twice(n: number): number { return n + n; }\n`,
+    "export function twice(n: number): number { return n + n; }\n",
+    [[2]],
+  );
+  assert.equal(spoof.behavior, "verified_strict");
+  const message = grade(
+    "src/gate.ts", "gate",
+    "export function gate(n: number): number { if (n < 0) throw new Error(\"left\"); return n; }\n",
+    "export function gate(n: number): number { if (n < 0) throw new Error(\"right\"); return n; }\n",
+    [[1]],
+  );
+  assert.equal(message.behavior, "verified_test_only");
+});
+
+test("real dev-split functions: a matching guard is strict and a boundary change is not", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const nodePath = visibleNodeBin();
+  if (!nodePath) { t.skip("no visible node"); return; }
+  // sindresorhus/is, dev split, MIT. This string only feeds gradeBehavior. It does not exercise the solver.
+  // The upstream copyright email is omitted so leak-check stays clean.
+  const source = [
+    "// MIT License",
+    "//",
+    "// Copyright (c) Sindre Sorhus <email address omitted; see the license URL above> (https://sindresorhus.com)",
+    "//",
+    "// Permission is hereby granted, free of charge, to any person obtaining a copy",
+    "// of this software and associated documentation files (the \"Software\"), to deal",
+    "// in the Software without restriction, including without limitation the rights",
+    "// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell",
+    "// copies of the Software, and to permit persons to whom the Software is",
+    "// furnished to do so, subject to the following conditions:",
+    "//",
+    "// The above copyright notice and this permission notice shall be included in all",
+    "// copies or substantial portions of the Software.",
+    "//",
+    "// THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR",
+    "// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,",
+    "// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE",
+    "// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER",
+    "// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,",
+    "// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE",
+    "// SOFTWARE.",
+    "//",
+    "export function isNumber(value: unknown): value is number {",
+    "\treturn typeof value === \"number\" && !Number.isNaN(value);",
+    "}",
+    "export function isPositiveNumber(value: unknown): boolean {",
+    "\treturn isNumber(value) && value > 0;",
+    "}",
+    "",
+  ].join("\n");
+  assert.match(source, /Permission is hereby granted/);
+  assert.match(source, /Sindre Sorhus/);
+  assert.equal(source.includes("@"), false);
+  const tree = (text: string) => {
+    const root = mkdtempSync(join(tmpdir(), "peaceai-real-"));
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src/is-number.ts"), text);
+    return root;
+  };
+  const real = tree(source);
+  const again = tree(source);
+  const wrong = tree(source.replace("value > 0", "value >= 0"));
+  try {
+    const match = gradeBehavior({
+      candidateRoot: real, fixRoot: again, nodePath,
+      target: { symbol: "isPositiveNumber", file: "src/is-number.ts", form: "named", exportName: "isPositiveNumber", args: [[1], [0], [-1]] },
+    });
+    assert.equal(match.behavior, "verified_strict");
+    const near = gradeBehavior({
+      candidateRoot: wrong, fixRoot: real, nodePath,
+      target: { symbol: "isPositiveNumber", file: "src/is-number.ts", form: "named", exportName: "isPositiveNumber", args: [[1]] },
+    });
+    assert.equal(near.behavior, "verified_test_only");
+  } finally {
+    rmSync(real, { recursive: true, force: true });
+    rmSync(again, { recursive: true, force: true });
+    rmSync(wrong, { recursive: true, force: true });
+  }
 });
