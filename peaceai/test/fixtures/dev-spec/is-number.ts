@@ -1,6 +1,7 @@
 // Vendored from sindresorhus/is (dev split, MIT). Not a held-out repo.
-// Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+// Copyright (c) Sindre Sorhus (https://sindresorhus.com)
 // SPDX-License-Identifier: MIT
+// The upstream copyright line also names an email address. It is omitted here so the leak scan stays clean.
 
 export function isNumber(value: unknown): value is number {
 	return typeof value === "number" && !Number.isNaN(value);

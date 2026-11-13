@@ -641,7 +641,7 @@ test("real dev-split functions: a matching guard is strict and a boundary change
   if (!nodePath) { t.skip("no visible node"); return; }
   const source = readFileSync(join(import.meta.dirname, "fixtures/dev-spec/is-number.ts"), "utf8");
   assert.match(source, /MIT/);
-  assert.match(source, /sindresorhus/);
+  assert.match(source, /Sindre Sorhus/);
   const tree = (text: string) => {
     const root = mkdtempSync(join(tmpdir(), "peaceai-real-"));
     mkdirSync(join(root, "src"), { recursive: true });
