@@ -1,6 +1,8 @@
 // Mixed-practice replay grades. credit: false. A pass is only GATE PASS plus the recorded test
 // going from fail to pass, and, for a test-as-spec candidate, a strict behavioral match.
 // Unmeasured is never a pass. Held-out rows keep the shape and the counts, not the diff.
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Behavior, BehaviorCounterexample } from "./specgrade.ts";
 import { loadTargets } from "./target.ts";
 
@@ -90,17 +92,54 @@ export function gradePracticeRow(input: GradeInput): { status: RowStatus; reason
   return row("pass", "GATE_PASS_AND_TEST", false);
 }
 
-/** One gaps.jsonl object. Held-out rows keep counts, reasons, and exit codes, not a diff or a counterexample. */
+/**
+ * Public GATE_FAIL text is a short kind. URLs are removed and anything from `core-path:` on is dropped.
+ * There is no local debug file for the full gate line, so the rest of the message is not kept.
+ */
+export function publishedReason(reason: string): string {
+  if (!/^GATE[_ ]FAIL\b/.test(reason)) return reason;
+  let msg = reason.replace(/^GATE[_ ]FAIL:?\s*/, "");
+  msg = msg.replace(/https?:\/\/\S+/gi, " ");
+  const cut = msg.search(/core-path:/i);
+  if (cut >= 0) msg = msg.slice(0, cut);
+  let kind = "";
+  if (/no scope/i.test(msg)) kind = "no-scope";
+  else {
+    const known = msg.match(/\b(core-text|scope|core-index|leak)\b/i);
+    kind = known ? known[1]!.toLowerCase() : "";
+  }
+  return kind ? `GATE_FAIL:${kind}` : "GATE_FAIL";
+}
+
+/** Held-out diagnostics keep kind and exit code. The command, test path, and failure lines stay on dev rows. */
+export function publishedDiagnostic(row: Pick<GradedRow, "split" | "diagnostic">): GradedRow["diagnostic"] | { kind: string; code: number | null } | undefined {
+  if (!row.diagnostic) return undefined;
+  if (row.split === "dev") return row.diagnostic;
+  return { kind: row.diagnostic.kind, code: row.diagnostic.code };
+}
+
+/** One public row. Held-out rows keep counts, reasons, exit codes, and diagnostic.kind plus code. */
 export function gapRecord(row: GradedRow): Record<string, unknown> {
   const fit = publishedFit(row);
+  const diagnostic = publishedDiagnostic(row);
+  const dev = row.split === "dev";
   return {
-    repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason,
+    repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: publishedReason(row.reason),
     ...(typeof row.beforeExit === "number" ? { beforeExit: row.beforeExit } : {}),
     ...(typeof row.afterExit === "number" ? { afterExit: row.afterExit } : {}),
-    ...(row.lines && row.lines.length ? { lines: row.lines } : {}),
-    ...(row.diagnostic ? { diagnostic: row.diagnostic } : {}),
+    ...(dev && row.lines && row.lines.length ? { lines: row.lines } : {}),
+    ...(diagnostic ? { diagnostic } : {}),
     ...(fit ? { shape: fit.shape, examples: fit.examples, behavior: fit.behavior, ...(fit.diff ? { diff: fit.diff } : {}), ...(fit.counterexample ? { counterexample: fit.counterexample } : {}) } : {}),
   };
+}
+
+/** Write replay.json and gaps.jsonl. Both go through gapRecord, so a held-out row cannot keep lines or a command. */
+export function writePracticeOutputs(out: string, rows: readonly GradedRow[]): void {
+  const doc = replayDocument(rows);
+  mkdirSync(out, { recursive: true });
+  writeFileSync(join(out, "replay.json"), JSON.stringify(doc, null, 2) + "\n");
+  const gaps = rows.filter((row) => row.gap || row.fit).map((row) => JSON.stringify(gapRecord(row)));
+  writeFileSync(join(out, "gaps.jsonl"), gaps.join("\n") + (gaps.length ? "\n" : ""));
 }
 
 export function targetIsScorable(repo: string, names: readonly string[] = Object.keys(loadTargets().targets)): boolean {
@@ -117,7 +156,8 @@ export function countBySplit(rows: readonly Pick<GradedRow, "split" | "status" |
     if (row.status === "pass") bag.pass++;
     else if (row.status === "fail") bag.fail++;
     else bag.unmeasured++;
-    bag.reasons[row.reason] = (bag.reasons[row.reason] ?? 0) + 1;
+    const reason = publishedReason(row.reason);
+    bag.reasons[reason] = (bag.reasons[reason] ?? 0) + 1;
   }
   return out;
 }
@@ -177,14 +217,9 @@ export function replayDocument(rows: readonly GradedRow[]): {
     protectedWhy: PROTECTED_GATE_WHY,
     counts: countsByUnderstanding(rows),
     behavior: behaviorBySplit(rows),
-    rows: rows.map((row) => {
-      const fit = publishedFit(row);
-      return {
-        repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason,
-        ...(row.diagnostic ? { diagnostic: row.diagnostic } : {}),
-        ...(fit ? { shape: fit.shape, examples: fit.examples, behavior: fit.behavior, ...(fit.diff ? { diff: fit.diff } : {}), ...(fit.counterexample ? { counterexample: fit.counterexample } : {}) } : {}),
-        ...(row.lines && row.lines.length ? { lines: row.lines } : {}),
-      };
+    rows: rows.map((row) => gapRecord(row) as {
+      repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string;
+      diagnostic?: GradedRow["diagnostic"]; shape?: string; examples?: number; behavior?: Behavior; diff?: string; counterexample?: BehaviorCounterexample; lines?: string[];
     }),
   };
 }

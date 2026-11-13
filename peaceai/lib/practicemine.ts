@@ -791,7 +791,38 @@ export function replayCloneRecord(
   return out;
 }
 
+/**
+ * A clone whose actual root commits include a held-out root is checked even when the recorded
+ * root does not name that collision. Every root is considered, not only the first.
+ */
+export function mergeCloneRootCollisions(
+  recorded: Readonly<Record<string, string | null>>,
+  corpus: Readonly<Record<string, string | null>>,
+  clonesDir: string,
+  heldOut: readonly { name: string; root: string }[],
+): Record<string, string | null> {
+  const out: Record<string, string | null> = { ...recorded };
+  if (!clonesDir || !existsSync(clonesDir)) return out;
+  const heldRoots = new Set(heldOut.map((held) => held.root));
+  let entries: string[] = [];
+  try { entries = readdirSync(clonesDir); } catch { return out; }
+  for (const entry of entries) {
+    const dir = join(clonesDir, entry);
+    if (!existsSync(join(dir, ".git"))) continue;
+    const id = readCloneIdentity(dir);
+    if (!id) continue;
+    const roots = identityRoots(id);
+    if (!roots.some((sha) => heldRoots.has(sha))) continue;
+    const cut = entry.indexOf("__");
+    const name = cut < 0 ? entry : `${entry.slice(0, cut)}/${entry.slice(cut + 2)}`;
+    if (Object.prototype.hasOwnProperty.call(out, name)) continue;
+    out[name] = Object.prototype.hasOwnProperty.call(corpus, name) ? corpus[name]! : null;
+  }
+  return out;
+}
+
 function identityRoots(id: RemoteIdentity): string[] {
+  // All roots. Using only roots[0] misses a collision that is on a later root.
   if (id.roots && id.roots.length) return [...id.roots];
   return id.root ? [id.root] : [];
 }

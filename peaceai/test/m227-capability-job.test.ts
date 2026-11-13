@@ -234,8 +234,14 @@ test("a gate timeout, signal, or crash is unmeasured, and a GATE FAIL message is
   assert.deepEqual(signal, { status: "unmeasured", reason: "GATE_SIGNAL:SIGKILL" });
   const fail = classifyGateRun({ status: 1, stdout: `noise\nGATE FAIL target has no scope ${home}\nGATE FAIL later\n` });
   assert.equal(fail.status, "fail");
-  assert.equal(fail.reason.startsWith("GATE_FAIL:target has no scope "), true);
+  assert.equal(fail.reason, "GATE_FAIL:no-scope");
   assert.equal(fail.reason.includes("someone"), false);
+  const pathOnly = classifyGateRun({ status: 1, stdout: "GATE FAIL candidate-1: core-path: src/secret.ts https://example.invalid/a\n" });
+  assert.equal(pathOnly.reason, "GATE_FAIL");
+  assert.equal(pathOnly.reason.includes("http"), false);
+  assert.equal(pathOnly.reason.includes("secret"), false);
+  const quiet = classifyGateRun({ status: 0, stdout: "done\n" });
+  assert.deepEqual(quiet, { status: "unmeasured", reason: "GATE_ERROR:exit 0" });
   const crash = classifyGateRun({ status: 1, stderr: "Error: boom" });
   assert.deepEqual(crash, { status: "unmeasured", reason: "GATE_ERROR:exit 1" });
   const other = classifyGateRun({ status: 2, stdout: "" });

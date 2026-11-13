@@ -9,11 +9,11 @@ import { keptLicense } from "../lib/practicemine.ts";
 import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync as readText, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
-  GIT_LOCK_ARGS, LOCK_EMPTY_GRACE_MS, cloneCheckProblems, cloneRootProblems, dependencyFingerprint, diffChangesDeps, ensurePracticeInstall, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutPairHash, heldOutWatchProblems, identitiesForRoots, installArgv, INSTALL_TIMEOUT_MS, installEnv, isSourceFile, isTestFile, manifestProblems, processStartId, readCloneIdentity, replayCloneRecord, SANDBOX_RAN, sanitizeInstallLines,
+  GIT_LOCK_ARGS, LOCK_EMPTY_GRACE_MS, cloneCheckProblems, cloneRootProblems, dependencyFingerprint, diffChangesDeps, ensurePracticeInstall, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutPairHash, heldOutWatchProblems, identitiesForRoots, installArgv, INSTALL_TIMEOUT_MS, installEnv, isSourceFile, isTestFile, manifestProblems, mergeCloneRootCollisions, processStartId, readCloneIdentity, replayCloneRecord, SANDBOX_RAN, sanitizeInstallLines,
   pairFiles, pairProblems, parseRepoToken, poisonChanges, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxArgv, practiceWatchFiles, releaseWorktree, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
-import { countBySplit, gapRecord, gradePracticeRow, replayDocument, targetIsScorable } from "../lib/practicereplay.ts";
+import { countBySplit, gapRecord, gradePracticeRow, replayDocument, targetIsScorable, writePracticeOutputs } from "../lib/practicereplay.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 
 const repo = join(import.meta.dirname, "../..");
@@ -1034,4 +1034,83 @@ test("a recycled pid is not the lock owner, and a held-out gap keeps exit codes 
   assert.equal(held.reason, "TEST_STILL_FAILS");
   assert.equal("diff" in held, false);
   assert.equal("counterexample" in held, false);
+});
+
+test("a held-out replay row does not keep the command, the test path, or failure lines", () => {
+  const secret = "src/held-secret.test.ts";
+  const boom = "Expected 1 to be 2";
+  const out = mkdtempSync(join(tmpdir(), "practice-held-out-"));
+  const row = {
+    repo: "example/lib", split: "held-out" as const, fixSha: "a".repeat(40), status: "fail" as const, gap: true,
+    understanding: "test-as-spec" as const, beforeExit: 1, afterExit: 1,
+    reason: `GATE_FAIL: target has no scope https://example.invalid/held core-path: ${secret}`,
+    lines: [`install failed at ${secret}`, boom],
+    diagnostic: { kind: "runner_error", code: 1, command: ["node", secret], lines: [boom, `at ${secret}:1`] },
+    fit: { shape: "literal", examples: 1, behavior: "verified_test_only" as const, diff: `--- a/${secret}\n`, counterexample: { args: "[1]", candidate: "1", fix: "2" } },
+  };
+  try {
+    writePracticeOutputs(out, [row]);
+    const replay = readText(join(out, "replay.json"), "utf8");
+    const gaps = readText(join(out, "gaps.jsonl"), "utf8");
+    for (const text of [replay, gaps]) {
+      assert.equal(text.includes(secret), false, text);
+      assert.equal(text.includes(boom), false);
+      assert.equal(text.includes("\"lines\""), false);
+      assert.equal(text.includes("\"command\""), false);
+    }
+    const parsed = JSON.parse(gaps) as { beforeExit?: number; reason?: string; diagnostic?: { kind?: string; code?: number; command?: unknown; lines?: unknown } };
+    assert.equal(parsed.diagnostic?.kind, "runner_error");
+    assert.equal(parsed.diagnostic?.code, 1);
+    assert.equal(parsed.diagnostic?.command, undefined);
+    assert.equal(parsed.diagnostic?.lines, undefined);
+    assert.equal(parsed.beforeExit, 1);
+    assert.equal(parsed.reason, "GATE_FAIL:no-scope");
+    assert.equal(replay.includes("http"), false);
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("a clone whose later root matches a held-out root fails even when the recorded root does not", () => {
+  const dir = mkdtempSync(join(tmpdir(), "practice-tworoot-"));
+  const clones = mkdtempSync(join(tmpdir(), "practice-tworoot-clones-"));
+  const git = (args: string[]) => {
+    const ran = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+    if (ran.status !== 0) throw new Error(ran.stderr || args.join(" "));
+  };
+  try {
+    git(["init", "-q"]);
+    const branch = spawnSync("git", ["-C", dir, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim() || "main";
+    writeFileSync(join(dir, "a.txt"), "one\n");
+    git(["add", "a.txt"]);
+    git(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "root-a"]);
+    const first = spawnSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    git(["checkout", "--orphan", "side"]);
+    writeFileSync(join(dir, "b.txt"), "two\n");
+    git(["add", "b.txt"]);
+    git(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "root-b"]);
+    const second = spawnSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    git(["checkout", "-q", branch]);
+    git(["-c", "user.email=t@example.com", "-c", "user.name=t", "merge", "--allow-unrelated-histories", "-m", "join", "side"]);
+    const roots = spawnSync("git", ["-C", dir, "rev-list", "--max-parents=0", "HEAD"], { encoding: "utf8" }).stdout.trim().split("\n").sort();
+    assert.deepEqual(roots, [first, second].sort());
+    const colliding = roots[1]!;
+    assert.notEqual(colliding, roots[0]);
+    git(["remote", "add", "origin", "https://github.com/x/fpkit.git"]);
+    const clone = join(clones, "x__fpkit");
+    spawnSync("cp", ["-a", dir, clone], { stdio: "ignore" });
+    const held = [{ name: "gcanti/fp-ts", root: colliding, upstreams: [] as string[] }];
+    const practice = [{ name: "gcanti/fp-ts", root: colliding, split: "held-out" }];
+    const corpus = { "x/fpkit": "b".repeat(40), "gcanti/fp-ts": colliding, "axios/axios": "c".repeat(40) };
+    const selected = replayCloneRecord(practice, corpus);
+    assert.equal(selected["x/fpkit"], undefined);
+    const merged = mergeCloneRootCollisions(selected, corpus, clones, held);
+    assert.equal(merged["x/fpkit"], "b".repeat(40));
+    const problems = cloneCheckProblems(held, merged, clones);
+    assert.ok(problems.includes("FORK_FALSE_ROOT:x/fpkit"), problems.join("\n"));
+    assert.equal(problems.some((problem) => problem.startsWith("ROOT_MISMATCH:x/fpkit")), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(clones, { recursive: true, force: true });
+  }
 });

@@ -209,6 +209,27 @@ export interface GateRun {
   stderr?: string;
 }
 
+/**
+ * Public GATE_FAIL text is a short kind. URLs are removed and anything from `core-path:` on is dropped.
+ * There is no local debug file for the full gate line, so the rest of the message is not kept.
+ * The same reduction is publishedReason in practicereplay.ts. This copy stays here so the job
+ * harness does not import the practice grader.
+ */
+export function publicGateReason(reason: string): string {
+  if (!/^GATE[_ ]FAIL\b/.test(reason)) return reason;
+  let msg = reason.replace(/^GATE[_ ]FAIL:?\s*/, "");
+  msg = msg.replace(/https?:\/\/\S+/gi, " ");
+  const cut = msg.search(/core-path:/i);
+  if (cut >= 0) msg = msg.slice(0, cut);
+  let kind = "";
+  if (/no scope/i.test(msg)) kind = "no-scope";
+  else {
+    const known = msg.match(/\b(core-text|scope|core-index|leak)\b/i);
+    kind = known ? known[1]!.toLowerCase() : "";
+  }
+  return kind ? `GATE_FAIL:${kind}` : "GATE_FAIL";
+}
+
 /** Drop home directories and token-shaped strings. Path prefixes are built so the source has no home path. */
 export function sanitizeGateText(text: string): string {
   const slash = "/";
@@ -223,8 +244,8 @@ export function sanitizeGateText(text: string): string {
 
 /**
  * A pass is only exit 0 and a GATE PASS line. A timeout or signal is unmeasured.
- * Exit 1 with a GATE FAIL line is a fail that keeps the first message. Any other
- * non-zero exit is an infrastructure error and is unmeasured, never a pass.
+ * Exit 1 with a GATE FAIL line is a fail that keeps only the reason kind. Any other
+ * non-zero exit, and exit 0 with no GATE PASS line, is unmeasured, never a pass.
  */
 export function classifyGateRun(ran: GateRun, candidates = 1): { status: "pass" | "fail" | "unmeasured"; reason: string } {
   const out = `${ran.stdout ?? ""}\n${ran.stderr ?? ""}`;
@@ -232,10 +253,7 @@ export function classifyGateRun(ran: GateRun, candidates = 1): { status: "pass" 
   if (ran.signal) return { status: "unmeasured", reason: `GATE_SIGNAL:${ran.signal}` };
   if (ran.status === 0 && /GATE PASS/.test(out)) return { status: "pass", reason: `GATE_PASS:${candidates}` };
   const fail = out.split("\n").map((line) => line.trim()).find((line) => line.startsWith("GATE FAIL"));
-  if (ran.status === 1 && fail) {
-    const msg = sanitizeGateText(fail.slice("GATE FAIL".length));
-    return { status: "fail", reason: `GATE_FAIL:${msg}` };
-  }
+  if (ran.status === 1 && fail) return { status: "fail", reason: publicGateReason(fail) };
   if (ran.status === null || ran.status !== 0) return { status: "unmeasured", reason: `GATE_ERROR:exit ${ran.status ?? "null"}` };
   return { status: "unmeasured", reason: "GATE_ERROR:exit 0" };
 }

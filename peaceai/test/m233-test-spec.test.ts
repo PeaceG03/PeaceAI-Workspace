@@ -639,10 +639,31 @@ test("real dev-split functions: a matching guard is strict and a boundary change
   if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
   const nodePath = visibleNodeBin();
   if (!nodePath) { t.skip("no visible node"); return; }
-  // sindresorhus/is, dev split, MIT. The upstream copyright email is omitted so leak-check stays clean.
+  // sindresorhus/is, dev split, MIT. This string only feeds gradeBehavior. It does not exercise the solver.
+  // The upstream copyright email is omitted so leak-check stays clean.
   const source = [
-    "// Copyright (c) Sindre Sorhus (https://sindresorhus.com)",
-    "// SPDX-License-Identifier: MIT",
+    "// MIT License",
+    "//",
+    "// Copyright (c) Sindre Sorhus <email address omitted; see the license URL above> (https://sindresorhus.com)",
+    "//",
+    "// Permission is hereby granted, free of charge, to any person obtaining a copy",
+    "// of this software and associated documentation files (the \"Software\"), to deal",
+    "// in the Software without restriction, including without limitation the rights",
+    "// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell",
+    "// copies of the Software, and to permit persons to whom the Software is",
+    "// furnished to do so, subject to the following conditions:",
+    "//",
+    "// The above copyright notice and this permission notice shall be included in all",
+    "// copies or substantial portions of the Software.",
+    "//",
+    "// THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR",
+    "// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,",
+    "// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE",
+    "// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER",
+    "// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,",
+    "// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE",
+    "// SOFTWARE.",
+    "//",
     "export function isNumber(value: unknown): value is number {",
     "\treturn typeof value === \"number\" && !Number.isNaN(value);",
     "}",
@@ -651,8 +672,9 @@ test("real dev-split functions: a matching guard is strict and a boundary change
     "}",
     "",
   ].join("\n");
-  assert.match(source, /MIT/);
+  assert.match(source, /Permission is hereby granted/);
   assert.match(source, /Sindre Sorhus/);
+  assert.equal(source.includes("@"), false);
   const tree = (text: string) => {
     const root = mkdtempSync(join(tmpdir(), "peaceai-real-"));
     mkdirSync(join(root, "src"), { recursive: true });

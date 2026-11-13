@@ -14,9 +14,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
-import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, cloneCheckProblems, ensurePracticeInstall, materializeSolverTree, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
+import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, cloneCheckProblems, ensurePracticeInstall, materializeSolverTree, mergeCloneRootCollisions, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
 import {
-  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gapRecord, gradePracticeRow, replayDocument, targetIsScorable,
+  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, targetIsScorable, writePracticeOutputs,
   type GradedRow, type Understanding,
 } from "../lib/practicereplay.ts";
 import { gradeBehavior, type BehaviorGrade } from "../lib/specgrade.ts";
@@ -284,7 +284,7 @@ function main(): void {
   const manifest = JSON.parse(readFileSync(join(tooling, "practice/manifest.json"), "utf8")) as { repos: { name: string; root: string; split: string; upstreams?: string[] }[] };
   const corpus = (JSON.parse(readFileSync(join(tooling, "practice/corpus-roots.json"), "utf8")) as { roots?: Record<string, string | null> }).roots ?? {};
   const held = manifest.repos.filter((repo) => repo.split === "held-out").map((repo) => ({ name: repo.name, root: repo.root, upstreams: repo.upstreams ?? [] }));
-  const recorded = replayCloneRecord(manifest.repos, corpus);
+  const recorded = mergeCloneRootCollisions(replayCloneRecord(manifest.repos, corpus), corpus, clones, held);
   const cloneProblems = cloneCheckProblems(held, recorded, clones);
   if (cloneProblems.length) {
     for (const problem of cloneProblems) console.log(problem);
@@ -352,10 +352,7 @@ function main(): void {
     dispose();
   }
   const doc = replayDocument(graded);
-  mkdirSync(out, { recursive: true });
-  writeFileSync(join(out, "replay.json"), JSON.stringify(doc, null, 2) + "\n");
-  const gaps = graded.filter((row) => row.gap || row.fit).map((row) => JSON.stringify(gapRecord(row)));
-  writeFileSync(join(out, "gaps.jsonl"), gaps.join("\n") + (gaps.length ? "\n" : ""));
+  writePracticeOutputs(out, graded);
   console.log("experimental credit=false");
   if (graded.some((row) => row.reason === "GATE_NO_TARGET")) {
     console.log(`protectedFunction=${PROTECTED_GATE_FUNCTION} protectedFile=${PROTECTED_GATE_FILE}`);
