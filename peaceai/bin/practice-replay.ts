@@ -56,6 +56,19 @@ function cloneDir(repo: string, clones: string, work: string): string | null {
   return dir;
 }
 
+/** Dev clones stay under out/clones. A held-out clone is a temp directory, deleted after grading. */
+export function replayClonePlace(split: "dev" | "held-out", outDir: string): { dir: string; release(): void } {
+  if (split !== "held-out") return { dir: join(outDir, "clones"), release() {} };
+  const dir = mkdtempSync(join(tmpdir(), "peaceai-held-clone-"));
+  return { dir, release() { rmSync(dir, { recursive: true, force: true }); } };
+}
+
+/** Copy one repo out of --clones-dir. Held-out copies are not created under outDir. */
+export function openPracticeClone(repo: string, split: "dev" | "held-out", clones: string, outDir: string): { dir: string | null; release(): void } {
+  const place = replayClonePlace(split, outDir);
+  return { dir: cloneDir(repo, clones, place.dir), release: place.release };
+}
+
 function linkModules(modules: string, dir: string): void {
   const dest = join(dir, "node_modules");
   if (!existsSync(modules) || existsSync(dest)) return;
@@ -303,6 +316,7 @@ function main(): void {
     else console.log(`core ${built.error}`);
   }
   const graded: GradedRow[] = [];
+  const heldScratch: { release(): void }[] = [];
   try {
     const repos = new Map<string, string | null>();
     const cacheRoot = installCache ? resolve(installCache) : join(out, "install-cache");
@@ -317,7 +331,11 @@ function main(): void {
         for (const understanding of ["text", "test-as-spec"] as const) graded.push({ repo: pair.repo, split: pair.split, fixSha: pair.fixSha, understanding, status, reason, gap: true });
         continue;
       }
-      if (!repos.has(pair.repo)) repos.set(pair.repo, cloneDir(pair.repo, clones, join(out, "clones")));
+      if (!repos.has(pair.repo)) {
+        const opened = openPracticeClone(pair.repo, pair.split, clones, out);
+        if (pair.split === "held-out") heldScratch.push(opened);
+        repos.set(pair.repo, opened.dir);
+      }
       const dir = repos.get(pair.repo);
       if (!dir) {
         for (const understanding of ["text", "test-as-spec"] as const) graded.push({ repo: pair.repo, split: pair.split, fixSha: pair.fixSha, understanding, status: "unmeasured", reason: "NO_CLONE", gap: true });
@@ -350,6 +368,7 @@ function main(): void {
     }
   } finally {
     dispose();
+    for (const scratch of heldScratch) scratch.release();
   }
   const doc = replayDocument(graded);
   writePracticeOutputs(out, graded);

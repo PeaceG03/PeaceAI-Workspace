@@ -705,20 +705,39 @@ const CMP: { op: string; fn: (left: number, right: number) => boolean }[] = [
   { op: "===", fn: (left, right) => left === right }, { op: "!==", fn: (left, right) => left !== right },
 ];
 
+/** `a > n` and `a >= n+1` are the same predicate on integers, and so are `a < n` and `a <= n-1`. */
+function integerCmpClass(op: string, n: number): string | null {
+  if (!Number.isInteger(n)) return null;
+  if (op === ">") return `gt:${n + 1}`;
+  if (op === ">=") return `gt:${n}`;
+  if (op === "<") return `lt:${n}`;
+  if (op === "<=") return `lt:${n + 1}`;
+  if (op === "===") return `eq:${n}`;
+  if (op === "!==") return `ne:${n}`;
+  return null;
+}
+
 function comparisonBody(examples: Example[]): string | null {
   if (!examples.length || examples.some((ex) => typeof ex.expected !== "boolean" || ex.args.some((arg) => typeof arg !== "number"))) return null;
   const arity = examples[0]!.args.length;
   if (examples.some((ex) => ex.args.length !== arity) || (arity !== 1 && arity !== 2)) return null;
-  const fits: string[] = [];
+  const integers = examples.every((ex) => (ex.args as number[]).every((arg) => Number.isInteger(arg)));
+  const fits: { text: string; key: string }[] = [];
   const constants = [...new Set(examples.flatMap((ex) => ex.args as number[]))];
-  const keep = (text: string, fn: (args: number[]) => boolean) => { if (examples.every((ex) => fn(ex.args as number[]) === ex.expected)) fits.push(text); };
-  if (arity === 2) for (const pred of CMP) keep(`a ${pred.op} b`, (args) => pred.fn(args[0]!, args[1]!));
+  const keep = (text: string, fn: (args: number[]) => boolean, key: string) => {
+    if (examples.every((ex) => fn(ex.args as number[]) === ex.expected)) fits.push({ text, key });
+  };
+  if (arity === 2) for (const pred of CMP) keep(`a ${pred.op} b`, (args) => pred.fn(args[0]!, args[1]!), `raw:a ${pred.op} b`);
   for (const n of constants) for (const pred of CMP) {
-    keep(`a ${pred.op} ${JSON.stringify(n)}`, (args) => pred.fn(args[0]!, n));
-    if (arity === 2) keep(`b ${pred.op} ${JSON.stringify(n)}`, (args) => pred.fn(args[1]!, n));
+    const cls = integers ? integerCmpClass(pred.op, n) : null;
+    const shown = JSON.stringify(n);
+    keep(`a ${pred.op} ${shown}`, (args) => pred.fn(args[0]!, n), cls ?? `raw:a ${pred.op} ${shown}`);
+    if (arity === 2) keep(`b ${pred.op} ${shown}`, (args) => pred.fn(args[1]!, n), cls ? `b:${cls}` : `raw:b ${pred.op} ${shown}`);
   }
-  if (fits.length !== 1) return null;
-  return `  return ${fits[0]};`;
+  const chosen = new Map<string, string>();
+  for (const fit of fits) if (!chosen.has(fit.key)) chosen.set(fit.key, fit.text);
+  if (chosen.size !== 1) return null;
+  return `  return ${[...chosen.values()][0]};`;
 }
 
 /** Every combination of boolean arguments is present, so one formula fits. */

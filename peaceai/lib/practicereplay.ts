@@ -96,7 +96,7 @@ export function gradePracticeRow(input: GradeInput): { status: RowStatus; reason
  * Public GATE_FAIL text is a short kind. URLs are removed and anything from `core-path:` on is dropped.
  * There is no local debug file for the full gate line, so the rest of the message is not kept.
  */
-export function publishedReason(reason: string): string {
+export function publicGateReason(reason: string): string {
   if (!/^GATE[_ ]FAIL\b/.test(reason)) return reason;
   let msg = reason.replace(/^GATE[_ ]FAIL:?\s*/, "");
   msg = msg.replace(/https?:\/\/\S+/gi, " ");
@@ -124,7 +124,7 @@ export function gapRecord(row: GradedRow): Record<string, unknown> {
   const diagnostic = publishedDiagnostic(row);
   const dev = row.split === "dev";
   return {
-    repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: publishedReason(row.reason),
+    repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: publicGateReason(row.reason),
     ...(typeof row.beforeExit === "number" ? { beforeExit: row.beforeExit } : {}),
     ...(typeof row.afterExit === "number" ? { afterExit: row.afterExit } : {}),
     ...(dev && row.lines && row.lines.length ? { lines: row.lines } : {}),
@@ -156,7 +156,7 @@ export function countBySplit(rows: readonly Pick<GradedRow, "split" | "status" |
     if (row.status === "pass") bag.pass++;
     else if (row.status === "fail") bag.fail++;
     else bag.unmeasured++;
-    const reason = publishedReason(row.reason);
+    const reason = publicGateReason(row.reason);
     bag.reasons[reason] = (bag.reasons[reason] ?? 0) + 1;
   }
   return out;

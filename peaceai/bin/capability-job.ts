@@ -15,6 +15,8 @@ import { makeGitOnMainChecker, denverYmd } from "../../builder-log/coverage.ts";
 import { parseLogEntries } from "../../builder-log/coverage.ts";
 import { buildCapabilityReport, inputDigest, type ReplayBind } from "../lib/capabilityreport.ts";
 import { CORE_ENTRY, boundReplay, citedIssue, classifyJobOutput, commitRef, landingParent, replayIssueTitle, routeReplay, type CommitRef } from "../lib/capabilityjob.ts";
+export { publicGateReason } from "../lib/practicereplay.ts";
+import { publicGateReason } from "../lib/practicereplay.ts";
 import { scoreFamilies, trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
 
 const ROW_MS = 45_000;
@@ -207,27 +209,6 @@ export interface GateRun {
   error?: { code?: string } | null;
   stdout?: string;
   stderr?: string;
-}
-
-/**
- * Public GATE_FAIL text is a short kind. URLs are removed and anything from `core-path:` on is dropped.
- * There is no local debug file for the full gate line, so the rest of the message is not kept.
- * The same reduction is publishedReason in practicereplay.ts. This copy stays here so the job
- * harness does not import the practice grader.
- */
-export function publicGateReason(reason: string): string {
-  if (!/^GATE[_ ]FAIL\b/.test(reason)) return reason;
-  let msg = reason.replace(/^GATE[_ ]FAIL:?\s*/, "");
-  msg = msg.replace(/https?:\/\/\S+/gi, " ");
-  const cut = msg.search(/core-path:/i);
-  if (cut >= 0) msg = msg.slice(0, cut);
-  let kind = "";
-  if (/no scope/i.test(msg)) kind = "no-scope";
-  else {
-    const known = msg.match(/\b(core-text|scope|core-index|leak)\b/i);
-    kind = known ? known[1]!.toLowerCase() : "";
-  }
-  return kind ? `GATE_FAIL:${kind}` : "GATE_FAIL";
 }
 
 /** Drop home directories and token-shaped strings. Path prefixes are built so the source has no home path. */

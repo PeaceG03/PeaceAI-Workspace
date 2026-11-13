@@ -241,6 +241,24 @@ test("a missing export is scaffolded only when one body fits every reduced call"
   const refused = scaffoldPlan("src/pos.test.ts", ambiguous, "Cannot find module '/work/src/pos.ts'", PATTERN, [], () => null);
   assert.equal(refused?.ok, false);
   if (refused && !refused.ok) assert.equal(refused.reason, "CANT_DO_YET_NO_BODY");
+  const tied = [
+    'import { above } from "./above.ts";',
+    "assert.equal(above(-1), false);",
+    "assert.equal(above(0), false);",
+    "assert.equal(above(1), true);",
+    "assert.equal(above(2), true);",
+  ].join("\n");
+  const equivalent = scaffoldPlan("src/above.test.ts", tied, "Cannot find module '/work/src/above.ts'", PATTERN, [], () => null);
+  assert.equal(equivalent?.ok, true);
+  if (equivalent?.ok) assert.match(equivalent.files[0]!.content, /return a > 0|return a >= 1/);
+  const wide = [
+    'import { high } from "./high.ts";',
+    "assert.equal(high(0), false);",
+    "assert.equal(high(2), true);",
+  ].join("\n");
+  const many = scaffoldPlan("src/high.test.ts", wide, "Cannot find module '/work/src/high.ts'", PATTERN, [], () => null);
+  assert.equal(many?.ok, false);
+  if (many && !many.ok) assert.equal(many.reason, "CANT_DO_YET_NO_BODY");
   const mixed = [
     'import { f } from "./f.ts";',
     "assert.equal(f(1), 1);",
