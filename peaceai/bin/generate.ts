@@ -18,11 +18,10 @@ import { indexBoost, selectSources } from "../lib/sources.ts";
 import { buildIndex, indexStats, relatedFiles, resolveTargets, search } from "../lib/symbols.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 import { buildVariants, cleanIssueText } from "../lib/taskmap.ts";
-import { understandIssue, UNDERSTAND_REASONS } from "../lib/issueunderstand.ts";
 // The practice grader is outside self-change. Naming these paths pulls them, and the modules they import, into the never-zone.
-const PRACTICE_GRADER_FILES = ["peaceai/lib/specgrade.ts", "peaceai/lib/practicereplay.ts", "peaceai/bin/practice-replay.ts", "peaceai/bin/practice-mine.ts"] as const;
+const PRACTICE_GRADER_FILES = ["peaceai/lib/specgrade.ts", "peaceai/lib/practicereplay.ts", "peaceai/bin/practice-replay.ts", "peaceai/bin/practice-mine.ts", "peaceai/lib/issueunderstand.ts"] as const;
 void PRACTICE_GRADER_FILES;
-import { nlDecision } from "../lib/nlparse.ts";
+import { nlDecision, understandIssue, UNDERSTAND_REASONS } from "../lib/nlparse.ts";
 import { regradeOf, type RegradeRequest } from "../lib/regrade.ts";
 import { regularFileReader, repoFileLists } from "../lib/learned-test-existing.ts";
 import { spawnSync } from "node:child_process";
