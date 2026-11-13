@@ -45,6 +45,9 @@ export function classifyJobOutput(o: { timedOut: boolean; code: number | null; c
   if (o.code === null) return { status: "unmeasured", reason: "SPAWN_FAILED" };
   if (o.candidates === null) return { status: "unmeasured", reason: `NO_SUMMARY: exit ${o.code}` };
   if (o.candidates > 0) return { status: "pass", reason: `JOB_A_CANDIDATES:${o.candidates}` };
+  // A specific hole from the issue reader. The generic nl= line stays for the refusal comment.
+  const cant = /can't do yet: (CANT_DO_YET_[A-Z0-9_]+)/.exec(o.stdout);
+  if (cant) return { status: "fail", reason: cant[1]! };
   const nl = /nl=unsure reason=(\S+)/.exec(o.stdout);
   if (nl) return { status: "fail", reason: `NL_${nl[1]}` };
   // formatRefusals joins reasons with "; ", so the line is not one token. Keep every reason on that line.

@@ -18,7 +18,10 @@ import { indexBoost, selectSources } from "../lib/sources.ts";
 import { buildIndex, indexStats, relatedFiles, resolveTargets, search } from "../lib/symbols.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 import { buildVariants, cleanIssueText } from "../lib/taskmap.ts";
-import { nlDecision } from "../lib/nlparse.ts";
+// The practice grader is outside self-change. Naming these paths pulls them, and the modules they import, into the never-zone.
+const PRACTICE_GRADER_FILES = ["peaceai/lib/specgrade.ts", "peaceai/lib/practicereplay.ts", "peaceai/bin/practice-replay.ts", "peaceai/bin/practice-mine.ts", "peaceai/lib/issueunderstand.ts"] as const;
+void PRACTICE_GRADER_FILES;
+import { nlDecision, understandIssue, UNDERSTAND_REASONS } from "../lib/nlparse.ts";
 import { regradeOf, type RegradeRequest } from "../lib/regrade.ts";
 import { regularFileReader, repoFileLists } from "../lib/learned-test-existing.ts";
 import { spawnSync } from "node:child_process";
@@ -119,15 +122,41 @@ if (process.env.PEACEAI_REGRADE_FILE && existsSync(process.env.PEACEAI_REGRADE_F
 
 // M10: plain-language tasks. Canonical wording passes unchanged; plain wording becomes the canonical plan;
 // anything unclear is refused here (no candidates, enum-only outputs) and the issue gets the phrasing list.
-const nl = nlDecision(issueTask, process.env.PEACEAI_NL_PARSE, new Set(admissions.filter((a) => a.decision === "APPROVED" && a.spec).map((a) => a.spec!.kind)));
-writeOutput({ nl: nl.status, nl_reason: nl.status === "unsure" ? nl.reason : "", nl_hint: nl.status === "unsure" ? nl.hint ?? "" : "", nl_steps: nl.status === "parsed" ? String(nl.steps.length) : "" });
-console.log(`nl=${nl.status}${nl.status === "unsure" ? ` reason=${nl.reason}` : nl.status === "parsed" ? ` steps=${nl.steps.length} families=${nl.steps.map((s) => s.family).join(",")}` : ""}`);
-if (nl.status === "unsure") {
+// Issue and commit sentences that the phrase list does not cover are read by understandIssue. A complete
+// mapping becomes the plan the engines already run. Anything short of that answers "can't do yet".
+const approvedKinds = new Set(admissions.filter((a) => a.decision === "APPROVED" && a.spec).map((a) => a.spec!.kind));
+const nl = nlDecision(issueTask, process.env.PEACEAI_NL_PARSE, approvedKinds);
+const understood = nl.status === "unsure" && (UNDERSTAND_REASONS as readonly string[]).includes(nl.reason)
+  ? understandIssue({
+      title: issueTask.title,
+      body: issueTask.body,
+      testFile: process.env.PEACEAI_TEST_FILE,
+      sourcePattern: targetConfig.sourcePattern,
+      sources: tracked.filter((p) => scope.isSource(p) && !scope.isTest(p) && !scope.isDenied(p)),
+      approvedKinds,
+    })
+  : null;
+if (nl.status === "unsure" && understood?.status !== "mapped") {
+  writeOutput({ nl: "unsure", nl_reason: nl.reason, nl_hint: nl.hint ?? "", nl_steps: "" });
+  console.log(`nl=unsure reason=${nl.reason}`);
+  if (understood?.status === "cant") console.log(`can't do yet: ${understood.reason}`);
   mkdirSync(join(outDir, "candidates"), { recursive: true });
   writeSummary({ schema: "peaceai-workspace-candidates:v1", taskId, baseSha, candidates: [] });
   process.exit(0);
 }
-const task = nl.status === "parsed" ? { title: "", body: nl.objective } : issueTask;
+const parsedSteps = understood?.status === "mapped" ? understood.steps : nl.status === "parsed" ? nl.steps : null;
+writeOutput({
+  nl: parsedSteps ? "parsed" : nl.status,
+  nl_reason: "",
+  nl_hint: "",
+  nl_steps: parsedSteps ? String(parsedSteps.length) : "",
+});
+console.log(parsedSteps
+  ? `nl=parsed steps=${parsedSteps.length} families=${parsedSteps.map((s) => s.family).join(",")}${understood?.status === "mapped" ? " understand=issue" : ""}`
+  : `nl=${nl.status}`);
+const task = understood?.status === "mapped"
+  ? { title: "", body: understood.objective }
+  : nl.status === "parsed" ? { title: "", body: nl.objective } : issueTask;
 
 // Auditor #466 (c), option A: repoFileLists (the one helper Job B's TEST_CASE_EXISTING re-check uses too) builds the
 // context list (in scope, not denied: the only list any context, prompt, edit or record sees) and, separately, the

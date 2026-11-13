@@ -41,7 +41,7 @@ export interface RepairInput { files: readonly { path: string; content: string }
 /** M190: `failing` feeds localisation (node:test names only); `baseFailing` (when given) is the baseline's failing test
  *  names for the outcome evidence (M178 / M179 / M191), vitest / jest names included. */
 export interface PrepareInput { request: string; failing: readonly string[]; baseFailing?: readonly string[] }
-export type RepairProposal = { edits: RepairEdit[] } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };
+export type RepairProposal = { edits: RepairEdit[]; kind?: string } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };
 
 export const REPAIR_PROPOSER = "repair-v1";
 export const REPAIR_PROPOSER_V2 = "repair-v2";
@@ -120,6 +120,36 @@ function declarationsNamed(sf: ts.SourceFile, name: string): ts.Node[] {
   };
   visit(sf);
   return out;
+}
+
+/**
+ * Where a property or assignment named `name` actually runs, in this file.
+ * An object literal `{ name: fn }` and `obj.name = fn` do not contain the body when `fn` is another
+ * binding. A const arrow and an inline function do. Repair-v2 follows these; the property alias itself
+ * has nothing to edit.
+ */
+function aliasBodies(sf: ts.SourceFile, name: string): ts.Node[] {
+  const tops = topFunctions(sf);
+  const out: ts.Node[] = [];
+  const add = (node: ts.Node) => { if (!out.includes(node)) out.push(node); };
+  const follow = (expr: ts.Expression) => {
+    if (ts.isIdentifier(expr)) { const fn = tops.get(expr.text); if (fn) add(fn); return; }
+    if (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)) add(expr);
+  };
+  const visit = (n: ts.Node) => {
+    if (ts.isPropertyAssignment(n) && propName(n.name) === name) follow(n.initializer);
+    else if (ts.isShorthandPropertyAssignment(n) && n.name.text === name) { const fn = tops.get(n.name.text); if (fn) add(fn); }
+    else if (ts.isMethodDeclaration(n) && propName(n.name) === name && n.parent && ts.isObjectLiteralExpression(n.parent)) add(n);
+    else if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(n.left) && propName(n.left.name) === name) follow(n.right);
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  return out;
+}
+function propName(name: ts.Node | undefined): string | null {
+  if (!name) return null;
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
+  return null;
 }
 
 /** Top-level functions (declarations and const arrow / function expressions) of a file, by name. */
@@ -250,7 +280,17 @@ export function locate(search: CodeRepo, input: PrepareInput, depth: number = CA
           else viaReExport(target, im.name);
         }
       };
-      for (const d of declarationsNamed(sf, name)) {
+      const decls = declarationsNamed(sf, name);
+      // A property `{ name: other }` or `obj.name = other` does not contain the function. Follow it
+      // only when that body sits outside every declaration of `name` (an inline arrow is already inside
+      // the property, and counting it twice would spend a site).
+      if (depth >= 2) for (const body of aliasBodies(sf, name)) {
+        const start = body.getStart(sf);
+        const end = body.getEnd();
+        if (decls.some((d) => start >= d.getStart(sf) && end <= d.getEnd())) continue;
+        push({ path: p, name, start, end, tier: 0 });
+      }
+      for (const d of decls) {
         push({ path: p, name, start: d.getStart(sf), end: d.getEnd(), tier: 0 });
         // one level of same-file callees (the fault is often one call below the named entry point)
         const callees: string[] = [];
@@ -1363,6 +1403,11 @@ export interface RepairOptions { name?: string; order?: (queue: readonly Candida
  * The general repair proposer (repair-v1). prepare() is called once per task by the loop with the search tools on the
  * pinned commit (no team tests) and the baseline's failing test names (node:test only; [] for vitest / jest).
  */
+function editKind(candidate: Candidate): string {
+  const names = [...new Set(candidate.muts.map((mut) => mut.template))];
+  return names.join("+") || "repair";
+}
+
 export function repairProposer(opts: RepairOptions = {}): { name: string; readonly loadRepair: boolean; prepare(search: CodeRepo, input: PrepareInput): void; next(input: RepairInput): RepairProposal } {
   let sites: Site[] | null = null;
   let queue: Candidate[] | null = null;
@@ -1387,7 +1432,7 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
         // a suite that did not load: only load-repair candidates, one per attempt (the other templates have no signal)
         if (!loadQueue) { loadQueue = loadCandidates(input.loadDiagnostics, new Map(input.files.map((f) => [f.path, f.content] as const))); if (loadQueue.length === 0) return { refuse: "NO_EDIT" }; }
         const pick = loadQueue.shift();
-        return pick ? { edits: pick.edits } : { refuse: "NO_MORE_EDITS" };
+        return pick ? { edits: pick.edits, kind: editKind(pick) } : { refuse: "NO_MORE_EDITS" };
       }
       if (opts.order && !queue && (!sites || sites.length === 0)) { queue = opts.order([]); } // M167: the ranking must hold for "nothing located" too
       if (!sites || sites.length === 0) return { refuse: "NO_EDIT" }; // nothing the request names was located: no edit anywhere
@@ -1470,7 +1515,7 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
       if (!pick) return { refuse: "NO_MORE_EDITS" };
       if (pick.anchored) seen.add(pick.key);
       tried.push(pick);
-      return { edits: pick.edits };
+      return { edits: pick.edits, kind: editKind(pick) };
     },
   };
 }

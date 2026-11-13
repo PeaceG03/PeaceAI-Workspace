@@ -15,32 +15,32 @@
     {
       "name": "sindresorhus/is",
       "split": "dev",
-      "candidates": 18,
-      "attempts": 18,
+      "candidates": 37,
+      "attempts": 37,
       "kept": 20,
       "reason": null
     },
     {
       "name": "unjs/defu",
       "split": "dev",
-      "candidates": 8,
-      "attempts": 8,
+      "candidates": 16,
+      "attempts": 16,
       "kept": 7,
       "reason": null
     },
     {
       "name": "blakeembrey/change-case",
       "split": "held-out",
-      "candidates": 16,
-      "attempts": 16,
+      "candidates": 20,
+      "attempts": 20,
       "kept": 16,
       "reason": null
     },
     {
       "name": "gvergnaud/ts-pattern",
       "split": "held-out",
-      "candidates": 20,
-      "attempts": 20,
+      "candidates": 29,
+      "attempts": 29,
       "kept": 20,
       "reason": null
     },
@@ -55,8 +55,8 @@
     {
       "name": "unjs/listhen",
       "split": "held-out",
-      "candidates": 3,
-      "attempts": 3,
+      "candidates": 16,
+      "attempts": 16,
       "kept": 3,
       "reason": null
     }

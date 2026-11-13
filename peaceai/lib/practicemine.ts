@@ -283,6 +283,34 @@ export function practiceGit(dir: string, args: readonly string[], timeout = 60_0
   return { ok: ran.status === 0 && !err, out: ran.status === 0 ? ran.stdout ?? "" : "", status: err ? null : ran.status };
 }
 
+/**
+ * A solver tree is a new repository holding only `sha`, detached, with none of the clone's other
+ * commits or refs. The fix commit is not reachable from it.
+ */
+export function materializeSolverTree(repoDir: string, sha: string, dest: string): boolean {
+  rmSync(dest, { recursive: true, force: true });
+  mkdirSync(dest, { recursive: true });
+  if (!practiceGit(dest, ["init", "-q"]).ok) return false;
+  const remote = `file://${repoDir}`;
+  const fetched = spawnSync("git", ["-C", dest, ...GIT_LOCK_ARGS, "fetch", "--depth", "1", "--no-tags", remote, sha], {
+    env: practiceGitEnv(), encoding: "utf8", timeout: 60_000,
+  });
+  if (fetched.status !== 0) return false;
+  if (!practiceGit(dest, ["checkout", "--detach", "FETCH_HEAD"]).ok) return false;
+  const head = practiceGit(dest, ["rev-parse", "HEAD"]);
+  return head.ok && head.out.trim() === sha;
+}
+
+/** Write one blob from `sha` into `destDir`. The destination repository does not gain that commit. */
+export function writeCommitFile(repoDir: string, sha: string, file: string, destDir: string): boolean {
+  const ran = practiceGit(repoDir, ["show", `${sha}:${file}`]);
+  if (!ran.ok) return false;
+  const path = join(destDir, file);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, ran.out);
+  return true;
+}
+
 const POISON_EXACT = new Set([".pnpmfile.cjs", ".npmrc", "package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock"]);
 
 const STAMP_MAX = 1 << 20;
@@ -501,11 +529,24 @@ export interface InstallCacheOptions {
 const LOCK_STALE_MS = 30 * 60 * 1000;
 const INSTALL_COMPLETE = ".practice-complete";
 
+function lockOwnerAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * A lock is taken over only when its owner is dead and the lock is older than 30 minutes.
+ * A fresh lock is left alone, including when the recorded pid cannot be signalled.
+ */
 function lockIsStale(path: string): boolean {
   try {
-    const [pid, ts] = readFileSync(path, "utf8").trim().split(/\s+/);
-    const alive = (() => { try { process.kill(Number(pid), 0); return true; } catch { return false; } })();
-    return !alive || Date.now() - Number(ts || 0) > LOCK_STALE_MS;
+    const [pidText, tsText] = readFileSync(path, "utf8").trim().split(/\s+/);
+    const pid = Number(pidText);
+    const ts = Number(tsText);
+    if (!Number.isInteger(pid) || pid <= 0 || !Number.isFinite(ts)) return true;
+    if (Date.now() - ts <= LOCK_STALE_MS) return false;
+    return !lockOwnerAlive(pid);
   } catch { return true; }
 }
 
@@ -658,6 +699,31 @@ export function repoFromRemote(url: string): string | null {
   return match ? match[1]! : null;
 }
 
+/** Remote, HEAD, and upstream of one local clone. Missing or unreadable git data is null. */
+export function readCloneIdentity(dir: string): RemoteIdentity | null {
+  if (!existsSync(join(dir, ".git"))) return null;
+  const remote = practiceGit(dir, ["remote", "get-url", "origin"]);
+  const root = practiceGit(dir, ["rev-parse", "HEAD"]);
+  const remoteUrl = remote.ok ? remote.out.trim() : null;
+  const rootSha = root.ok && /^[0-9a-f]{40}$/.test(root.out.trim()) ? root.out.trim() : null;
+  const upstreamUrl = practiceGit(dir, ["remote", "get-url", "upstream"]);
+  const parent = upstreamUrl.ok ? repoFromRemote(upstreamUrl.out.trim()) : null;
+  let upstreamRoot: string | null = null;
+  if (parent) {
+    const up = practiceGit(dir, ["rev-parse", "--verify", "refs/remotes/upstream/HEAD"]);
+    if (up.ok && /^[0-9a-f]{40}$/.test(up.out.trim())) upstreamRoot = up.out.trim();
+  }
+  if (!remoteUrl && !rootSha) return null;
+  return { remoteUrl, root: rootSha, parent, source: parent, upstreamRoot };
+}
+
+/** One identity per recorded root. A missing clone is null, which falseRootProblems reports as CLONE_UNVERIFIED. */
+export function identitiesForRoots(recorded: Readonly<Record<string, string | null>>, clonesDir: string): Record<string, RemoteIdentity | null> {
+  const out: Record<string, RemoteIdentity | null> = {};
+  for (const name of Object.keys(recorded)) out[name] = readCloneIdentity(join(clonesDir, name.replaceAll("/", "__")));
+  return out;
+}
+
 /**
  * A corpus root is trusted only when a clone's remote and root agree with it.
  * A renamed fork whose recorded root is not the clone's root fails closed, as does a missing clone.
@@ -694,9 +760,17 @@ export type PracticeLicense = Spdx | "owner";
 
 export const DEP_PATHS = new Set(["package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock"]);
 
-/** A fix that edits package.json, a lockfile, or package-manager config is not admitted. */
+function depBase(name: string): string {
+  const slash = Math.max(name.lastIndexOf("/"), name.lastIndexOf("\\"));
+  return slash < 0 ? name : name.slice(slash + 1);
+}
+
+/** A fix that edits package.json, a lockfile, or package-manager config is not admitted. Nested paths count. */
 export function diffChangesDeps(names: readonly string[]): boolean {
-  return names.some((name) => DEP_PATHS.has(name) || name === ".npmrc" || name.startsWith(".yarnrc") || name.startsWith(".pnpmfile"));
+  return names.some((name) => {
+    const base = depBase(name);
+    return DEP_PATHS.has(base) || base === ".npmrc" || base.startsWith(".yarnrc") || base.startsWith(".pnpmfile");
+  });
 }
 
 export function isOwnerRepo(name: string): boolean {

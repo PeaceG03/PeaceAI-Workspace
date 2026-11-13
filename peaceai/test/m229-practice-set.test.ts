@@ -9,7 +9,7 @@ import { keptLicense } from "../lib/practicemine.ts";
 import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync as readText, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
-  GIT_LOCK_ARGS, cloneRootProblems, dependencyFingerprint, ensurePracticeInstall, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutPairHash, heldOutWatchProblems, installArgv, INSTALL_TIMEOUT_MS, installEnv, isSourceFile, isTestFile, manifestProblems, SANDBOX_RAN, sanitizeInstallLines,
+  GIT_LOCK_ARGS, cloneRootProblems, dependencyFingerprint, diffChangesDeps, ensurePracticeInstall, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutPairHash, heldOutWatchProblems, identitiesForRoots, installArgv, INSTALL_TIMEOUT_MS, installEnv, isSourceFile, isTestFile, manifestProblems, readCloneIdentity, SANDBOX_RAN, sanitizeInstallLines,
   pairFiles, pairProblems, parseRepoToken, poisonChanges, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxArgv, practiceWatchFiles, releaseWorktree, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
@@ -598,9 +598,10 @@ test("the committed held-out repos and their upstreams are absent from corpus, t
   const hits = exclusionHits(held, sources, rootsFile.roots);
   assert.deepEqual(hits, []);
   const watched = heldOutWatchProblems(held, practiceWatchFiles(repo), rootsFile.roots);
-  const named = watched.filter((problem) => !problem.startsWith("CLONE_UNVERIFIED:"));
-  assert.deepEqual(named, [], named.join("\n"));
-  assert.ok(watched.some((problem) => problem.startsWith("CLONE_UNVERIFIED:")), "a root with no clone identity fails closed");
+  const mentions = watched.filter((problem) => problem.startsWith("HELD_OUT") || problem.startsWith("BAD_REPO"));
+  assert.deepEqual(mentions, [], mentions.join("\n"));
+  assert.ok(watched.some((problem) => problem.startsWith("CLONE_UNVERIFIED:")), "CLONE_UNVERIFIED stays in the problem list");
+  assert.equal(watched.length > mentions.length, true);
   const devInCorpus = sources.filter((s) => s.name === "PeaceG03/PeaceSTOCKS");
   assert.ok(devInCorpus.length > 0, "PeaceSTOCKS stays a corpus source; it is dev, not held out");
 });
@@ -700,12 +701,36 @@ test("replay passes only on GATE PASS plus a failing-then-passing test, and an u
   assert.equal(doc.credit, false);
   assert.equal(doc.protectedFunction, "checkCandidateScope");
   assert.equal(doc.protectedFile, "peaceai/lib/scope.ts");
-  assert.equal(doc.counts["held-out"].unmeasured, 1);
-  assert.equal(doc.counts["held-out"].pass, 0);
-  assert.equal(doc.counts.dev.pass, 1);
-  assert.equal(JSON.stringify(doc).includes("diff"), false);
+  assert.equal(doc.counts.text["held-out"].unmeasured, 1);
+  assert.equal(doc.counts.text["held-out"].pass, 0);
+  assert.equal(doc.counts.text.dev.pass, 1);
+  assert.equal(doc.counts["test-as-spec"].dev.pass, 0);
+  assert.equal(doc.rows[0]?.understanding, "text");
+  assert.equal(doc.rows.filter((row) => row.split !== "dev").every((row) => !("diff" in row) && !("counterexample" in row)), true);
+  const heldFit = replayDocument([{
+    repo: "sindresorhus/is", split: "held-out", fixSha: "e".repeat(40), status: "fail", reason: "VERIFIED_TEST_ONLY", gap: true, understanding: "test-as-spec",
+    fit: { shape: "literal", examples: 1, behavior: "verified_test_only", diff: "--- a/src/a.ts\n+++ b/src/a.ts\n", counterexample: { args: "[1]", candidate: "4", fix: "2" } },
+  }]);
+  assert.equal(heldFit.rows[0]?.shape, "literal");
+  assert.equal(heldFit.rows[0]?.examples, 1);
+  assert.equal("diff" in (heldFit.rows[0] ?? {}), false);
+  assert.equal("counterexample" in (heldFit.rows[0] ?? {}), false);
+  const devFit = replayDocument([{
+    repo: "PeaceG03/PeaceSTOCKS", split: "dev", fixSha: "f".repeat(40), status: "fail", reason: "VERIFIED_TEST_ONLY", gap: true, understanding: "test-as-spec",
+    fit: { shape: "comparison", examples: 2, behavior: "verified_test_only", diff: "--- a/src/a.ts\n+++ b/src/a.ts\n", counterexample: { args: "[0]", candidate: "true", fix: "false" } },
+  }]);
+  assert.equal(devFit.rows[0]?.diff?.includes("src/a.ts"), true);
+  assert.equal(devFit.rows[0]?.counterexample?.args, "[0]");
+  assert.equal(gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: 1, afterExit: 0, behavior: "verified_test_only" }).reason, "VERIFIED_TEST_ONLY");
+  assert.equal(gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: 1, afterExit: 0, behavior: "diff_unavailable" }).status, "fail");
+  assert.equal(gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: 1, afterExit: 0, behavior: "verified_strict" }).status, "pass");
+  assert.equal(devFit.behavior.dev.verified_test_only, 1);
   const counts = countBySplit(rows);
   assert.equal(counts["held-out"].reasons.GATE_NO_TARGET, 1);
+  const spec = replayDocument([...rows, { repo: "sindresorhus/is", split: "dev", fixSha: "d".repeat(40), status: "fail", reason: "CANT_DO_YET_NO_SYMBOL", gap: true, understanding: "test-as-spec" }]);
+  assert.equal(spec.counts.text.dev.pass, 1);
+  assert.equal(spec.counts["test-as-spec"].dev.fail, 1);
+  assert.equal(spec.counts["test-as-spec"].dev.reasons.CANT_DO_YET_NO_SYMBOL, 1);
 });
 
 test("each practice repo has a scope, and a third-party target posts a patch instead of opening a PR", () => {
@@ -752,4 +777,150 @@ test("PeaceG03 repos are recorded as owner, and any other repo still needs a per
     schema: "peaceai-practice-manifest:v1", credit: false, heldOutHash: manifest.heldOutHash,
     repos: [...manifest.repos, repoOf({ name: "other/lib", license: "owner", licenseFile: null })],
   }).includes("repo_license:other/lib"));
+});
+
+test("mine-report counts match kept pairs and excluded rows", () => {
+  const pairs = read("practice/pairs.jsonl").split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line) as { repo: string });
+  const excluded = read("practice/excluded.jsonl").split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line) as { repo: string; reason: string });
+  const report = JSON.parse(read("practice/mine-report.json")) as {
+    kept: number;
+    excluded: Record<string, number>;
+    repos: { name: string; candidates: number; attempts: number; kept: number }[];
+  };
+  const keptByRepo = new Map<string, number>();
+  for (const pair of pairs) keptByRepo.set(pair.repo, (keptByRepo.get(pair.repo) ?? 0) + 1);
+  const excludedByRepo = new Map<string, number>();
+  const excludedByReason: Record<string, number> = {};
+  for (const row of excluded) {
+    excludedByRepo.set(row.repo, (excludedByRepo.get(row.repo) ?? 0) + 1);
+    excludedByReason[row.reason] = (excludedByReason[row.reason] ?? 0) + 1;
+  }
+  assert.equal(report.kept, pairs.length);
+  assert.deepEqual(report.excluded, excludedByReason);
+  for (const row of report.repos) {
+    const kept = keptByRepo.get(row.name) ?? 0;
+    const dropped = excludedByRepo.get(row.name) ?? 0;
+    assert.equal(row.kept, kept, row.name);
+    assert.equal(row.candidates, kept + dropped, row.name);
+    assert.equal(row.attempts, row.candidates, row.name);
+  }
+  assert.equal(report.repos.find((row) => row.name === "sindresorhus/is")?.kept, 20);
+  assert.equal(report.repos.find((row) => row.name === "blakeembrey/change-case")?.kept, 16);
+  assert.equal(report.repos.find((row) => row.name === "blakeembrey/change-case")?.candidates, 20);
+});
+
+test("dependency edits include nested package manifests and lockfiles", () => {
+  assert.equal(diffChangesDeps(["src/a.ts"]), false);
+  assert.equal(diffChangesDeps(["package.json"]), true);
+  assert.equal(diffChangesDeps(["packages/cli/package.json"]), true);
+  assert.equal(diffChangesDeps(["packages/cli/pnpm-lock.yaml"]), true);
+  assert.equal(diffChangesDeps(["services/api/yarn.lock"]), true);
+  assert.equal(diffChangesDeps(["packages/cli/.npmrc"]), true);
+  assert.equal(diffChangesDeps(["packages/cli/.yarnrc.yml"]), true);
+  assert.equal(diffChangesDeps(["packages/cli/.pnpmfile.cjs"]), true);
+});
+
+test("a fresh lock is not stolen, a partial install is renamed into place, and EUSAGE is BASE_NOT_FROZEN_INSTALLABLE", () => {
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const origin = tinyRepo();
+  const cache = mkdtempSync(join(tmpdir(), "practice-mutant-"));
+  const bin = mkdtempSync(join(tmpdir(), "practice-npm-"));
+  const marker = join(cache, "cwd");
+  writeFileSync(join(bin, "npm"), `#!/bin/sh\necho "$PWD" > ${JSON.stringify(marker)}\necho EUSAGE lock file is out of date >&2\nexit 1\n`);
+  spawnSync("chmod", ["+x", join(bin, "npm")], { stdio: "ignore" });
+  spawnSync("ln", ["-s", node, join(bin, "node")], { stdio: "ignore" });
+  const tool = { nodePath: join(bin, "node"), nodeVersion: "v22.23.4", manager: "npm" as const, managerVersion: "10.9.9" };
+  try {
+    const sha = spawnSync("git", ["-C", origin, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    const fingerprint = dependencyFingerprint(readText(join(origin, "package.json"), "utf8"), "", tool);
+    const lock = join(cache, "locks", `${fingerprint}.lock`);
+    mkdirSync(join(cache, "locks"), { recursive: true });
+    writeFileSync(lock, `999999 ${Date.now()}\n`);
+    const busy = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: sha, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false);
+    assert.equal(busy.ok, false);
+    assert.equal(busy.reason, "INSTALL_FAILED");
+    assert.ok(busy.lines.includes("install lock is busy"));
+    assert.equal(readText(lock, "utf8").startsWith("999999 "), true);
+    writeFileSync(lock, `999999 0\n`);
+    const failed = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: sha, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false, { timeoutMs: 20_000 });
+    assert.equal(failed.reason, "BASE_NOT_FROZEN_INSTALLABLE", failed.lines.join("\n"));
+    assert.equal(existsSync(join(cache, "installs", fingerprint)), false);
+    assert.equal(existsSync(join(cache, "installs", `${fingerprint}.partial`)), false);
+    assert.ok(readText(marker, "utf8").trim().endsWith(".partial"), readText(marker, "utf8"));
+  } finally {
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(cache, { recursive: true, force: true });
+    rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test("prune leaves an install whose fresh lock belongs to another pid", () => {
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const origin = tinyRepo();
+  const cache = mkdtempSync(join(tmpdir(), "practice-inuse-"));
+  const tool = { nodePath: node, nodeVersion: "v22.23.4", manager: "none" as const, managerVersion: "none" };
+  const commit = (name: string) => {
+    writeFileSync(join(origin, "package.json"), JSON.stringify({ name }) + "\n");
+    spawnSync("git", ["-C", origin, "add", "package.json"], { stdio: "ignore" });
+    spawnSync("git", ["-C", origin, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", name], { stdio: "ignore" });
+    return spawnSync("git", ["-C", origin, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+  };
+  try {
+    const first = commit("kept");
+    const kept = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: first, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false, { maxInstalls: 1 });
+    assert.equal(kept.ok, true);
+    const lock = join(cache, "locks", `${kept.fingerprint}.lock`);
+    mkdirSync(join(cache, "locks"), { recursive: true });
+    writeFileSync(lock, `999999 ${Date.now()}\n`);
+    const second = commit("other");
+    const next = ensurePracticeInstall(origin, { repo: "example/fresh", baseSha: second, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false, { maxInstalls: 1 });
+    assert.equal(next.ok, true);
+    assert.equal(existsSync(join(cache, "installs", kept.fingerprint!)), true, "a fresh lock is not pruned");
+  } finally {
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(cache, { recursive: true, force: true });
+  }
+});
+
+test("a renamed fork x/fpkit at a false root fails the clone check", () => {
+  const dir = mkdtempSync(join(tmpdir(), "practice-fpkit-"));
+  const clones = mkdtempSync(join(tmpdir(), "practice-clones-"));
+  const manifestPath = join(clones, "manifest.json");
+  const rootsPath = join(clones, "roots.json");
+  try {
+    spawnSync("git", ["init", "-q", dir], { stdio: "ignore" });
+    writeFileSync(join(dir, "package.json"), "{\"name\":\"fpkit\"}\n");
+    spawnSync("git", ["-C", dir, "add", "package.json"], { stdio: "ignore" });
+    spawnSync("git", ["-C", dir, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "root"], { stdio: "ignore" });
+    const root = spawnSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    spawnSync("git", ["-C", dir, "remote", "add", "origin", "https://github.com/x/fpkit.git"], { stdio: "ignore" });
+    spawnSync("git", ["-C", dir, "remote", "add", "upstream", "https://github.com/gcanti/fp-ts.git"], { stdio: "ignore" });
+    spawnSync("git", ["-C", dir, "update-ref", "refs/remotes/upstream/HEAD", root], { stdio: "ignore" });
+    const clone = join(clones, "x__fpkit");
+    spawnSync("cp", ["-a", dir, clone], { stdio: "ignore" });
+    const id = readCloneIdentity(clone);
+    assert.equal(id?.remoteUrl?.includes("x/fpkit"), true);
+    assert.equal(id?.root, root);
+    assert.equal(id?.parent, "gcanti/fp-ts");
+    assert.equal(id?.upstreamRoot, root);
+    const held = [{ name: "gcanti/fp-ts", root, upstreams: [] }];
+    const recorded = { "x/fpkit": "b".repeat(40) };
+    const problems = heldOutWatchProblems(held, [], recorded, {}, identitiesForRoots(recorded, clones));
+    assert.ok(problems.includes("FORK_FALSE_ROOT:x/fpkit"), problems.join("\n"));
+    writeFileSync(manifestPath, JSON.stringify({
+      schema: "peaceai-practice-manifest:v1", credit: false, heldOutHash: "ab".repeat(32),
+      repos: [{ name: "gcanti/fp-ts", commit: "c".repeat(40), root, license: "MIT", licenseFile: "LICENSE", split: "held-out", upstreams: [] }],
+    }));
+    writeFileSync(rootsPath, JSON.stringify({ schema: "peaceai-practice-corpus-roots:v1", credit: false, roots: recorded }));
+    const ran = spawnSync(join(repo, "node_modules/.bin/tsx"), [join(repo, "peaceai/bin/practice-mine.ts"), "--check-clones", clones, "--manifest", manifestPath, "--roots", rootsPath], { encoding: "utf8" });
+    assert.equal(ran.status, 1);
+    assert.match(ran.stdout, /FORK_FALSE_ROOT:x\/fpkit/);
+    const missing = heldOutWatchProblems(held, [], { "x/fpkit": root }, {}, {});
+    assert.ok(missing.includes("CLONE_UNVERIFIED:x/fpkit"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(clones, { recursive: true, force: true });
+  }
 });
