@@ -240,6 +240,11 @@ test("a gate timeout, signal, or crash is unmeasured, and a GATE FAIL message is
   assert.equal(pathOnly.reason, "GATE_FAIL");
   assert.equal(pathOnly.reason.includes("http"), false);
   assert.equal(pathOnly.reason.includes("secret"), false);
+  const urlKind = classifyGateRun({ status: 1, stdout: "GATE FAIL see https://example.invalid/core-text/note leak\n" });
+  assert.equal(urlKind.reason, "GATE_FAIL:leak");
+  const afterPath = classifyGateRun({ status: 1, stdout: "GATE FAIL candidate-1: core-path: src/leak.ts\n" });
+  assert.equal(afterPath.reason, "GATE_FAIL");
+  assert.equal(afterPath.reason.includes("leak"), false);
   const quiet = classifyGateRun({ status: 0, stdout: "done\n" });
   assert.deepEqual(quiet, { status: "unmeasured", reason: "GATE_ERROR:exit 0" });
   const crash = classifyGateRun({ status: 1, stderr: "Error: boom" });
