@@ -60,6 +60,9 @@ const untag = (v) => {
   if (v.k === "null") return null;
   if (v.k === "a") return v.v.map(untag);
   if (v.k === "o") { const o = {}; for (const [key, val] of Object.entries(v.v)) o[key] = untag(val); return o; }
+  if (v.k === "date") return new Date(v.v);
+  if (v.k === "set") return new Set((v.v || []).map(untag));
+  if (v.k === "map") return new Map((v.v || []).map((pair) => [untag(pair[0]), untag(pair[1])]));
   return v.v;
 };
 const seen = new WeakSet();
@@ -120,13 +123,22 @@ function tag(value: unknown): unknown {
   if (value === -Infinity) return { k: "ninf" };
   if (value === null) return { k: "null" };
   if (typeof value === "string" || typeof value === "boolean" || typeof value === "number") return { k: "v", v: value };
+  if (typeof value === "function" || typeof value === "symbol" || typeof value === "bigint") return { k: "opaque", why: typeof value };
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return { k: "date", v: Number.isNaN(time) ? null : time };
+  }
+  if (value instanceof Set) return { k: "set", v: [...value].map(tag) };
+  if (value instanceof Map) return { k: "map", v: [...value.entries()].map((pair) => [tag(pair[0]), tag(pair[1])]) };
   if (Array.isArray(value)) return { k: "a", v: value.map(tag) };
   if (typeof value === "object") {
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) return { k: "opaque", why: "instance" };
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value as Record<string, unknown>)) out[key] = tag(item);
     return { k: "o", v: out };
   }
-  return { k: "other" };
+  return { k: "opaque", why: typeof value };
 }
 
 function seedOf(text: string): number {
@@ -180,10 +192,11 @@ function everyNumericIsInteger(examples: readonly (readonly unknown[])[]): boole
 function mutants(value: unknown, flags: ParamFlags | undefined, depth = 0, fractional = false): unknown[] {
   const out: unknown[] = [];
   if (typeof value === "number" && Number.isFinite(value)) {
+    // Half-steps come first so a nested field, which keeps only a few mutants, still includes them.
+    // They do not separate every pair of thresholds. Bounds written in the two functions are probed separately.
+    if (fractional && Number.isInteger(value)) out.push(value + 0.5, value - 0.5, value + 0.25, value - 0.25, 0.5);
     out.push(value + 1, value - 1, 0, Object.is(value, 0) ? -0 : -Math.abs(value), Number.NaN);
     if (Object.is(value, 0)) out.push(-0);
-    // Half-steps split integer predicates the ±1 set cannot, such as `>` n, `>=` n+1, and `>=` n+0.5.
-    if (fractional && Number.isInteger(value)) out.push(value + 0.5, value - 0.5, value + 0.25, value - 0.25, 0.5);
   }
   else if (typeof value === "string") {
     const flipped = [...value].map((ch) => ch === ch.toLowerCase() ? ch.toUpperCase() : ch.toLowerCase()).join("");
@@ -231,8 +244,81 @@ function paramFlags(source: string, symbol: string): ParamFlags[] {
   return [];
 }
 
-/** The test's own argument lists, then seeded mutations, capped at INPUT_CAP. */
-export function behaviorInputs(examples: readonly (readonly unknown[])[], flags: readonly ParamFlags[], seedText: string): unknown[][] {
+function numericLiteral(node: ts.Node): number | null {
+  if (ts.isNumericLiteral(node)) return Number(node.text);
+  if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(node.operand)) return -Number(node.operand.text);
+  return null;
+}
+
+/** Literal bounds of `<`, `>`, `<=`, and `>=`, and whether a comparison has no literal bound. */
+export function comparisonBounds(source: string): { thresholds: number[]; unprobed: boolean } {
+  const sf = ts.createSourceFile("candidate.ts", source, ts.ScriptTarget.Latest, true);
+  const thresholds: number[] = [];
+  let unprobed = false;
+  const visit = (node: ts.Node) => {
+    if (ts.isBinaryExpression(node)) {
+      const kind = node.operatorToken.kind;
+      const comparison = kind === ts.SyntaxKind.GreaterThanToken || kind === ts.SyntaxKind.GreaterThanEqualsToken
+        || kind === ts.SyntaxKind.LessThanToken || kind === ts.SyntaxKind.LessThanEqualsToken;
+      if (comparison) {
+        const bound = numericLiteral(node.left) ?? numericLiteral(node.right);
+        if (bound === null || !Number.isFinite(bound)) unprobed = true;
+        else thresholds.push(bound);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return { thresholds: [...new Set(thresholds)], unprobed };
+}
+
+type NumPath = (string | number)[];
+
+function numberPaths(value: unknown, prefix: NumPath = []): NumPath[] {
+  if (typeof value === "number" && Number.isFinite(value)) return [prefix];
+  if (Array.isArray(value)) return value.flatMap((item, index) => numberPaths(item, [...prefix, index]));
+  if (value && typeof value === "object" && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)) {
+    return Object.keys(value).flatMap((key) => numberPaths((value as Record<string, unknown>)[key], [...prefix, key]));
+  }
+  return [];
+}
+
+function setAt(value: unknown, path: NumPath, next: number): unknown {
+  if (path.length === 0) return next;
+  const [head, ...rest] = path;
+  if (Array.isArray(value) && typeof head === "number") {
+    const copy = [...value];
+    copy[head] = setAt(value[head], rest, next);
+    return copy;
+  }
+  if (value && typeof value === "object") {
+    return { ...(value as Record<string, unknown>), [String(head)]: setAt((value as Record<string, unknown>)[String(head)], rest, next) };
+  }
+  return value;
+}
+
+/** Points on either side of each written bound, plus the midpoint between neighboring example numbers. */
+function boundaryValues(thresholds: readonly number[], samples: readonly number[]): number[] {
+  const out: number[] = [];
+  for (const bound of thresholds) for (const delta of [-1e-6, 0, 1e-6]) out.push(bound + delta);
+  const sorted = [...new Set(samples.filter((n) => Number.isFinite(n)))].sort((a, b) => a - b);
+  for (let i = 1; i < sorted.length; i++) out.push((sorted[i - 1]! + sorted[i]!) / 2);
+  return out;
+}
+
+function containsOpaque(value: unknown): boolean {
+  if (value === null || typeof value !== "object") return typeof value === "function" || typeof value === "symbol" || typeof value === "bigint";
+  if (value instanceof Date) return false;
+  if (value instanceof Set) return [...value].some(containsOpaque);
+  if (value instanceof Map) return [...value.entries()].some((pair) => containsOpaque(pair[0]) || containsOpaque(pair[1]));
+  if (Array.isArray(value)) return value.some(containsOpaque);
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return true;
+  return Object.values(value as object).some(containsOpaque);
+}
+
+/** The test's own argument lists, then boundary probes, then seeded mutations, capped at INPUT_CAP. */
+export function behaviorInputs(examples: readonly (readonly unknown[])[], flags: readonly ParamFlags[], seedText: string, thresholds: readonly number[] = []): unknown[][] {
   const originals: unknown[][] = [];
   const seen = new Set<string>();
   const add = (bucket: unknown[][], args: unknown[]) => {
@@ -242,6 +328,21 @@ export function behaviorInputs(examples: readonly (readonly unknown[])[], flags:
     bucket.push(args);
   };
   for (const example of examples) add(originals, [...example]);
+  const probed: unknown[][] = [];
+  for (const example of originals) {
+    for (const path of numberPaths(example)) {
+      const samples = originals.flatMap((args) => {
+        let cur: unknown = args;
+        for (const step of path) {
+          if (Array.isArray(cur) && typeof step === "number") cur = cur[step];
+          else if (cur && typeof cur === "object") cur = (cur as Record<string, unknown>)[String(step)];
+          else return [];
+        }
+        return typeof cur === "number" ? [cur] : [];
+      });
+      for (const next of boundaryValues(thresholds, samples)) add(probed, setAt(example, path, next) as unknown[]);
+    }
+  }
   const varied: unknown[][] = [];
   const fractional = everyNumericIsInteger(originals);
   for (const example of originals) {
@@ -253,7 +354,7 @@ export function behaviorInputs(examples: readonly (readonly unknown[])[], flags:
       }
     });
   }
-  const ordered = [...originals, ...shuffle(varied, seedOf(seedText))];
+  const ordered = [...originals, ...probed, ...shuffle(varied, seedOf(seedText))];
   return ordered.slice(0, INPUT_CAP);
 }
 
@@ -337,9 +438,19 @@ export function gradeBehavior(input: {
   nodeModules?: string | null;
 }): BehaviorGrade {
   let source = "";
+  let fixSource = "";
   try { source = readFileSync(join(input.candidateRoot, input.target.file), "utf8"); } catch { source = ""; }
+  try { fixSource = readFileSync(join(input.fixRoot, input.target.file), "utf8"); } catch { fixSource = ""; }
+  if (input.target.args.some((args) => args.some(containsOpaque))) return { behavior: "diff_unavailable", compared: 0 };
+  const candidateBounds = comparisonBounds(source);
+  const fixBounds = comparisonBounds(fixSource);
   const flags = paramFlags(source, input.target.form === "named" ? input.target.exportName : input.target.symbol);
-  const inputs = behaviorInputs(input.target.args, flags, `${input.target.symbol}\0${input.target.file}\0${JSON.stringify(input.target.args.map(tag))}`);
+  const inputs = behaviorInputs(
+    input.target.args,
+    flags,
+    `${input.target.symbol}\0${input.target.file}\0${JSON.stringify(input.target.args.map(tag))}`,
+    [...candidateBounds.thresholds, ...fixBounds.thresholds],
+  );
   if (!inputs.length) return { behavior: "diff_unavailable", compared: 0 };
   const modules = input.nodeModules ?? null;
   const nonce = randomBytes(16).toString("hex");
@@ -369,5 +480,6 @@ export function gradeBehavior(input: {
     if (!originalKeys.has(keyOf(inputs[i]!))) mutated += 1;
   }
   if (mutated < 1) return { behavior: "verified_test_only", compared: inputs.length };
+  if (candidateBounds.unprobed || fixBounds.unprobed) return { behavior: "verified_test_only", compared: inputs.length };
   return { behavior: "verified_strict", compared: inputs.length };
 }

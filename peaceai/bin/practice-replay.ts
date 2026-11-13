@@ -10,11 +10,11 @@
 // candidate and passes after it. Unmeasured is never a pass.
 // A repo that targets.json does not name is UNMEASURED GATE_NO_TARGET. gate.ts and scope.ts are not edited.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
-import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, cloneCheckProblems, ensurePracticeInstall, materializeSolverTree, mergeCloneRootCollisions, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
+import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, cloneCheckProblems, ensurePracticeInstall, materializeSolverTree, mergeCloneRootCollisions, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, processStartId, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
 import {
   PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, targetIsScorable, writePracticeOutputs,
   type GradedRow, type Understanding,
@@ -56,10 +56,49 @@ function cloneDir(repo: string, clones: string, work: string): string | null {
   return dir;
 }
 
+const HELD_TEMP_PREFIXES = ["peaceai-held-clone-", "peaceai-held-install-"];
+const HELD_OWNER = ".peaceai-owner";
+
+function ownerStamp(): string {
+  return `${process.pid} ${processStartId(process.pid) ?? "0"}\n`;
+}
+
+function ownerStillAlive(pid: number, start: string): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); } catch { return false; }
+  const now = processStartId(pid);
+  return now !== null && now === start;
+}
+
+/** Delete held-out temp dirs whose owner process is gone. A live owner is left alone. */
+export function reapStaleHeldTemps(root = tmpdir()): string[] {
+  const removed: string[] = [];
+  let names: string[] = [];
+  try { names = readdirSync(root); } catch { return removed; }
+  for (const name of names) {
+    if (!HELD_TEMP_PREFIXES.some((prefix) => name.startsWith(prefix))) continue;
+    const dir = join(root, name);
+    let text = "";
+    try { text = readFileSync(join(dir, HELD_OWNER), "utf8"); } catch { text = ""; }
+    const [pidText, start] = text.trim().split(/\s+/);
+    const pid = Number(pidText);
+    if (pid === process.pid && ownerStillAlive(pid, start ?? "")) continue;
+    if (Number.isInteger(pid) && start && ownerStillAlive(pid, start)) continue;
+    rmSync(dir, { recursive: true, force: true });
+    removed.push(dir);
+  }
+  return removed;
+}
+
+function markHeldOwner(dir: string): void {
+  writeFileSync(join(dir, HELD_OWNER), ownerStamp());
+}
+
 /** Dev clones stay under out/clones. A held-out clone is a temp directory, deleted after grading. */
 export function replayClonePlace(split: "dev" | "held-out", outDir: string): { dir: string; release(): void } {
   if (split !== "held-out") return { dir: join(outDir, "clones"), release() {} };
   const dir = mkdtempSync(join(tmpdir(), "peaceai-held-clone-"));
+  markHeldOwner(dir);
   return { dir, release() { rmSync(dir, { recursive: true, force: true }); } };
 }
 
@@ -73,6 +112,7 @@ export function openPracticeClone(repo: string, split: "dev" | "held-out", clone
 export function practiceInstallRoot(split: "dev" | "held-out", outDir: string, explicit?: string): { dir: string; release(): void } {
   if (split === "held-out") {
     const dir = mkdtempSync(join(tmpdir(), "peaceai-held-install-"));
+    markHeldOwner(dir);
     return { dir, release() { rmSync(dir, { recursive: true, force: true }); } };
   }
   return { dir: explicit ? resolve(explicit) : join(outDir, "install-cache"), release() {} };
@@ -294,7 +334,16 @@ function pushInstall(graded: GradedRow[], pair: PracticePair, reason: string, li
 }
 
 function main(): void {
+  reapStaleHeldTemps();
   const args = process.argv.slice(2);
+  if (args.includes("--hold-held-temps")) {
+    const clone = replayClonePlace("held-out", tmpdir());
+    const install = practiceInstallRoot("held-out", tmpdir());
+    console.log(`held-clone ${clone.dir}`);
+    console.log(`held-install ${install.dir}`);
+    setInterval(() => {}, 1_000_000);
+    return;
+  }
   if (args.includes("-h") || args.includes("--help")) { console.log(USAGE); return; }
   const pairsPath = flag("--pairs", args);
   const out = flag("--out", args);
@@ -333,14 +382,6 @@ function main(): void {
   const heldScratch: { release(): void }[] = [];
   const devCache = installCache ? resolve(installCache) : join(out, "install-cache");
   let heldCache: { dir: string; release(): void } | null = null;
-  const stop = (code: number) => {
-    releaseHeldPlaces(heldScratch);
-    process.exit(code);
-  };
-  const onInt = () => stop(130);
-  const onTerm = () => stop(143);
-  process.on("SIGINT", onInt);
-  process.on("SIGTERM", onTerm);
   try {
     const repos = new Map<string, string | null>();
     for (const pair of pairs) {
@@ -395,8 +436,6 @@ function main(): void {
       graded.push(specOne(tooling, coreDir, dir, pair, installed.modules));
     }
   } finally {
-    process.off("SIGINT", onInt);
-    process.off("SIGTERM", onTerm);
     dispose();
     releaseHeldPlaces(heldScratch);
   }

@@ -799,3 +799,133 @@ test("a scaffolded integer comparison is not strict against a fix the half-step 
   assert.notEqual(grade(scaffolded, other).behavior, "verified_strict");
   assert.notEqual(grade(scaffolded, fn("a >= 0.5")).behavior, "verified_strict");
 });
+
+test("nested numbers keep a half-step, and a written bound is probed", () => {
+  const fields = behaviorInputs([[{ n: 1 }]], [], "field");
+  assert.equal(fields.some((args) => (args[0] as { n: number }).n === 1.5), true);
+  assert.equal(fields.some((args) => (args[0] as { n: number }).n === 0.5), true);
+  const probed = behaviorInputs([[{ n: 0 }], [{ n: 1 }]], [], "bound", [0, 0.1, 0.8, 1]);
+  const values = probed.map((args) => (args[0] as { n: number }).n);
+  assert.equal(values.some((n) => Math.abs(n - (0.1 - 1e-6)) < 1e-12), true);
+  assert.equal(values.some((n) => Math.abs(n - 0.8) < 1e-12), true);
+});
+
+test("threshold gaps, dates, sets, instances, and throws are not strict", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const nodePath = visibleNodeBin();
+  if (!nodePath) { t.skip("no visible node"); return; }
+  const write = (file: string, body: string) => {
+    const root = mkdtempSync(join(tmpdir(), "peaceai-gap-"));
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, file), body);
+    return root;
+  };
+  const grade = (file: string, symbol: string, candidate: string, fix: string, args: unknown[][]) => {
+    const left = write(file, candidate);
+    const right = write(file, fix);
+    try {
+      return gradeBehavior({
+        candidateRoot: left, fixRoot: right, nodePath,
+        target: { symbol, file, form: "named", exportName: symbol, args },
+      });
+    } finally {
+      rmSync(left, { recursive: true, force: true });
+      rmSync(right, { recursive: true, force: true });
+    }
+  };
+  const fn = (name: string, params: string, expr: string) => `export function ${name}(${params}): boolean {\n  return ${expr};\n}\n`;
+  const ints = [[-1], [0], [1], [2]];
+  assert.notEqual(grade("src/above.ts", "above", fn("above", "a: number", "a > 0"), fn("above", "a: number", "a >= 0.1"), ints).behavior, "verified_strict");
+  assert.notEqual(grade("src/above.ts", "above", fn("above", "a: number", "a >= 1"), fn("above", "a: number", "a >= 0.8"), ints).behavior, "verified_strict");
+  const objects = [[{ n: -1 }], [{ n: 0 }], [{ n: 1 }], [{ n: 2 }]];
+  const field = (expr: string) => `export function above(a: { n: number }): boolean {\n  return ${expr};\n}\n`;
+  assert.notEqual(grade("src/above.ts", "above", field("a.n > 0"), field("a.n >= 1"), objects).behavior, "verified_strict");
+  const dated = (body: string) => `export function stamp(d: Date): number {\n  ${body}\n}\n`;
+  const stamped = grade("src/stamp.ts", "stamp", dated("return d instanceof Date ? d.getTime() : -1;"), dated("return d instanceof Date ? 0 : -1;"), [[new Date(5)]]);
+  assert.equal(stamped.behavior, "verified_test_only");
+  assert.match(stamped.counterexample?.candidate ?? "", /5/);
+  const made = (when: number) => `export function born(_n: number): Date {\n  return new Date(${when});\n}\n`;
+  const births = grade("src/born.ts", "born", made(5), made(9), [[1]]);
+  assert.equal(births.behavior, "verified_test_only");
+  assert.match(births.counterexample?.candidate ?? "", /5/);
+  const setted = (body: string) => `export function has(s: Set<number>): boolean {\n  ${body}\n}\n`;
+  const membership = grade("src/has.ts", "has", setted("return s instanceof Set && s.has(1);"), setted("return s instanceof Set && s.has(2);"), [[new Set([1])]]);
+  assert.equal(membership.behavior, "verified_test_only");
+  assert.match(membership.counterexample?.candidate ?? "", /true/);
+  const bag = (n: number) => `export function bag(_x: number): Set<number> {\n  return new Set([${n}]);\n}\n`;
+  const bags = grade("src/bag.ts", "bag", bag(1), bag(2), [[1]]);
+  assert.equal(bags.behavior, "verified_test_only");
+  const boxed = "export function box(n: number): object {\n  class Box {\n    n: number;\n    constructor(value: number) { this.n = value; }\n  }\n  return new Box(n);\n}\n";
+  const plain = "export function box(n: number): object {\n  return { n };\n}\n";
+  assert.equal(grade("src/box.ts", "box", boxed, plain, [[1]]).behavior, "diff_unavailable");
+  const thrown = "export function gate(n: number): number {\n  throw n;\n}\n";
+  const returned = "export function gate(n: number): number {\n  return n;\n}\n";
+  assert.notEqual(grade("src/gate.ts", "gate", thrown, returned, [[1]]).behavior, "verified_strict");
+  const open = "export function cmp(a: number, b: number): boolean {\n  return a > b;\n}\n";
+  assert.equal(grade("src/cmp.ts", "cmp", open, open, [[1, 0], [0, 1]]).behavior, "verified_test_only");
+});
+
+test("kevva/is-positive scaffolds an integer comparison and the module runs", () => {
+  const source = [
+    "// MIT License",
+    "//",
+    "// Copyright (c) Kevin Martensson <email address omitted> (https://github.com/kevva/is-positive)",
+    "//",
+    "// Permission is hereby granted, free of charge, to any person obtaining a copy",
+    "// of this software and associated documentation files (the \"Software\"), to deal",
+    "// in the Software without restriction, including without limitation the rights",
+    "// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell",
+    "// copies of the Software, and to permit persons to whom the Software is",
+    "// furnished to do so, subject to the following conditions:",
+    "//",
+    "// The above copyright notice and this permission notice shall be included in all",
+    "// copies or substantial portions of the Software.",
+    "//",
+    "// THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR",
+    "// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,",
+    "// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE",
+    "// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER",
+    "// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,",
+    "// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE",
+    "// SOFTWARE.",
+    "//",
+    "// The published file calls a free toString. This copy binds that to Object.prototype.toString.",
+    "const toString = Object.prototype.toString;",
+    "export function isPositive(n: unknown): boolean {",
+    "\treturn toString.call(n) === \"[object Number]\" && (n as number) > 0;",
+    "}",
+    "",
+  ].join("\n");
+  assert.equal(source.includes("@"), false);
+  assert.match(source, /Permission is hereby granted/);
+  const calls = [
+    'import { isPositive } from "./is-positive.ts";',
+    "import assert from \"node:assert\";",
+    "assert.equal(isPositive(-1), false);",
+    "assert.equal(isPositive(0), false);",
+    "assert.equal(isPositive(1), true);",
+    "assert.equal(isPositive(2), true);",
+  ].join("\n");
+  const plan = scaffoldPlan("src/is-positive.test.ts", calls, "Error [ERR_MODULE_NOT_FOUND]: Cannot find module './is-positive.ts'", PATTERN, [], () => null);
+  assert.equal(plan?.ok, true);
+  if (!plan?.ok) return;
+  assert.match(plan.files[0]!.content, /return a > 0|return a >= 1/);
+  const root = mkdtempSync(join(tmpdir(), "peaceai-is-positive-"));
+  try {
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src/is-positive.ts"), plan.files[0]!.content);
+    writeFileSync(join(root, "run.mjs"), [
+      "import { isPositive } from './src/is-positive.ts';",
+      "const values = [-1, 0, 1, 2].map((n) => isPositive(n));",
+      "console.log(JSON.stringify(values));",
+      "",
+    ].join("\n"));
+    const ran = spawnSync(process.execPath, ["--experimental-strip-types", join(root, "run.mjs")], { encoding: "utf8" });
+    assert.equal(ran.status, 0, ran.stderr);
+    const toString = Object.prototype.toString;
+    const real = (n: unknown) => toString.call(n) === "[object Number]" && (n as number) > 0;
+    assert.deepEqual(JSON.parse(ran.stdout), [-1, 0, 1, 2].map(real));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
