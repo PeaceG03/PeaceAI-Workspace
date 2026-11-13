@@ -553,6 +553,17 @@ function lockOwnerAlive(pid: number): boolean {
   }
 }
 
+/** Start-time token from /proc, so a recycled pid is not the lock owner. */
+export function processStartId(pid: number): string | null {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const end = stat.lastIndexOf(")");
+    if (end < 0) return null;
+    const start = stat.slice(end + 2).trim().split(/\s+/)[19];
+    return start && /^\d+$/.test(start) ? start : null;
+  } catch { return null; }
+}
+
 /**
  * A live owner's lock is never taken over. Age applies only after the owner is dead.
  * An empty or unwritten lock stays busy until LOCK_EMPTY_GRACE_MS after its mtime.
@@ -561,11 +572,14 @@ function lockIsStale(path: string): boolean {
   try {
     const text = readFileSync(path, "utf8");
     const mtime = lstatSync(path).mtimeMs;
-    const [pidText, tsText] = text.trim().split(/\s+/);
+    const [pidText, tsText, startText] = text.trim().split(/\s+/);
     const pid = Number(pidText);
     const ts = Number(tsText);
     if (!text.trim() || !Number.isInteger(pid) || pid <= 0 || !Number.isFinite(ts)) return Date.now() - mtime > LOCK_EMPTY_GRACE_MS;
-    if (lockOwnerAlive(pid)) return false;
+    if (lockOwnerAlive(pid)) {
+      const start = processStartId(pid);
+      if (!startText || !start || startText === start) return false;
+    }
     return Date.now() - ts > LOCK_STALE_MS;
   } catch { return true; }
 }
@@ -576,7 +590,8 @@ function withLock<T>(path: string, fn: () => T): T | { busy: true } {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const fd = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY);
-      writeSync(fd, `${process.pid} ${Date.now()}\n`);
+      const start = processStartId(process.pid) ?? "0";
+      writeSync(fd, `${process.pid} ${Date.now()} ${start}\n`);
       closeSync(fd);
       try { return fn(); } finally { rmSync(path, { force: true }); }
     } catch (err) {
@@ -708,10 +723,14 @@ export function toolchainProblems(value: unknown): string[] {
 
 export interface RemoteIdentity {
   remoteUrl: string | null;
+  /** The sole root commit, when the history has one. Null when there are several; see `roots`. */
   root: string | null;
+  /** Every root commit (`git rev-list --max-parents=0 HEAD`), sorted. */
+  roots?: readonly string[];
   parent: string | null;
   source: string | null;
   upstreamRoot: string | null;
+  upstreamRoots?: readonly string[];
 }
 
 export function repoFromRemote(url: string): string | null {
@@ -719,22 +738,32 @@ export function repoFromRemote(url: string): string | null {
   return match ? match[1]! : null;
 }
 
-/** Remote, HEAD, and upstream of one local clone. Missing or unreadable git data is null. */
+function commitList(text: string): string[] {
+  return [...new Set(text.split("\n").map((line) => line.trim()).filter((line) => /^[0-9a-f]{40}$/.test(line)))].sort();
+}
+
+/** Root commits of HEAD. A later tip is not a root. Several roots are all returned. */
+export function rootCommits(dir: string, rev = "HEAD"): string[] {
+  const ran = practiceGit(dir, ["rev-list", "--max-parents=0", rev]);
+  return ran.ok ? commitList(ran.out) : [];
+}
+
+/** Remote and root commits of one local clone. The tip commit is not the root. */
 export function readCloneIdentity(dir: string): RemoteIdentity | null {
   if (!existsSync(join(dir, ".git"))) return null;
   const remote = practiceGit(dir, ["remote", "get-url", "origin"]);
-  const root = practiceGit(dir, ["rev-parse", "HEAD"]);
   const remoteUrl = remote.ok ? remote.out.trim() : null;
-  const rootSha = root.ok && /^[0-9a-f]{40}$/.test(root.out.trim()) ? root.out.trim() : null;
+  const roots = rootCommits(dir);
+  const root = roots.length === 1 ? roots[0]! : null;
   const upstreamUrl = practiceGit(dir, ["remote", "get-url", "upstream"]);
   const parent = upstreamUrl.ok ? repoFromRemote(upstreamUrl.out.trim()) : null;
-  let upstreamRoot: string | null = null;
-  if (parent) {
-    const up = practiceGit(dir, ["rev-parse", "--verify", "refs/remotes/upstream/HEAD"]);
-    if (up.ok && /^[0-9a-f]{40}$/.test(up.out.trim())) upstreamRoot = up.out.trim();
+  let upstreamRoots: string[] = [];
+  if (parent && practiceGit(dir, ["rev-parse", "--verify", "--quiet", "refs/remotes/upstream/HEAD"]).ok) {
+    upstreamRoots = rootCommits(dir, "refs/remotes/upstream/HEAD");
   }
-  if (!remoteUrl && !rootSha) return null;
-  return { remoteUrl, root: rootSha, parent, source: parent, upstreamRoot };
+  const upstreamRoot = upstreamRoots.length === 1 ? upstreamRoots[0]! : null;
+  if (!remoteUrl && roots.length === 0) return null;
+  return { remoteUrl, root, roots, parent, source: parent, upstreamRoot, ...(upstreamRoots.length ? { upstreamRoots } : {}) };
 }
 
 /** One identity per recorded root. A missing clone is null, which falseRootProblems reports as CLONE_UNVERIFIED. */
@@ -744,16 +773,40 @@ export function identitiesForRoots(recorded: Readonly<Record<string, string | nu
   return out;
 }
 
-/** Held-out clone check. A missing clones directory, or a root with no identity, is CLONE_UNVERIFIED. */
+/**
+ * Repos a practice replay must identify: the practice manifest, plus any corpus root that
+ * shares a name or a root commit with one of them. Other corpus repos are not checked.
+ */
+export function replayCloneRecord(
+  practice: readonly { name: string; root: string; split: string }[],
+  corpus: Readonly<Record<string, string | null>>,
+): Record<string, string | null> {
+  const names = new Set(practice.map((repo) => repo.name.toLowerCase()));
+  const roots = new Set(practice.map((repo) => repo.root));
+  const out: Record<string, string | null> = {};
+  for (const repo of practice) out[repo.name] = repo.root;
+  for (const [name, root] of Object.entries(corpus)) {
+    if (names.has(name.toLowerCase()) || (typeof root === "string" && roots.has(root))) out[name] = root;
+  }
+  return out;
+}
+
+function identityRoots(id: RemoteIdentity): string[] {
+  if (id.roots && id.roots.length) return [...id.roots];
+  return id.root ? [id.root] : [];
+}
+
+/** Clone check for the recorded set. A missing or empty clones directory fails closed. */
 export function cloneCheckProblems(
   heldOut: readonly { name: string; root: string; upstreams?: readonly string[] }[],
   recorded: Readonly<Record<string, string | null>>,
   clonesDir: string,
 ): string[] {
-  const identities = clonesDir
-    ? identitiesForRoots(recorded, clonesDir)
-    : Object.fromEntries(Object.keys(recorded).map((name) => [name, null]));
-  return heldOutWatchProblems(heldOut, [], recorded, {}, identities);
+  if (!clonesDir || !existsSync(clonesDir)) return Object.keys(recorded).map((name) => `CLONE_UNVERIFIED:${name}`).sort();
+  let names: string[] = [];
+  try { names = readdirSync(clonesDir); } catch { return Object.keys(recorded).map((name) => `CLONE_UNVERIFIED:${name}`).sort(); }
+  if (names.length === 0) return Object.keys(recorded).map((name) => `CLONE_UNVERIFIED:${name}`).sort();
+  return heldOutWatchProblems(heldOut, [], recorded, {}, identitiesForRoots(recorded, clonesDir));
 }
 
 /**
@@ -768,19 +821,21 @@ export function falseRootProblems(
   const problems: string[] = [];
   for (const [name, recordedRoot] of Object.entries(recorded)) {
     const id = Object.prototype.hasOwnProperty.call(identities, name) ? identities[name] : undefined;
-    if (id === undefined || !id || !id.remoteUrl || !id.root) { problems.push(`CLONE_UNVERIFIED:${name}`); continue; }
+    const roots = id ? identityRoots(id) : [];
+    if (id === undefined || !id || !id.remoteUrl || roots.length === 0) { problems.push(`CLONE_UNVERIFIED:${name}`); continue; }
     const remote = repoFromRemote(id.remoteUrl);
     if (!remote) { problems.push(`REMOTE_UNPARSED:${name}`); continue; }
     // A recorded parent does not excuse a remote URL that names a different repository.
     if (remote.toLowerCase() !== name.toLowerCase()) problems.push(`REMOTE_NAME:${name}`);
     const upstream = id.source ?? id.parent;
-    if (typeof recordedRoot === "string" && recordedRoot !== id.root) {
-      if (heldOut.some((held) => held.root === id.root && held.name.toLowerCase() !== name.toLowerCase())) problems.push(`FORK_FALSE_ROOT:${name}`);
+    if (typeof recordedRoot === "string" && !roots.includes(recordedRoot)) {
+      if (heldOut.some((held) => roots.includes(held.root) && held.name.toLowerCase() !== name.toLowerCase())) problems.push(`FORK_FALSE_ROOT:${name}`);
       else problems.push(`ROOT_MISMATCH:${name}`);
     }
     if (upstream && upstream.toLowerCase() !== name.toLowerCase()) {
-      if (!id.upstreamRoot) problems.push(`UPSTREAM_ROOT_UNVERIFIED:${name}`);
-      else if (id.upstreamRoot !== id.root) problems.push(`FORK_ROOT:${name}`);
+      const ups = id.upstreamRoots?.length ? [...id.upstreamRoots] : (id.upstreamRoot ? [id.upstreamRoot] : []);
+      if (!ups.length) problems.push(`UPSTREAM_ROOT_UNVERIFIED:${name}`);
+      else if (ups.some((sha) => !roots.includes(sha))) problems.push(`FORK_ROOT:${name}`);
     }
   }
   return [...new Set(problems)].sort();

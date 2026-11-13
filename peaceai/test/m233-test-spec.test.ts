@@ -626,4 +626,45 @@ test("generalization: argument state, signed zero, infinities, throws, and the m
     [[2]],
   );
   assert.equal(spoof.behavior, "verified_strict");
+  const message = grade(
+    "src/gate.ts", "gate",
+    "export function gate(n: number): number { if (n < 0) throw new Error(\"left\"); return n; }\n",
+    "export function gate(n: number): number { if (n < 0) throw new Error(\"right\"); return n; }\n",
+    [[1]],
+  );
+  assert.equal(message.behavior, "verified_test_only");
+});
+
+test("real dev-split functions: a matching guard is strict and a boundary change is not", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const nodePath = visibleNodeBin();
+  if (!nodePath) { t.skip("no visible node"); return; }
+  const source = readFileSync(join(import.meta.dirname, "fixtures/dev-spec/is-number.ts"), "utf8");
+  assert.match(source, /MIT/);
+  assert.match(source, /sindresorhus/);
+  const tree = (text: string) => {
+    const root = mkdtempSync(join(tmpdir(), "peaceai-real-"));
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src/is-number.ts"), text);
+    return root;
+  };
+  const real = tree(source);
+  const again = tree(source);
+  const wrong = tree(source.replace("value > 0", "value >= 0"));
+  try {
+    const match = gradeBehavior({
+      candidateRoot: real, fixRoot: again, nodePath,
+      target: { symbol: "isPositiveNumber", file: "src/is-number.ts", form: "named", exportName: "isPositiveNumber", args: [[1], [0], [-1]] },
+    });
+    assert.equal(match.behavior, "verified_strict");
+    const near = gradeBehavior({
+      candidateRoot: wrong, fixRoot: real, nodePath,
+      target: { symbol: "isPositiveNumber", file: "src/is-number.ts", form: "named", exportName: "isPositiveNumber", args: [[1]] },
+    });
+    assert.equal(near.behavior, "verified_test_only");
+  } finally {
+    rmSync(real, { recursive: true, force: true });
+    rmSync(again, { recursive: true, force: true });
+    rmSync(wrong, { recursive: true, force: true });
+  }
 });

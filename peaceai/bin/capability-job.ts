@@ -255,6 +255,12 @@ function productionGate(tooling: string, dir: string, outDir: string, coreDir: s
   return classifyGateRun({ status: ran.status, signal: ran.signal, error, stdout: ran.stdout, stderr: ran.stderr }, count);
 }
 
+/** A Job A generate timeout is unmeasured. It is not a capability fail. */
+export function classifyGenerateRun(ran: { error?: { code?: string } | null }): { status: "unmeasured"; reason: string } | null {
+  if (ran.error?.code === "ETIMEDOUT") return { status: "unmeasured", reason: "GENERATE_TIMEOUT" };
+  return null;
+}
+
 /** One private work tree per row. The suffix is random, so two replays of the same seq do not share a path. */
 export function jobaWorkDir(seq: number): string {
   return mkdtempSync(join(tmpdir(), `peaceai-joba-${seq}-`));
@@ -292,6 +298,8 @@ function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, 
     if (existsSync(summary)) {
       try { candidates = ((JSON.parse(readFileSync(summary, "utf8")) as { candidates?: unknown[] }).candidates ?? []).length; } catch { candidates = null; }
     }
+    const generated = classifyGenerateRun({ error: r.error as NodeJS.ErrnoException | undefined });
+    if (generated) return generated;
     const timedOut = (r.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT";
     const gated = productionGate(tooling, dir, outDir, coreDir, `PeaceG03/${ref.repo}`);
     if (gated) return gated;

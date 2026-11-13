@@ -11,7 +11,7 @@ import { CORE_ENTRY, adoptIssueBody, agreedIssue, boundReplay, classifyJobOutput
 import { cleanIssueText } from "../lib/taskmap.ts";
 import { trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
 import { indexGitTree } from "../lib/coreindex.ts";
-import { archiveSha256, classifyGateRun, coreStillPinned, extractPinnedCore, gitTreeSha, jobaWorkDir, pinnedKernel, readCorePin, type CorePin } from "../bin/capability-job.ts";
+import { archiveSha256, classifyGateRun, classifyGenerateRun, coreStillPinned, extractPinnedCore, gitTreeSha, jobaWorkDir, pinnedKernel, readCorePin, type CorePin } from "../bin/capability-job.ts";
 
 const repo = resolve(import.meta.dirname, "../..");
 const tsx = join(repo, "node_modules/.bin/tsx");
@@ -243,6 +243,9 @@ test("a gate timeout, signal, or crash is unmeasured, and a GATE FAIL message is
   const pass = classifyGateRun({ status: 0, stdout: "GATE PASS candidates=1\n" }, 1);
   assert.deepEqual(pass, { status: "pass", reason: "GATE_PASS:1" });
   for (const row of [timeout, signal, crash, other]) assert.notEqual(row.status, "pass");
+  const generateTimeout = classifyGenerateRun({ error: { code: "ETIMEDOUT" } });
+  assert.deepEqual(generateTimeout, { status: "unmeasured", reason: "GENERATE_TIMEOUT" });
+  assert.equal(classifyGenerateRun({ error: null }), null);
   assert.equal(realPercent(1, 4, 1), null);
   assert.equal(realPercent(1, 4, 0), 25);
 });

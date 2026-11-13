@@ -64,22 +64,43 @@ export interface GradedRow {
   };
   /** Sanitized install log from the fingerprint install. Present when that install did not produce a tree. */
   lines?: string[];
+  /** Recorded test exit before the candidate, when the row ran that test. */
+  beforeExit?: number;
+  /** Recorded test exit after the candidate. */
+  afterExit?: number;
 }
 
 /** One row. Unmeasured never comes back as pass. A pass requires GATE PASS and fail-before/pass-after. */
-export function gradePracticeRow(input: GradeInput): { status: RowStatus; reason: string; gap: boolean } {
-  if (!input.scorable) return { status: "unmeasured", reason: "GATE_NO_TARGET", gap: true };
-  if (input.core !== "ok") return { status: "unmeasured", reason: "NO_CORE", gap: true };
-  if (!input.job) return { status: "unmeasured", reason: "NOT_RUN", gap: true };
-  if (input.job.status === "unmeasured") return { status: "unmeasured", reason: input.job.reason, gap: true };
-  if (input.job.status === "fail") return { status: "fail", reason: input.job.reason, gap: true };
-  if (input.behavior === "verified_test_only") return { status: "fail", reason: "VERIFIED_TEST_ONLY", gap: true };
-  if (input.behavior === "diff_unavailable") return { status: "fail", reason: "DIFF_UNAVAILABLE", gap: true };
-  if (!input.gatePass) return { status: "fail", reason: "GATE_FAIL", gap: false };
-  if (input.beforeExit === null || input.afterExit === null) return { status: "unmeasured", reason: "TEST_NOT_RUN", gap: true };
-  if (input.beforeExit === 0) return { status: "unmeasured", reason: "TEST_BASE_NOT_FAILING", gap: true };
-  if (input.afterExit !== 0) return { status: "fail", reason: "TEST_STILL_FAILS", gap: false };
-  return { status: "pass", reason: "GATE_PASS_AND_TEST", gap: false };
+export function gradePracticeRow(input: GradeInput): { status: RowStatus; reason: string; gap: boolean; beforeExit?: number; afterExit?: number } {
+  const exits: { beforeExit?: number; afterExit?: number } = {};
+  if (typeof input.beforeExit === "number") exits.beforeExit = input.beforeExit;
+  if (typeof input.afterExit === "number") exits.afterExit = input.afterExit;
+  const row = (status: RowStatus, reason: string, gap: boolean) => ({ status, reason, gap, ...exits });
+  if (!input.scorable) return row("unmeasured", "GATE_NO_TARGET", true);
+  if (input.core !== "ok") return row("unmeasured", "NO_CORE", true);
+  if (!input.job) return row("unmeasured", "NOT_RUN", true);
+  if (input.job.status === "unmeasured") return row("unmeasured", input.job.reason, true);
+  if (input.job.status === "fail") return row("fail", input.job.reason, true);
+  if (input.behavior === "verified_test_only") return row("fail", "VERIFIED_TEST_ONLY", true);
+  if (input.behavior === "diff_unavailable") return row("fail", "DIFF_UNAVAILABLE", true);
+  if (!input.gatePass) return row("fail", "GATE_FAIL", false);
+  if (input.beforeExit === null || input.afterExit === null) return row("unmeasured", "TEST_NOT_RUN", true);
+  if (input.beforeExit === 0) return row("unmeasured", "TEST_BASE_NOT_FAILING", true);
+  if (input.afterExit !== 0) return row("fail", "TEST_STILL_FAILS", false);
+  return row("pass", "GATE_PASS_AND_TEST", false);
+}
+
+/** One gaps.jsonl object. Held-out rows keep counts, reasons, and exit codes, not a diff or a counterexample. */
+export function gapRecord(row: GradedRow): Record<string, unknown> {
+  const fit = publishedFit(row);
+  return {
+    repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason,
+    ...(typeof row.beforeExit === "number" ? { beforeExit: row.beforeExit } : {}),
+    ...(typeof row.afterExit === "number" ? { afterExit: row.afterExit } : {}),
+    ...(row.lines && row.lines.length ? { lines: row.lines } : {}),
+    ...(row.diagnostic ? { diagnostic: row.diagnostic } : {}),
+    ...(fit ? { shape: fit.shape, examples: fit.examples, behavior: fit.behavior, ...(fit.diff ? { diff: fit.diff } : {}), ...(fit.counterexample ? { counterexample: fit.counterexample } : {}) } : {}),
+  };
 }
 
 export function targetIsScorable(repo: string, names: readonly string[] = Object.keys(loadTargets().targets)): boolean {

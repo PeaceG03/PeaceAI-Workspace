@@ -14,9 +14,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
-import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, cloneCheckProblems, ensurePracticeInstall, materializeSolverTree, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
+import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, cloneCheckProblems, ensurePracticeInstall, materializeSolverTree, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
 import {
-  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, publishedFit, replayDocument, targetIsScorable,
+  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gapRecord, gradePracticeRow, replayDocument, targetIsScorable,
   type GradedRow, type Understanding,
 } from "../lib/practicereplay.ts";
 import { gradeBehavior, type BehaviorGrade } from "../lib/specgrade.ts";
@@ -282,8 +282,9 @@ function main(): void {
   // generate.ts stays outside the sandbox: the sandbox hides .git and does not mount the PeaceAI
   // tooling or the kernel bundle, and the candidate output directory is not the work tree.
   const manifest = JSON.parse(readFileSync(join(tooling, "practice/manifest.json"), "utf8")) as { repos: { name: string; root: string; split: string; upstreams?: string[] }[] };
-  const recorded = (JSON.parse(readFileSync(join(tooling, "practice/corpus-roots.json"), "utf8")) as { roots?: Record<string, string | null> }).roots ?? {};
+  const corpus = (JSON.parse(readFileSync(join(tooling, "practice/corpus-roots.json"), "utf8")) as { roots?: Record<string, string | null> }).roots ?? {};
   const held = manifest.repos.filter((repo) => repo.split === "held-out").map((repo) => ({ name: repo.name, root: repo.root, upstreams: repo.upstreams ?? [] }));
+  const recorded = replayCloneRecord(manifest.repos, corpus);
   const cloneProblems = cloneCheckProblems(held, recorded, clones);
   if (cloneProblems.length) {
     for (const problem of cloneProblems) console.log(problem);
@@ -353,15 +354,7 @@ function main(): void {
   const doc = replayDocument(graded);
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, "replay.json"), JSON.stringify(doc, null, 2) + "\n");
-  const gaps = graded.filter((row) => row.gap || row.fit).map((row) => {
-    const fit = publishedFit(row);
-    return JSON.stringify({
-      repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text", status: row.status, reason: row.reason,
-      ...(row.lines && row.lines.length ? { lines: row.lines } : {}),
-      ...(row.diagnostic ? { diagnostic: row.diagnostic } : {}),
-      ...(fit ? { shape: fit.shape, examples: fit.examples, behavior: fit.behavior, ...(fit.diff ? { diff: fit.diff } : {}), ...(fit.counterexample ? { counterexample: fit.counterexample } : {}) } : {}),
-    });
-  });
+  const gaps = graded.filter((row) => row.gap || row.fit).map((row) => JSON.stringify(gapRecord(row)));
   writeFileSync(join(out, "gaps.jsonl"), gaps.join("\n") + (gaps.length ? "\n" : ""));
   console.log("experimental credit=false");
   if (graded.some((row) => row.reason === "GATE_NO_TARGET")) {
