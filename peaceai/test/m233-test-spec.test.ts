@@ -1079,3 +1079,42 @@ test("probe overflow, Object.is, switch, includes, and an unprobed fix are not s
     rmSync(right, { recursive: true, force: true });
   }
 });
+
+test("collection literals and numeric strings are probed, and the same pair stays strict", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const nodePath = visibleNodeBin();
+  if (!nodePath) { t.skip("no visible node"); return; }
+  const write = (body: string) => {
+    const root = mkdtempSync(join(tmpdir(), "peaceai-lit-"));
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src/f.ts"), body);
+    return root;
+  };
+  const grade = (candidate: string, fix: string, args: unknown[][]) => {
+    const left = write(candidate);
+    const right = write(fix);
+    try {
+      return gradeBehavior({
+        candidateRoot: left, fixRoot: right, nodePath,
+        target: { symbol: "f", file: "src/f.ts", form: "named", exportName: "f", args },
+      }).behavior;
+    } finally {
+      rmSync(left, { recursive: true, force: true });
+      rmSync(right, { recursive: true, force: true });
+    }
+  };
+  const fn = (expr: string) => `export function f(a: number): boolean {\n  return ${expr};\n}\n`;
+  const ints = [[-1], [0], [1], [2]];
+  const pairs = [
+    ["[0.1].indexOf(a) !== -1", "false"],
+    ["new Set([0.1]).has(a)", "false"],
+    ["new Map([[0.1, true]]).get(a) === true", "false"],
+    ["({ 0.1: true } as Record<string, boolean>)[String(a)] === true", "false"],
+    ["a > 0 && String(a) !== '0.3'", "a > 0"],
+    ["Boolean((a > 0) & (String(a) !== '0.3'))", "a > 0"],
+  ];
+  for (const [left, right] of pairs) {
+    assert.notEqual(grade(fn(left), fn(right), ints), "verified_strict");
+    assert.equal(grade(fn(left), fn(left), ints), "verified_strict");
+  }
+});
