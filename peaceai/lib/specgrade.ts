@@ -247,8 +247,14 @@ function paramFlags(source: string, symbol: string): ParamFlags[] {
 }
 
 function numericLiteral(node: ts.Node): number | null {
-  if (ts.isNumericLiteral(node)) return Number(node.text);
-  if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(node.operand)) return -Number(node.operand.text);
+  const cur = unwrapExpr(node);
+  if (ts.isNumericLiteral(cur)) return Number(cur.text);
+  if (ts.isPrefixUnaryExpression(cur) && cur.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(cur.operand)) return -Number(cur.operand.text);
+  if (ts.isBinaryExpression(cur) && cur.operatorToken.kind === ts.SyntaxKind.SlashToken) {
+    const left = numericLiteral(cur.left);
+    const right = numericLiteral(cur.right);
+    if (left !== null && right !== null && right !== 0 && Number.isFinite(left / right)) return left / right;
+  }
   return null;
 }
 
@@ -265,8 +271,10 @@ function isNonNumericLiteral(node: ts.Node): boolean {
 /** A string such as `"0.3"` hides the same number a numeric literal would. `"number"` does not. */
 function numericText(text: string): number | null {
   const trimmed = text.trim();
-  if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(trimmed)) return null;
-  const n = Number(trimmed);
+  // The match must consume the whole string. "0.3abc" is not 0.3.
+  const match = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?/i.exec(trimmed);
+  if (!match || match[0].length !== trimmed.length) return null;
+  const n = Number(match[0]);
   return Number.isFinite(n) ? n : null;
 }
 
@@ -288,8 +296,53 @@ function stringText(node: ts.Node): string | null {
 
 const TYPEOF_NAMES = new Set(["number", "string", "boolean", "undefined", "object", "function", "symbol", "bigint"]);
 
-/** Same-file bindings. A module-level `const BAD = new Set([0.3])` is visible to `BAD.has(a)`. */
-let boundNames = new Map<string, ts.Expression>();
+/** An import, a reassigned let, a destructure, or an unknown spread is not trusted. */
+let importedNames = new Set<string>();
+let unresolvedBinding = false;
+
+function bindsName(name: ts.BindingName, target: string): boolean {
+  if (ts.isIdentifier(name)) return name.text === target;
+  if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
+    return name.elements.some((el) => !ts.isOmittedExpression(el) && bindsName(el.name, target));
+  }
+  return false;
+}
+
+function assignedLater(name: string, decl: ts.VariableDeclaration): boolean {
+  let scope: ts.Node = decl;
+  while (scope.parent && !ts.isFunctionLike(scope) && !ts.isSourceFile(scope)) scope = scope.parent;
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (node === decl) return;
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment && ts.isIdentifier(node.left) && node.left.text === name) found = true;
+    if ((ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) && (node.operator === ts.SyntaxKind.PlusPlusToken || node.operator === ts.SyntaxKind.MinusMinusToken) && ts.isIdentifier(node.operand) && node.operand.text === name) found = true;
+    if (!found) ts.forEachChild(node, visit);
+  };
+  visit(scope);
+  return found;
+}
+
+function bindingAt(at: ts.Node, name: string): { init: ts.Expression | null; opaque: boolean } | null {
+  let cur: ts.Node | undefined = at.parent;
+  while (cur) {
+    const stmts = ts.isSourceFile(cur) || ts.isBlock(cur) || ts.isModuleBlock(cur) ? cur.statements : null;
+    if (stmts) {
+      for (const st of stmts) {
+        if (!ts.isVariableStatement(st)) continue;
+        for (const decl of st.declarationList.declarations) {
+          if (ts.isIdentifier(decl.name) && decl.name.text === name) {
+            const isConst = (st.declarationList.flags & ts.NodeFlags.Const) !== 0;
+            if (!decl.initializer || (!isConst && assignedLater(name, decl))) return { init: null, opaque: true };
+            return { init: decl.initializer, opaque: false };
+          }
+          if (!ts.isIdentifier(decl.name) && bindsName(decl.name, name)) return { init: null, opaque: true };
+        }
+      }
+    }
+    cur = cur.parent;
+  }
+  return null;
+}
 
 function remember(text: string, numbers: number[], strings: string[]): void {
   strings.push(text);
@@ -307,10 +360,38 @@ function collectLiteralNumbers(node: ts.Node, numbers: number[], strings: string
   const cur = unwrapExpr(node);
   if (ts.isIdentifier(cur)) {
     if (seen.has(cur.text)) return;
-    const init = boundNames.get(cur.text);
-    if (!init) return;
+    if (importedNames.has(cur.text)) { unresolvedBinding = true; return; }
+    const found = bindingAt(cur, cur.text);
+    if (!found) return;
+    if (found.opaque || !found.init) { unresolvedBinding = true; return; }
     seen.add(cur.text);
-    collectLiteralNumbers(init, numbers, strings, seen);
+    collectLiteralNumbers(found.init, numbers, strings, seen);
+    return;
+  }
+  if (ts.isPropertyAccessExpression(cur)) {
+    const obj = unwrapExpr(cur.expression);
+    const init = ts.isIdentifier(obj) ? bindingAt(obj, obj.text)?.init : null;
+    const literal = init ? unwrapExpr(init) : obj;
+    if (ts.isObjectLiteralExpression(literal)) {
+      for (const prop of literal.properties) {
+        if (!ts.isPropertyAssignment(prop)) continue;
+        const key = ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name) || ts.isNumericLiteral(prop.name) ? prop.name.text : null;
+        if (key === cur.name.text) collectLiteralNumbers(prop.initializer, numbers, strings, seen);
+      }
+      return;
+    }
+    unresolvedBinding = true;
+    return;
+  }
+  if (ts.isSpreadElement(cur)) {
+    const expr = unwrapExpr(cur.expression);
+    const init = ts.isIdentifier(expr) ? bindingAt(expr, expr.text) : null;
+    const literal = init?.init && !init.opaque ? unwrapExpr(init.init) : expr;
+    if (ts.isArrayLiteralExpression(literal) || ts.isObjectLiteralExpression(literal)) {
+      collectLiteralNumbers(literal, numbers, strings, seen);
+      return;
+    }
+    unresolvedBinding = true;
     return;
   }
   const direct = numericLiteral(cur);
@@ -318,7 +399,7 @@ function collectLiteralNumbers(node: ts.Node, numbers: number[], strings: string
   const text = stringText(cur);
   if (text !== null) { remember(text, numbers, strings); return; }
   if (ts.isArrayLiteralExpression(cur)) {
-    for (const el of cur.elements) if (ts.isExpression(el)) collectLiteralNumbers(el, numbers, strings, seen);
+    for (const el of cur.elements) collectLiteralNumbers(el, numbers, strings, seen);
     return;
   }
   if (ts.isObjectLiteralExpression(cur)) {
@@ -340,15 +421,26 @@ function collectAllNumbers(node: ts.Node, numbers: number[]): void {
   ts.forEachChild(node, (child) => collectAllNumbers(child, numbers));
 }
 
-/** `(a * 10 | 0) === 3` stands for 0.3. */
+function stripIntegerize(node: ts.Node): ts.Node {
+  let cur = unwrapExpr(node);
+  if (ts.isPrefixUnaryExpression(cur) && cur.operator === ts.SyntaxKind.TildeToken) {
+    const inner = unwrapExpr(cur.operand);
+    if (ts.isPrefixUnaryExpression(inner) && inner.operator === ts.SyntaxKind.TildeToken) return unwrapExpr(inner.operand);
+  }
+  if (ts.isCallExpression(cur) && ts.isPropertyAccessExpression(cur.expression) && ts.isIdentifier(cur.expression.name) && (cur.expression.name.text === "floor" || cur.expression.name.text === "trunc") && ts.isIdentifier(cur.expression.expression) && cur.expression.expression.text === "Math" && cur.arguments[0]) return unwrapExpr(cur.arguments[0]);
+  if (ts.isBinaryExpression(cur) && (cur.operatorToken.kind === ts.SyntaxKind.BarToken || cur.operatorToken.kind === ts.SyntaxKind.GreaterThanGreaterThanToken) && numericLiteral(cur.right) === 0) return unwrapExpr(cur.left);
+  return cur;
+}
+
+/** `(a * 10 | 0) === 3`, `~~(a * 10) === 3`, `Math.floor(a * 10) === 3`, `(a * 10) >> 0 === 3`, and `a * 10 === 3` stand for 0.3. */
 function scaledProbe(node: ts.BinaryExpression): number | null {
-  if (node.operatorToken.kind !== ts.SyntaxKind.BarToken) return null;
-  if (numericLiteral(node.right) !== 0) return null;
-  const left = unwrapExpr(node.left);
-  if (!ts.isBinaryExpression(left) || left.operatorToken.kind !== ts.SyntaxKind.AsteriskToken) return null;
-  const scale = numericLiteral(left.left) ?? numericLiteral(left.right);
+  const core = stripIntegerize(node);
+  if (!ts.isBinaryExpression(core) || core.operatorToken.kind !== ts.SyntaxKind.AsteriskToken) return null;
+  const scale = numericLiteral(core.left) ?? numericLiteral(core.right);
   if (scale === null || scale === 0) return null;
   let parent: ts.Node = node.parent;
+  while (ts.isParenthesizedExpression(parent) || (ts.isPrefixUnaryExpression(parent) && parent.operator === ts.SyntaxKind.TildeToken)) parent = parent.parent;
+  if (ts.isCallExpression(parent)) parent = parent.parent;
   while (ts.isParenthesizedExpression(parent)) parent = parent.parent;
   if (!ts.isBinaryExpression(parent)) return null;
   const target = numericLiteral(parent.left) ?? numericLiteral(parent.right);
@@ -371,14 +463,27 @@ export function adjacentFloat(value: number, direction: 1 | -1): number {
   return view.getFloat64(0);
 }
 
+function mentionsSplit(node: ts.Node): boolean {
+  let hit = false;
+  const walk = (cur: ts.Node) => {
+    if (ts.isCallExpression(cur) && ts.isPropertyAccessExpression(cur.expression) && ts.isIdentifier(cur.expression.name) && cur.expression.name.text === "split") hit = true;
+    if (!hit) ts.forEachChild(cur, walk);
+  };
+  walk(node);
+  return hit;
+}
+
 /** Literal bounds, including a literal on the left and a negative literal, plus `.length` bounds and inequality literals. */
 export function comparisonBounds(source: string): { thresholds: number[]; lengthThresholds: number[]; strings: string[]; unprobed: boolean } {
   const sf = ts.createSourceFile("candidate.ts", source, ts.ScriptTarget.Latest, true);
-  boundNames = new Map();
+  importedNames = new Set();
+  unresolvedBinding = false;
   for (const st of sf.statements) {
-    if (!ts.isVariableStatement(st)) continue;
-    for (const decl of st.declarationList.declarations) {
-      if (ts.isIdentifier(decl.name) && decl.initializer) boundNames.set(decl.name.text, decl.initializer);
+    if (ts.isImportDeclaration(st) && st.importClause && !st.importClause.isTypeOnly) {
+      if (st.importClause.name) importedNames.add(st.importClause.name.text);
+      const named = st.importClause.namedBindings;
+      if (named && ts.isNamespaceImport(named)) importedNames.add(named.name.text);
+      if (named && ts.isNamedImports(named)) for (const el of named.elements) if (!el.isTypeOnly) importedNames.add(el.name.text);
     }
   }
   const thresholds: number[] = [];
@@ -386,9 +491,15 @@ export function comparisonBounds(source: string): { thresholds: number[]; length
   const strings: string[] = [];
   let unprobed = false;
   const noteSide = (side: ts.Node, other: ts.Node) => {
-    if (ts.isTypeOfExpression(side) || ts.isTypeOfExpression(other)) return;
     const text = stringText(side);
-    if (text !== null && !TYPEOF_NAMES.has(text)) remember(text, thresholds, strings);
+    if (text === null) return;
+    if ((ts.isTypeOfExpression(side) || ts.isTypeOfExpression(other)) && TYPEOF_NAMES.has(text)) return;
+    remember(text, thresholds, strings);
+    const call = unwrapExpr(other);
+    const name = ts.isCallExpression(call) && ts.isPropertyAccessExpression(call.expression) && ts.isIdentifier(call.expression.name) ? call.expression.name.text : "";
+    if (name === "toLowerCase") strings.push(text.toUpperCase());
+    else if (name === "trim") strings.push(` ${text} `, `\t${text}\n`);
+    else if (name === "split") unresolvedBinding = true;
   };
   const visit = (node: ts.Node) => {
     if (ts.isBinaryExpression(node)) {
@@ -405,13 +516,19 @@ export function comparisonBounds(source: string): { thresholds: number[]; length
         } else if (ordered || !(isNonNumericLiteral(node.left) || isNonNumericLiteral(node.right))) unprobed = true;
         noteSide(node.left, node.right);
         noteSide(node.right, node.left);
+        if (mentionsSplit(node.left) || mentionsSplit(node.right)) unresolvedBinding = true;
+        if (ordered) {
+          const interesting = (side: ts.Node) => /Math\.abs|\*\*/.test(side.getText(sf));
+          if (interesting(node.left)) collectAllNumbers(node.left, thresholds);
+          if (interesting(node.right)) collectAllNumbers(node.right, thresholds);
+        }
       }
       if (kind === ts.SyntaxKind.InKeyword) collectLiteralNumbers(node.right, thresholds, strings);
       const scaled = scaledProbe(node);
       if (scaled !== null && Number.isFinite(scaled)) thresholds.push(scaled);
     }
     if (ts.isRegularExpressionLiteral(node)) {
-      const src = node.text.replace(/\\\./g, ".");
+      const src = node.text.replace(/\[\.\]/g, ".").replace(/\\\./g, ".");
       for (const match of src.match(/[+-]?(?:\d+\.\d+|\.\d+|\d+)(?:e[+-]?\d+)?/gi) ?? []) {
         const n = numericText(match);
         if (n !== null) thresholds.push(n);
@@ -454,10 +571,38 @@ export function comparisonBounds(source: string): { thresholds: number[]; length
     ts.forEachChild(node, visit);
   };
   visit(sf);
+  if (unresolvedBinding) unprobed = true;
   return { thresholds: [...new Set(thresholds)], lengthThresholds: [...new Set(lengthThresholds)], strings: [...new Set(strings)], unprobed };
 }
 
 type NumPath = (string | number)[];
+
+function plainObjectPaths(value: unknown, prefix: NumPath = []): NumPath[] {
+  const out: NumPath[] = [];
+  if (Array.isArray(value)) value.forEach((item, index) => out.push(...plainObjectPaths(item, [...prefix, index])));
+  else if (value && typeof value === "object" && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)) {
+    out.push(prefix);
+    for (const key of Object.keys(value)) out.push(...plainObjectPaths((value as Record<string, unknown>)[key], [...prefix, key]));
+  }
+  return out;
+}
+
+function withProp(value: unknown, path: NumPath, key: string, prop: unknown): unknown {
+  if (path.length === 0) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+    return { ...(value as Record<string, unknown>), [key]: prop };
+  }
+  const [head, ...rest] = path;
+  if (Array.isArray(value) && typeof head === "number") {
+    const copy = [...value];
+    copy[head] = withProp(value[head], rest, key, prop);
+    return copy;
+  }
+  if (value && typeof value === "object") {
+    return { ...(value as Record<string, unknown>), [String(head)]: withProp((value as Record<string, unknown>)[String(head)], rest, key, prop) };
+  }
+  return value;
+}
 
 function stringPaths(value: unknown, prefix: NumPath = []): NumPath[] {
   if (typeof value === "string") return [prefix];
@@ -613,6 +758,14 @@ export function behaviorInputSet(examples: readonly (readonly unknown[])[], flag
     }
     for (const path of stringPaths(example)) {
       for (const text of stringThresholds) add(probed, setAtAny(example, path, text) as unknown[]);
+    }
+    for (const path of plainObjectPaths(example)) {
+      const obj = readAt(example, path);
+      if (numberPaths(obj).length > 0) continue;
+      for (const n of thresholds) {
+        if (!Number.isFinite(n)) continue;
+        add(probed, withProp(example, path, String(n), true) as unknown[]);
+      }
     }
     for (const path of numberPaths(example)) {
       for (const text of stringThresholds) {

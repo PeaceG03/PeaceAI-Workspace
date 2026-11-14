@@ -83,10 +83,10 @@ function defaultSignal(pid: number): void {
   process.kill(pid, 0);
 }
 
-function defaultProcHas(pid: number): boolean | null {
+function defaultProcHas(pid: number, procRoot = "/proc"): boolean | null {
   try {
-    if (!existsSync("/proc")) return null;
-    return existsSync(join("/proc", String(pid)));
+    if (!existsSync(procRoot)) return null;
+    return existsSync(join(procRoot, String(pid)));
   } catch {
     return null;
   }
@@ -117,10 +117,10 @@ function reapLog(message: string): void {
 export function reapStaleHeldTemps(
   root = tmpdir(),
   remove: (dir: string) => void = (dir) => rmSync(dir, { recursive: true, force: true }),
-  hooks: { signal?: SignalFn; procHas?: ProcHas } = {},
+  hooks: { signal?: SignalFn; procHas?: ProcHas; procRoot?: string } = {},
 ): string[] {
   const signal = hooks.signal ?? defaultSignal;
-  const procHas = hooks.procHas ?? defaultProcHas;
+  const procHas = hooks.procHas ?? ((pid: number) => defaultProcHas(pid, hooks.procRoot ?? "/proc"));
   const removed: string[] = [];
   let names: string[] = [];
   try { names = readdirSync(root); } catch (err) {
@@ -151,7 +151,13 @@ export function reapStaleHeldTemps(
         if (!Number.isInteger(pid) || pid <= 0 || pidText !== String(pid)) continue;
         // Start time 0 means the start id could not be read. A live pid is never that owner's replacement.
         if (start === "0") {
-          if (pidState(pid, signal, procHas) !== "dead") continue;
+          const state = pidState(pid, signal, procHas);
+          if (state === "alive") continue;
+          // Unknown liveness is kept while fresh. A stale one is ours (the held prefix) and is bounded by age.
+          if (state === "unknown") {
+            if (Date.now() - lstatSync(dir).mtimeMs >= HELD_OWNERLESS_MS) drop(dir);
+            continue;
+          }
           deadStart0.push({ dir, mtime: lstatSync(dir).mtimeMs });
           continue;
         }

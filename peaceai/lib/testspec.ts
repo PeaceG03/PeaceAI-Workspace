@@ -236,7 +236,7 @@ function arrowCall(fn: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: 
 }
 
 /** Concrete expectations already written in the test. A call with a non-literal argument is not one. */
-export function expectationsIn(testFile: string, text: string, sourcePattern: string, denyPatterns: readonly string[] = [], exists: (path: string) => boolean = () => true): Expectation[] {
+export function expectationsIn(testFile: string, text: string, sourcePattern: string, denyPatterns: readonly string[] = [], exists: (path: string) => boolean = () => true, failing: readonly string[] = []): Expectation[] {
   const found = bindings(testFile, text, sourcePattern, denyPatterns, exists);
   const locals = new Map(found.map((b) => [b.local, b]));
   const sf = ts.createSourceFile(testFile, text, ts.ScriptTarget.Latest, true);
@@ -287,8 +287,34 @@ export function expectationsIn(testFile: string, text: string, sourcePattern: st
     }
     ts.forEachChild(node, visit);
   };
-  visit(sf);
+  const titles = new Set(failing.map((name) => name.trim()).filter(Boolean));
+  const bodies: ts.Node[] = [];
+  if (titles.size) {
+    const findTests = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && node.arguments.length >= 2) {
+        const titleNode = node.arguments[0];
+        const title = titleNode && (ts.isStringLiteral(titleNode) || ts.isNoSubstitutionTemplateLiteral(titleNode)) ? titleNode.text : "";
+        const callee = node.expression;
+        const name = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name) ? callee.name.text : "";
+        const fn = node.arguments.find((arg) => ts.isArrowFunction(arg) || ts.isFunctionExpression(arg));
+        if (title && fn && titles.has(title) && (name === "test" || name === "it" || name === "serial" || name === "only")) bodies.push(fn);
+      }
+      ts.forEachChild(node, findTests);
+    };
+    findTests(sf);
+  }
+  if (bodies.length) for (const body of bodies) visit(body);
+  if (out.length === 0) visit(sf);
   return out;
+}
+
+/** Names of the tests the runner reported as failed. Only the runner's own labels, capped. */
+export function failingTestNames(output: string): string[] {
+  const names: string[] = [];
+  for (const match of output.matchAll(/^not ok \d+ - (.+)$/gm)) names.push(match[1]!.trim());
+  for (const match of output.matchAll(/^✘ \[fail\]: (.+)$/gm)) names.push(match[1]!.trim());
+  for (const match of output.matchAll(/^FAIL\s+\S+\s+>\s+(.+)$/gm)) names.push(match[1]!.trim());
+  return [...new Set(names)].filter(Boolean).slice(0, 8);
 }
 
 const ASSERTION_OUTPUT = /AssertionError|ERR_ASSERTION|Expected values|expected .+ to (?:be|equal)|Difference \(|\+ Received|- Expected|✘ \[fail\]|Test Files .* failed/i;
@@ -1135,7 +1161,8 @@ export function runTestSpec(input: SpecInput): SpecResult {
   const testText = read(input.root, input.testFile);
   if (testText === null) return { status: "cant", reason: "CANT_DO_YET_ASSERTION_UNPARSED", attempts: 0, diagnostic: diag("assertion_unparsed", first.code, output) };
   const exists = (path: string) => read(input.root, path) !== null;
-  const expectations = expectationsIn(input.testFile, testText, input.sourcePattern, deny, exists);
+  const failing = failingTestNames(output);
+  const expectations = expectationsIn(input.testFile, testText, input.sourcePattern, deny, exists, failing);
   if (expectations.length === 0) {
     const named = bindings(input.testFile, testText, input.sourcePattern, deny, exists);
     if (named.length === 0 && seen === "assertion_unparsed") return { status: "cant", reason: "CANT_DO_YET_ASSERTION_UNPARSED", attempts: 0, diagnostic: diag("assertion_unparsed", first.code, output) };
@@ -1153,7 +1180,6 @@ export function runTestSpec(input: SpecInput): SpecResult {
     original.set(path, text);
   }
   const request = `${specTask(input.subject)}\n${symbols.map((s) => `\`${s}\``).join(" ")}`;
-  const failing = [...output.matchAll(/^not ok \d+ - (.+)$/gm)].map((m) => m[1]!.trim()).slice(0, 8);
   const repo = openRepo(input.root);
   const related = [...(input.relatedTests ?? [])];
   if (input.originalSuite === "related" && input.relatedTests === undefined) {
