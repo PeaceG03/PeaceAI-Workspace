@@ -18,6 +18,8 @@ import { runInPracticeSandbox } from "./practicemine.ts";
 import type { CallForm } from "./testspec.ts";
 
 export const INPUT_CAP = 50;
+/** Boundary probes do not compete with the mutant budget. */
+export const PROBE_CAP = 48;
 export const BEHAVIORS = ["verified_strict", "verified_test_only", "diff_unavailable"] as const;
 export type Behavior = (typeof BEHAVIORS)[number];
 /** Static prefix a candidate might print. The grader does not accept a line that has only this. */
@@ -60,6 +62,9 @@ const untag = (v) => {
   if (v.k === "null") return null;
   if (v.k === "a") return v.v.map(untag);
   if (v.k === "o") { const o = {}; for (const [key, val] of Object.entries(v.v)) o[key] = untag(val); return o; }
+  if (v.k === "date") return new Date(v.v);
+  if (v.k === "set") return new Set((v.v || []).map(untag));
+  if (v.k === "map") return new Map((v.v || []).map((pair) => [untag(pair[0]), untag(pair[1])]));
   return v.v;
 };
 const seen = new WeakSet();
@@ -120,13 +125,22 @@ function tag(value: unknown): unknown {
   if (value === -Infinity) return { k: "ninf" };
   if (value === null) return { k: "null" };
   if (typeof value === "string" || typeof value === "boolean" || typeof value === "number") return { k: "v", v: value };
+  if (typeof value === "function" || typeof value === "symbol" || typeof value === "bigint") return { k: "opaque", why: typeof value };
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return { k: "date", v: Number.isNaN(time) ? null : time };
+  }
+  if (value instanceof Set) return { k: "set", v: [...value].map(tag) };
+  if (value instanceof Map) return { k: "map", v: [...value.entries()].map((pair) => [tag(pair[0]), tag(pair[1])]) };
   if (Array.isArray(value)) return { k: "a", v: value.map(tag) };
   if (typeof value === "object") {
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) return { k: "opaque", why: "instance" };
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value as Record<string, unknown>)) out[key] = tag(item);
     return { k: "o", v: out };
   }
-  return { k: "other" };
+  return { k: "opaque", why: typeof value };
 }
 
 function seedOf(text: string): number {
@@ -180,9 +194,10 @@ function everyNumericIsInteger(examples: readonly (readonly unknown[])[]): boole
 function mutants(value: unknown, flags: ParamFlags | undefined, depth = 0, fractional = false): unknown[] {
   const out: unknown[] = [];
   if (typeof value === "number" && Number.isFinite(value)) {
+    // Classic mutants stay ahead of half-steps. Half-steps do not replace 0, negation, or NaN,
+    // and they do not separate every pair of thresholds.
     out.push(value + 1, value - 1, 0, Object.is(value, 0) ? -0 : -Math.abs(value), Number.NaN);
     if (Object.is(value, 0)) out.push(-0);
-    // Half-steps split integer predicates the ±1 set cannot, such as `>` n, `>=` n+1, and `>=` n+0.5.
     if (fractional && Number.isInteger(value)) out.push(value + 0.5, value - 0.5, value + 0.25, value - 0.25, 0.5);
   }
   else if (typeof value === "string") {
@@ -195,7 +210,7 @@ function mutants(value: unknown, flags: ParamFlags | undefined, depth = 0, fract
     if (value.length > 1) out.push(value.slice(0, -1), [...value].reverse());
     if (depth < 2) {
       value.forEach((item, index) => {
-        for (const next of mutants(item, undefined, depth + 1, fractional).slice(0, 4)) {
+        for (const next of mutants(item, undefined, depth + 1, fractional)) {
           const copy = [...value];
           copy[index] = next;
           out.push(copy);
@@ -204,7 +219,7 @@ function mutants(value: unknown, flags: ParamFlags | undefined, depth = 0, fract
     }
   } else if (plainObject(value) && depth < 2) {
     for (const [key, item] of Object.entries(value)) {
-      for (const next of mutants(item, undefined, depth + 1, fractional).slice(0, 4)) out.push({ ...value, [key]: next });
+      for (const next of mutants(item, undefined, depth + 1, fractional)) out.push({ ...value, [key]: next });
     }
     out.push({});
   } else if (typeof value === "boolean") out.push(!value);
@@ -231,8 +246,158 @@ function paramFlags(source: string, symbol: string): ParamFlags[] {
   return [];
 }
 
-/** The test's own argument lists, then seeded mutations, capped at INPUT_CAP. */
-export function behaviorInputs(examples: readonly (readonly unknown[])[], flags: readonly ParamFlags[], seedText: string): unknown[][] {
+function numericLiteral(node: ts.Node): number | null {
+  if (ts.isNumericLiteral(node)) return Number(node.text);
+  if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(node.operand)) return -Number(node.operand.text);
+  return null;
+}
+
+function isLengthAccess(node: ts.Expression): boolean {
+  return ts.isPropertyAccessExpression(node) && node.name.text === "length";
+}
+
+function isNonNumericLiteral(node: ts.Node): boolean {
+  return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
+    || node.kind === ts.SyntaxKind.TrueKeyword || node.kind === ts.SyntaxKind.FalseKeyword
+    || node.kind === ts.SyntaxKind.NullKeyword;
+}
+
+/** The next representable float above or below `value`. A bound and these neighbors are the probe, not a fixed 1e-6 gap. */
+export function adjacentFloat(value: number, direction: 1 | -1): number {
+  if (!Number.isFinite(value)) return value;
+  if (Object.is(value, 0)) return direction > 0 ? Number.MIN_VALUE : -Number.MIN_VALUE;
+  const buf = new ArrayBuffer(8);
+  const view = new DataView(buf);
+  view.setFloat64(0, value);
+  let bits = view.getBigUint64(0);
+  const up = direction > 0;
+  if (value > 0) bits += up ? 1n : -1n;
+  else bits += up ? -1n : 1n;
+  view.setBigUint64(0, bits);
+  return view.getFloat64(0);
+}
+
+/** Literal bounds, including a literal on the left and a negative literal, plus `.length` bounds and inequality literals. */
+export function comparisonBounds(source: string): { thresholds: number[]; lengthThresholds: number[]; unprobed: boolean } {
+  const sf = ts.createSourceFile("candidate.ts", source, ts.ScriptTarget.Latest, true);
+  const thresholds: number[] = [];
+  const lengthThresholds: number[] = [];
+  let unprobed = false;
+  const visit = (node: ts.Node) => {
+    if (ts.isBinaryExpression(node)) {
+      const kind = node.operatorToken.kind;
+      const ordered = kind === ts.SyntaxKind.GreaterThanToken || kind === ts.SyntaxKind.GreaterThanEqualsToken
+        || kind === ts.SyntaxKind.LessThanToken || kind === ts.SyntaxKind.LessThanEqualsToken;
+      const inequality = kind === ts.SyntaxKind.EqualsEqualsToken || kind === ts.SyntaxKind.EqualsEqualsEqualsToken
+        || kind === ts.SyntaxKind.ExclamationEqualsToken || kind === ts.SyntaxKind.ExclamationEqualsEqualsToken;
+      if (ordered || inequality) {
+        const bound = numericLiteral(node.left) ?? numericLiteral(node.right);
+        if (bound !== null && Number.isFinite(bound)) {
+          thresholds.push(bound);
+          if (ordered && (isLengthAccess(node.left) || isLengthAccess(node.right))) lengthThresholds.push(bound);
+        } else if (ordered || !(isNonNumericLiteral(node.left) || isNonNumericLiteral(node.right))) unprobed = true;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return { thresholds: [...new Set(thresholds)], lengthThresholds: [...new Set(lengthThresholds)], unprobed };
+}
+
+type NumPath = (string | number)[];
+
+function numberPaths(value: unknown, prefix: NumPath = []): NumPath[] {
+  if (typeof value === "number" && Number.isFinite(value)) return [prefix];
+  if (Array.isArray(value)) return value.flatMap((item, index) => numberPaths(item, [...prefix, index]));
+  if (value && typeof value === "object" && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)) {
+    return Object.keys(value).flatMap((key) => numberPaths((value as Record<string, unknown>)[key], [...prefix, key]));
+  }
+  return [];
+}
+
+function setAt(value: unknown, path: NumPath, next: number): unknown {
+  if (path.length === 0) return next;
+  const [head, ...rest] = path;
+  if (Array.isArray(value) && typeof head === "number") {
+    const copy = [...value];
+    copy[head] = setAt(value[head], rest, next);
+    return copy;
+  }
+  if (value && typeof value === "object") {
+    return { ...(value as Record<string, unknown>), [String(head)]: setAt((value as Record<string, unknown>)[String(head)], rest, next) };
+  }
+  return value;
+}
+
+/** The bound, the adjacent floats on either side, and the midpoint between neighboring example numbers. */
+function boundaryValues(thresholds: readonly number[], samples: readonly number[]): number[] {
+  const out: number[] = [];
+  for (const bound of thresholds) out.push(adjacentFloat(bound, -1), bound, adjacentFloat(bound, 1));
+  const sorted = [...new Set(samples.filter((n) => Number.isFinite(n)))].sort((a, b) => a - b);
+  for (let i = 1; i < sorted.length; i++) out.push((sorted[i - 1]! + sorted[i]!) / 2);
+  return out;
+}
+
+function containsOpaque(value: unknown): boolean {
+  if (value === null || typeof value !== "object") return typeof value === "function" || typeof value === "symbol" || typeof value === "bigint";
+  if (value instanceof Date) return false;
+  if (value instanceof Set) return [...value].some(containsOpaque);
+  if (value instanceof Map) return [...value.entries()].some((pair) => containsOpaque(pair[0]) || containsOpaque(pair[1]));
+  if (Array.isArray(value)) return value.some(containsOpaque);
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return true;
+  return Object.values(value as object).some(containsOpaque);
+}
+
+function readAt(value: unknown, path: NumPath): unknown {
+  let cur = value;
+  for (const step of path) {
+    if (Array.isArray(cur) && typeof step === "number") cur = cur[step];
+    else if (cur && typeof cur === "object") cur = (cur as Record<string, unknown>)[String(step)];
+    else return undefined;
+  }
+  return cur;
+}
+
+function collectionPaths(value: unknown, prefix: NumPath = []): NumPath[] {
+  const out: NumPath[] = [];
+  if (typeof value === "string" || Array.isArray(value)) out.push(prefix);
+  if (Array.isArray(value)) value.forEach((item, index) => out.push(...collectionPaths(item, [...prefix, index])));
+  else if (value && typeof value === "object" && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)) {
+    for (const key of Object.keys(value)) out.push(...collectionPaths((value as Record<string, unknown>)[key], [...prefix, key]));
+  }
+  return out;
+}
+
+function withLength(value: unknown, path: NumPath, length: number): unknown {
+  if (length < 0 || !Number.isFinite(length)) return value;
+  const size = Math.floor(length);
+  if (path.length === 0) {
+    if (typeof value === "string") return value.length >= size ? value.slice(0, size) : value + "x".repeat(size - value.length);
+    if (Array.isArray(value)) {
+      if (value.length >= size) return value.slice(0, size);
+      const pad = value.length ? value[value.length - 1] : 0;
+      return [...value, ...Array.from({ length: size - value.length }, () => pad)];
+    }
+    return value;
+  }
+  const [head, ...rest] = path;
+  if (Array.isArray(value) && typeof head === "number") {
+    const copy = [...value];
+    copy[head] = withLength(value[head], rest, size);
+    return copy;
+  }
+  if (value && typeof value === "object") {
+    const key = String(head);
+    return { ...(value as Record<string, unknown>), [key]: withLength((value as Record<string, unknown>)[key], rest, size) };
+  }
+  return value;
+}
+
+export interface BehaviorInputSet { inputs: unknown[][]; truncated: boolean }
+
+/** Originals and mutants share INPUT_CAP. Probes use PROBE_CAP and do not push mutants out. */
+export function behaviorInputSet(examples: readonly (readonly unknown[])[], flags: readonly ParamFlags[], seedText: string, thresholds: readonly number[] = [], lengthThresholds: readonly number[] = []): BehaviorInputSet {
   const originals: unknown[][] = [];
   const seen = new Set<string>();
   const add = (bucket: unknown[][], args: unknown[]) => {
@@ -253,8 +418,31 @@ export function behaviorInputs(examples: readonly (readonly unknown[])[], flags:
       }
     });
   }
-  const ordered = [...originals, ...shuffle(varied, seedOf(seedText))];
-  return ordered.slice(0, INPUT_CAP);
+  const room = Math.max(0, INPUT_CAP - originals.length);
+  const keptMutants = varied.slice(0, room);
+  const probed: unknown[][] = [];
+  for (const example of originals) {
+    for (const path of numberPaths(example)) {
+      const samples = originals.flatMap((args) => {
+        const cur = readAt(args, path);
+        return typeof cur === "number" ? [cur] : [];
+      });
+      for (const next of boundaryValues(thresholds, samples)) add(probed, setAt(example, path, next) as unknown[]);
+    }
+    for (const path of collectionPaths(example)) {
+      for (const bound of lengthThresholds) for (const length of [bound - 1, bound, bound + 1]) {
+        if (length < 0) continue;
+        add(probed, withLength(example, path, length) as unknown[]);
+      }
+    }
+  }
+  const keptProbes = probed.slice(0, PROBE_CAP);
+  return { inputs: [...originals, ...keptMutants, ...keptProbes], truncated: varied.length > keptMutants.length };
+}
+
+/** The test's own argument lists, then mutants, then probes. Mutants are not sliced away to make room for probes. */
+export function behaviorInputs(examples: readonly (readonly unknown[])[], flags: readonly ParamFlags[], seedText: string, thresholds: readonly number[] = [], lengthThresholds: readonly number[] = []): unknown[][] {
+  return behaviorInputSet(examples, flags, seedText, thresholds, lengthThresholds).inputs;
 }
 
 interface ProbeBody {
@@ -337,9 +525,21 @@ export function gradeBehavior(input: {
   nodeModules?: string | null;
 }): BehaviorGrade {
   let source = "";
+  let fixSource = "";
   try { source = readFileSync(join(input.candidateRoot, input.target.file), "utf8"); } catch { source = ""; }
+  try { fixSource = readFileSync(join(input.fixRoot, input.target.file), "utf8"); } catch { fixSource = ""; }
+  if (input.target.args.some((args) => args.some(containsOpaque))) return { behavior: "diff_unavailable", compared: 0 };
+  const candidateBounds = comparisonBounds(source);
+  const fixBounds = comparisonBounds(fixSource);
   const flags = paramFlags(source, input.target.form === "named" ? input.target.exportName : input.target.symbol);
-  const inputs = behaviorInputs(input.target.args, flags, `${input.target.symbol}\0${input.target.file}\0${JSON.stringify(input.target.args.map(tag))}`);
+  const planned = behaviorInputSet(
+    input.target.args,
+    flags,
+    `${input.target.symbol}\0${input.target.file}\0${JSON.stringify(input.target.args.map(tag))}`,
+    [...candidateBounds.thresholds, ...fixBounds.thresholds],
+    [...candidateBounds.lengthThresholds, ...fixBounds.lengthThresholds],
+  );
+  const inputs = planned.inputs;
   if (!inputs.length) return { behavior: "diff_unavailable", compared: 0 };
   const modules = input.nodeModules ?? null;
   const nonce = randomBytes(16).toString("hex");
@@ -369,5 +569,6 @@ export function gradeBehavior(input: {
     if (!originalKeys.has(keyOf(inputs[i]!))) mutated += 1;
   }
   if (mutated < 1) return { behavior: "verified_test_only", compared: inputs.length };
+  if (candidateBounds.unprobed || fixBounds.unprobed || planned.truncated) return { behavior: "verified_test_only", compared: inputs.length };
   return { behavior: "verified_strict", compared: inputs.length };
 }

@@ -9,7 +9,7 @@ import { openRepo } from "../lib/codesearch.ts";
 import { CALLEE_DEPTH, locate, MAX_CANDIDATES } from "../lib/editpropose.ts";
 import { MAX_ATTEMPTS } from "../lib/loop.ts";
 import { GIT_LOCK_ARGS, materializeSolverTree, practiceGit, practiceGitEnv, practiceSandboxReady, visibleNodeBin, writeCommitFile } from "../lib/practicemine.ts";
-import { behaviorInputs, gradeBehavior, INPUT_CAP, parseProbe, PROBE_SENTINEL } from "../lib/specgrade.ts";
+import { adjacentFloat, behaviorInputs, gradeBehavior, INPUT_CAP, parseProbe, PROBE_SENTINEL } from "../lib/specgrade.ts";
 import { classifyRunnerOutput, expectationsIn, integerCmpClass, originalSuiteArgv, runTestSpec, sanitizeRunnerLines, scaffoldPlan, SPEC_ATTEMPT_CAP, specTask, type SpecInput } from "../lib/testspec.ts";
 
 const PATTERN = "^src/.+\\.ts$";
@@ -558,7 +558,7 @@ test("thin fits are not strict, and a real toy implementation is", (t) => {
   assert.notEqual(asyncGrade.behavior, "verified_strict");
   assert.equal(doubled.behavior, "verified_test_only");
   const mapped = pair("src/box.ts", "box", "return new Map();", "const x = args[0] as number; return new Map([[x, x]]);", [[1]]);
-  assert.notEqual(mapped.behavior, "verified_strict");
+  assert.equal(mapped.behavior, "verified_test_only");
   const fn = pair("src/make.ts", "make", "return () => 0;", "const x = args[0] as number; return () => x;", [[1]]);
   assert.equal(fn.behavior, "diff_unavailable");
   const summed = pair("src/total.ts", "total", "const xs = args[0] as number[]; return xs.length * 2;", "const xs = args[0] as number[]; return xs.reduce((sum, n) => sum + n, 0);", [[[1, 2, 3]]]);
@@ -798,4 +798,213 @@ test("a scaffolded integer comparison is not strict against a fix the half-step 
   const other = scaffolded.includes(">=") ? fn("a > 0") : fn("a >= 1");
   assert.notEqual(grade(scaffolded, other).behavior, "verified_strict");
   assert.notEqual(grade(scaffolded, fn("a >= 0.5")).behavior, "verified_strict");
+});
+
+test("nested numbers keep a half-step, and a written bound is probed", () => {
+  const fields = behaviorInputs([[{ n: 1 }]], [], "field");
+  const nested = fields.map((args) => (args[0] as { n: number }).n);
+  assert.equal(nested.includes(1.5), true);
+  assert.equal(nested.includes(0.5), true);
+  assert.equal(nested.includes(0), true);
+  assert.equal(nested.includes(-1), true);
+  assert.equal(nested.some((n) => Number.isNaN(n)), true);
+  const cells = behaviorInputs([[[1, 2]]], [], "cells").flatMap((args) => args[0] as number[]);
+  assert.equal(cells.includes(-1), true);
+  assert.equal(cells.includes(1.5), true);
+  const probed = behaviorInputs([[{ n: 0 }], [{ n: 1 }]], [], "bound", [0, 0.1, 0.8, 1]);
+  const values = probed.map((args) => (args[0] as { n: number }).n);
+  assert.equal(values.some((n) => Object.is(n, adjacentFloat(0.1, -1))), true);
+  assert.equal(values.some((n) => Object.is(n, 0.8)), true);
+  assert.equal(values.some((n) => Object.is(n, (0 + 1) / 2)), true);
+  const between = behaviorInputs([[0], [4]], [], "mid");
+  assert.equal(between.some((args) => args[0] === 2), true);
+});
+
+test("threshold gaps, dates, sets, instances, and throws are not strict", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const nodePath = visibleNodeBin();
+  if (!nodePath) { t.skip("no visible node"); return; }
+  const write = (file: string, body: string) => {
+    const root = mkdtempSync(join(tmpdir(), "peaceai-gap-"));
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, file), body);
+    return root;
+  };
+  const grade = (file: string, symbol: string, candidate: string, fix: string, args: unknown[][]) => {
+    const left = write(file, candidate);
+    const right = write(file, fix);
+    try {
+      return gradeBehavior({
+        candidateRoot: left, fixRoot: right, nodePath,
+        target: { symbol, file, form: "named", exportName: symbol, args },
+      });
+    } finally {
+      rmSync(left, { recursive: true, force: true });
+      rmSync(right, { recursive: true, force: true });
+    }
+  };
+  const fn = (name: string, params: string, expr: string) => `export function ${name}(${params}): boolean {\n  return ${expr};\n}\n`;
+  const ints = [[-1], [0], [1], [2]];
+  assert.notEqual(grade("src/above.ts", "above", fn("above", "a: number", "a > 0"), fn("above", "a: number", "a >= 0.1"), ints).behavior, "verified_strict");
+  assert.notEqual(grade("src/above.ts", "above", fn("above", "a: number", "a >= 1"), fn("above", "a: number", "a >= 0.8"), ints).behavior, "verified_strict");
+  assert.notEqual(grade("src/above.ts", "above", fn("above", "a: number", "a > 0"), fn("above", "a: number", "a >= 1e-9"), ints).behavior, "verified_strict");
+  assert.notEqual(grade("src/above.ts", "above", fn("above", "a: number", "a >= 1"), fn("above", "a: number", "a > 0.999999999"), ints).behavior, "verified_strict");
+  assert.equal(grade("src/above.ts", "above", fn("above", "a: number", "0 < a"), fn("above", "a: number", "0 < a"), [[1], [-1]]).behavior, "verified_strict");
+  assert.notEqual(grade("src/above.ts", "above", fn("above", "a: number", "0 < a"), fn("above", "a: number", "0.1 < a"), ints).behavior, "verified_strict");
+  assert.equal(grade("src/above.ts", "above", fn("above", "a: number", "a > -1"), fn("above", "a: number", "a > -1"), [[0], [-2]]).behavior, "verified_strict");
+  assert.notEqual(grade("src/above.ts", "above", fn("above", "a: number", "a > -1"), fn("above", "a: number", "a >= -0.5"), [[10]]).behavior, "verified_strict");
+  assert.notEqual(grade("src/above.ts", "above", fn("above", "a: number", "a > 0"), fn("above", "a: number", "a > 0 && a !== 0.3"), ints).behavior, "verified_strict");
+  const len = (expr: string) => `export function size(a: string): boolean {\n  return ${expr};\n}\n`;
+  assert.notEqual(grade("src/size.ts", "size", len("a.length > 3"), len("a.length > 4"), [["ab"]]).behavior, "verified_strict");
+  const indexed = (expr: string) => `export function at(a: number[], b: number, c: number): number {\n  return ${expr};\n}\n`;
+  const wide = Array.from({ length: 14 }, (_, i) => [[0, 0, 0, 0, 0, 0, 0, 0], i, 0] as unknown[]);
+  assert.notEqual(grade("src/at.ts", "at", indexed("a[7] === 1 ? 1 : 0"), indexed("0"), wide).behavior, "verified_strict");
+  const objects = [[{ n: -1 }], [{ n: 0 }], [{ n: 1 }], [{ n: 2 }]];
+  const field = (expr: string) => `export function above(a: { n: number }): boolean {\n  return ${expr};\n}\n`;
+  assert.notEqual(grade("src/above.ts", "above", field("a.n > 0"), field("a.n >= 1"), objects).behavior, "verified_strict");
+  const dated = (body: string) => `export function stamp(d: Date): number {\n  ${body}\n}\n`;
+  const stamped = grade("src/stamp.ts", "stamp", dated("return d instanceof Date ? d.getTime() : -1;"), dated("return d instanceof Date ? 0 : -1;"), [[new Date(5)]]);
+  assert.equal(stamped.behavior, "verified_test_only");
+  assert.match(stamped.counterexample?.candidate ?? "", /5/);
+  const made = (when: number) => `export function born(_n: number): Date {\n  return new Date(${when});\n}\n`;
+  const births = grade("src/born.ts", "born", made(5), made(9), [[1]]);
+  assert.equal(births.behavior, "verified_test_only");
+  assert.match(births.counterexample?.candidate ?? "", /5/);
+  const setted = (body: string) => `export function has(s: Set<number>): boolean {\n  ${body}\n}\n`;
+  const membership = grade("src/has.ts", "has", setted("return s instanceof Set && s.has(1);"), setted("return s instanceof Set && s.has(2);"), [[new Set([1])]]);
+  assert.equal(membership.behavior, "verified_test_only");
+  assert.match(membership.counterexample?.candidate ?? "", /true/);
+  const bag = (n: number) => `export function bag(_x: number): Set<number> {\n  return new Set([${n}]);\n}\n`;
+  const bags = grade("src/bag.ts", "bag", bag(1), bag(2), [[1]]);
+  assert.equal(bags.behavior, "verified_test_only");
+  const boxed = "export function box(n: number): object {\n  class Box {\n    n: number;\n    constructor(value: number) { this.n = value; }\n  }\n  return new Box(n);\n}\n";
+  const plain = "export function box(n: number): object {\n  return { n };\n}\n";
+  assert.equal(grade("src/box.ts", "box", boxed, plain, [[1]]).behavior, "diff_unavailable");
+  class Item { n: number; constructor(value: number) { this.n = value; } }
+  const readItem = "export function total(a: { n: number }): number {\n  return a.n;\n}\n";
+  assert.equal(grade("src/item.ts", "total", readItem, readItem, [[new Item(1)]]).behavior, "diff_unavailable");
+  const thrown = "export function gate(n: number): number {\n  throw n;\n}\n";
+  const returned = "export function gate(n: number): number {\n  return n;\n}\n";
+  assert.notEqual(grade("src/gate.ts", "gate", thrown, returned, [[1]]).behavior, "verified_strict");
+  const open = "export function cmp(a: number, b: number): boolean {\n  return a > b;\n}\n";
+  assert.equal(grade("src/cmp.ts", "cmp", open, open, [[1, 0], [0, 1]]).behavior, "verified_test_only");
+});
+
+test("kevva/is-positive real test does not show the integer collapse", () => {
+  const source = [
+    "// MIT License",
+    "//",
+    "// Copyright (c) Kevin Martensson (github.com/kevva)",
+    "//",
+    "// Permission is hereby granted, free of charge, to any person obtaining a copy",
+    "// of this software and associated documentation files (the \"Software\"), to deal",
+    "// in the Software without restriction, including without limitation the rights",
+    "// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell",
+    "// copies of the Software, and to permit persons to whom the Software is",
+    "// furnished to do so, subject to the following conditions:",
+    "//",
+    "// The above copyright notice and this permission notice shall be included in all",
+    "// copies or substantial portions of the Software.",
+    "//",
+    "// THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR",
+    "// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,",
+    "// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE",
+    "// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER",
+    "// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,",
+    "// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE",
+    "// SOFTWARE.",
+    "//",
+    "// The published file calls a free toString. This copy binds that to Object.prototype.toString.",
+    "const toString = Object.prototype.toString;",
+    "export function isPositive(n: unknown): boolean {",
+    "\treturn toString.call(n) === \"[object Number]\" && (n as number) > 0;",
+    "}",
+    "",
+  ].join("\n");
+  assert.equal(source.includes("@"), false);
+  assert.match(source, /Copyright \(c\) Kevin Martensson \(github.com\/kevva\)/);
+  assert.match(source, /Permission is hereby granted/);
+  // The published test.js assertions, with only the import path pointed at a TypeScript file.
+  const realTest = [
+    "import test from \"ava\";",
+    "import m from \"./is-positive.ts\";",
+    "test(t => {",
+    " t.true(m(1));",
+    " t.true(m(new Number(1)));",
+    " t.false(m(0));",
+    " t.false(m(-1));",
+    " t.false(m('1'));",
+    " t.false(m(NaN));",
+    " t.false(m(true));",
+    " t.false(m());",
+    "});",
+  ].join("\n");
+  // The module is absent. The import path is the only edit, so the scaffold reads the published calls.
+  const full = scaffoldPlan("src/is-positive.test.ts", realTest, "Error [ERR_MODULE_NOT_FOUND]: Cannot find module './is-positive.ts'", PATTERN, [], () => null);
+  assert.equal(full?.ok, false);
+  if (full && !full.ok) assert.equal(full.reason, "CANT_DO_YET_SIGNATURE");
+  const subset = [
+    "import test from \"ava\";",
+    "import m from \"./is-positive.ts\";",
+    "test(t => {",
+    " t.true(m(1));",
+    " t.false(m(0));",
+    " t.false(m(-1));",
+    "});",
+  ].join("\n");
+  const narrow = scaffoldPlan("src/is-positive.test.ts", subset, "Error [ERR_MODULE_NOT_FOUND]: Cannot find module './is-positive.ts'", PATTERN, [], () => null);
+  assert.equal(narrow?.ok, false);
+  if (narrow && !narrow.ok) assert.equal(narrow.reason, "CANT_DO_YET_NO_BODY");
+});
+
+test("array-input bugs are not graded strict when classic mutants still fit", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const nodePath = visibleNodeBin();
+  if (!nodePath) { t.skip("no visible node"); return; }
+  const grade = (candidate: string, fix: string, args: unknown[][]) => {
+    const write = (body: string) => {
+      const root = mkdtempSync(join(tmpdir(), "peaceai-arr-"));
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(join(root, "src/arr.ts"), body);
+      return root;
+    };
+    const left = write(candidate);
+    const right = write(fix);
+    try {
+      return gradeBehavior({
+        candidateRoot: left, fixRoot: right, nodePath,
+        target: { symbol: "total", file: "src/arr.ts", form: "named", exportName: "total", args },
+      }).behavior;
+    } finally {
+      rmSync(left, { recursive: true, force: true });
+      rmSync(right, { recursive: true, force: true });
+    }
+  };
+  const sum = "export function total(a: number[]): number { return a.reduce((sum, n) => sum + n, 0); }\n";
+  const abs = "export function total(a: number[]): number { return a.reduce((sum, n) => sum + Math.abs(n), 0); }\n";
+  const rows = [[1], [1, 2], [2, 3, 4], [5], [1, 1, 1], [3, 1], [4, 2, 2], [8, 1]];
+  let absStrict = 0;
+  for (const row of rows) if (grade(sum, abs, [[row]]) === "verified_strict") absStrict++;
+  let lengthStrict = 0;
+  for (const cap of [2, 3, 4, 2, 3, 4, 5, 3]) {
+    const row = Array.from({ length: cap }, (_, i) => i + 1);
+    const capped = `export function total(a: number[]): number { return Math.min(a.length, ${cap}); }\n`;
+    const plain = "export function total(a: number[]): number { return a.length; }\n";
+    if (grade(plain, capped, [[row]]) === "verified_strict") lengthStrict++;
+  }
+  const crowded = Array.from({ length: 14 }, (_, i) => [Array.from({ length: 4 }, (__, j) => i + j + 1)]);
+  const crowdedLength = grade(
+    "export function total(a: number[]): number { return a.length; }\n",
+    "export function total(a: number[]): number { return Math.min(a.length, 4); }\n",
+    crowded,
+  );
+  const same = grade(
+    "export function total(a: number[]): number { return a.length; }\n",
+    "export function total(a: number[]): number { return a.length; }\n",
+    [[[1, 2]]],
+  );
+  assert.equal(absStrict, 0);
+  assert.equal(lengthStrict, 0);
+  assert.notEqual(crowdedLength, "verified_strict");
+  assert.equal(same, "verified_strict");
 });

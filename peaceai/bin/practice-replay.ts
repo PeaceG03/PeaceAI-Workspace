@@ -10,11 +10,11 @@
 // candidate and passes after it. Unmeasured is never a pass.
 // A repo that targets.json does not name is UNMEASURED GATE_NO_TARGET. gate.ts and scope.ts are not edited.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
-import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, cloneCheckProblems, ensurePracticeInstall, materializeSolverTree, mergeCloneRootCollisions, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
+import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, cloneCheckProblems, ensurePracticeInstall, materializeSolverTree, mergeCloneRootCollisions, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, processStartId, readPairFingerprint, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
 import {
   PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, targetIsScorable, writePracticeOutputs,
   type GradedRow, type Understanding,
@@ -56,10 +56,75 @@ function cloneDir(repo: string, clones: string, work: string): string | null {
   return dir;
 }
 
+const HELD_TEMP_PREFIXES = ["peaceai-held-clone-", "peaceai-held-install-"];
+const HELD_OWNER = ".peaceai-owner";
+
+function ownerStamp(): string {
+  return `${process.pid} ${processStartId(process.pid) ?? "0"}\n`;
+}
+
+function ownerStillAlive(pid: number, start: string): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); } catch { return false; }
+  const now = processStartId(pid);
+  return now !== null && now === start;
+}
+
+/** An ownerless directory is reaped only after it has sat this long. A pid of 0, or text that is not a pid, is never reaped. */
+export const HELD_OWNERLESS_MS = 24 * 60 * 60 * 1000;
+
+function reapLog(message: string): void {
+  console.log(`reap ${message}`);
+}
+
+/** Delete held-out temp dirs whose owner is dead. Errors are logged and do not stop the scan. */
+export function reapStaleHeldTemps(root = tmpdir(), remove: (dir: string) => void = (dir) => rmSync(dir, { recursive: true, force: true })): string[] {
+  const removed: string[] = [];
+  let names: string[] = [];
+  try { names = readdirSync(root); } catch (err) {
+    reapLog(`skipped: ${(err as Error).message}`);
+    return removed;
+  }
+  for (const name of names) {
+    if (!HELD_TEMP_PREFIXES.some((prefix) => name.startsWith(prefix))) continue;
+    const dir = join(root, name);
+    try {
+      let text = "";
+      let ownerless = false;
+      try { text = readFileSync(join(dir, HELD_OWNER), "utf8"); } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+        ownerless = true;
+      }
+      if (ownerless) {
+        const age = Date.now() - lstatSync(dir).mtimeMs;
+        if (age < HELD_OWNERLESS_MS) continue;
+      } else {
+        const [pidText, start] = text.trim().split(/\s+/);
+        const pid = Number(pidText);
+        if (!Number.isInteger(pid) || pid <= 0 || pidText !== String(pid)) continue;
+        if (ownerStillAlive(pid, start ?? "")) continue;
+      }
+      remove(dir);
+      removed.push(dir);
+    } catch (err) {
+      reapLog(`${name}: ${(err as Error).message}`);
+    }
+  }
+  return removed;
+}
+
+function markHeldOwner(dir: string): void {
+  const dest = join(dir, HELD_OWNER);
+  const tmp = join(dir, `.${HELD_OWNER}.${process.pid}.tmp`);
+  writeFileSync(tmp, ownerStamp());
+  renameSync(tmp, dest);
+}
+
 /** Dev clones stay under out/clones. A held-out clone is a temp directory, deleted after grading. */
 export function replayClonePlace(split: "dev" | "held-out", outDir: string): { dir: string; release(): void } {
   if (split !== "held-out") return { dir: join(outDir, "clones"), release() {} };
   const dir = mkdtempSync(join(tmpdir(), "peaceai-held-clone-"));
+  markHeldOwner(dir);
   return { dir, release() { rmSync(dir, { recursive: true, force: true }); } };
 }
 
@@ -73,6 +138,7 @@ export function openPracticeClone(repo: string, split: "dev" | "held-out", clone
 export function practiceInstallRoot(split: "dev" | "held-out", outDir: string, explicit?: string): { dir: string; release(): void } {
   if (split === "held-out") {
     const dir = mkdtempSync(join(tmpdir(), "peaceai-held-install-"));
+    markHeldOwner(dir);
     return { dir, release() { rmSync(dir, { recursive: true, force: true }); } };
   }
   return { dir: explicit ? resolve(explicit) : join(outDir, "install-cache"), release() {} };
@@ -81,6 +147,25 @@ export function practiceInstallRoot(split: "dev" | "held-out", outDir: string, e
 /** Delete every held-out temp this replay owns. A second call is harmless. */
 export function releaseHeldPlaces(places: readonly { release(): void }[]): void {
   for (const place of places) place.release();
+}
+
+/** How many later pairs still need each dependency fingerprint. */
+export function tallyFingerprints(fingerprints: readonly string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const fingerprint of fingerprints) counts.set(fingerprint, (counts.get(fingerprint) ?? 0) + 1);
+  return counts;
+}
+
+/** Drop one use. When none remain, the temp install for that fingerprint is removed. */
+export function finishHeldFingerprint(cacheRoot: string, fingerprint: string, remaining: Map<string, number>): boolean {
+  const left = (remaining.get(fingerprint) ?? 1) - 1;
+  if (left > 0) {
+    remaining.set(fingerprint, left);
+    return false;
+  }
+  remaining.delete(fingerprint);
+  if (cacheRoot) rmSync(join(cacheRoot, "installs", fingerprint), { recursive: true, force: true });
+  return true;
 }
 
 function linkModules(modules: string, dir: string): void {
@@ -294,7 +379,16 @@ function pushInstall(graded: GradedRow[], pair: PracticePair, reason: string, li
 }
 
 function main(): void {
+  reapStaleHeldTemps();
   const args = process.argv.slice(2);
+  if (args.includes("--hold-held-temps")) {
+    const clone = replayClonePlace("held-out", tmpdir());
+    const install = practiceInstallRoot("held-out", tmpdir());
+    console.log(`held-clone ${clone.dir}`);
+    console.log(`held-install ${install.dir}`);
+    setInterval(() => {}, 1_000_000);
+    return;
+  }
   if (args.includes("-h") || args.includes("--help")) { console.log(USAGE); return; }
   const pairsPath = flag("--pairs", args);
   const out = flag("--out", args);
@@ -333,16 +427,9 @@ function main(): void {
   const heldScratch: { release(): void }[] = [];
   const devCache = installCache ? resolve(installCache) : join(out, "install-cache");
   let heldCache: { dir: string; release(): void } | null = null;
-  const stop = (code: number) => {
-    releaseHeldPlaces(heldScratch);
-    process.exit(code);
-  };
-  const onInt = () => stop(130);
-  const onTerm = () => stop(143);
-  process.on("SIGINT", onInt);
-  process.on("SIGTERM", onTerm);
   try {
     const repos = new Map<string, string | null>();
+    const runnable: PracticePair[] = [];
     for (const pair of pairs) {
       const scorable = targetIsScorable(pair.repo);
       if (!scorable || core !== "ok" || !sandbox) {
@@ -354,14 +441,40 @@ function main(): void {
         for (const understanding of ["text", "test-as-spec"] as const) graded.push({ repo: pair.repo, split: pair.split, fixSha: pair.fixSha, understanding, status, reason, gap: true });
         continue;
       }
+      runnable.push(pair);
       if (!repos.has(pair.repo)) {
         const opened = openPracticeClone(pair.repo, pair.split, clones, out);
         if (pair.split === "held-out") heldScratch.push(opened);
         repos.set(pair.repo, opened.dir);
       }
+    }
+    const locksOf = (dir: string, pair: PracticePair): LockFiles => {
+      const shown = (path: string) => practiceGit(dir, ["show", `${pair.baseSha}:${path}`]);
+      return {
+        npm: shown("package-lock.json").ok || shown("npm-shrinkwrap.json").ok,
+        pnpm: shown("pnpm-lock.yaml").ok,
+        yarn: shown("yarn.lock").ok,
+      };
+    };
+    const fingerprintOf = new Map<PracticePair, string>();
+    for (const pair of runnable) {
+      if (pair.split !== "held-out") continue;
       const dir = repos.get(pair.repo);
+      if (!dir) continue;
+      const fp = readPairFingerprint(dir, pair.baseSha, pair.toolchain, locksOf(dir, pair));
+      if (fp) fingerprintOf.set(pair, fp);
+    }
+    const remaining = tallyFingerprints([...fingerprintOf.values()]);
+    const ordered = [
+      ...runnable.filter((pair) => pair.split !== "held-out"),
+      ...runnable.filter((pair) => pair.split === "held-out").sort((a, b) => (fingerprintOf.get(a) ?? "").localeCompare(fingerprintOf.get(b) ?? "")),
+    ];
+    for (const pair of ordered) {
+      const dir = repos.get(pair.repo);
+      const fp = fingerprintOf.get(pair);
       if (!dir) {
         for (const understanding of ["text", "test-as-spec"] as const) graded.push({ repo: pair.repo, split: pair.split, fixSha: pair.fixSha, understanding, status: "unmeasured", reason: "NO_CLONE", gap: true });
+        if (fp) finishHeldFingerprint(heldCache?.dir ?? "", fp, remaining);
         continue;
       }
       let cacheRoot = devCache;
@@ -369,34 +482,32 @@ function main(): void {
         if (!heldCache) { heldCache = practiceInstallRoot("held-out", out); heldScratch.push(heldCache); }
         cacheRoot = heldCache.dir;
       }
-      const shown = (path: string) => practiceGit(dir, ["show", `${pair.baseSha}:${path}`]);
-      const pkgShow = shown("package.json");
-      let pkg: { packageManager?: string; dependencies?: object; devDependencies?: object } = {};
-      try { pkg = JSON.parse(pkgShow.out) as typeof pkg; } catch { pkg = {}; }
-      const locks: LockFiles = {
-        npm: shown("package-lock.json").ok || shown("npm-shrinkwrap.json").ok,
-        pnpm: shown("pnpm-lock.yaml").ok,
-        yarn: shown("yarn.lock").ok,
-      };
-      let installed;
       try {
-        installed = ensurePracticeInstall(dir, pair, cacheRoot, locks, yarnIsModern(pkg), { maxInstalls: installMax });
-      } catch (err) {
-        const code = (err as NodeJS.ErrnoException).code;
-        const reason = code === "ENOSPC" ? "INSTALL_SKIPPED_NO_SPACE" : "INSTALL_FAILED";
-        pushInstall(graded, pair, reason, [`${(err as Error).message ?? "install"}`.slice(0, 240)]);
-        continue;
+        const shown = (path: string) => practiceGit(dir, ["show", `${pair.baseSha}:${path}`]);
+        const pkgShow = shown("package.json");
+        let pkg: { packageManager?: string; dependencies?: object; devDependencies?: object } = {};
+        try { pkg = JSON.parse(pkgShow.out) as typeof pkg; } catch { pkg = {}; }
+        const locks = locksOf(dir, pair);
+        let installed;
+        try {
+          installed = ensurePracticeInstall(dir, pair, cacheRoot, locks, yarnIsModern(pkg), { maxInstalls: installMax });
+        } catch (err) {
+          const code = (err as NodeJS.ErrnoException).code;
+          const reason = code === "ENOSPC" ? "INSTALL_SKIPPED_NO_SPACE" : "INSTALL_FAILED";
+          pushInstall(graded, pair, reason, [`${(err as Error).message ?? "install"}`.slice(0, 240)]);
+          continue;
+        }
+        if (!installed.ok || !installed.modules) {
+          pushInstall(graded, pair, installed.reason ?? "INSTALL_FAILED", installed.lines);
+          continue;
+        }
+        graded.push(replayOne(tooling, bundle, coreDir, dir, pair, installed.modules));
+        graded.push(specOne(tooling, coreDir, dir, pair, installed.modules));
+      } finally {
+        if (fp && heldCache) finishHeldFingerprint(heldCache.dir, fp, remaining);
       }
-      if (!installed.ok || !installed.modules) {
-        pushInstall(graded, pair, installed.reason ?? "INSTALL_FAILED", installed.lines);
-        continue;
-      }
-      graded.push(replayOne(tooling, bundle, coreDir, dir, pair, installed.modules));
-      graded.push(specOne(tooling, coreDir, dir, pair, installed.modules));
     }
   } finally {
-    process.off("SIGINT", onInt);
-    process.off("SIGTERM", onTerm);
     dispose();
     releaseHeldPlaces(heldScratch);
   }

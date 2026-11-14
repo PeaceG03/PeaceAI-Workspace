@@ -1,7 +1,7 @@
 // Mixed practice set. credit is false. The held-out hash and the training-exclusion check live here
 // because the corpus and pair source lists are in files this change does not edit.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import test from "node:test";
@@ -14,7 +14,7 @@ import {
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
 import { countBySplit, gapRecord, gradePracticeRow, replayDocument, targetIsScorable, writePracticeOutputs } from "../lib/practicereplay.ts";
-import { openPracticeClone, practiceInstallRoot, releaseHeldPlaces } from "../bin/practice-replay.ts";
+import { finishHeldFingerprint, HELD_OWNERLESS_MS, openPracticeClone, practiceInstallRoot, reapStaleHeldTemps, releaseHeldPlaces, tallyFingerprints } from "../bin/practice-replay.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 
 const repo = join(import.meta.dirname, "../..");
@@ -1130,6 +1130,134 @@ test("a held-out clone is not left under the replay output directory", () => {
     rmSync(out, { recursive: true, force: true });
     if (heldRoot) rmSync(heldRoot, { recursive: true, force: true });
     if (installRoot) rmSync(installRoot, { recursive: true, force: true });
+  }
+});
+
+test("a live owner keeps its held temp, and a dead owner is reaped", () => {
+  const root = mkdtempSync(join(tmpdir(), "m229-reap-"));
+  const dir = mkdtempSync(join(root, "peaceai-held-clone-"));
+  try {
+    writeFileSync(join(dir, ".peaceai-owner"), `${process.pid} ${processStartId(process.pid) ?? "0"}\n`);
+    assert.equal(reapStaleHeldTemps(root).includes(dir), false);
+    assert.equal(existsSync(dir), true);
+    writeFileSync(join(dir, ".peaceai-owner"), `${process.pid} 1\n`);
+    assert.equal(reapStaleHeldTemps(root).includes(dir), true);
+    assert.equal(existsSync(dir), false);
+    const fresh = mkdtempSync(join(root, "peaceai-held-install-"));
+    assert.equal(reapStaleHeldTemps(root).includes(fresh), false);
+    assert.equal(existsSync(fresh), true);
+    const old = mkdtempSync(join(root, "peaceai-held-clone-"));
+    const ago = new Date(Date.now() - HELD_OWNERLESS_MS - 1000);
+    utimesSync(old, ago, ago);
+    assert.equal(reapStaleHeldTemps(root).includes(old), true);
+    assert.equal(existsSync(old), false);
+    const zero = mkdtempSync(join(root, "peaceai-held-clone-"));
+    writeFileSync(join(zero, ".peaceai-owner"), "0 1\n");
+    utimesSync(zero, ago, ago);
+    assert.equal(reapStaleHeldTemps(root).includes(zero), false);
+    assert.equal(existsSync(zero), true);
+    const unknown = mkdtempSync(join(root, "peaceai-held-clone-"));
+    writeFileSync(join(unknown, ".peaceai-owner"), "nope\n");
+    utimesSync(unknown, ago, ago);
+    assert.equal(reapStaleHeldTemps(root).includes(unknown), false);
+    const blocked = mkdtempSync(join(root, "peaceai-held-clone-"));
+    writeFileSync(join(blocked, ".peaceai-owner"), "2147483646 1\n");
+    assert.doesNotThrow(() => reapStaleHeldTemps(root, () => { throw Object.assign(new Error("EACCES"), { code: "EACCES" }); }));
+    assert.equal(existsSync(blocked), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("SIGTERM to the replay leaves held temps for the next start to reap", async () => {
+  const tsx = join(repo, "node_modules/tsx/dist/cli.mjs");
+  const script = join(repo, "peaceai/bin/practice-replay.ts");
+  const scratch = mkdtempSync(join(tmpdir(), "m229-replay-"));
+  const hold = () => new Promise<{ child: ReturnType<typeof spawn>; clone: string; install: string }>((resolve, reject) => {
+    const child = spawn(process.execPath, [tsx, script, "--hold-held-temps"], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, TMPDIR: scratch, TMP: scratch, TEMP: scratch } });
+    let text = "";
+    const timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error(`hold timed out\n${text}`)); }, 20_000);
+    const take = () => {
+      const clone = text.match(/held-clone (\S+)/);
+      const install = text.match(/held-install (\S+)/);
+      if (!clone || !install) return;
+      clearTimeout(timer);
+      resolve({ child, clone: clone[1]!, install: install[1]! });
+    };
+    child.stdout?.on("data", (buf: Buffer) => { text += buf.toString(); take(); });
+    child.stderr?.on("data", (buf: Buffer) => { text += buf.toString(); });
+    child.once("exit", (code) => { clearTimeout(timer); reject(new Error(`replay exited ${code}\n${text}`)); });
+  });
+  const stopped = (child: ReturnType<typeof spawn>) => new Promise<void>((resolve) => {
+    if (child.exitCode !== null) { resolve(); return; }
+    child.once("exit", () => resolve());
+    child.kill("SIGTERM");
+  });
+  let second: Awaited<ReturnType<typeof hold>> | null = null;
+  const first = await hold();
+  try {
+    assert.equal(existsSync(first.clone), true);
+    assert.equal(existsSync(first.install), true);
+    await stopped(first.child);
+    assert.equal(existsSync(first.clone), true);
+    assert.equal(existsSync(first.install), true);
+    second = await hold();
+    assert.equal(existsSync(first.clone), false);
+    assert.equal(existsSync(first.install), false);
+    assert.equal(existsSync(second.clone), true);
+    assert.equal(second.clone.startsWith(scratch), true);
+  } finally {
+    if (second && second.child.exitCode === null) await stopped(second.child);
+    reapStaleHeldTemps(scratch);
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("a live replay keeps its held temp while a second start reaps only the dead one", async () => {
+  const scratch = mkdtempSync(join(tmpdir(), "m229-live-"));
+  const tsx = join(repo, "node_modules/tsx/dist/cli.mjs");
+  const script = join(repo, "peaceai/bin/practice-replay.ts");
+  const child = spawn(process.execPath, [tsx, script, "--hold-held-temps"], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, TMPDIR: scratch, TMP: scratch, TEMP: scratch } });
+  let text = "";
+  try {
+    const clone = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(text)), 20_000);
+      child.stdout?.on("data", (buf: Buffer) => {
+        text += buf.toString();
+        const found = text.match(/held-clone (\S+)/);
+        if (found) { clearTimeout(timer); resolve(found[1]!); }
+      });
+    });
+    assert.equal(reapStaleHeldTemps(scratch).includes(clone), false);
+    assert.equal(existsSync(clone), true);
+    const owner = readText(join(clone, ".peaceai-owner"), "utf8");
+    assert.match(owner, /^\d+ \d+\n$/);
+    assert.equal(existsSync(join(clone, ".peaceai-owner")), true);
+  } finally {
+    if (child.exitCode === null) child.kill("SIGTERM");
+    reapStaleHeldTemps(scratch);
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("held-out installs with one fingerprint are shared and deleted when unused", () => {
+  const cache = mkdtempSync(join(tmpdir(), "m229-held-install-"));
+  try {
+    const remaining = tallyFingerprints(["aaa", "aaa", "bbb"]);
+    const shared = join(cache, "installs", "aaa");
+    mkdirSync(join(shared, "node_modules"), { recursive: true });
+    writeFileSync(join(shared, "package.json"), "{}\n");
+    writeFileSync(join(shared, "package-lock.json"), "{}\n");
+    assert.equal(finishHeldFingerprint(cache, "aaa", remaining), false);
+    assert.equal(existsSync(join(shared, "node_modules")), true);
+    assert.equal(finishHeldFingerprint(cache, "aaa", remaining), true);
+    assert.equal(existsSync(shared), false);
+    const other = join(cache, "installs", "bbb");
+    mkdirSync(join(other, "node_modules"), { recursive: true });
+    assert.equal(finishHeldFingerprint(cache, "bbb", remaining), true);
+    assert.equal(existsSync(other), false);
+  } finally {
+    rmSync(cache, { recursive: true, force: true });
   }
 });
 
