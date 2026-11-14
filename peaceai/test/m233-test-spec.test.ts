@@ -9,7 +9,7 @@ import { openRepo } from "../lib/codesearch.ts";
 import { CALLEE_DEPTH, locate, MAX_CANDIDATES } from "../lib/editpropose.ts";
 import { MAX_ATTEMPTS } from "../lib/loop.ts";
 import { GIT_LOCK_ARGS, materializeSolverTree, practiceGit, practiceGitEnv, practiceSandboxReady, visibleNodeBin, writeCommitFile } from "../lib/practicemine.ts";
-import { adjacentFloat, behaviorInputs, gradeBehavior, INPUT_CAP, parseProbe, PROBE_SENTINEL } from "../lib/specgrade.ts";
+import { adjacentFloat, behaviorInputs, comparisonBounds, gradeBehavior, INPUT_CAP, parseProbe, PROBE_SENTINEL } from "../lib/specgrade.ts";
 import { classifyRunnerOutput, expectationsIn, integerCmpClass, originalSuiteArgv, runTestSpec, sanitizeRunnerLines, scaffoldPlan, SPEC_ATTEMPT_CAP, specTask, type SpecInput } from "../lib/testspec.ts";
 
 const PATTERN = "^src/.+\\.ts$";
@@ -1117,4 +1117,66 @@ test("collection literals and numeric strings are probed, and the same pair stay
     assert.notEqual(grade(fn(left), fn(right), ints), "verified_strict");
     assert.equal(grade(fn(left), fn(left), ints), "verified_strict");
   }
+});
+
+test("module constants, string carve-outs, scale, and regex are not strict when they differ", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const nodePath = visibleNodeBin();
+  if (!nodePath) { t.skip("no visible node"); return; }
+  const write = (body: string) => {
+    const root = mkdtempSync(join(tmpdir(), "peaceai-more-"));
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src/f.ts"), body);
+    return root;
+  };
+  const grade = (candidate: string, fix: string, args: unknown[][]) => {
+    const left = write(candidate);
+    const right = write(fix);
+    try {
+      return gradeBehavior({
+        candidateRoot: left, fixRoot: right, nodePath,
+        target: { symbol: "f", file: "src/f.ts", form: "named", exportName: "f", args },
+      }).behavior;
+    } finally {
+      rmSync(left, { recursive: true, force: true });
+      rmSync(right, { recursive: true, force: true });
+    }
+  };
+  const num = (expr: string) => `export function f(a: number): boolean {\n  return ${expr};\n}\n`;
+  const str = (expr: string) => `export function f(a: string): boolean {\n  return ${expr};\n}\n`;
+  const ints = [[-1], [0], [1], [2]];
+  const words = [["ab"]];
+  const consts = [
+    ["const BAD = new Set([0.3]);\n", "BAD.has(a)", num],
+    ["const BAD = [0.3];\n", "BAD.indexOf(a) !== -1", num],
+    ["const BAD = new Map([[0.3, true]]);\n", "BAD.get(a) === true", num],
+    ["const BAD = { \"0.3\": true } as Record<string, boolean>;\n", "BAD[a] === true", num],
+  ] as const;
+  for (const [head, expr, wrap] of consts) {
+    const body = (value: string) => `${head}${wrap(value)}`;
+    assert.notEqual(grade(body(expr), body("false"), ints), "verified_strict");
+    assert.equal(grade(body(expr), body(expr), ints), "verified_strict");
+  }
+  const textPairs: [string, string, unknown[][]][] = [
+    [str('a === "x"'), str("false"), words],
+    ["export function f(a: string): boolean {\n  switch (a) { case \"x\": return true; default: return false; }\n}\n", str("false"), words],
+    [str('new Set(["zz"]).has(a)'), str("false"), words],
+    [str('({ zz: true } as Record<string, boolean>)[a] === true'), str("false"), words],
+    [str('a.startsWith("zz")'), str("false"), words],
+    [num('String(a) !== "Infinity"'), num("true"), ints],
+    [num('String(a) in { "0.3": true }'), num("false"), ints],
+    [num("(a * 10 | 0) === 3"), num("false"), ints],
+    [num("/0\\.3/.test(String(a))"), num("false"), ints],
+    [num("Math.abs(a - 0.1) < 1e-12"), num("false"), ints],
+    ["export function f(a: string[]): boolean {\n  return a.includes(\"0.3\");\n}\n", "export function f(a: string[]): boolean {\n  return false;\n}\n", [[["no"]]]],
+  ];
+  for (const [left, right, args] of textPairs) {
+    assert.notEqual(grade(left, right, args), "verified_strict");
+    assert.equal(grade(left, left, args), "verified_strict");
+  }
+  const includes = "export function f(a: number[], b: number): boolean {\n  return a.includes(b);\n}\n";
+  assert.equal(grade(includes, includes, [[[1], 2]]), "verified_test_only");
+  assert.equal(comparisonBounds("export function f(a: Record<string, boolean>): boolean {\n  return a[0.3] === true;\n}\n").thresholds.includes(0.3), true);
+  assert.equal(comparisonBounds('export function f(a: number): boolean {\n  return String(a) !== "1e-9";\n}\n').thresholds.includes(1e-9), true);
+  assert.equal(comparisonBounds("export function f(a: number): boolean {\n  return a === 0x100;\n}\n").thresholds.includes(256), true);
 });

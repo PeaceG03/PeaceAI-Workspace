@@ -14,7 +14,7 @@ import {
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
 import { countBySplit, gapRecord, gradePracticeRow, replayDocument, targetIsScorable, writePracticeOutputs } from "../lib/practicereplay.ts";
-import { drivePracticePairs, finishHeldFingerprint, HELD_OWNERLESS_MS, HELD_START0_CAP, openPracticeClone, practiceInstallRoot, reapStaleHeldTemps, releaseHeldPlaces, tallyFingerprints } from "../bin/practice-replay.ts";
+import { drivePracticePairs, finishHeldFingerprint, HELD_OWNERLESS_MS, HELD_START0_CAP, openPracticeClone, pidState, practiceInstallRoot, reapStaleHeldTemps, releaseHeldPlaces, tallyFingerprints } from "../bin/practice-replay.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 
 const repo = join(import.meta.dirname, "../..");
@@ -1270,6 +1270,38 @@ test("a live replay keeps its held temp while a second start reaps only the dead
     if (child.exitCode === null) child.kill("SIGTERM");
     reapStaleHeldTemps(scratch);
     rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("EPERM on a live start-time-0 pid reaps nothing, and an unproven ESRCH is kept", () => {
+  const root = mkdtempSync(join(tmpdir(), "m229-eperm-"));
+  const eperm = () => { throw Object.assign(new Error("EPERM"), { code: "EPERM" }); };
+  const esrch = () => { throw Object.assign(new Error("ESRCH"), { code: "ESRCH" }); };
+  try {
+    const dirs: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const dir = mkdtempSync(join(root, "peaceai-held-clone-"));
+      writeFileSync(join(dir, ".peaceai-owner"), `${process.pid} 0\n`);
+      if (i < 5) {
+        const ago = new Date(Date.now() - HELD_OWNERLESS_MS - 1000 - i);
+        utimesSync(dir, ago, ago);
+      }
+      dirs.push(dir);
+    }
+    assert.equal(pidState(process.pid, eperm, () => false), "alive");
+    const removed = reapStaleHeldTemps(root, undefined, { signal: eperm });
+    assert.equal(removed.length, 0);
+    for (const dir of dirs) assert.equal(existsSync(dir), true);
+    const hidden = mkdtempSync(join(root, "peaceai-held-clone-"));
+    writeFileSync(join(hidden, ".peaceai-owner"), "2147483646 0\n");
+    const ago = new Date(Date.now() - HELD_OWNERLESS_MS - 1000);
+    utimesSync(hidden, ago, ago);
+    assert.equal(reapStaleHeldTemps(root, undefined, { signal: esrch, procHas: () => null }).includes(hidden), false);
+    assert.equal(existsSync(hidden), true);
+    assert.equal(reapStaleHeldTemps(root, undefined, { signal: esrch, procHas: () => false }).includes(hidden), true);
+    assert.equal(existsSync(hidden), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
