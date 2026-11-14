@@ -373,6 +373,37 @@ function staticMemberInit(className: string, prop: string, at: ts.Node): ts.Expr
   return null;
 }
 
+function staticReassigned(className: string, prop: string, at: ts.Node): boolean {
+  let root: ts.Node | undefined = at;
+  while (root && !ts.isSourceFile(root)) root = root.parent;
+  if (!root) return false;
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+      const left = unwrapExpr(node.left);
+      if (ts.isPropertyAccessExpression(left) && ts.isIdentifier(left.expression) && left.expression.text === className && ts.isIdentifier(left.name) && left.name.text === prop) found = true;
+    }
+    if (!found) ts.forEachChild(node, visit);
+  };
+  visit(root);
+  return found;
+}
+
+function propertyAssigned(objName: string, prop: string, at: ts.Node): boolean {
+  let scope: ts.Node = at;
+  while (scope.parent && !ts.isFunctionLike(scope) && !ts.isSourceFile(scope)) scope = scope.parent;
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+      const left = unwrapExpr(node.left);
+      if (ts.isPropertyAccessExpression(left) && ts.isIdentifier(left.expression) && left.expression.text === objName && ts.isIdentifier(left.name) && left.name.text === prop) found = true;
+    }
+    if (!found) ts.forEachChild(node, visit);
+  };
+  visit(scope);
+  return found;
+}
+
 /** Numbers and strings written in an array, a Set or Map, an object key, or a same-file binding. */
 function collectLiteralNumbers(node: ts.Node, numbers: number[], strings: string[], seen = new Set<string>()): void {
   const cur = unwrapExpr(node);
@@ -405,7 +436,12 @@ function collectLiteralNumbers(node: ts.Node, numbers: number[], strings: string
       return;
     }
     const member = staticMemberInit(obj.text, cur.name.text, obj);
-    if (member) collectLiteralNumbers(member, numbers, strings, seen);
+    if (member) {
+      if (staticReassigned(obj.text, cur.name.text, obj)) { unresolvedBinding = true; return; }
+      collectLiteralNumbers(member, numbers, strings, seen);
+      return;
+    }
+    if (propertyAssigned(obj.text, cur.name.text, obj)) unresolvedBinding = true;
     return;
   }
   if (ts.isSpreadElement(cur)) {
@@ -469,8 +505,18 @@ function scaledProbe(node: ts.BinaryExpression): number | null {
   const scale = div ? numericLiteral(core.right) : (numericLiteral(core.left) ?? numericLiteral(core.right));
   if (scale === null || scale === 0) return null;
   let parent: ts.Node = node.parent;
-  while (ts.isParenthesizedExpression(parent) || (ts.isPrefixUnaryExpression(parent) && parent.operator === ts.SyntaxKind.TildeToken)) parent = parent.parent;
-  if (ts.isCallExpression(parent)) parent = parent.parent;
+  while (parent) {
+    if (ts.isParenthesizedExpression(parent) || (ts.isPrefixUnaryExpression(parent) && parent.operator === ts.SyntaxKind.TildeToken)) {
+      parent = parent.parent;
+      continue;
+    }
+    // Only Math.floor/trunc/round/ceil are peeled. Any other call hides the scale.
+    if (ts.isCallExpression(parent) && stripIntegerize(parent) !== unwrapExpr(parent)) {
+      parent = parent.parent;
+      continue;
+    }
+    break;
+  }
   while (ts.isParenthesizedExpression(parent)) parent = parent.parent;
   if (!ts.isBinaryExpression(parent)) return null;
   const target = numericLiteral(parent.left) ?? numericLiteral(parent.right);
@@ -821,7 +867,7 @@ export function readFieldProbes(source: string, symbol: string): Array<Record<st
   return fields;
 }
 
-export interface BehaviorInputSet { inputs: unknown[][]; truncated: boolean }
+export interface BehaviorInputSet { inputs: unknown[][]; truncated: boolean; discount: string[] }
 
 /** Originals and mutants share INPUT_CAP. Probes use PROBE_CAP and do not push mutants out. */
 export function behaviorInputSet(examples: readonly (readonly unknown[])[], flags: readonly ParamFlags[], seedText: string, thresholds: readonly number[] = [], lengthThresholds: readonly number[] = [], stringThresholds: readonly string[] = [], fieldSets: ReadonlyArray<ReadonlyArray<Readonly<Record<string, unknown>>>> = []): BehaviorInputSet {
@@ -848,6 +894,7 @@ export function behaviorInputSet(examples: readonly (readonly unknown[])[], flag
   const room = Math.max(0, INPUT_CAP - originals.length);
   const keptMutants = varied.slice(0, room);
   const probed: unknown[][] = [];
+  const discount: string[] = [];
   for (const example of originals) {
     for (const path of numberPaths(example)) {
       const samples = originals.flatMap((args) => {
@@ -865,8 +912,8 @@ export function behaviorInputSet(examples: readonly (readonly unknown[])[], flag
     for (const path of stringPaths(example)) {
       for (const text of stringThresholds) add(probed, setAtAny(example, path, text) as unknown[]);
     }
-    // A key is set only when the graded function reads that field. One object carries every such field,
-    // so `a[0.3] === true && a.y === 1` is not "proved" by writing an unread key.
+    // A key is set only when the graded function reads that field. Writing it onto an empty object
+    // can show a disagreement, but that input does not count toward verified_strict.
     for (const maps of fieldSets) {
       maps.forEach((fields, index) => {
         if (Object.keys(fields).length === 0) return;
@@ -874,7 +921,9 @@ export function behaviorInputSet(examples: readonly (readonly unknown[])[], flag
         if (!plainObject(obj) || numberPaths(obj).length > 0) return;
         let next: unknown = [...example];
         for (const [key, value] of Object.entries(fields)) next = withProp(next, [index], key, value);
-        add(probed, next as unknown[]);
+        const row = next as unknown[];
+        if (Object.keys(obj).length === 0) discount.push(keyOf(row));
+        add(probed, row);
       });
     }
     for (const path of numberPaths(example)) {
@@ -887,7 +936,12 @@ export function behaviorInputSet(examples: readonly (readonly unknown[])[], flag
     }
   }
   const keptProbes = probed.slice(0, PROBE_CAP);
-  return { inputs: [...originals, ...keptMutants, ...keptProbes], truncated: varied.length > keptMutants.length || probed.length > keptProbes.length };
+  const keptKeys = new Set(keptProbes.map((row) => keyOf(row)));
+  return {
+    inputs: [...originals, ...keptMutants, ...keptProbes],
+    truncated: varied.length > keptMutants.length || probed.length > keptProbes.length,
+    discount: discount.filter((key) => keptKeys.has(key)),
+  };
 }
 
 /** The test's own argument lists, then mutants, then probes. Mutants are not sliced away to make room for probes. */
@@ -1001,6 +1055,7 @@ export function gradeBehavior(input: {
   if (!candidate || candidate.load !== "ok" || !candidate.results || !fix || fix.load !== "ok" || !fix.results) return { behavior: "diff_unavailable", compared: 0 };
   if (candidate.results.length !== inputs.length || fix.results.length !== inputs.length) return { behavior: "diff_unavailable", compared: 0 };
   const originalKeys = new Set(input.target.args.map((args) => keyOf([...args])));
+  const discount = new Set(planned.discount);
   let mutated = 0;
   for (let i = 0; i < inputs.length; i++) {
     const left = candidate.results[i]!;
@@ -1019,7 +1074,8 @@ export function gradeBehavior(input: {
         },
       };
     }
-    if (!originalKeys.has(keyOf(inputs[i]!))) mutated += 1;
+    const key = keyOf(inputs[i]!);
+    if (!originalKeys.has(key) && !discount.has(key)) mutated += 1;
   }
   if (mutated < 1) return { behavior: "verified_test_only", compared: inputs.length };
   if (candidateBounds.unprobed || fixBounds.unprobed || planned.truncated) return { behavior: "verified_test_only", compared: inputs.length };
