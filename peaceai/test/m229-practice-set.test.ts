@@ -1273,7 +1273,7 @@ test("a live replay keeps its held temp while a second start reaps only the dead
   }
 });
 
-test("EPERM on a live start-time-0 pid reaps nothing, and an unproven ESRCH is kept", () => {
+test("EPERM on a live start-time-0 pid reaps nothing, and a stale unknown start-time 0 is reaped", () => {
   const root = mkdtempSync(join(tmpdir(), "m229-eperm-"));
   const eperm = () => { throw Object.assign(new Error("EPERM"), { code: "EPERM" }); };
   const esrch = () => { throw Object.assign(new Error("ESRCH"), { code: "ESRCH" }); };
@@ -1296,9 +1296,37 @@ test("EPERM on a live start-time-0 pid reaps nothing, and an unproven ESRCH is k
     writeFileSync(join(hidden, ".peaceai-owner"), "2147483646 0\n");
     const ago = new Date(Date.now() - HELD_OWNERLESS_MS - 1000);
     utimesSync(hidden, ago, ago);
-    assert.equal(reapStaleHeldTemps(root, undefined, { signal: esrch, procHas: () => null }).includes(hidden), false);
-    assert.equal(existsSync(hidden), true);
-    assert.equal(reapStaleHeldTemps(root, undefined, { signal: esrch, procHas: () => false }).includes(hidden), true);
+    assert.equal(reapStaleHeldTemps(root, undefined, { signal: esrch, procHas: () => null }).includes(hidden), true);
+    assert.equal(existsSync(hidden), false);
+    const freshUnknown = mkdtempSync(join(root, "peaceai-held-clone-"));
+    writeFileSync(join(freshUnknown, ".peaceai-owner"), "2147483645 0\n");
+    const freshStamp = new Date(Date.now() - 5_000);
+    utimesSync(freshUnknown, freshStamp, freshStamp);
+    assert.equal(reapStaleHeldTemps(root, undefined, { signal: esrch, procHas: () => null }).includes(freshUnknown), false);
+    assert.equal(existsSync(freshUnknown), true);
+    const realStart = mkdtempSync(join(root, "peaceai-held-clone-"));
+    writeFileSync(join(realStart, ".peaceai-owner"), `${process.pid} ${processStartId(process.pid) ?? "0"}\n`);
+    utimesSync(realStart, ago, ago);
+    const eio = () => { throw Object.assign(new Error("EIO"), { code: "EIO" }); };
+    assert.equal(reapStaleHeldTemps(root, undefined, { signal: eio }).includes(realStart), false);
+    assert.equal(existsSync(realStart), true);
+    const seenAlive = mkdtempSync(join(root, "peaceai-held-clone-"));
+    writeFileSync(join(seenAlive, ".peaceai-owner"), `${process.pid} 1\n`);
+    utimesSync(seenAlive, ago, ago);
+    assert.equal(reapStaleHeldTemps(root, undefined, { signal: esrch, procHas: () => true }).includes(seenAlive), true);
+    const noProc: string[] = [];
+    for (let i = 0; i < HELD_START0_CAP + 1; i++) {
+      const dir = mkdtempSync(join(root, "peaceai-held-clone-"));
+      writeFileSync(join(dir, ".peaceai-owner"), `214748200${i} 0\n`);
+      // Newer than freshUnknown, and distinct from each other, so the cap's oldest-first order does not depend on readdir.
+      const stamp = new Date(Date.now() - 1_000 * (HELD_START0_CAP - i));
+      utimesSync(dir, stamp, stamp);
+      noProc.push(dir);
+    }
+    const gone = reapStaleHeldTemps(root, undefined, { signal: esrch, procRoot: join(root, "no-such-proc") });
+    assert.equal(gone.some((dir) => noProc.includes(dir)), false);
+    for (const dir of noProc) assert.equal(existsSync(dir), true);
+    assert.equal(reapStaleHeldTemps(root, undefined, { signal: esrch, procHas: () => false }).includes(freshUnknown), true);
     assert.equal(existsSync(hidden), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
