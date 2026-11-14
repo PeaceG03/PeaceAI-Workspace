@@ -262,6 +262,50 @@ function isNonNumericLiteral(node: ts.Node): boolean {
     || node.kind === ts.SyntaxKind.NullKeyword;
 }
 
+/** A string such as `"0.3"` hides the same number a numeric literal would. `"number"` does not. */
+function numericText(text: string): number | null {
+  const trimmed = text.trim();
+  if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
+function numericString(node: ts.Node): number | null {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return numericText(node.text);
+  return null;
+}
+
+function unwrapExpr(node: ts.Node): ts.Node {
+  let cur = node;
+  while (ts.isParenthesizedExpression(cur) || ts.isAsExpression(cur) || ts.isTypeAssertionExpression(cur) || ts.isSatisfiesExpression(cur)) cur = cur.expression;
+  return cur;
+}
+
+/** Numbers written in an array, a Set or Map constructor, or an object-literal key. */
+function collectLiteralNumbers(node: ts.Node, out: number[]): void {
+  const cur = unwrapExpr(node);
+  const direct = numericLiteral(cur) ?? numericString(cur);
+  if (direct !== null && Number.isFinite(direct)) { out.push(direct); return; }
+  if (ts.isArrayLiteralExpression(cur)) {
+    for (const el of cur.elements) if (ts.isExpression(el)) collectLiteralNumbers(el, out);
+    return;
+  }
+  if (ts.isObjectLiteralExpression(cur)) {
+    for (const prop of cur.properties) {
+      if (!ts.isPropertyAssignment(prop)) continue;
+      if (ts.isNumericLiteral(prop.name) || ts.isStringLiteral(prop.name)) {
+        const key = numericText(prop.name.text);
+        if (key !== null) out.push(key);
+      }
+      collectLiteralNumbers(prop.initializer, out);
+    }
+    return;
+  }
+  if (ts.isNewExpression(cur) && cur.arguments) {
+    for (const arg of cur.arguments) collectLiteralNumbers(arg, out);
+  }
+}
+
 /** The next representable float above or below `value`. A bound and these neighbors are the probe, not a fixed 1e-6 gap. */
 export function adjacentFloat(value: number, direction: 1 | -1): number {
   if (!Number.isFinite(value)) return value;
@@ -291,7 +335,7 @@ export function comparisonBounds(source: string): { thresholds: number[]; length
       const inequality = kind === ts.SyntaxKind.EqualsEqualsToken || kind === ts.SyntaxKind.EqualsEqualsEqualsToken
         || kind === ts.SyntaxKind.ExclamationEqualsToken || kind === ts.SyntaxKind.ExclamationEqualsEqualsToken;
       if (ordered || inequality) {
-        const bound = numericLiteral(node.left) ?? numericLiteral(node.right);
+        const bound = numericLiteral(node.left) ?? numericLiteral(node.right) ?? numericString(node.left) ?? numericString(node.right);
         if (bound !== null && Number.isFinite(bound)) {
           thresholds.push(bound);
           if (ordered && (isLengthAccess(node.left) || isLengthAccess(node.right))) lengthThresholds.push(bound);
@@ -301,12 +345,25 @@ export function comparisonBounds(source: string): { thresholds: number[]; length
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && ts.isIdentifier(node.expression.name)) {
       const called = node.expression.name.text;
       const objectIs = called === "is" && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Object";
-      if (objectIs || called === "includes") {
+      const lookup = called === "includes" || called === "indexOf" || called === "has" || called === "get";
+      if (objectIs || lookup) {
         const args = objectIs ? [...node.arguments] : node.arguments.slice(0, 1);
-        const literals = args.map((arg) => numericLiteral(arg)).filter((n): n is number => n !== null && Number.isFinite(n));
-        if (literals.length) for (const n of literals) thresholds.push(n);
-        else if (args.some((arg) => !isNonNumericLiteral(arg))) unprobed = true;
+        const found: number[] = [];
+        for (const arg of args) {
+          const n = numericLiteral(arg) ?? numericString(arg);
+          if (n !== null && Number.isFinite(n)) found.push(n);
+        }
+        if (lookup) collectLiteralNumbers(node.expression.expression, found);
+        if (found.length) for (const n of found) thresholds.push(n);
+        else if ((objectIs || called === "includes") && args.some((arg) => !isNonNumericLiteral(arg))) unprobed = true;
       }
+    }
+    if (ts.isElementAccessExpression(node) && node.argumentExpression) {
+      const found: number[] = [];
+      collectLiteralNumbers(node.expression, found);
+      const idx = numericLiteral(node.argumentExpression) ?? numericString(node.argumentExpression);
+      if (idx !== null && Number.isFinite(idx)) found.push(idx);
+      for (const n of found) thresholds.push(n);
     }
     if (ts.isCaseClause(node)) {
       const bound = numericLiteral(node.expression);

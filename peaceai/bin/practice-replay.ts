@@ -72,6 +72,13 @@ function ownerStillAlive(pid: number, start: string): boolean {
 
 /** An ownerless directory is reaped only after it has sat this long. A pid of 0, or text that is not a pid, is never reaped. */
 export const HELD_OWNERLESS_MS = 24 * 60 * 60 * 1000;
+/** Dead start-time-0 temps older than this, or beyond this many fresh ones, are reaped. A live pid is kept. */
+export const HELD_START0_CAP = 4;
+
+function pidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
 
 function reapLog(message: string): void {
   console.log(`reap ${message}`);
@@ -85,6 +92,11 @@ export function reapStaleHeldTemps(root = tmpdir(), remove: (dir: string) => voi
     reapLog(`skipped: ${(err as Error).message}`);
     return removed;
   }
+  const deadStart0: { dir: string; mtime: number }[] = [];
+  const drop = (dir: string) => {
+    remove(dir);
+    removed.push(dir);
+  };
   for (const name of names) {
     if (!HELD_TEMP_PREFIXES.some((prefix) => name.startsWith(prefix))) continue;
     const dir = join(root, name);
@@ -102,15 +114,34 @@ export function reapStaleHeldTemps(root = tmpdir(), remove: (dir: string) => voi
         const [pidText, start] = text.trim().split(/\s+/);
         const pid = Number(pidText);
         if (!Number.isInteger(pid) || pid <= 0 || pidText !== String(pid)) continue;
-        // A start time of 0 is what we write when the start id cannot be read. It never identifies a dead owner.
-        if (start === "0") continue;
+        // Start time 0 means the start id could not be read. A live pid is never that owner's replacement.
+        if (start === "0") {
+          if (pidAlive(pid)) continue;
+          deadStart0.push({ dir, mtime: lstatSync(dir).mtimeMs });
+          continue;
+        }
         if (ownerStillAlive(pid, start ?? "")) continue;
       }
-      remove(dir);
-      removed.push(dir);
+      drop(dir);
     } catch (err) {
       reapLog(`${name}: ${(err as Error).message}`);
     }
+  }
+  deadStart0.sort((a, b) => a.mtime - b.mtime);
+  const fresh: { dir: string; mtime: number }[] = [];
+  for (const item of deadStart0) {
+    try {
+      if (Date.now() - item.mtime >= HELD_OWNERLESS_MS) drop(item.dir);
+      else fresh.push(item);
+    } catch (err) {
+      reapLog(`${item.dir}: ${(err as Error).message}`);
+    }
+  }
+  const overflow = fresh.length - HELD_START0_CAP;
+  for (let i = 0; i < overflow; i++) {
+    const item = fresh[i];
+    if (!item) continue;
+    try { drop(item.dir); } catch (err) { reapLog(`${item.dir}: ${(err as Error).message}`); }
   }
   return removed;
 }

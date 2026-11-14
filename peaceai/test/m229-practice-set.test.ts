@@ -14,7 +14,7 @@ import {
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
 import { countBySplit, gapRecord, gradePracticeRow, replayDocument, targetIsScorable, writePracticeOutputs } from "../lib/practicereplay.ts";
-import { drivePracticePairs, finishHeldFingerprint, HELD_OWNERLESS_MS, openPracticeClone, practiceInstallRoot, reapStaleHeldTemps, releaseHeldPlaces, tallyFingerprints } from "../bin/practice-replay.ts";
+import { drivePracticePairs, finishHeldFingerprint, HELD_OWNERLESS_MS, HELD_START0_CAP, openPracticeClone, practiceInstallRoot, reapStaleHeldTemps, releaseHeldPlaces, tallyFingerprints } from "../bin/practice-replay.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 
 const repo = join(import.meta.dirname, "../..");
@@ -1171,7 +1171,21 @@ test("a live owner keeps its held temp, and a dead owner is reaped", () => {
     const deadZero = mkdtempSync(join(root, "peaceai-held-clone-"));
     writeFileSync(join(deadZero, ".peaceai-owner"), "2147483646 0\n");
     utimesSync(deadZero, ago, ago);
-    assert.equal(reapStaleHeldTemps(root).includes(deadZero), false);
+    assert.equal(reapStaleHeldTemps(root).includes(deadZero), true);
+    assert.equal(existsSync(deadZero), false);
+    const freshDead: string[] = [];
+    for (let i = 0; i < HELD_START0_CAP + 2; i++) {
+      const held = mkdtempSync(join(root, "peaceai-held-clone-"));
+      writeFileSync(join(held, ".peaceai-owner"), `${2147483000 + i} 0\n`);
+      const when = new Date(Date.now() - (HELD_START0_CAP + 2 - i) * 1000);
+      utimesSync(held, when, when);
+      freshDead.push(held);
+    }
+    reapStaleHeldTemps(root);
+    assert.equal(existsSync(freshDead[0]!), false);
+    assert.equal(existsSync(freshDead[1]!), false);
+    assert.equal(existsSync(freshDead[freshDead.length - 1]!), true);
+    assert.equal(existsSync(startZero), true);
     const foreign = mkdtempSync(join(root, "not-held-"));
     const embedded = mkdtempSync(join(root, "xpeaceai-held-clone-"));
     utimesSync(foreign, ago, ago);
