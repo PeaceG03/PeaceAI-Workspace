@@ -9,26 +9,29 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const libDir = resolve(import.meta.dirname, "../lib");
+const binDir = resolve(import.meta.dirname, "../bin");
 const sources = {
-  grade: { file: "specgrade.ts", tag: /\/\/ grade-guard:(and-only|and-width|fn-name|nested|candidate-operands|operand-kept)\s*$/, suite: "grade", ids: ["and-only", "and-width", "candidate-operands", "fn-name", "nested", "operand-kept"] },
-  report: { file: "practicereplay.ts", tag: /\/\/ (?:report-guard:(dev-only|seed-sha)|grade-guard:(path-filter|text-probe|probe-cap|text-wire))\s*$/, suite: "report", ids: ["dev-only", "path-filter", "probe-cap", "seed-sha", "text-probe", "text-wire"] },
+  grade: { file: "specgrade.ts", root: libDir, tag: /\/\/ grade-guard:(and-only|and-width|fn-name|nested|candidate-operands|operand-kept)\s*$/, suite: "grade", ids: ["and-only", "and-width", "candidate-operands", "fn-name", "nested", "operand-kept"] },
+  report: { file: "practicereplay.ts", root: libDir, tag: /\/\/ (?:report-guard:(dev-only|seed-sha)|grade-guard:(path-filter|text-probe|probe-cap|text-wire))\s*$/, suite: "report", ids: ["dev-only", "path-filter", "probe-cap", "seed-sha", "text-probe", "text-wire"] },
+  replay: { file: "practice-replay.ts", root: binDir, tag: /\/\/ replay-guard:(changed-cover|no-targets|row-behavior|unavailable)\s*$/, suite: "replay", ids: ["changed-cover", "no-targets", "row-behavior", "unavailable"] },
 } as const;
 
 let dir: string;
 before(() => { dir = mkdtempSync(join(tmpdir(), "peaceai-m238-mut-")); });
 after(() => rmSync(dir, { recursive: true, force: true }));
 
-function rewrite(text: string): string {
+function rewrite(text: string, root: string): string {
   const tsPath = createRequire(join(libDir, "specgrade.ts")).resolve("typescript");
   return text
-    .replace(/from "\.\/([a-z0-9-]+\.ts)"/g, (_, f: string) => `from ${JSON.stringify(pathToFileURL(join(libDir, f)).href)}`)
+    .replace(/from "\.\.\/lib\/([a-z0-9-]+\.ts)"/g, (_, f: string) => `from ${JSON.stringify(pathToFileURL(join(libDir, f)).href)}`)
+    .replace(/from "\.\/([a-z0-9-]+\.ts)"/g, (_, f: string) => `from ${JSON.stringify(pathToFileURL(join(root, f)).href)}`)
     .replace(/from "typescript"/, `from ${JSON.stringify(pathToFileURL(tsPath).href)}`)
-    .replace(/import\.meta\.dirname/g, JSON.stringify(libDir));
+    .replace(/import\.meta\.dirname/g, JSON.stringify(root));
 }
 
 function runMutant(name: string, body: string, suite: string): Promise<{ failed: string[]; crashed: string[] } | null> {
   const file = join(dir, `mutant-${name}.ts`);
-  writeFileSync(file, rewrite(body));
+  writeFileSync(file, rewrite(body, sources[suite as keyof typeof sources]?.root ?? libDir));
   return new Promise((done, fail) => {
     const child = spawn(process.execPath, [...process.execArgv, join(import.meta.dirname, "m238-mutant-runner.ts"), file, suite], { detached: true, stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
@@ -46,7 +49,7 @@ function runMutant(name: string, body: string, suite: string): Promise<{ failed:
 }
 
 for (const spec of Object.values(sources)) {
-  const text = readFileSync(join(libDir, spec.file), "utf8");
+  const text = readFileSync(join(spec.root, spec.file), "utf8");
   const lines = text.split("\n");
   const guards = lines.flatMap((line, i) => { const m = spec.tag.exec(line); return m ? [{ id: (m[1] ?? m[2])!, line: i }] : []; });
   test(`${spec.file} weakening tags are present`, () => {

@@ -204,7 +204,7 @@ function snippet(sf: ts.SourceFile, node: ts.Node): string {
   return sf.text.slice(node.getStart(sf), node.getEnd()).replace(/\s+/g, " ").slice(0, 80);
 }
 
-function called(expr: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: ts.SourceFile): { symbol: string; file: string; input: string } | null {
+function called(expr: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: ts.SourceFile): { symbol: string; file: string; input: string; imported: string; member: string | null } | null {
   const inner = unwrap(expr);
   if (!ts.isCallExpression(inner)) return null;
   const callee = inner.expression;
@@ -213,17 +213,119 @@ function called(expr: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: t
   if (ts.isIdentifier(callee)) {
     const b = locals.get(callee.text);
     if (!b) return null;
-    return { symbol: b.imported === "default" ? b.local : b.imported, file: b.file, input };
+    return { symbol: b.imported === "default" ? b.local : b.imported, file: b.file, input, imported: b.imported, member: null };
   }
   if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && ts.isIdentifier(callee.name)) {
     const b = locals.get(callee.expression.text);
     if (!b) return null;
-    return { symbol: callee.name.text, file: b.file, input };
+    return { symbol: callee.name.text, file: b.file, input, imported: b.imported, member: callee.name.text };
   }
   return null;
 }
 
-function arrowCall(fn: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: ts.SourceFile): { symbol: string; file: string; input: string } | null {
+function bindingInit(sf: ts.SourceFile, name: string, seen: Set<string>): ts.Expression | null {
+  if (seen.has(name)) return null;
+  seen.add(name);
+  for (const st of sf.statements) {
+    if (!ts.isVariableStatement(st)) continue;
+    for (const decl of st.declarationList.declarations) {
+      if (ts.isIdentifier(decl.name) && decl.name.text === name && decl.initializer) return decl.initializer;
+    }
+  }
+  return null;
+}
+
+function propertyFunction(expr: ts.Expression | null, member: string, sf: ts.SourceFile, seen: Set<string>): string | null {
+  if (!expr) return null;
+  const node = unwrap(expr);
+  if (ts.isIdentifier(node)) return propertyFunction(bindingInit(sf, node.text, seen), member, sf, seen);
+  if (ts.isObjectLiteralExpression(node)) {
+    for (const prop of node.properties) {
+      const key = prop.name && (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) ? prop.name.text : null;
+      if (key !== member) continue;
+      if (ts.isShorthandPropertyAssignment(prop)) return prop.name.text;
+      if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.initializer)) return prop.initializer.text;
+    }
+    return null;
+  }
+  if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Object" && node.expression.name.text === "assign") {
+    for (const arg of node.arguments) {
+      if (!ts.isExpression(arg)) continue;
+      const hit = propertyFunction(arg, member, sf, seen);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/**
+ * The function a property call actually names. `is.positiveNumber` is the exported `isPositiveNumber`
+ * when the default object assigns that property to it. A name that is not a declared function stays as written.
+ */
+export function declaredExport(source: string, imported: string, member: string): string | null {
+  if (!source || !member) return null;
+  const sf = ts.createSourceFile("mod.ts", source, ts.ScriptTarget.Latest, true);
+  const functions = new Set<string>();
+  const exported = new Set<string>();
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name) {
+      functions.add(st.name.text);
+      if (exportedModifier(st)) exported.add(st.name.text);
+    }
+    if (ts.isVariableStatement(st)) {
+      const isExport = exportedModifier(st);
+      for (const decl of st.declarationList.declarations) {
+        if (!ts.isIdentifier(decl.name) || !decl.initializer) continue;
+        const init = decl.initializer;
+        if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) functions.add(decl.name.text);
+        if (isExport) exported.add(decl.name.text);
+      }
+    }
+    if (ts.isExportDeclaration(st) && st.exportClause && ts.isNamedExports(st.exportClause)) {
+      for (const el of st.exportClause.elements) exported.add((el.propertyName ?? el.name).text);
+    }
+  }
+  let root: ts.Expression | null = null;
+  if (imported === "default") {
+    for (const st of sf.statements) {
+      if (!ts.isExportAssignment(st)) continue;
+      root = ts.isIdentifier(st.expression) ? bindingInit(sf, st.expression.text, new Set()) ?? st.expression : st.expression;
+    }
+  } else root = bindingInit(sf, imported, new Set());
+  const name = propertyFunction(root, member, sf, new Set());
+  if (!name || !functions.has(name) || !exported.has(name)) return null;
+  return name;
+}
+
+/** Functions whose text differs between the two sides of a candidate diff. Nested functions count on their own. */
+export function changedFunctionNames(before: string, after: string): string[] {
+  const texts = (source: string) => {
+    const sf = ts.createSourceFile("mod.ts", source, ts.ScriptTarget.Latest, true);
+    const out = new Map<string, string>();
+    const visit = (node: ts.Node) => {
+      let name: string | null = null;
+      if ((ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) && node.name && ts.isIdentifier(node.name)) name = node.name.text;
+      else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) name = node.name.text;
+      else if (ts.isFunctionExpression(node) && node.name) name = node.name.text;
+      if (name) {
+        const text = node.getText(sf);
+        const prev = out.get(name);
+        out.set(name, prev ? `${prev}\n${text}` : text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    return out;
+  };
+  const older = texts(before);
+  const newer = texts(after);
+  const names: string[] = [];
+  for (const [name, text] of newer) if (older.get(name) !== text) names.push(name);
+  for (const name of older.keys()) if (!newer.has(name) && !names.includes(name)) names.push(name);
+  return names;
+}
+
+function arrowCall(fn: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: ts.SourceFile): { symbol: string; file: string; input: string; imported: string; member: string | null } | null {
   if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return null;
   if (ts.isCallExpression(unwrap(fn.body as ts.Expression)) || ts.isBlock(fn.body)) {
     if (!ts.isBlock(fn.body)) return called(fn.body as ts.Expression, locals, sf);
@@ -238,14 +340,20 @@ function arrowCall(fn: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: 
 }
 
 /** Concrete expectations already written in the test. A call with a non-literal argument is not one. */
-export function expectationsIn(testFile: string, text: string, sourcePattern: string, denyPatterns: readonly string[] = [], exists: (path: string) => boolean = () => true, failing: readonly string[] = []): Expectation[] {
+export function expectationsIn(testFile: string, text: string, sourcePattern: string, denyPatterns: readonly string[] = [], exists: (path: string) => boolean = () => true, failing: readonly string[] = [], read: (path: string) => string | null = () => null): Expectation[] {
   const found = bindings(testFile, text, sourcePattern, denyPatterns, exists);
   const locals = new Map(found.map((b) => [b.local, b]));
   const sf = ts.createSourceFile(testFile, text, ts.ScriptTarget.Latest, true);
   const out: Expectation[] = [];
-  const add = (kind: Expectation["kind"], hit: { symbol: string; file: string; input: string } | null, expected: string) => {
+  const add = (kind: Expectation["kind"], hit: { symbol: string; file: string; input: string; imported: string; member: string | null } | null, expected: string) => {
     if (!hit || out.length >= 32) return;
-    const row: Expectation = { kind, symbol: hit.symbol, file: hit.file, input: hit.input, expected: expected.slice(0, 80) };
+    let symbol = hit.symbol;
+    if (hit.member) {
+      const source = read(hit.file);
+      const declared = source ? declaredExport(source, hit.imported, hit.member) : null;
+      if (declared) symbol = declared;
+    }
+    const row: Expectation = { kind, symbol, file: hit.file, input: hit.input, expected: expected.slice(0, 80) };
     if (out.some((e) => e.kind === row.kind && e.symbol === row.symbol && e.file === row.file && e.input === row.input && e.expected === row.expected)) return;
     out.push(row);
   };
@@ -311,9 +419,9 @@ export function expectationsIn(testFile: string, text: string, sourcePattern: st
 }
 
 /** Concrete calls in a recorded test, grouped the way the behavioral grader loads a symbol. */
-export function behaviorTargets(testFile: string, text: string, sourcePattern: string, denyPatterns: readonly string[] = [], exists: (path: string) => boolean = () => true): SpecTarget[] {
+export function behaviorTargets(testFile: string, text: string, sourcePattern: string, denyPatterns: readonly string[] = [], exists: (path: string) => boolean = () => true, read: (path: string) => string | null = () => null): SpecTarget[] {
   const by = new Map<string, SpecTarget>();
-  for (const row of expectationsIn(testFile, text, sourcePattern, denyPatterns, exists)) {
+  for (const row of expectationsIn(testFile, text, sourcePattern, denyPatterns, exists, [], read)) {
     if (row.kind === "throws") continue;
     const args = argsFromSnippet(row.input);
     if (!args) continue;

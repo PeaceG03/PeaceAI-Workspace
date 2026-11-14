@@ -5,10 +5,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { gradeTextCandidate } from "../bin/practice-replay.ts";
+import { finishTextRow, gradeTextCandidate } from "../bin/practice-replay.ts";
 import { gradePracticeRow, replayDocument, seededIdiom, sourcePaths, textFlipBehavior } from "../lib/practicereplay.ts";
 import { visibleNodeBin } from "../lib/practicemine.ts";
 import { gradeBehavior, type Behavior } from "../lib/specgrade.ts";
+import { behaviorTargets, changedFunctionNames, declaredExport } from "../lib/testspec.ts";
 
 const nodePath = visibleNodeBin() ?? process.execPath;
 
@@ -115,6 +116,105 @@ test("a recorded text flip is strict only when the probes match the fix", () => 
   }
 });
 
+test("a changed function the test does not call is not strict", () => {
+  const repo = mkdtempSync(join(tmpdir(), "peaceai-text-cover-"));
+  const git = (...args: string[]) => spawnSync("git", ["-C", repo, ...args], { encoding: "utf8" });
+  const file = join(repo, "src/predicates.ts");
+  const testFile = join(repo, "test/predicates.test.ts");
+  const fixSource = [
+    "export function isPositive(value: unknown): boolean { return typeof value === \"number\" && value > 0; }",
+    "export function isClass(value: unknown): boolean { return typeof value === \"function\" && /^class(\\s+|{)/.test(Function.prototype.toString.call(value)); }",
+    "",
+  ].join("\n");
+  const baseSource = fixSource;
+  const testText = [
+    "import assert from \"node:assert/strict\";",
+    "import { isPositive, isClass } from \"../src/predicates.ts\";",
+    "assert.equal(isPositive(1), true);",
+    "for (const value of [class {}, function () {}]) { assert.equal(isClass(value), true); }",
+    "",
+  ].join("\n");
+  const row = {
+    scorable: true, core: "ok" as const, job: { status: "pass" as const, reason: "JOB_A_CANDIDATES:1" },
+    gatePass: true, beforeExit: 1, afterExit: 0,
+  };
+  try {
+    git("init", "-q");
+    git("config", "user.email", "guard@example.com");
+    git("config", "user.name", "guard");
+    mkdirSync(join(repo, "src"));
+    mkdirSync(join(repo, "test"));
+    writeFileSync(file, baseSource);
+    writeFileSync(testFile, testText);
+    git("add", ".");
+    git("commit", "-q", "-m", "base");
+    const base = git("rev-parse", "HEAD").stdout.trim();
+    writeFileSync(file, `${fixSource}\n`);
+    git("add", "src/predicates.ts");
+    git("commit", "-q", "-m", "fix");
+    const fix = git("rev-parse", "HEAD").stdout.trim();
+    git("checkout", "-q", base);
+    writeFileSync(file, fixSource.replace(
+      "return typeof value === \"function\" && /^class(\\s+|{)/.test(Function.prototype.toString.call(value));",
+      "return typeof value === \"function\";",
+    ));
+    const weakDiff = git("diff", "--", "src/predicates.ts").stdout;
+    const weak = gradeTextCandidate({
+      repoDir: repo, baseSha: base, fixSha: fix, diff: weakDiff, testFile: "test/predicates.test.ts",
+      sourcePattern: "^src/.*\\.ts$", nodePath,
+    });
+    assert.equal(weak.behavior, "verified_test_only");
+    assert.ok(weak.compared > 0);
+    const graded = finishTextRow(true, weak, row);
+    assert.equal(graded.reason, "VERIFIED_TEST_ONLY");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("no recognized call and a diff that cannot be loaded are not strict", () => {
+  const repo = mkdtempSync(join(tmpdir(), "peaceai-text-safe-"));
+  const git = (...args: string[]) => spawnSync("git", ["-C", repo, ...args], { encoding: "utf8" });
+  const row = {
+    scorable: true, core: "ok" as const, job: { status: "pass" as const, reason: "JOB_A_CANDIDATES:1" },
+    gatePass: true, beforeExit: 1, afterExit: 0,
+  };
+  try {
+    git("init", "-q");
+    git("config", "user.email", "guard@example.com");
+    git("config", "user.name", "guard");
+    mkdirSync(join(repo, "src"));
+    mkdirSync(join(repo, "test"));
+    writeFileSync(join(repo, "src/oven.ts"), "export const label = \"cold\";\nexport function warm(n: number): boolean { return n > 0; }\n");
+    writeFileSync(join(repo, "test/oven.test.ts"), "import \"../src/oven.ts\";\n");
+    git("add", ".");
+    git("commit", "-q", "-m", "base");
+    const base = git("rev-parse", "HEAD").stdout.trim();
+    writeFileSync(join(repo, "src/oven.ts"), "export const label = \"warm\";\nexport function warm(n: number): boolean { return n > 0; }\n");
+    git("add", "src/oven.ts");
+    git("commit", "-q", "-m", "fix");
+    const fix = git("rev-parse", "HEAD").stdout.trim();
+    git("checkout", "-q", base);
+    writeFileSync(join(repo, "src/oven.ts"), "export const label = \"warm\";\nexport function warm(n: number): boolean { return n > 0; }\n");
+    const diff = git("diff", "--", "src/oven.ts").stdout;
+    const empty = gradeTextCandidate({
+      repoDir: repo, baseSha: base, fixSha: fix, diff, testFile: "test/oven.test.ts",
+      sourcePattern: "^src/.*\\.ts$", nodePath,
+    });
+    assert.notEqual(empty.behavior, "verified_strict");
+    assert.notEqual(finishTextRow(true, empty, row).reason, "GATE_PASS_AND_TEST");
+    const missing = gradeTextCandidate({
+      repoDir: repo, baseSha: base, fixSha: "0".repeat(40), diff, testFile: "test/oven.test.ts",
+      sourcePattern: "^src/.*\\.ts$", nodePath,
+    });
+    assert.notEqual(missing.behavior, "verified_strict");
+    assert.notEqual(finishTextRow(true, missing, row).reason, "GATE_PASS_AND_TEST");
+    assert.equal(finishTextRow(true, { behavior: "verified_test_only", compared: 2 }, row).reason, "VERIFIED_TEST_ONLY");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test("source paths skip test files and test directories", () => {
   const diff = [
     "--- a/src/oven.ts", "+++ b/src/oven.ts",
@@ -124,6 +224,30 @@ test("source paths skip test files and test directories", () => {
     "",
   ].join("\n");
   assert.deepEqual(sourcePaths(diff), ["src/oven.ts"]);
+});
+
+test("a property on the default object resolves to the exported function", () => {
+  const source = [
+    "export function isPositiveNumber(value: unknown): boolean { return typeof value === \"number\" && value > 0; }",
+    "export function isClass(value: unknown): boolean { return typeof value === \"function\"; }",
+    "const is = Object.assign(isClass, { positiveNumber: isPositiveNumber, class: isClass });",
+    "export default is;",
+    "",
+  ].join("\n");
+  assert.equal(declaredExport(source, "default", "positiveNumber"), "isPositiveNumber");
+  assert.equal(declaredExport(source, "default", "class"), "isClass");
+  assert.equal(declaredExport(source, "default", "missing"), null);
+  const testText = [
+    "import is from \"../source/index.js\";",
+    "import assert from \"node:assert/strict\";",
+    "assert.equal(is.positiveNumber(6), true);",
+    "for (const value of [class {}]) { assert.equal(is.class(value), true); }",
+    "",
+  ].join("\n");
+  const read = (path: string) => path === "source/index.ts" ? source : null;
+  const targets = behaviorTargets("test/test.ts", testText, "^source/.+\\.ts$", [], (path) => path === "source/index.ts", read);
+  assert.deepEqual(targets.map((target) => target.symbol), ["isPositiveNumber"]);
+  assert.equal(targets[0]?.exportName, "isPositiveNumber");
 });
 
 test("seeded idiom rows are excluded from credit, and a held-out row with the same sha is not", () => {
@@ -138,4 +262,86 @@ test("seeded idiom rows are excluded from credit, and a held-out row with the sa
   assert.equal(doc.excludedFromCredit.every((row) => row.split === "dev"), true);
   assert.equal(doc.counts.text.dev.pass, 2);
   assert.equal(doc.creditCounts.text.dev.pass, 0);
+});
+
+test("the is class fix and its weakenings are graded on the dev repo", { timeout: 180_000 }, () => {
+  const repo = mkdtempSync(join(tmpdir(), "peaceai-is-grade-"));
+  const git = (...args: string[]) => spawnSync("git", ["-C", repo, ...args], { encoding: "utf8" });
+  const baseSha = "d22ab629916392104a69b34387008ca2a2cc3ddd";
+  const fixSha = "e7c84fcb797ea9857fa56750688440bf3f347589";
+  const pattern = "^source/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.ts$";
+  const deny = ["(^|/)\\.", "(^|/)fixtures/", "(^|/)fixture/", "secret", "credential", "token"];
+  const fixReturn = "return isFunction(value) && /^class(\\s+|{)/.test(value.toString());";
+  const weaken: [string, string][] = [
+    ["drop-class-check", "return isFunction(value);"],
+    ["typeof-only", "return typeof value === \"function\";"],
+    ["always-true", "return true;"],
+    ["always-false", "return false;"],
+    ["and-true", "return isFunction(value) && true;"],
+    ["or-widen", "return isFunction(value) || /^class(\\s+|{)/.test(value.toString());"],
+    ["drop-function-check", "return /^class(\\s+|{)/.test(String(value));"],
+    ["broader-regex", "return isFunction(value) && /^class/.test(value.toString());"],
+    ["includes-class", "return isFunction(value) && String(value).includes(\"class\");"],
+    ["old-startsWith", "return isFunction(value) && value.toString().startsWith(\"class \");"],
+    ["constant-pattern", "return isFunction(value) && /^class(\\s+|{)/.test(\"class {\");"],
+    ["flipped-or", "return !isFunction(value) || /^class(\\s+|{)/.test(value.toString());"],
+    ["equals-self", "return value === value;"],
+    ["early-true", "if (isFunction(value)) return true;\n\treturn false;"],
+    ["loose-null", "return value != null && isFunction(value);"],
+    ["boolean-cast", "return Boolean(value);"],
+    ["helper-true", "function seen(): boolean { return true; }\n\treturn isFunction(value) && seen();"],
+  ];
+  const equivalent: [string, string][] = [
+    ["exact", fixReturn],
+    ["de-morgan", "return !(!isFunction(value) || !/^class(\\s+|{)/.test(value.toString()));"],
+    ["alt-regex", "return isFunction(value) && new RegExp(\"^class(\\\\s+|\\\\{)\").test(value.toString());"],
+    ["helper", "function classText(value: Function): boolean { return /^class(\\s+|{)/.test(value.toString()); }\n\treturn isFunction(value) && classText(value);"],
+  ];
+  try {
+    const cloned = git("clone", "--quiet", "--filter=blob:none", "--no-checkout", "https://github.com/sindresorhus/is.git", ".");
+    assert.equal(cloned.status, 0, cloned.stderr);
+    for (const sha of [baseSha, fixSha]) assert.equal(git("fetch", "--quiet", "--depth", "1", "origin", sha).status, 0, sha);
+    const fixSource = git("show", `${fixSha}:source/index.ts`).stdout;
+    const testText = git("show", `${fixSha}:test/test.ts`).stdout;
+    assert.ok(fixSource.includes(fixReturn));
+    const read = (path: string) => path === "source/index.ts" ? fixSource : null;
+    const symbols = behaviorTargets("test/test.ts", testText, pattern, deny, (path) => path === "source/index.ts" || path === "source/utilities.ts" || path === "source/types.ts", read).map((target) => target.symbol);
+    assert.ok(symbols.includes("isPositiveNumber"), symbols.join(","));
+    assert.ok(!symbols.includes("positiveNumber"));
+    assert.ok(!symbols.includes("isClass"));
+    git("checkout", "--quiet", "--detach", baseSha);
+    const gradeAt = (source: string) => {
+      writeFileSync(join(repo, "source/index.ts"), source);
+      const diff = git("diff", "--", "source/index.ts").stdout;
+      return gradeTextCandidate({
+        repoDir: repo, baseSha, fixSha, diff, testFile: "test/test.ts",
+        sourcePattern: pattern, denyPatterns: deny, nodePath,
+      });
+    };
+    const reason = (source: string, grade: { behavior: string; compared: number }) => {
+      const changed = changedFunctionNames(git("show", `${baseSha}:source/index.ts`).stdout, source);
+      const hit = changed.filter((name) => symbols.includes(name));
+      if (grade.behavior === "diff_unavailable" || grade.compared === 0) return "probes-unavailable";
+      if (changed.some((name) => !symbols.includes(name)) && hit.length === 0) return "probes-unavailable";
+      if (grade.behavior !== "verified_strict") return "behavior-compared";
+      return "strict";
+    };
+    for (const [name, body] of equivalent) {
+      const source = fixSource.replace(fixReturn, body);
+      const grade = gradeAt(source);
+      assert.ok(grade.compared > 0, `${name} compared ${grade.compared} ${grade.behavior}`);
+      assert.notEqual(grade.behavior, "diff_unavailable", name);
+      console.log(`is-equivalent ${name} ${grade.behavior} compared=${grade.compared} ${reason(source, grade)}`);
+    }
+    assert.equal(weaken.length, 17);
+    for (const [name, body] of weaken) {
+      const source = fixSource.replace(fixReturn, body);
+      const grade = gradeAt(source);
+      const why = reason(source, grade);
+      assert.notEqual(grade.behavior, "verified_strict", name);
+      console.log(`is-weakening ${name} ${grade.behavior} compared=${grade.compared} ${why}`);
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
 });

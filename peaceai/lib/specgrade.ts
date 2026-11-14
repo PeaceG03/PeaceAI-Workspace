@@ -49,9 +49,26 @@ export interface BehaviorGrade {
 interface ParamFlags { nulls: boolean; undef: boolean }
 
 const PROBE = `
-import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { existsSync, readFileSync } from "node:fs";
+import { registerHooks } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
 const spec = JSON.parse(readFileSync(process.argv[2], "utf8"));
+if (spec.mapExtensions !== false) {
+  registerHooks({
+    resolve(specifier, context, nextResolve) {
+      const relative = specifier.startsWith("./") || specifier.startsWith("../");
+      const swap = specifier.endsWith(".mjs") ? [4, ".mts"] : specifier.endsWith(".js") ? [3, ".ts"] : null;
+      if (!relative || !swap) return nextResolve(specifier, context);
+      try { return nextResolve(specifier, context); }
+      catch {
+        const mapped = specifier.slice(0, -swap[0]) + swap[1];
+        const resolved = nextResolve(mapped, context);
+        if (!existsSync(fileURLToPath(resolved.url))) return nextResolve(specifier, context);
+        return resolved;
+      }
+    },
+  });
+}
 const untag = (v) => {
   if (!v || typeof v !== "object" || !("k" in v)) return v;
   if (v.k === "nan") return NaN;
@@ -992,12 +1009,15 @@ function loadSide(root: string, file: string, target: BehaviorTarget, inputs: un
   const spec = join(root, ".practice-behavior.json");
   try {
     writeFileSync(probe, PROBE);
+    let mapExtensions = false;
+    mapExtensions = true; // grade-guard:js-to-ts
     writeFileSync(spec, JSON.stringify({
       file: join(root, file),
       form: target.form,
       exportName: target.exportName,
       prop: target.prop ?? "",
       nonce,
+      mapExtensions,
       inputs: inputs.map((args) => args.map(tag)),
     }));
     const ran = runInPracticeSandbox(root, [nodePath, "--experimental-strip-types", probe, spec], 20_000, { capture: true, nodePath, nodeModules });

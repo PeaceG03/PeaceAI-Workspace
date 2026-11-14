@@ -19,8 +19,8 @@ import {
   PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, sourcePaths, targetIsScorable, textFlipBehavior, writePracticeOutputs,
   type GradedRow, type Understanding,
 } from "../lib/practicereplay.ts";
-import { gradeBehavior, type BehaviorGrade } from "../lib/specgrade.ts";
-import { behaviorTargets, runTestSpec, type SpecResult } from "../lib/testspec.ts";
+import { gradeBehavior, type Behavior, type BehaviorGrade } from "../lib/specgrade.ts";
+import { behaviorTargets, changedFunctionNames, runTestSpec, type SpecResult } from "../lib/testspec.ts";
 import { loadTargets } from "../lib/target.ts";
 import { pinnedKernel, readCorePin } from "./capability-job.ts";
 
@@ -336,15 +336,21 @@ function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: st
       repoDir, baseSha: pair.baseSha, fixSha: pair.fixSha, diff: winningDiff, testFile: pair.testFile,
       sourcePattern: config.sourcePattern, denyPatterns: config.denyPatterns, nodePath: pair.toolchain.nodePath, nodeModules: modules,
     }) : null;
-    const behavior = textFlipBehavior(fixed, probed);
-    return { ...blank(pair, "text"), ...gradePracticeRow({ scorable: true, core: "ok", job, gatePass: true, beforeExit, afterExit: fixed ? 0 : afterExit, behavior }) };
+    return { ...blank(pair, "text"), ...finishTextRow(fixed, probed, { scorable: true, core: "ok", job, gatePass: true, beforeExit, afterExit: fixed ? 0 : afterExit }) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(outDir, { recursive: true, force: true });
   }
 }
 
-/** Probe the fix's copy of each changed source symbol the recorded test calls. */
+/** The verdict replayOne records for a text flip. A missing assignment leaves the row able to pass. */
+export function finishTextRow(fixed: boolean, probed: BehaviorGrade | null, row: Omit<Parameters<typeof gradePracticeRow>[0], "behavior">): ReturnType<typeof gradePracticeRow> {
+  let behavior: Behavior | undefined;
+  behavior = textFlipBehavior(fixed, probed); // replay-guard:row-behavior
+  return gradePracticeRow({ ...row, behavior });
+}
+
+/** Probe the fix's copy of each function the candidate diff changes. An unprobed changed function is not strict. */
 export function gradeTextCandidate(input: {
   repoDir: string;
   baseSha: string;
@@ -356,7 +362,11 @@ export function gradeTextCandidate(input: {
   nodePath: string;
   nodeModules?: string | null;
 }): BehaviorGrade {
-  const unavailable = (): BehaviorGrade => ({ behavior: "diff_unavailable", compared: 0 });
+  const unavailable = (): BehaviorGrade => {
+    let behavior: Behavior = "verified_strict";
+    behavior = "diff_unavailable"; // replay-guard:unavailable
+    return { behavior, compared: 0 };
+  };
   const paths = sourcePaths(input.diff);
   if (paths.length === 0) return { behavior: "verified_test_only", compared: 0 };
   const fixDir = mkdtempSync(join(tmpdir(), "peaceai-practice-text-fix-"));
@@ -369,15 +379,40 @@ export function gradeTextCandidate(input: {
     if (applied.status !== 0) return unavailable();
     const shown = practiceGit(input.repoDir, ["show", `${input.fixSha}:${input.testFile}`]);
     if (!shown.ok) return unavailable();
-    const targets = behaviorTargets(input.testFile, shown.out, input.sourcePattern, input.denyPatterns ?? [], (path) => existsSync(join(candDir, path)))
+    const read = (path: string): string | null => {
+      try { return readFileSync(join(candDir, path), "utf8"); } catch { return null; }
+    };
+    const targets = behaviorTargets(input.testFile, shown.out, input.sourcePattern, input.denyPatterns ?? [], (path) => existsSync(join(candDir, path)), read)
       .filter((target) => paths.includes(target.file) && target.args.length > 0);
-    if (targets.length === 0) return { behavior: "verified_test_only", compared: 0 };
+    let empty: Behavior = "verified_strict";
+    if (targets.length === 0) empty = "verified_test_only"; // replay-guard:no-targets
+    if (empty !== "verified_strict") return { behavior: empty, compared: 0 };
     if (input.nodeModules) { linkModules(input.nodeModules, fixDir); linkModules(input.nodeModules, candDir); }
+    const changed: string[] = [];
+    for (const path of paths) {
+      const before = practiceGit(input.repoDir, ["show", `${input.baseSha}:${path}`]);
+      const prior = before.ok ? before.out : "";
+      const next = read(path) ?? "";
+      for (const name of changedFunctionNames(prior, next)) if (!changed.includes(name)) changed.push(name);
+    }
+    const probed = targets.map((target) => target.symbol);
+    let uncovered = false;
+    uncovered = changed.some((name) => !probed.includes(name)); // replay-guard:changed-cover
+    const queue = changed.length === 0 ? targets : targets.filter((target) => changed.includes(target.symbol));
+    const extra = uncovered ? targets.filter((target) => !changed.includes(target.symbol)) : [];
     let grade: BehaviorGrade = { behavior: "verified_strict", compared: 0 };
-    for (const target of targets) {
-      const one = gradeBehavior({ candidateRoot: candDir, fixRoot: fixDir, target, nodePath: input.nodePath, nodeModules: input.nodeModules });
-      grade = { behavior: one.behavior, compared: grade.compared + one.compared, ...(one.counterexample ? { counterexample: one.counterexample } : {}) };
-      if (one.behavior !== "verified_strict") break;
+    const run = (list: typeof targets, stopWhenCompared: boolean) => {
+      for (const target of list) {
+        const one = gradeBehavior({ candidateRoot: candDir, fixRoot: fixDir, target, nodePath: input.nodePath, nodeModules: input.nodeModules });
+        grade = { behavior: one.behavior, compared: grade.compared + one.compared, ...(one.counterexample ? { counterexample: one.counterexample } : {}) };
+        if (one.behavior !== "verified_strict") return;
+        if (stopWhenCompared && grade.compared > 0) return;
+      }
+    };
+    run(queue, false);
+    if (uncovered && grade.behavior === "verified_strict") {
+      run(extra, true);
+      if (grade.behavior === "verified_strict") grade = { ...grade, behavior: "verified_test_only" };
     }
     return grade;
   } finally {
