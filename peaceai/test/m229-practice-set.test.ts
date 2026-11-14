@@ -9,12 +9,12 @@ import { keptLicense } from "../lib/practicemine.ts";
 import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync as readText, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
-  GIT_LOCK_ARGS, LOCK_EMPTY_GRACE_MS, cloneCheckProblems, cloneRootProblems, dependencyFingerprint, diffChangesDeps, ensurePracticeInstall, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutPairHash, heldOutWatchProblems, identitiesForRoots, installArgv, INSTALL_TIMEOUT_MS, installEnv, isSourceFile, isTestFile, manifestProblems, mergeCloneRootCollisions, processStartId, readCloneIdentity, replayCloneRecord, SANDBOX_RAN, sanitizeInstallLines,
+  GIT_LOCK_ARGS, LOCK_EMPTY_GRACE_MS, cloneCheckProblems, cloneRootProblems, dependencyFingerprint, diffChangesDeps, ensurePracticeInstall, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutPairHash, heldOutWatchProblems, identitiesForRoots, installArgv, INSTALL_TIMEOUT_MS, installEnv, isSourceFile, isTestFile, manifestProblems, mergeCloneRootCollisions, processStartId, readCloneIdentity, readPairFingerprint, replayCloneRecord, SANDBOX_RAN, sanitizeInstallLines,
   pairFiles, pairProblems, parseRepoToken, poisonChanges, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxArgv, practiceWatchFiles, releaseWorktree, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
 import { countBySplit, gapRecord, gradePracticeRow, replayDocument, targetIsScorable, writePracticeOutputs } from "../lib/practicereplay.ts";
-import { finishHeldFingerprint, HELD_OWNERLESS_MS, openPracticeClone, practiceInstallRoot, reapStaleHeldTemps, releaseHeldPlaces, tallyFingerprints } from "../bin/practice-replay.ts";
+import { drivePracticePairs, finishHeldFingerprint, HELD_OWNERLESS_MS, openPracticeClone, practiceInstallRoot, reapStaleHeldTemps, releaseHeldPlaces, tallyFingerprints } from "../bin/practice-replay.ts";
 import { loadTargets, scopeOf } from "../lib/target.ts";
 
 const repo = join(import.meta.dirname, "../..");
@@ -965,22 +965,25 @@ test("a live owner's old lock is not stolen, and an empty lock stays busy during
 
 test("replay refuses to grade when a recorded root has no clone identity", () => {
   const out = mkdtempSync(join(tmpdir(), "practice-replay-gate-"));
+  const scratch = mkdtempSync(join(tmpdir(), "m229-replay-gate-"));
+  const env = { ...process.env, TMPDIR: scratch, TMP: scratch, TEMP: scratch };
   try {
     const ran = spawnSync(join(repo, "node_modules/.bin/tsx"), [
       join(repo, "peaceai/bin/practice-replay.ts"), "--pairs", "/dev/null", "--out", out,
-    ], { encoding: "utf8" });
+    ], { encoding: "utf8", env });
     assert.equal(ran.status, 1);
     assert.match(`${ran.stdout}`, /CLONE_UNVERIFIED:PeaceG03\/PeaceSTOCKS/);
     assert.equal(ran.stdout.includes("CLONE_UNVERIFIED:axios/axios"), false);
-    const empty = mkdtempSync(join(tmpdir(), "practice-empty-clones-"));
+    const empty = mkdtempSync(join(scratch, "practice-empty-clones-"));
     const emptyRun = spawnSync(join(repo, "node_modules/.bin/tsx"), [
       join(repo, "peaceai/bin/practice-replay.ts"), "--pairs", "/dev/null", "--out", out, "--clones-dir", empty,
-    ], { encoding: "utf8" });
+    ], { encoding: "utf8", env });
     assert.equal(emptyRun.status, 1);
     assert.match(`${emptyRun.stdout}`, /CLONE_UNVERIFIED:/);
     rmSync(empty, { recursive: true, force: true });
   } finally {
     rmSync(out, { recursive: true, force: true });
+    rmSync(scratch, { recursive: true, force: true });
   }
 });
 
@@ -1160,6 +1163,22 @@ test("a live owner keeps its held temp, and a dead owner is reaped", () => {
     writeFileSync(join(unknown, ".peaceai-owner"), "nope\n");
     utimesSync(unknown, ago, ago);
     assert.equal(reapStaleHeldTemps(root).includes(unknown), false);
+    const startZero = mkdtempSync(join(root, "peaceai-held-clone-"));
+    writeFileSync(join(startZero, ".peaceai-owner"), `${process.pid} 0\n`);
+    utimesSync(startZero, ago, ago);
+    assert.equal(reapStaleHeldTemps(root).includes(startZero), false);
+    assert.equal(existsSync(startZero), true);
+    const deadZero = mkdtempSync(join(root, "peaceai-held-clone-"));
+    writeFileSync(join(deadZero, ".peaceai-owner"), "2147483646 0\n");
+    utimesSync(deadZero, ago, ago);
+    assert.equal(reapStaleHeldTemps(root).includes(deadZero), false);
+    const foreign = mkdtempSync(join(root, "not-held-"));
+    const embedded = mkdtempSync(join(root, "xpeaceai-held-clone-"));
+    utimesSync(foreign, ago, ago);
+    utimesSync(embedded, ago, ago);
+    reapStaleHeldTemps(root);
+    assert.equal(existsSync(foreign), true);
+    assert.equal(existsSync(embedded), true);
     const blocked = mkdtempSync(join(root, "peaceai-held-clone-"));
     writeFileSync(join(blocked, ".peaceai-owner"), "2147483646 1\n");
     assert.doesNotThrow(() => reapStaleHeldTemps(root, () => { throw Object.assign(new Error("EACCES"), { code: "EACCES" }); }));
@@ -1257,6 +1276,37 @@ test("held-out installs with one fingerprint are shared and deleted when unused"
     assert.equal(finishHeldFingerprint(cache, "bbb", remaining), true);
     assert.equal(existsSync(other), false);
   } finally {
+    rmSync(cache, { recursive: true, force: true });
+  }
+});
+
+test("the replay deletes a shared held-out install after the last pair, including a missing clone", () => {
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const origin = tinyRepo();
+  const cache = mkdtempSync(join(tmpdir(), "m229-shared-install-"));
+  try {
+    const sha = spawnSync("git", ["-C", origin, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    const tool = { nodePath: node, nodeVersion: "v22.23.4", manager: "none" as const, managerVersion: "none" };
+    const fp = readPairFingerprint(origin, sha, tool, { npm: false, pnpm: false, yarn: false });
+    assert.ok(fp);
+    const present = { repo: "acme/present", split: "held-out", baseSha: sha, toolchain: tool } as PracticePair;
+    const missing = { repo: "acme/missing", split: "held-out", baseSha: sha, toolchain: tool } as PracticePair;
+    let sawModules = false;
+    drivePracticePairs({
+      pairs: [missing, present],
+      devCache: cache,
+      installMax: 4,
+      openClone: (pair) => pair.repo === "acme/present" ? origin : null,
+      missingFingerprint: (pair) => pair.repo === "acme/missing" ? fp : null,
+      createHeldCache: () => cache,
+      grade: (_dir, _pair, modules) => { sawModules = existsSync(modules); },
+      onUnmeasured: () => {},
+    });
+    assert.equal(sawModules, true);
+    assert.equal(existsSync(join(cache, "installs", fp)), false);
+  } finally {
+    rmSync(origin, { recursive: true, force: true });
     rmSync(cache, { recursive: true, force: true });
   }
 });

@@ -102,6 +102,8 @@ export function reapStaleHeldTemps(root = tmpdir(), remove: (dir: string) => voi
         const [pidText, start] = text.trim().split(/\s+/);
         const pid = Number(pidText);
         if (!Number.isInteger(pid) || pid <= 0 || pidText !== String(pid)) continue;
+        // A start time of 0 is what we write when the start id cannot be read. It never identifies a dead owner.
+        if (start === "0") continue;
         if (ownerStillAlive(pid, start ?? "")) continue;
       }
       remove(dir);
@@ -378,6 +380,84 @@ function pushInstall(graded: GradedRow[], pair: PracticePair, reason: string, li
   }
 }
 
+/** Install and grade runnable pairs. Held-out installs with one fingerprint are shared, then deleted. */
+export function drivePracticePairs(input: {
+  pairs: readonly PracticePair[];
+  devCache: string;
+  installMax: number;
+  openClone: (pair: PracticePair) => string | null;
+  /** Fingerprint for a held-out pair whose clone is missing, so its install share is still released. */
+  missingFingerprint?: (pair: PracticePair) => string | null;
+  createHeldCache: () => string;
+  grade: (dir: string, pair: PracticePair, modules: string) => void;
+  onUnmeasured: (pair: PracticePair, reason: string, lines: string[]) => void;
+}): void {
+  const repos = new Map<string, string | null>();
+  for (const pair of input.pairs) {
+    if (!repos.has(pair.repo)) repos.set(pair.repo, input.openClone(pair));
+  }
+  const locksOf = (dir: string, pair: PracticePair): LockFiles => {
+    const shown = (path: string) => practiceGit(dir, ["show", `${pair.baseSha}:${path}`]);
+    return {
+      npm: shown("package-lock.json").ok || shown("npm-shrinkwrap.json").ok,
+      pnpm: shown("pnpm-lock.yaml").ok,
+      yarn: shown("yarn.lock").ok,
+    };
+  };
+  const fingerprintOf = new Map<PracticePair, string>();
+  for (const pair of input.pairs) {
+    if (pair.split !== "held-out") continue;
+    const dir = repos.get(pair.repo);
+    const fp = dir
+      ? readPairFingerprint(dir, pair.baseSha, pair.toolchain, locksOf(dir, pair))
+      : input.missingFingerprint?.(pair) ?? null;
+    if (fp) fingerprintOf.set(pair, fp);
+  }
+  const remaining = tallyFingerprints([...fingerprintOf.values()]);
+  const ordered = [
+    ...input.pairs.filter((pair) => pair.split !== "held-out"),
+    ...input.pairs.filter((pair) => pair.split === "held-out").sort((a, b) => (fingerprintOf.get(a) ?? "").localeCompare(fingerprintOf.get(b) ?? "")),
+  ];
+  let heldCache: string | null = null;
+  for (const pair of ordered) {
+    const dir = repos.get(pair.repo);
+    const fp = fingerprintOf.get(pair);
+    if (!dir) {
+      input.onUnmeasured(pair, "NO_CLONE", []);
+      if (fp) finishHeldFingerprint(heldCache ?? "", fp, remaining);
+      continue;
+    }
+    let cacheRoot = input.devCache;
+    if (pair.split === "held-out") {
+      if (!heldCache) heldCache = input.createHeldCache();
+      cacheRoot = heldCache;
+    }
+    try {
+      const shown = (path: string) => practiceGit(dir, ["show", `${pair.baseSha}:${path}`]);
+      const pkgShow = shown("package.json");
+      let pkg: { packageManager?: string; dependencies?: object; devDependencies?: object } = {};
+      try { pkg = JSON.parse(pkgShow.out) as typeof pkg; } catch { pkg = {}; }
+      const locks = locksOf(dir, pair);
+      let installed;
+      try {
+        installed = ensurePracticeInstall(dir, pair, cacheRoot, locks, yarnIsModern(pkg), { maxInstalls: input.installMax });
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        const reason = code === "ENOSPC" ? "INSTALL_SKIPPED_NO_SPACE" : "INSTALL_FAILED";
+        input.onUnmeasured(pair, reason, [`${(err as Error).message ?? "install"}`.slice(0, 240)]);
+        continue;
+      }
+      if (!installed.ok || !installed.modules) {
+        input.onUnmeasured(pair, installed.reason ?? "INSTALL_FAILED", installed.lines);
+        continue;
+      }
+      input.grade(dir, pair, installed.modules);
+    } finally {
+      if (fp && heldCache) finishHeldFingerprint(heldCache, fp, remaining);
+    }
+  }
+}
+
 function main(): void {
   reapStaleHeldTemps();
   const args = process.argv.slice(2);
@@ -426,9 +506,7 @@ function main(): void {
   const graded: GradedRow[] = [];
   const heldScratch: { release(): void }[] = [];
   const devCache = installCache ? resolve(installCache) : join(out, "install-cache");
-  let heldCache: { dir: string; release(): void } | null = null;
   try {
-    const repos = new Map<string, string | null>();
     const runnable: PracticePair[] = [];
     for (const pair of pairs) {
       const scorable = targetIsScorable(pair.repo);
@@ -442,71 +520,33 @@ function main(): void {
         continue;
       }
       runnable.push(pair);
-      if (!repos.has(pair.repo)) {
+    }
+    drivePracticePairs({
+      pairs: runnable,
+      devCache,
+      installMax,
+      openClone: (pair) => {
         const opened = openPracticeClone(pair.repo, pair.split, clones, out);
         if (pair.split === "held-out") heldScratch.push(opened);
-        repos.set(pair.repo, opened.dir);
-      }
-    }
-    const locksOf = (dir: string, pair: PracticePair): LockFiles => {
-      const shown = (path: string) => practiceGit(dir, ["show", `${pair.baseSha}:${path}`]);
-      return {
-        npm: shown("package-lock.json").ok || shown("npm-shrinkwrap.json").ok,
-        pnpm: shown("pnpm-lock.yaml").ok,
-        yarn: shown("yarn.lock").ok,
-      };
-    };
-    const fingerprintOf = new Map<PracticePair, string>();
-    for (const pair of runnable) {
-      if (pair.split !== "held-out") continue;
-      const dir = repos.get(pair.repo);
-      if (!dir) continue;
-      const fp = readPairFingerprint(dir, pair.baseSha, pair.toolchain, locksOf(dir, pair));
-      if (fp) fingerprintOf.set(pair, fp);
-    }
-    const remaining = tallyFingerprints([...fingerprintOf.values()]);
-    const ordered = [
-      ...runnable.filter((pair) => pair.split !== "held-out"),
-      ...runnable.filter((pair) => pair.split === "held-out").sort((a, b) => (fingerprintOf.get(a) ?? "").localeCompare(fingerprintOf.get(b) ?? "")),
-    ];
-    for (const pair of ordered) {
-      const dir = repos.get(pair.repo);
-      const fp = fingerprintOf.get(pair);
-      if (!dir) {
-        for (const understanding of ["text", "test-as-spec"] as const) graded.push({ repo: pair.repo, split: pair.split, fixSha: pair.fixSha, understanding, status: "unmeasured", reason: "NO_CLONE", gap: true });
-        if (fp) finishHeldFingerprint(heldCache?.dir ?? "", fp, remaining);
-        continue;
-      }
-      let cacheRoot = devCache;
-      if (pair.split === "held-out") {
-        if (!heldCache) { heldCache = practiceInstallRoot("held-out", out); heldScratch.push(heldCache); }
-        cacheRoot = heldCache.dir;
-      }
-      try {
-        const shown = (path: string) => practiceGit(dir, ["show", `${pair.baseSha}:${path}`]);
-        const pkgShow = shown("package.json");
-        let pkg: { packageManager?: string; dependencies?: object; devDependencies?: object } = {};
-        try { pkg = JSON.parse(pkgShow.out) as typeof pkg; } catch { pkg = {}; }
-        const locks = locksOf(dir, pair);
-        let installed;
-        try {
-          installed = ensurePracticeInstall(dir, pair, cacheRoot, locks, yarnIsModern(pkg), { maxInstalls: installMax });
-        } catch (err) {
-          const code = (err as NodeJS.ErrnoException).code;
-          const reason = code === "ENOSPC" ? "INSTALL_SKIPPED_NO_SPACE" : "INSTALL_FAILED";
-          pushInstall(graded, pair, reason, [`${(err as Error).message ?? "install"}`.slice(0, 240)]);
-          continue;
+        return opened.dir;
+      },
+      createHeldCache: () => {
+        const created = practiceInstallRoot("held-out", out);
+        heldScratch.push(created);
+        return created.dir;
+      },
+      grade: (dir, pair, modules) => {
+        graded.push(replayOne(tooling, bundle, coreDir, dir, pair, modules));
+        graded.push(specOne(tooling, coreDir, dir, pair, modules));
+      },
+      onUnmeasured: (pair, reason, lines) => {
+        if (reason === "NO_CLONE") {
+          for (const understanding of ["text", "test-as-spec"] as const) graded.push({ repo: pair.repo, split: pair.split, fixSha: pair.fixSha, understanding, status: "unmeasured", reason, gap: true });
+          return;
         }
-        if (!installed.ok || !installed.modules) {
-          pushInstall(graded, pair, installed.reason ?? "INSTALL_FAILED", installed.lines);
-          continue;
-        }
-        graded.push(replayOne(tooling, bundle, coreDir, dir, pair, installed.modules));
-        graded.push(specOne(tooling, coreDir, dir, pair, installed.modules));
-      } finally {
-        if (fp && heldCache) finishHeldFingerprint(heldCache.dir, fp, remaining);
-      }
-    }
+        pushInstall(graded, pair, reason, lines);
+      },
+    });
   } finally {
     dispose();
     releaseHeldPlaces(heldScratch);

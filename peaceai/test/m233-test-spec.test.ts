@@ -818,6 +818,12 @@ test("nested numbers keep a half-step, and a written bound is probed", () => {
   assert.equal(values.some((n) => Object.is(n, (0 + 1) / 2)), true);
   const between = behaviorInputs([[0], [4]], [], "mid");
   assert.equal(between.some((args) => args[0] === 2), true);
+  assert.equal(adjacentFloat(0, 1), Number.MIN_VALUE);
+  assert.equal(Object.is(adjacentFloat(0, -1), -Number.MIN_VALUE), true);
+  assert.equal(adjacentFloat(-1, 1) > -1, true);
+  assert.equal(adjacentFloat(-1, -1) < -1, true);
+  assert.equal(adjacentFloat(-0.5, 1) > -0.5, true);
+  assert.equal(adjacentFloat(-0.5, -1) < -0.5, true);
 });
 
 test("threshold gaps, dates, sets, instances, and throws are not strict", (t) => {
@@ -1007,4 +1013,69 @@ test("array-input bugs are not graded strict when classic mutants still fit", (t
   assert.equal(lengthStrict, 0);
   assert.notEqual(crowdedLength, "verified_strict");
   assert.equal(same, "verified_strict");
+});
+
+test("probe overflow, Object.is, switch, includes, and an unprobed fix are not strict", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const nodePath = visibleNodeBin();
+  if (!nodePath) { t.skip("no visible node"); return; }
+  const write = (body: string) => {
+    const root = mkdtempSync(join(tmpdir(), "peaceai-hole-"));
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src/f.ts"), body);
+    return root;
+  };
+  const grade = (candidate: string, fix: string, args: unknown[][]) => {
+    const left = write(candidate);
+    const right = write(fix);
+    try {
+      return gradeBehavior({
+        candidateRoot: left, fixRoot: right, nodePath,
+        target: { symbol: "f", file: "src/f.ts", form: "named", exportName: "f", args },
+      }).behavior;
+    } finally {
+      rmSync(left, { recursive: true, force: true });
+      rmSync(right, { recursive: true, force: true });
+    }
+  };
+  const fn = (expr: string, params = "a: number") => `export function f(${params}): boolean {\n  return ${expr};\n}\n`;
+  const ints = [[-1], [0], [1], [2]];
+  const dummies = Array.from({ length: 20 }, (_, i) => `a > ${i + 10}`).join(" || ");
+  const crowded = (expr: string) => fn(`${dummies} || ${expr}`);
+  assert.notEqual(grade(crowded("a >= 0.1"), crowded("a > 0"), ints), "verified_strict");
+  const always = "export function f(a: number, b: number): boolean {\n  return true;\n}\n";
+  const tautology = "export function f(a: number, b: number): boolean {\n  return a > b || true;\n}\n";
+  assert.equal(grade(always, tautology, [[1, 0], [0, 1]]), "verified_test_only");
+  assert.notEqual(grade(fn("Object.is(a, 0.1)"), fn("false"), ints), "verified_strict");
+  assert.equal(grade(fn("Object.is(a, 0.1)"), fn("Object.is(a, 0.1)"), ints), "verified_strict");
+  const both = fn("Object.is(a, b)", "a: number, b: number");
+  assert.equal(grade(both, both, [[1, 0], [0, 1]]), "verified_test_only");
+  const switched = "export function f(a: number): boolean {\n  switch (a) { case 0.1: return true; default: return false; }\n}\n";
+  assert.notEqual(grade(switched, fn("false"), ints), "verified_strict");
+  assert.equal(grade(switched, switched, ints), "verified_strict");
+  const includes = "export function f(a: number[]): boolean {\n  return a.includes(0.1);\n}\n";
+  const never = "export function f(a: number[]): boolean {\n  return false;\n}\n";
+  assert.notEqual(grade(includes, never, [[[1, 2, 3]]]), "verified_strict");
+  assert.equal(grade(includes, includes, [[[1, 2, 3]]]), "verified_strict");
+  const sameEq = fn("a === b", "a: number, b: number");
+  assert.equal(grade(sameEq, sameEq, [[1, 0], [0, 1]]), "verified_test_only");
+  assert.equal(grade(fn("a !== 0.3"), fn("a !== 0.3"), ints), "verified_strict");
+  const len = (expr: string) => `export function f(a: string): boolean {\n  return ${expr};\n}\n`;
+  assert.notEqual(grade(len("a.length > 3"), len("a.length >= 5"), [["a"]]), "verified_strict");
+  assert.equal(grade(len("a.length > 3"), len("a.length > 3"), [["a"]]), "verified_strict");
+  assert.notEqual(grade(fn("a === 0"), fn("a === 0 || a === Number.MIN_VALUE"), ints), "verified_strict");
+  const readMap = (n: number) => `export function has(m: Map<number, number>): boolean {\n  return m instanceof Map && m.has(${n});\n}\n`;
+  const left = write(readMap(1));
+  const right = write(readMap(2));
+  try {
+    const mapped = gradeBehavior({
+      candidateRoot: left, fixRoot: right, nodePath,
+      target: { symbol: "has", file: "src/f.ts", form: "named", exportName: "has", args: [[new Map([[1, 1]])]] },
+    });
+    assert.equal(mapped.behavior, "verified_test_only");
+    assert.match(mapped.counterexample?.candidate ?? "", /true/);
+  } finally {
+    rmSync(left, { recursive: true, force: true });
+    rmSync(right, { recursive: true, force: true });
+  }
 });
