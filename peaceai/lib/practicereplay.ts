@@ -89,37 +89,22 @@ export function seededIdiom(row: { repo: string; split: string; fixSha: string }
   return hit ? hit.idiom : null; // report-guard:seed-sha
 }
 
-function recordedTestPath(path: string): boolean {
-  const norm = path.replaceAll("\\", "/");
-  if (/(^|\/)__tests__\//.test(norm)) return true;
-  if (/(^|\/)test\//.test(norm)) return true;
-  return /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(norm);
-}
-
-/** Source paths a candidate diff changes. Test files and test directories are not the implementation. */
-export function sourcePaths(diff: string): string[] {
-  const paths = [...diff.matchAll(/^\+\+\+ b\/(.+)$/gm)].map((m) => m[1]!).filter((p) => p !== "/dev/null");
-  let kept = paths;
-  kept = paths.filter((p) => !recordedTestPath(p)); // grade-guard:path-filter
-  return kept;
-}
-
-/** A text flip is strict only when the probes match the fix. No probes, or a load that cannot be compared, stays test-only. */
-export function textProbeVerdict(grade: { behavior: Behavior } | null): Behavior {
+/**
+ * Text mode is test-only for now. A recorded test that goes from fail to pass is
+ * VERIFIED_TEST_ONLY. Probe agreement cannot raise that to verified_strict.
+ * Strict text credit will be redesigned around real rows later.
+ */
+export function textFlipVerdict(fixed: boolean, agreed = false): Behavior | undefined {
+  if (!fixed) return undefined;
   let verdict: Behavior = "verified_strict";
-  verdict = grade?.behavior ?? "verified_test_only"; // grade-guard:text-probe
-  if (verdict === "diff_unavailable") verdict = "verified_test_only"; // grade-guard:probe-cap
+  let cap = false;
+  cap = true; // grade-guard:text-cap
+  if (cap) verdict = "verified_test_only";
+  let ignoreProbe = false;
+  ignoreProbe = true; // grade-guard:probe-agree
+  if (agreed && !ignoreProbe) verdict = "verified_strict";
   return verdict;
 }
-
-/** The behavior a text flip is allowed to claim. Skipping the probe leaves the row able to pass. */
-export function textFlipBehavior(fixed: boolean, probed: { behavior: Behavior } | null): Behavior | undefined {
-  let behavior: Behavior | undefined;
-  if (fixed) behavior = textProbeVerdict(probed); // grade-guard:text-wire
-  return behavior;
-}
-
-/** A text flip passes only when `behavior` is strict. Callers probe first; a missing probe is not a pass. */
 
 /** One row. Unmeasured never comes back as pass. A pass requires GATE PASS and fail-before/pass-after. */
 export function gradePracticeRow(input: GradeInput): { status: RowStatus; reason: string; gap: boolean; beforeExit?: number; afterExit?: number } {

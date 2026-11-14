@@ -16,11 +16,11 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
 import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, applyPracticeTestLaunch, cloneCheckProblems, ensurePracticeInstall, gradedLaunchMode, isTestFile, materializeSolverTree, mergeCloneRootCollisions, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, processStartId, readPairFingerprint, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
 import {
-  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, sourcePaths, targetIsScorable, textFlipBehavior, writePracticeOutputs,
+  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, targetIsScorable, textFlipVerdict, writePracticeOutputs,
   type GradedRow, type Understanding,
 } from "../lib/practicereplay.ts";
-import { gradeBehavior, type Behavior, type BehaviorGrade } from "../lib/specgrade.ts";
-import { behaviorTargets, runTestSpec, textHunksCovered, type SpecResult } from "../lib/testspec.ts";
+import { gradeBehavior, type BehaviorGrade } from "../lib/specgrade.ts";
+import { runTestSpec, type SpecResult } from "../lib/testspec.ts";
 import { loadTargets } from "../lib/target.ts";
 import { pinnedKernel, readCorePin } from "./capability-job.ts";
 
@@ -320,89 +320,19 @@ function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: st
     let beforeExit: number | null = null;
     let afterExit: number | null = null;
     let fixed = false;
-    let winningDiff = "";
     const summary = JSON.parse(readFileSync(summaryPath, "utf8")) as { candidates?: { file: string }[] };
     for (const candidate of summary.candidates ?? []) {
       const diff = readFileSync(join(outDir, candidate.file), "utf8");
       const graded = gradeCandidate(repoDir, pair, diff, modules);
       if (beforeExit === null) beforeExit = graded.beforeExit;
-      if (graded.beforeExit !== null && graded.beforeExit !== 0 && graded.afterExit === 0) { afterExit = 0; fixed = true; winningDiff = diff; break; }
+      if (graded.beforeExit !== null && graded.beforeExit !== 0 && graded.afterExit === 0) { afterExit = 0; fixed = true; break; }
       if (afterExit === null) afterExit = graded.afterExit;
     }
     if (!fixed && afterExit === null) afterExit = null;
-    const key = Object.keys(loadTargets().targets).find((name) => name.toLowerCase() === pair.repo.toLowerCase());
-    const config = key ? loadTargets().targets[key] : undefined;
-    const probed = fixed && config ? gradeTextCandidate({
-      repoDir, baseSha: pair.baseSha, fixSha: pair.fixSha, diff: winningDiff, testFile: pair.testFile,
-      sourcePattern: config.sourcePattern, denyPatterns: config.denyPatterns, nodePath: pair.toolchain.nodePath, nodeModules: modules,
-    }) : null;
-    return { ...blank(pair, "text"), ...finishTextRow(fixed, probed, { scorable: true, core: "ok", job, gatePass: true, beforeExit, afterExit: fixed ? 0 : afterExit }) };
+    return { ...blank(pair, "text"), ...gradePracticeRow({ scorable: true, core: "ok", job, gatePass: true, beforeExit, afterExit: fixed ? 0 : afterExit, behavior: textFlipVerdict(fixed) }) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(outDir, { recursive: true, force: true });
-  }
-}
-
-/** The verdict replayOne records for a text flip. A missing assignment leaves the row able to pass. */
-export function finishTextRow(fixed: boolean, probed: BehaviorGrade | null, row: Omit<Parameters<typeof gradePracticeRow>[0], "behavior">): ReturnType<typeof gradePracticeRow> {
-  let behavior: Behavior | undefined;
-  behavior = textFlipBehavior(fixed, probed); // replay-guard:row-behavior
-  return gradePracticeRow({ ...row, behavior });
-}
-
-/** Probe the fix's copy of each function the candidate diff changes. An unprobed changed function is not strict. */
-export function gradeTextCandidate(input: {
-  repoDir: string;
-  baseSha: string;
-  fixSha: string;
-  diff: string;
-  testFile: string;
-  sourcePattern: string;
-  denyPatterns?: readonly string[];
-  nodePath: string;
-  nodeModules?: string | null;
-}): BehaviorGrade {
-  const unavailable = (): BehaviorGrade => {
-    let behavior: Behavior = "verified_strict";
-    behavior = "diff_unavailable"; // replay-guard:unavailable
-    return { behavior, compared: 0 };
-  };
-  const paths = sourcePaths(input.diff);
-  if (paths.length === 0) return { behavior: "verified_test_only", compared: 0 };
-  const fixDir = mkdtempSync(join(tmpdir(), "peaceai-practice-text-fix-"));
-  const candDir = mkdtempSync(join(tmpdir(), "peaceai-practice-text-cand-"));
-  try {
-    if (!materializeSolverTree(input.repoDir, input.fixSha, fixDir)) return unavailable();
-    if (!materializeSolverTree(input.repoDir, input.baseSha, candDir)) return unavailable();
-    if (!writeCommitFile(input.repoDir, input.fixSha, input.testFile, candDir)) return unavailable();
-    const applied = spawnSync("git", ["-C", candDir, ...GIT_LOCK_ARGS, "apply", "--whitespace=nowarn", "-"], { input: input.diff, encoding: "utf8", env: practiceGitEnv(), stdio: ["pipe", "ignore", "ignore"] });
-    if (applied.status !== 0) return unavailable();
-    const shown = practiceGit(input.repoDir, ["show", `${input.fixSha}:${input.testFile}`]);
-    if (!shown.ok) return unavailable();
-    const read = (path: string): string | null => {
-      try { return readFileSync(join(candDir, path), "utf8"); } catch { return null; }
-    };
-    const targets = behaviorTargets(input.testFile, shown.out, input.sourcePattern, input.denyPatterns ?? [], (path) => existsSync(join(candDir, path)), read)
-      .filter((target) => paths.includes(target.file) && target.args.length > 0);
-    if (targets.length === 0) return { behavior: "verified_test_only", compared: 0 };
-    if (input.nodeModules) { linkModules(input.nodeModules, fixDir); linkModules(input.nodeModules, candDir); }
-    const texts = paths.map((path) => {
-      const before = practiceGit(input.repoDir, ["show", `${input.baseSha}:${path}`]);
-      return { path, before: before.ok ? before.out : "", after: read(path) ?? "" };
-    });
-    let uncovered = false;
-    uncovered = !textHunksCovered(input.diff, texts, targets.map((target) => ({ file: target.file, symbol: target.symbol }))); // replay-guard:changed-cover
-    let grade: BehaviorGrade = { behavior: "verified_strict", compared: 0 };
-    for (const target of targets) {
-      const one = gradeBehavior({ candidateRoot: candDir, fixRoot: fixDir, target, nodePath: input.nodePath, nodeModules: input.nodeModules });
-      grade = { behavior: one.behavior, compared: grade.compared + one.compared, ...(one.counterexample ? { counterexample: one.counterexample } : {}) };
-      if (one.behavior !== "verified_strict") break;
-    }
-    if (uncovered && grade.behavior === "verified_strict") grade = { ...grade, behavior: "verified_test_only" };
-    return grade;
-  } finally {
-    rmSync(fixDir, { recursive: true, force: true });
-    rmSync(candDir, { recursive: true, force: true });
   }
 }
 

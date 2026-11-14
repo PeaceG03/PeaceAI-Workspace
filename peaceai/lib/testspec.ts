@@ -204,7 +204,7 @@ function snippet(sf: ts.SourceFile, node: ts.Node): string {
   return sf.text.slice(node.getStart(sf), node.getEnd()).replace(/\s+/g, " ").slice(0, 80);
 }
 
-function called(expr: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: ts.SourceFile): { symbol: string; file: string; input: string; imported: string; member: string | null } | null {
+function called(expr: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: ts.SourceFile): { symbol: string; file: string; input: string } | null {
   const inner = unwrap(expr);
   if (!ts.isCallExpression(inner)) return null;
   const callee = inner.expression;
@@ -213,299 +213,17 @@ function called(expr: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: t
   if (ts.isIdentifier(callee)) {
     const b = locals.get(callee.text);
     if (!b) return null;
-    return { symbol: b.imported === "default" ? b.local : b.imported, file: b.file, input, imported: b.imported, member: null };
+    return { symbol: b.imported === "default" ? b.local : b.imported, file: b.file, input };
   }
   if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && ts.isIdentifier(callee.name)) {
     const b = locals.get(callee.expression.text);
     if (!b) return null;
-    return { symbol: callee.name.text, file: b.file, input, imported: b.imported, member: callee.name.text };
+    return { symbol: callee.name.text, file: b.file, input };
   }
   return null;
 }
 
-function bindingInit(sf: ts.SourceFile, name: string, seen: Set<string>): ts.Expression | null {
-  if (seen.has(name)) return null;
-  seen.add(name);
-  for (const st of sf.statements) {
-    if (!ts.isVariableStatement(st)) continue;
-    for (const decl of st.declarationList.declarations) {
-      if (ts.isIdentifier(decl.name) && decl.name.text === name && decl.initializer) return decl.initializer;
-    }
-  }
-  return null;
-}
-
-function propertyFunction(expr: ts.Expression | null, member: string, sf: ts.SourceFile, seen: Set<string>): string | null {
-  if (!expr) return null;
-  const node = unwrap(expr);
-  if (ts.isIdentifier(node)) return propertyFunction(bindingInit(sf, node.text, seen), member, sf, seen);
-  if (ts.isObjectLiteralExpression(node)) {
-    for (const prop of node.properties) {
-      const key = prop.name && (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) ? prop.name.text : null;
-      if (key !== member) continue;
-      if (ts.isShorthandPropertyAssignment(prop)) return prop.name.text;
-      if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.initializer)) return prop.initializer.text;
-    }
-    return null;
-  }
-  if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Object" && node.expression.name.text === "assign") {
-    for (const arg of node.arguments) {
-      if (!ts.isExpression(arg)) continue;
-      const hit = propertyFunction(arg, member, sf, seen);
-      if (hit) return hit;
-    }
-  }
-  return null;
-}
-
-/**
- * The function a property call actually names. `is.positiveNumber` is the exported `isPositiveNumber`
- * when the default object assigns that property to it. A name that is not a declared function stays as written.
- */
-export function declaredExport(source: string, imported: string, member: string): string | null {
-  if (!source || !member) return null;
-  const sf = ts.createSourceFile("mod.ts", source, ts.ScriptTarget.Latest, true);
-  const functions = new Set<string>();
-  const exported = new Set<string>();
-  for (const st of sf.statements) {
-    if (ts.isFunctionDeclaration(st) && st.name) {
-      functions.add(st.name.text);
-      if (exportedModifier(st)) exported.add(st.name.text);
-    }
-    if (ts.isVariableStatement(st)) {
-      const isExport = exportedModifier(st);
-      for (const decl of st.declarationList.declarations) {
-        if (!ts.isIdentifier(decl.name) || !decl.initializer) continue;
-        const init = decl.initializer;
-        if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) functions.add(decl.name.text);
-        if (isExport) exported.add(decl.name.text);
-      }
-    }
-    if (ts.isExportDeclaration(st) && st.exportClause && ts.isNamedExports(st.exportClause)) {
-      for (const el of st.exportClause.elements) exported.add((el.propertyName ?? el.name).text);
-    }
-  }
-  let root: ts.Expression | null = null;
-  if (imported === "default") {
-    for (const st of sf.statements) {
-      if (!ts.isExportAssignment(st)) continue;
-      root = ts.isIdentifier(st.expression) ? bindingInit(sf, st.expression.text, new Set()) ?? st.expression : st.expression;
-    }
-  } else root = bindingInit(sf, imported, new Set());
-  const name = propertyFunction(root, member, sf, new Set());
-  if (!name || !functions.has(name) || !exported.has(name)) return null;
-  return name;
-}
-
-/**
- * A changed line is covered only when it sits in the body of `symbol` and not in a nested function.
- * A nested edit is not covered by a probe of the outer function: the probe calls the outer function,
- * and that does not show the nested function ran. New and removed nested functions are the same.
- * A line that also contains a parameter is not entirely inside the body, so it is not covered.
- */
-function bodyHit(source: string, symbol: string, line: number, blockNested: boolean, blockFresh: boolean, other: string): boolean {
-  if (!source) return false;
-  const sf = ts.createSourceFile("mod.ts", source, ts.ScriptTarget.Latest, true);
-  const otherSf = ts.createSourceFile("other.ts", other, ts.ScriptTarget.Latest, true);
-  let fn = findFunction(sf, symbol);
-  if (!fn) fn = findArrow(sf, symbol); // cover-guard:arrow-body
-  if (!fn) fn = findMethod(sf, symbol); // cover-guard:method-body
-  const body = fn && functionBody(fn);
-  if (!fn || !body) return false;
-  const start = lineNumber(sf, body.getStart(sf));
-  const end = lineNumber(sf, body.getEnd());
-  if (line < start || line > end) return false;
-  if (fn.parameters.length > 0) {
-    const ps = lineNumber(sf, fn.parameters[0]!.getStart(sf));
-    const pe = lineNumber(sf, fn.parameters[fn.parameters.length - 1]!.getEnd());
-    if (line >= ps && line <= pe) return false;
-  }
-  const names = new Set(nestedFns(findFunction(otherSf, symbol) ?? findArrow(otherSf, symbol) ?? findMethod(otherSf, symbol), otherSf).map((span) => span.name));
-  let blocked = false;
-  for (const span of nestedFns(fn, sf)) {
-    if (line < span.start || line > span.end) continue;
-    const known = names.has(span.name);
-    if (known) blocked = blocked || blockNested;
-    else blocked = blocked || blockFresh;
-  }
-  return !blocked;
-}
-
-function lineNumber(sf: ts.SourceFile, pos: number): number {
-  return sf.getLineAndCharacterOfPosition(pos).line + 1;
-}
-
-function functionBody(fn: ts.FunctionLikeDeclaration): ts.Node | null {
-  return fn.body ?? null;
-}
-
-function findFunction(sf: ts.SourceFile, symbol: string): ts.FunctionLikeDeclaration | null {
-  for (const st of sf.statements) {
-    if (ts.isFunctionDeclaration(st) && st.name?.text === symbol && st.body) return st;
-  }
-  return null;
-}
-
-function findArrow(sf: ts.SourceFile, symbol: string): ts.FunctionLikeDeclaration | null {
-  for (const st of sf.statements) {
-    if (!ts.isVariableStatement(st)) continue;
-    for (const decl of st.declarationList.declarations) {
-      if (!ts.isIdentifier(decl.name) || decl.name.text !== symbol || !decl.initializer) continue;
-      const init = decl.initializer;
-      if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) return init;
-    }
-  }
-  return null;
-}
-
-function withBody(fn: ts.Node): fn is ts.FunctionLikeDeclaration & { body: ts.Node } {
-  return (ts.isFunctionDeclaration(fn) || ts.isMethodDeclaration(fn) || ts.isGetAccessorDeclaration(fn) || ts.isSetAccessorDeclaration(fn) || ts.isConstructorDeclaration(fn) || ts.isFunctionExpression(fn) || ts.isArrowFunction(fn)) && fn.body != null;
-}
-
-function findMethod(sf: ts.SourceFile, symbol: string): ts.FunctionLikeDeclaration | null {
-  const found: ts.FunctionLikeDeclaration[] = [];
-  const add = (name: string | undefined, fn: ts.Node) => {
-    if (name !== symbol) return;
-    if (withBody(fn)) found.push(fn);
-  };
-  const visit = (node: ts.Node) => {
-    if (ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) {
-      const name = node.name && ts.isIdentifier(node.name) ? node.name.text : undefined;
-      add(name, node);
-    } else if ((ts.isPropertyAssignment(node) || ts.isPropertyDeclaration(node)) && node.initializer) {
-      const name = node.name && (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) && !ts.isComputedPropertyName(node.name) ? node.name.text : undefined;
-      add(name, node.initializer);
-    }
-    if (ts.isFunctionLike(node)) return;
-    ts.forEachChild(node, visit);
-  };
-  visit(sf);
-  return found.length === 1 ? found[0]! : null;
-}
-
-function nestedFns(fn: ts.FunctionLikeDeclaration | null, sf: ts.SourceFile): { name: string; start: number; end: number }[] {
-  if (!fn?.body) return [];
-  const out: { name: string; start: number; end: number }[] = [];
-  const visit = (node: ts.Node) => {
-    if (node === fn) { ts.forEachChild(node, visit); return; }
-    if (withBody(node)) {
-      const name = node.name && ts.isIdentifier(node.name) ? node.name.text : "";
-      out.push({ name, start: lineNumber(sf, node.getStart(sf)), end: lineNumber(sf, node.getEnd()) });
-      return;
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(fn);
-  return out;
-}
-
-interface DiffSide { file: string; added: number[]; removed: number[] }
-
-function parseDiffLines(diff: string): DiffSide[] | null {
-  const files: DiffSide[] = [];
-  let cur: DiffSide | null = null;
-  let oldLine = 0;
-  let newLine = 0;
-  let inHunk = false;
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("diff --git ")) { inHunk = false; cur = null; continue; }
-    if (line.startsWith("--- ")) { inHunk = false; continue; }
-    if (line.startsWith("+++ ")) {
-      inHunk = false;
-      const plus = /^\+\+\+ b\/(.+)$/.exec(line);
-      if (plus && plus[1] !== "/dev/null") {
-        cur = { file: plus[1]!, added: [], removed: [] };
-        files.push(cur);
-      } else cur = null;
-      continue;
-    }
-    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
-    if (hunk) {
-      if (!cur) return null;
-      inHunk = true;
-      oldLine = Number(hunk[1]);
-      newLine = Number(hunk[2]);
-      continue;
-    }
-    if (!inHunk || !cur || line === "" || line.startsWith("\\")) continue;
-    if (line.startsWith("+")) { cur.added.push(newLine); newLine += 1; continue; }
-    if (line.startsWith("-")) { cur.removed.push(oldLine); oldLine += 1; continue; }
-    if (line.startsWith(" ")) { oldLine += 1; newLine += 1; continue; }
-    return null;
-  }
-  return files;
-}
-
-/**
- * True only when every changed line of the candidate diff lies inside a probed function body.
- * An empty diff, a line that cannot be placed, a module-level line, another file, a parameter
- * line, or a nested function is not covered.
- */
-export function textHunksCovered(
-  diff: string,
-  files: readonly { path: string; before: string; after: string }[],
-  probes: readonly { file: string; symbol: string }[],
-): boolean {
-  const parsed = parseDiffLines(diff);
-  if (!parsed) return false;
-  const byPath = new Map(files.map((file) => [file.path, file]));
-  const added: { file: string; line: number }[] = [];
-  const removed: { file: string; line: number }[] = [];
-  for (const side of parsed) {
-    if (!byPath.has(side.file)) return false;
-    for (const line of side.added) added.push({ file: side.file, line });
-    for (const line of side.removed) removed.push({ file: side.file, line });
-  }
-  let lines = added.map((row) => row);
-  lines = lines.concat(removed); // cover-guard:removed-lines
-  let outside = false;
-  if (added.length + removed.length === 0) outside = true; // cover-guard:empty-change
-  const hit = (row: { file: string; line: number }, side: "before" | "after") => {
-    const file = byPath.get(row.file);
-    if (!file) return false;
-    const source = side === "after" ? file.after : file.before;
-    const other = side === "after" ? file.before : file.after;
-    const symbols = probes.filter((probe) => probe.file === row.file).map((probe) => probe.symbol);
-    if (symbols.length === 0) return false;
-    let nested = false;
-    nested = true; // cover-guard:nested-exclude
-    let fresh = false;
-    fresh = true; // cover-guard:new-helper
-    return symbols.some((symbol) => bodyHit(source, symbol, row.line, nested, fresh, other));
-  };
-  outside = outside || lines.some((row) => !hit(row, added.includes(row) ? "after" : "before")); // cover-guard:probe-all
-  return !outside;
-}
-
-/** Functions whose text differs between the two sides of a candidate diff. Nested functions count on their own. */
-export function changedFunctionNames(before: string, after: string): string[] {
-  const texts = (source: string) => {
-    const sf = ts.createSourceFile("mod.ts", source, ts.ScriptTarget.Latest, true);
-    const out = new Map<string, string>();
-    const visit = (node: ts.Node) => {
-      let name: string | null = null;
-      if ((ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) && node.name && ts.isIdentifier(node.name)) name = node.name.text;
-      else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) name = node.name.text;
-      else if (ts.isFunctionExpression(node) && node.name) name = node.name.text;
-      if (name) {
-        const text = node.getText(sf);
-        const prev = out.get(name);
-        out.set(name, prev ? `${prev}\n${text}` : text);
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(sf);
-    return out;
-  };
-  const older = texts(before);
-  const newer = texts(after);
-  const names: string[] = [];
-  for (const [name, text] of newer) if (older.get(name) !== text) names.push(name);
-  for (const name of older.keys()) if (!newer.has(name) && !names.includes(name)) names.push(name);
-  return names;
-}
-
-function arrowCall(fn: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: ts.SourceFile): { symbol: string; file: string; input: string; imported: string; member: string | null } | null {
+function arrowCall(fn: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: ts.SourceFile): { symbol: string; file: string; input: string } | null {
   if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return null;
   if (ts.isCallExpression(unwrap(fn.body as ts.Expression)) || ts.isBlock(fn.body)) {
     if (!ts.isBlock(fn.body)) return called(fn.body as ts.Expression, locals, sf);
@@ -520,20 +238,14 @@ function arrowCall(fn: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: 
 }
 
 /** Concrete expectations already written in the test. A call with a non-literal argument is not one. */
-export function expectationsIn(testFile: string, text: string, sourcePattern: string, denyPatterns: readonly string[] = [], exists: (path: string) => boolean = () => true, failing: readonly string[] = [], read: (path: string) => string | null = () => null): Expectation[] {
+export function expectationsIn(testFile: string, text: string, sourcePattern: string, denyPatterns: readonly string[] = [], exists: (path: string) => boolean = () => true, failing: readonly string[] = []): Expectation[] {
   const found = bindings(testFile, text, sourcePattern, denyPatterns, exists);
   const locals = new Map(found.map((b) => [b.local, b]));
   const sf = ts.createSourceFile(testFile, text, ts.ScriptTarget.Latest, true);
   const out: Expectation[] = [];
-  const add = (kind: Expectation["kind"], hit: { symbol: string; file: string; input: string; imported: string; member: string | null } | null, expected: string) => {
+  const add = (kind: Expectation["kind"], hit: { symbol: string; file: string; input: string } | null, expected: string) => {
     if (!hit || out.length >= 32) return;
-    let symbol = hit.symbol;
-    if (hit.member) {
-      const source = read(hit.file);
-      const declared = source ? declaredExport(source, hit.imported, hit.member) : null;
-      if (declared) symbol = declared;
-    }
-    const row: Expectation = { kind, symbol, file: hit.file, input: hit.input, expected: expected.slice(0, 80) };
+    const row: Expectation = { kind, symbol: hit.symbol, file: hit.file, input: hit.input, expected: expected.slice(0, 80) };
     if (out.some((e) => e.kind === row.kind && e.symbol === row.symbol && e.file === row.file && e.input === row.input && e.expected === row.expected)) return;
     out.push(row);
   };
@@ -596,24 +308,6 @@ export function expectationsIn(testFile: string, text: string, sourcePattern: st
   if (bodies.length) for (const body of bodies) visit(body);
   if (out.length === 0) visit(sf);
   return out;
-}
-
-/** Concrete calls in a recorded test, grouped the way the behavioral grader loads a symbol. */
-export function behaviorTargets(testFile: string, text: string, sourcePattern: string, denyPatterns: readonly string[] = [], exists: (path: string) => boolean = () => true, read: (path: string) => string | null = () => null): SpecTarget[] {
-  const by = new Map<string, SpecTarget>();
-  for (const row of expectationsIn(testFile, text, sourcePattern, denyPatterns, exists, [], read)) {
-    if (row.kind === "throws") continue;
-    const args = argsFromSnippet(row.input);
-    if (!args) continue;
-    const id = `${row.file}\0${row.symbol}`;
-    let target = by.get(id);
-    if (!target) {
-      target = { symbol: row.symbol, file: row.file, form: "named", exportName: row.symbol, args: [] };
-      by.set(id, target);
-    }
-    if (!target.args.some((have) => JSON.stringify(have) === JSON.stringify(args))) target.args.push(args);
-  }
-  return [...by.values()];
 }
 
 /**
