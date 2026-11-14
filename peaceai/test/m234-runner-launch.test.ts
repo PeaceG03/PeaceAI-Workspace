@@ -10,7 +10,7 @@ import {
   PRACTICE_AVA_CONFIG, applyPracticeTestLaunch, declaredLoaderMissing, declaredTypeScriptLoader, dependencyFingerprint,
   INSTALL_READER_MARK, RETIRED_INSTALL_MS, ensurePracticeInstall, gradedLaunchMode, loaderFingerprintNote, loaderInstalled,
   practiceSandboxReady, practiceTestLaunch, publishInstallTree, reapRetiredInstalls,
-  sandboxExtraEnv, tsconfigOmitsTest, visibleNodeBin,
+  sandboxExtraEnv, treeHasConstEnum, tsconfigOmitsTest, visibleNodeBin,
 } from "../lib/practicemine.ts";
 import { runRecordedTest } from "../bin/practice-replay.ts";
 import { avaEarlyDetail, classifyRunnerOutput, loaderMissingDetail, runTestSpec, type SpecInput } from "../lib/testspec.ts";
@@ -65,6 +65,10 @@ test("an overlaid test outside the tsconfig include is transpiled, and one insid
   assert.equal(tsconfigOmitsTest("{}", "test/test.ts"), false);
   const outside = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: AVA3, tsconfig: SOURCE_ONLY, mode: "relaxed" });
   assert.equal(outside.env.TS_NODE_TRANSPILE_ONLY, "true");
+  const enumKept = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: AVA3, tsconfig: SOURCE_ONLY, mode: "relaxed", constEnum: true });
+  assert.equal(enumKept.env.TS_NODE_TRANSPILE_ONLY, undefined);
+  const enumAsked = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: AVA3, tsconfig: TRANSPILE, mode: "relaxed", constEnum: true });
+  assert.equal(enumAsked.env.TS_NODE_TRANSPILE_ONLY, "true");
   assert.deepEqual(outside.cmd.slice(0, 3), ["./node_modules/.bin/ava", "--config", PRACTICE_AVA_CONFIG]);
   assert.equal(outside.cmd.at(-1), "test/test.ts");
   assert.match(outside.configText ?? "", /ts-node\/register/);
@@ -106,6 +110,44 @@ test("sandbox env keeps the loader flag and drops every other key", () => {
     TS_NODE_TRANSPILE_ONLY: "true", TSIMP_DIAG: "ignore",
   });
   assert.deepEqual(sandboxExtraEnv({ TS_NODE_TRANSPILE_ONLY: "false", TSIMP_DIAG: "error" }), {});
+});
+
+test("a const enum under node_modules, or past 400 files, does not change the launch", () => {
+  const root = mkdtempSync(join(tmpdir(), "practice-enum-cap-"));
+  mkdirSync(join(root, "node_modules", "vendor"), { recursive: true });
+  writeFileSync(join(root, "node_modules", "vendor", "index.d.ts"), "export const enum VendorLevel { High = \"high\" }\n");
+  assert.equal(treeHasConstEnum(root), false);
+  for (let i = 0; i < 400; i++) writeFileSync(join(root, `note-${i}.ts`), "export const n = 1;\n");
+  mkdirSync(join(root, "later"));
+  writeFileSync(join(root, "later", "hidden.ts"), "export const enum Hidden { A = 1 }\n");
+  assert.equal(treeHasConstEnum(root), false);
+  rmSync(join(root, "note-0.ts"));
+  assert.equal(treeHasConstEnum(root), true);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("a const enum keeps type-checking when the test file is outside include", () => {
+  const root = mkdtempSync(join(tmpdir(), "practice-const-enum-"));
+  mkdirSync(join(root, "source"), { recursive: true });
+  mkdirSync(join(root, "test"), { recursive: true });
+  writeFileSync(join(root, "package.json"), `${AVA3}\n`);
+  writeFileSync(join(root, "tsconfig.json"), `${SOURCE_ONLY}\n`);
+  writeFileSync(join(root, "source", "levels.ts"), "export const enum Level { High = \"high\" }\n");
+  writeFileSync(join(root, "test", "test.ts"), "import { Level } from \"../source/levels\";\nexport const label = Level.High;\n");
+  try {
+    const kept = applyPracticeTestLaunch(root, ["./node_modules/.bin/ava", "test/test.ts"], "test/test.ts", "relaxed");
+    assert.equal(kept.env.TS_NODE_TRANSPILE_ONLY, undefined);
+    rmSync(join(root, "source", "levels.ts"));
+    mkdirSync(join(root, "node_modules", "vendor"), { recursive: true });
+    writeFileSync(join(root, "node_modules", "vendor", "index.d.ts"), "export const enum VendorLevel { High = \"high\" }\n");
+    assert.equal(treeHasConstEnum(root), false);
+    const plain = applyPracticeTestLaunch(root, ["./node_modules/.bin/ava", "test/test.ts"], "test/test.ts", "relaxed");
+    assert.equal(plain.env.TS_NODE_TRANSPILE_ONLY, "true");
+    const checked = applyPracticeTestLaunch(root, ["./node_modules/.bin/ava", "test/test.ts"], "test/test.ts", "typecheck");
+    assert.deepEqual(checked.env, {});
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("an ava assertion is not an early exit, and a worker crash names its error", () => {

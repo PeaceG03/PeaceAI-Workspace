@@ -53,7 +53,7 @@ const MAX_CALLEES = 6;
 /** The fixed template order (rank = index). */
 export const TEMPLATES = ["missing-export", "nullish-check", "comparison", "arithmetic", "off-by-one", "logical", "default-value", "null-guard", "negate-condition", "boolean-return"] as const;
 /** M168: repair-v2's idiom templates, tried before TEMPLATES in this fixed order (decided before any dev-split run). */
-export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key"] as const; // M172: + undefined-keeps-key
+export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "enum-values"] as const; // M172: + undefined-keeps-key
 export type Idiom = (typeof IDIOM_TEMPLATES)[number];
 /** M173 (spec: peaceai/spec/repair-v2-m173.md): repair-v2's module-scope constant template, tried after all others. */
 export const CONST_TEMPLATES = ["const-value"] as const;
@@ -836,6 +836,91 @@ function undefinedKeepsKey(n: ts.Node, sf: ts.SourceFile): string | null {
   return `${src(n)} || ${key} in ${src(obj)}`;
 }
 
+const srcOf = (sf: ts.SourceFile, n: ts.Node): string => sf.text.slice(n.getStart(sf), n.getEnd());
+
+/** A call that already asks whether a property is the object's own. */
+function isOwnProbe(expr: ts.Node): boolean {
+  if (ts.isPropertyAccessExpression(expr) && expr.name.text === "hasOwnProperty") return true; // cap-guard:own-hasown
+  if (ts.isPropertyAccessExpression(expr) && expr.name.text === "hasOwn" && ts.isIdentifier(expr.expression) && expr.expression.text === "Object") return true; // cap-guard:own-object-hasown
+  if (ts.isPropertyAccessExpression(expr) && expr.name.text === "call") {
+    const recv = expr.expression;
+    if (!ts.isPropertyAccessExpression(recv) || recv.name.text !== "hasOwnProperty") return false;
+    const proto = recv.expression;
+    return ts.isPropertyAccessExpression(proto) && ts.isIdentifier(proto.expression) && proto.expression.text === "Object" && proto.name.text === "prototype"; // cap-guard:own-proto-call
+  }
+  return false;
+}
+
+/** True when the loop body already skips inherited names. A nested function does not count. */
+function ownPropertyGuard(stmt: ts.Node): boolean {
+  let found = false;
+  const walk = (node: ts.Node, top: boolean): void => {
+    if (found) return;
+    if (!top && (ts.isFunctionLike(node) || ts.isClassLike(node))) return; // cap-guard:own-nested
+    if (ts.isCallExpression(node) && isOwnProbe(node.expression)) found = true;
+    else ts.forEachChild(node, (child) => walk(child, false));
+  };
+  walk(stmt, true);
+  return found;
+}
+
+/**
+ * own-keys: `for (k in obj)` also visits enumerable names inherited from the prototype.
+ * Insert an own-property guard. The loop variable and the body stay. A loop that already
+ * calls `hasOwnProperty`, `Object.hasOwn`, or `Object.prototype.hasOwnProperty.call` is left alone.
+ */
+function ownKeys(n: ts.Node, sf: ts.SourceFile): string | null {
+  if (!ts.isForInStatement(n)) return null; // cap-guard:own-forin
+  let binding = "";
+  let key = "";
+  if (ts.isVariableDeclarationList(n.initializer)) {
+    if (n.initializer.declarations.length !== 1) return null; // cap-guard:own-decl
+    const decl = n.initializer.declarations[0]!;
+    if (!ts.isIdentifier(decl.name) || decl.initializer) return null; // cap-guard:own-name
+    const flags = n.initializer.flags;
+    const keyword = flags & ts.NodeFlags.Const ? "const" : flags & ts.NodeFlags.Let ? "let" : "var";
+    key = decl.name.text;
+    binding = `${keyword} ${key}`;
+  } else if (ts.isIdentifier(n.initializer)) {
+    key = n.initializer.text;
+    binding = key;
+  } else return null;
+  if (!plainRef(n.expression)) return null; // cap-guard:own-ref
+  if (ownPropertyGuard(n.statement)) return null; // cap-guard:own-guarded
+  const obj = srcOf(sf, n.expression);
+  const guard = `if (!Object.hasOwn(${obj}, ${key})) continue;`;
+  const stmt = n.statement;
+  const body = ts.isBlock(stmt) ? `{ ${guard}${srcOf(sf, stmt).slice(1)}` : `{ ${guard} ${srcOf(sf, stmt)} }`;
+  return `for (${binding} in ${obj}) ${body}`;
+}
+
+/**
+ * enum-values: `Object.values(table).includes(member)` on a numeric enum also accepts the reverse-mapped
+ * member name (`0` stores `"Draft"` and `"Draft"` stores `0`). Drop a string only when it round-trips
+ * through a numeric property. Numbers and string-enum values stay.
+ */
+function enumValues(n: ts.Node, sf: ts.SourceFile): string | null {
+  if (!ts.isCallExpression(n) || n.arguments.length !== 1 || n.questionDotToken) return null; // cap-guard:enum-argc
+  const callee = n.expression;
+  if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== "includes" || callee.questionDotToken) return null; // cap-guard:enum-includes
+  const values = callee.expression;
+  if (!ts.isCallExpression(values) || values.arguments.length !== 1 || values.questionDotToken) return null; // cap-guard:enum-values-call
+  const head = values.expression;
+  if (!ts.isPropertyAccessExpression(head) || head.questionDotToken || !ts.isIdentifier(head.expression) || head.expression.text !== "Object" || head.name.text !== "values") return null; // cap-guard:enum-object-values
+  const bare = (e: ts.Node): ts.Node => {
+    let cur = e;
+    while (ts.isAsExpression(cur) || ts.isTypeAssertionExpression(cur) || ts.isParenthesizedExpression(cur) || ts.isSatisfiesExpression(cur)) cur = cur.expression;
+    return cur;
+  };
+  const target = bare(values.arguments[0]!);
+  const item = bare(n.arguments[0]!);
+  if (!plainRef(target) || !plainRef(item)) return null; // cap-guard:enum-ref
+  const e = srcOf(sf, target);
+  const v = srcOf(sf, item);
+  const box = `(${e} as Record<PropertyKey, unknown>)`;
+  return `Object.values(${e}).filter((member) => typeof member !== "string" || typeof ${box}[member] !== "number" || ${box}[${box}[member] as PropertyKey] !== member).includes(${v})`;
+}
+
 /** M168: every idiom candidate inside one site (no I/O); repair-v2 only. */
 export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: number): Mutation[] {
   const out: Mutation[] = [];
@@ -849,6 +934,8 @@ export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: numbe
     add(typeofNull(n, sf), "typeof-null");
     add(protoSafeCopy(n, sf), "proto-safe-copy");
     add(undefinedKeepsKey(n, sf), "undefined-keeps-key");
+    add(ownKeys(n, sf), "own-keys");
+    add(enumValues(n, sf), "enum-values");
     ts.forEachChild(n, visit);
   };
   visit(sf);
@@ -1217,7 +1304,33 @@ function reachReserved(all: readonly Mutation[], sites: readonly Site[], files: 
   const kept = [...low.slice(0, nLow), ...high.slice(0, nHigh)];
   kept.sort((a, b) => a.i - b.i); // m189-guard:order
   for (const k of kept) seen.add(k.c.key);
-  return kept.map((k) => k.c);
+  // One idiom often has to land in every function the test names. A single edit leaves the other failing.
+  const bundled = idiomBundles(all, files, seen);
+  const list = [...bundled, ...kept.map((k) => k.c)];
+  if (list.length > MAX_CANDIDATES) list.length = MAX_CANDIDATES; // cap-guard:bundle-cap
+  return list;
+}
+
+const BUNDLE_IDIOMS = new Set<string>(["own-keys", "enum-values"]);
+
+/** Every non-overlapping hit of one new idiom, as one candidate. Two to four hits. */
+function idiomBundles(all: readonly Mutation[], files: ReadonlyMap<string, string>, seen: Set<string>): Candidate[] {
+  const out: Candidate[] = [];
+  for (const template of BUNDLE_IDIOMS) {
+    const group = all.filter((m) => m.template === template);
+    if (group.length < 2 || group.length > 4) continue; // cap-guard:bundle-size
+    const disjoint: Mutation[] = [];
+    for (const m of group) {
+      if (disjoint.some((d) => overlaps(d, m))) continue; // cap-guard:bundle-overlap
+      disjoint.push(m);
+    }
+    if (disjoint.length < 2) continue;
+    const c = candidateFor(files, disjoint);
+    if (!c || seen.has(c.key)) continue; // cap-guard:bundle-new
+    seen.add(c.key);
+    out.push(c);
+  }
+  return out;
 }
 
 // ---- M174: load-repair candidates (repair-v2 only)

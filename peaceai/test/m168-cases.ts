@@ -299,8 +299,8 @@ export const CASES: Case[] = [
       assert.ok(v1.length > 0);
       for (const c of v1) assert.ok((l.prop.TEMPLATES as readonly string[]).includes(c.muts[0]!.template), `v1 got ${c.muts[0]!.template}`);
       const v2 = l.prop.repairCandidates([site], files, new Set(), true);
-      // M172: the list now also holds undefined-keeps-key, which this text has no site for (m172-cases.ts covers it)
-      assert.deepEqual([...new Set(v2.slice(0, 4).map((c) => c.muts[0]!.template))].sort(), l.prop.IDIOM_TEMPLATES.filter((t) => t !== "undefined-keeps-key").sort());
+      // Later idioms (own-keys and the forms after it) are not in these first four. undefined-keeps-key has no site here.
+      assert.deepEqual([...new Set(v2.slice(0, 4).map((c) => c.muts[0]!.template))].sort(), ["case-predicate", "discarded-result", "proto-safe-copy", "typeof-null"]);
       assert.equal(l.prop.repairProposer().name, "repair-v1");
       assert.equal(l.prop.repairProposer({ v2: true }).name, "repair-v2");
     },

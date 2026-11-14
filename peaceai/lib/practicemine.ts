@@ -296,11 +296,42 @@ export function gradedLaunchMode(phase: "before" | "after"): PracticeLaunchMode 
 }
 
 /**
+ * True when a TypeScript file under this checkout declares a const enum.
+ * A const enum is inlined only while ts-node type-checks. Transpile-only leaves the use as a
+ * property read on a value that was erased, so the worker dies before any test.
+ * `node_modules` (including its `.d.ts` files) and dot directories are not scanned. At most 400 files are read.
+ */
+export function treeHasConstEnum(root: string): boolean {
+  const stack = [root];
+  let seen = 0;
+  while (stack.length > 0 && seen < 400) {
+    const dir = stack.pop()!;
+    let names: string[] = [];
+    try { names = readdirSync(dir); } catch { continue; }
+    for (const name of names) {
+      if (name === "node_modules" || name === ".git" || name.startsWith(".")) continue;
+      const path = join(dir, name);
+      let stat;
+      try { stat = lstatSync(path); } catch { continue; }
+      if (stat.isSymbolicLink()) continue;
+      if (stat.isDirectory()) { stack.push(path); continue; }
+      if (!stat.isFile() || !/\.[cm]?tsx?$/.test(name)) continue;
+      seen += 1;
+      let text = "";
+      try { text = readFileSync(path, "utf8"); } catch { continue; }
+      if (/const\s+enum\b/.test(text)) return true; // cap-guard:const-enum-scan
+    }
+  }
+  return false;
+}
+
+/**
  * How to run one recorded test command. `relaxed` is for spec diagnostics only: it copies the ava
  * key and, when the repo tsconfig does not cover the overlaid test, compiles it transpile-only.
+ * That shortcut is not used when the checkout declares a const enum: transpile-only would erase it.
  * `typecheck` is the recorded command with no extra env, so ts-node type-checks the test and the
  * source it imports. Graded fail-before and pass-after both use `typecheck`.
- * `ts-node.transpileOnly` in the repo's own tsconfig is part of that type-checking launch.
+ * `ts-node.transpileOnly` in the repo's own tsconfig is part of that launch, including relaxed.
  * Package scripts are not rewritten.
  */
 export function practiceTestLaunch(input: {
@@ -312,6 +343,8 @@ export function practiceTestLaunch(input: {
   avaConfigFile?: boolean;
   /** Defaults to the type-checking launch. */
   mode?: PracticeLaunchMode;
+  /** True when a const enum in the checkout must stay inlined. */
+  constEnum?: boolean;
 }): PracticeLaunch {
   const command = [...input.command];
   const mode = input.mode ?? "typecheck";
@@ -320,7 +353,8 @@ export function practiceTestLaunch(input: {
   const pkgText = input.packageJson ?? "";
   const loader = declaredTypeScriptLoader(pkgText, input.tsconfig);
   const omitted = tsconfigOmitsTest(input.tsconfig, input.testFile);
-  if (loader?.name === "ts-node" && (loader.transpileOnly || omitted)) env.TS_NODE_TRANSPILE_ONLY = "true";
+  // A repo that set transpileOnly keeps it. An omitted test is transpile-only only when no const enum needs inlining.
+  if (loader?.name === "ts-node" && (loader.transpileOnly || (omitted && !input.constEnum))) env.TS_NODE_TRANSPILE_ONLY = "true"; // cap-guard:omit-const-enum
   const pkg = asRecord(parseConfigJson(pkgText));
   const ava = pkg ? avaRecord(pkg) : null;
   if (!isAvaCommand(command) || !ava || input.avaConfigFile || command.includes("--config") || command.includes(PRACTICE_AVA_CONFIG)) {
@@ -347,6 +381,7 @@ export function applyPracticeTestLaunch(workDir: string, command: readonly strin
     command, testFile, packageJson: read("package.json"), tsconfig: read("tsconfig.json"),
     avaConfigFile: AVA_CONFIG_FILES.some((name) => existsSync(join(workDir, name))),
     mode,
+    constEnum: mode === "relaxed" && treeHasConstEnum(workDir),
   });
   const dest = join(workDir, PRACTICE_AVA_CONFIG);
   if (launch.configText) writeFileSync(dest, launch.configText);
