@@ -146,71 +146,10 @@ function textRepairFromIssue(): RepairEdit[][] {
   return textRepairBatches(openRepo(repo), taskSource({ title: issueTask.title, body: issueTask.body }), TEXT_REPAIR_LIMIT);
 }
 
-/** Write repair batches as scoped candidate diffs. Returns how many were kept. */
-function writeTextRepairs(batches: readonly (readonly RepairEdit[])[]): number {
-  const work = mkdtempSync(join(tmpdir(), "peaceai-text-"));
-  rmSync(work, { recursive: true, force: true });
-  git(repo, "worktree", "add", "--quiet", "--detach", work, baseSha);
-  const seen = new Set<string>();
-  const candidates: { id: string; diff: string }[] = [];
-  const one = (edits: readonly RepairEdit[]): string | null => {
-    try {
-      for (const edit of edits) {
-        const target = join(work, edit.path);
-        if (!target.startsWith(`${work}/`)) return null;
-        mkdirSync(dirname(target), { recursive: true });
-        writeFileSync(target, edit.content);
-      }
-      git(work, "add", "-A", "--intent-to-add", ".");
-      const diff = git(work, "diff", "--no-color", "--no-ext-diff", "--no-renames", "--full-index");
-      return diff.trim() ? diff : null;
-    } catch {
-      return null;
-    } finally {
-      git(work, "reset", "--quiet", "--hard", baseSha);
-      git(work, "clean", "-fdqx");
-    }
-  };
-  try {
-    for (const edits of batches) {
-      if (candidates.length >= TEXT_REPAIR_LIMIT) break;
-      const diff = one(edits);
-      if (!diff) continue;
-      const key = createHash("sha256").update(diff).digest("hex");
-      if (seen.has(key)) continue;
-      if (checkCandidateScope(parseDiff(diff), baseFiles, scope).length > 0) continue;
-      seen.add(key);
-      candidates.push({ id: `candidate-${candidates.length + 1}`, diff });
-    }
-  } finally {
-    git(repo, "worktree", "remove", "--force", work);
-  }
-  if (candidates.length === 0 || nl.status !== "unsure" || !outDir) return 0;
-  mkdirSync(join(outDir, "candidates"), { recursive: true });
-  for (const candidate of candidates) writeFileSync(join(outDir, "candidates", `${candidate.id}.diff`), candidate.diff);
-  writeSummary({
-    schema: "peaceai-workspace-candidates:v1", taskId, baseSha,
-    candidates: candidates.map((candidate) => ({
-      id: candidate.id,
-      file: `candidates/${candidate.id}.diff`,
-      transformations: ["REPAIR_V2"],
-      operationId: null,
-      diffBytes: Buffer.byteLength(candidate.diff),
-      diffLines: candidate.diff.split("\n").filter((line) => /^[+-](?![+-]{2} )/.test(line)).length,
-    })),
-  });
-  // Candidates exist, so this is not an unsure refusal. peace-task.yml posts the phrasing
-  // list only when nl is unsure AND there are zero candidates. Reporting "repair" keeps
-  // that comment off even if a later step looks at nl alone. Job B keys off candidates.
-  writeOutput({ nl: "repair", nl_reason: "", nl_hint: "", nl_steps: "" });
-  console.log("nl=repair");
-  console.log(`text-repair candidates=${candidates.length}`);
-  return candidates.length;
-}
-
+let textBatches: RepairEdit[][] = [];
 if (nl.status === "unsure" && understood?.status !== "mapped") {
-  const batches = textRepairFromIssue();
-  if (batches.length === 0 || writeTextRepairs(batches) === 0) {
+  textBatches = textRepairFromIssue();
+  if (textBatches.length === 0) {
     writeOutput({ nl: "unsure", nl_reason: nl.reason, nl_hint: nl.hint ?? "", nl_steps: "" });
     console.log(`nl=unsure reason=${nl.reason}`);
     if (understood?.status === "cant") console.log(`can't do yet: ${understood.reason}`);
@@ -218,16 +157,15 @@ if (nl.status === "unsure" && understood?.status !== "mapped") {
     writeSummary({ schema: "peaceai-workspace-candidates:v1", taskId, baseSha, candidates: [] });
     process.exit(0);
   }
-  process.exit(0);
 }
 const parsedSteps = understood?.status === "mapped" ? understood.steps : nl.status === "parsed" ? nl.steps : null;
-writeOutput({
+if (textBatches.length === 0) writeOutput({
   nl: parsedSteps ? "parsed" : nl.status,
   nl_reason: "",
   nl_hint: "",
   nl_steps: parsedSteps ? String(parsedSteps.length) : "",
 });
-console.log(parsedSteps
+if (textBatches.length === 0) console.log(parsedSteps
   ? `nl=parsed steps=${parsedSteps.length} families=${parsedSteps.map((s) => s.family).join(",")}${understood?.status === "mapped" ? " understand=issue" : ""}`
   : `nl=${nl.status}`);
 const task = understood?.status === "mapped"
@@ -293,12 +231,42 @@ const candidates: { id: string; diff: string; transformations: string[]; operati
 const seen = new Set<string>();
 let calls = 0;
 let scopeRejected = 0;
+let planStatus = "none";
+let learnedCandidates = 0;
+let fillStatus = "off";
 
+if (textBatches.length) {
+  for (const edits of textBatches) {
+    if (candidates.length >= TEXT_REPAIR_LIMIT) break;
+    const diff = toDiff(edits.map((edit) => ({
+      operation: "EDIT_FILE" as const, path: edit.path, expectedCurrentFingerprint: null, content: edit.content, transformation: "REPAIR_V2",
+    })));
+    if (!diff) continue;
+    const key = createHash("sha256").update(diff).digest("hex");
+    if (seen.has(key)) continue;
+    if (checkCandidateScope(parseDiff(diff), baseFiles, scope).length > 0) { scopeRejected += 1; continue; }
+    seen.add(key);
+    candidates.push({ id: `candidate-${candidates.length + 1}`, diff, transformations: ["REPAIR_V2"], operationId: null });
+  }
+  if (candidates.length === 0) {
+    writeOutput({ nl: "unsure", nl_reason: nl.status === "unsure" ? nl.reason : "", nl_hint: nl.status === "unsure" ? nl.hint ?? "" : "", nl_steps: "" });
+    console.log(`nl=unsure reason=${nl.status === "unsure" ? nl.reason : ""}`);
+    if (understood?.status === "cant") console.log(`can't do yet: ${understood.reason}`);
+  } else {
+    // Candidates exist, so this is not an unsure refusal. peace-task.yml posts the phrasing
+    // list only when nl is unsure AND there are zero candidates. Reporting "repair" keeps
+    // that comment off even if a later step looks at nl alone. Job B keys off candidates.
+    writeOutput({ nl: "repair", nl_reason: "", nl_hint: "", nl_steps: "" });
+    console.log("nl=repair");
+    console.log(`text-repair candidates=${candidates.length}`);
+  }
+}
+
+if (textBatches.length === 0) {
 // M6: a task written as numbered steps is a multi-step plan. It runs once through the bundled planner
 // (DevelopmentPlanGraph + CrossLayerPlanExecutor over the edit families) and yields at most one combined
 // candidate; single-step variants are not tried, so a partial chain is never offered.
 const planSteps = typeof kernel.parsePlanSteps === "function" ? kernel.parsePlanSteps(objectiveText) : null;
-let planStatus = "none";
 if (planSteps) {
   calls += 1;
   let plan;
@@ -381,7 +349,6 @@ function m67EditOk(kind: string, edit: LearnedEdit): boolean {
   return !!scope.tsconfigScript && edit.path === "package.json" && extra.length === 1 && extra[0]!.create === true
     && /^tsconfig\.[a-z][a-z0-9-]{0,20}\.json$/.test(extra[0]!.path) && !baseFiles.has(extra[0]!.path);
 }
-let learnedCandidates = 0;
 const ruleRefusals: RuleRefusal[] = []; // M59: why each matching approved rule made no candidate
 let ruleQuestions = ""; // M99 round 3: the first DERIVE refusal's questions (lib/refusal-reason.ts formatDeriveQuestions)
 for (const a of planSteps ? [] : admissions) {
@@ -447,7 +414,6 @@ writeOutput({ rule_questions: refusalLine && validQuestionLine(ruleQuestions) ? 
 // M9: template gap fill (flag PEACEAI_LM_FILL, off by default). The lm-fill job chose a value among the
 // template's options; it is accepted only if it is one of the options derived here from the same target.
 // The candidate is then gated, scoped, tested and repaired like any other. Never uses learned rules.
-let fillStatus = "off";
 const fillTask = lmFlags(process.env).fill && !planSteps ? parseFillTask(objectiveText) : null;
 if (fillTask && process.env.PEACEAI_LM_FILLS && existsSync(process.env.PEACEAI_LM_FILLS) && candidates.length < MAX_CANDIDATES) {
   let raw: unknown = null;
@@ -463,6 +429,7 @@ if (fillTask && process.env.PEACEAI_LM_FILLS && existsSync(process.env.PEACEAI_L
   }
 } else if (fillTask) fillStatus = "no-fill";
 console.log(`lm fill=${fillStatus}`);
+}
 git(repo, "worktree", "remove", "--force", worktree);
 
 mkdirSync(join(outDir, "candidates"), { recursive: true });
