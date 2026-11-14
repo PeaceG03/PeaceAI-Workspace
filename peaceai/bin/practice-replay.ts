@@ -14,7 +14,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
-import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, cloneCheckProblems, ensurePracticeInstall, materializeSolverTree, mergeCloneRootCollisions, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, processStartId, readPairFingerprint, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
+import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, applyPracticeTestLaunch, cloneCheckProblems, ensurePracticeInstall, isTestFile, materializeSolverTree, mergeCloneRootCollisions, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, processStartId, readPairFingerprint, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
 import {
   PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, targetIsScorable, writePracticeOutputs,
   type GradedRow, type Understanding,
@@ -243,8 +243,9 @@ function linkModules(modules: string, dir: string): void {
 }
 
 function runTest(dir: string, cmd: string[], nodePath: string, modules: string): { code: number | null; blocked: boolean } {
+  const launch = applyPracticeTestLaunch(dir, cmd, [...cmd].reverse().find((part) => isTestFile(part)) ?? "");
   const before = poisonStamp(dir);
-  const ran = runInPracticeSandbox(dir, cmd, TEST_MS, { nodePath, nodeModules: modules });
+  const ran = runInPracticeSandbox(dir, launch.cmd, TEST_MS, { nodePath, nodeModules: modules, extraEnv: launch.env });
   const released = releaseWorktree(dir, before);
   if (ran.unsafe || released.poison.length > 0 || !released.clean) return { code: null, blocked: true };
   return { code: ran.code, blocked: false };

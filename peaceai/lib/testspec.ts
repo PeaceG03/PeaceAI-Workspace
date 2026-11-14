@@ -17,7 +17,7 @@ import ts from "typescript";
 import { isTestPath, openRepo } from "./codesearch.ts";
 import { MAX_CANDIDATES, repairProposer, type RepairFeedback } from "./editpropose.ts";
 import { MAX_ATTEMPTS } from "./loop.ts";
-import { poisonChanges, poisonStamp, practiceGit, releaseWorktree, runInPracticeSandbox, type PracticeToolchain } from "./practicemine.ts";
+import { applyPracticeTestLaunch, declaredTypeScriptLoader, poisonChanges, poisonStamp, practiceGit, practiceTestLaunch, releaseWorktree, runInPracticeSandbox, type PracticeToolchain } from "./practicemine.ts";
 
 export const SPEC_SCHEMA = "peaceai-test-spec:v1";
 export const UNDERSTANDINGS = ["text", "test-as-spec"] as const;
@@ -35,6 +35,8 @@ export const SPEC_CANT = [
   "CANT_DO_YET_SIGNATURE",
   "CANT_DO_YET_NOT_A_FUNCTION",
   "CANT_DO_YET_NO_MODULE",
+  "CANT_DO_YET_LOADER_MISSING",
+  "CANT_DO_YET_AVA_EARLY_EXIT",
   "INSTALL_UNAVAILABLE",
 ] as const;
 export type SpecCant = (typeof SPEC_CANT)[number];
@@ -55,7 +57,7 @@ export interface Expectation {
 export const SPEC_DIAG_KINDS = [
   "runner_error", "no_failure", "assertion_unparsed", "assertion_unreducible",
   "reduced", "verified", "no_symbol", "no_verify", "cap", "sandbox_poison", "unsafe",
-  "missing_symbol", "install_unavailable",
+  "missing_symbol", "install_unavailable", "loader_missing", "ava_early_exit",
 ] as const;
 export type SpecDiagKind = (typeof SPEC_DIAG_KINDS)[number];
 
@@ -291,7 +293,7 @@ export function expectationsIn(testFile: string, text: string, sourcePattern: st
   return out;
 }
 
-const ASSERTION_OUTPUT = /AssertionError|ERR_ASSERTION|Expected values|expected .+ to (?:be|equal)|Difference \(|\+ Received|- Expected|✘ \[fail\]|Test Files .* failed/i;
+const ASSERTION_OUTPUT = /AssertionError|ERR_ASSERTION|Expected values|expected .+ to (?:be|equal)|Difference \(|\+ Received|- Expected|✘ \[fail\]|✖ |Error thrown in test|Test Files .* failed/i;
 const RUNNER_OUTPUT = /bwrap:|ERR_MODULE_NOT_FOUND|Cannot find module|Cannot find package|error TS\d+|ENOENT|not found/i;
 
 /** What a finished runner process is, before the test source is read. */
@@ -302,6 +304,34 @@ export function classifyRunnerOutput(output: string, code: number | null): "runn
   if (RUNNER_OUTPUT.test(output) && !assertion) return "runner_error";
   if (assertion || /^not ok \d+/m.test(output)) return "assertion_seen";
   return "assertion_unparsed";
+}
+
+const AVA_EARLY_BANNER = /exited due to an error|exited with a non-zero exit code|Uncaught exception in /;
+
+/**
+ * Ava's worker-exit banner, when no test result was reported. The return value is the worker's own
+ * error line, or a short fallback when the banner is the only line. An assertion failure is not one.
+ */
+export function avaEarlyDetail(output: string, code: number | null): string | null {
+  if (code === null || code === 0) return null;
+  if (!AVA_EARLY_BANNER.test(output)) return null;
+  if (/✘ \[fail\]|✖ \[fail\]|^not ok \d+/m.test(output) || /AssertionError|ERR_ASSERTION/.test(output)) return null;
+  const lines = output.split("\n").map((line) => line.trim()).filter(Boolean);
+  const detail = lines.find((line) => /^(?:TypeError|SyntaxError|ReferenceError|RangeError|Error)\b/.test(line)
+    || /error TS\d+/.test(line)
+    || /Cannot find (?:package|module) /.test(line)
+    || /^Error \[ERR_/.test(line));
+  return (detail ?? "ava exited before a test result").slice(0, 240);
+}
+
+/** The declared loader is named in the output as a package Node could not resolve. */
+export function loaderMissingDetail(output: string, loaderName: string | null): string | null {
+  if (!loaderName) return null;
+  const escaped = loaderName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = output.match(new RegExp(`(?:Cannot find package '${escaped}'|Cannot find module '${escaped}(?:/[^']*)?')`));
+  if (!match) return null;
+  const line = output.split("\n").map((row) => row.trim()).find((row) => row.includes(match[0]));
+  return (line ?? match[0]).slice(0, 240);
 }
 
 /** First assertion-relevant lines. Paths outside the work directory and env assignments are removed. */
@@ -358,9 +388,10 @@ type SandboxHit = { blocked: SpecBlock } | { blocked: null; code: number | null;
 
 /** One test inside the practice sandbox. A poison or unsafe result is cleaned and blocks the next git step. */
 function runSandboxed(input: SpecInput, cmd: readonly string[]): SandboxHit {
+  const launch = applyPracticeTestLaunch(input.root, cmd, input.testFile);
   const before = poisonStamp(input.root);
   const modules = input.nodeModules && existsSync(input.nodeModules) ? input.nodeModules : null;
-  const ran = runInPracticeSandbox(input.root, cmd, 60_000, { capture: true, nodePath: input.toolchain.nodePath, nodeModules: modules });
+  const ran = runInPracticeSandbox(input.root, launch.cmd, 60_000, { capture: true, nodePath: input.toolchain.nodePath, nodeModules: modules, extraEnv: launch.env });
   const poison = poisonChanges(before, poisonStamp(input.root));
   if (ran.unsafe || poison.length > 0) {
     releaseWorktree(input.root, before);
@@ -1118,13 +1149,33 @@ export function commandNeedsInstall(command: readonly string[]): boolean {
 export function runTestSpec(input: SpecInput): SpecResult {
   const cap = Math.min(SPEC_ATTEMPT_CAP, Math.max(1, Math.floor(input.maxAttempts ?? SPEC_ATTEMPT_CAP)));
   const deny = input.denyPatterns ?? [];
-  const diag = (kind: SpecDiagKind, code: number | null, output: string) => specDiagnostic(kind, code, input.testCommand, output, input.root);
+  const planned = practiceTestLaunch({
+    command: input.testCommand,
+    testFile: input.testFile,
+    packageJson: read(input.root, "package.json"),
+    tsconfig: read(input.root, "tsconfig.json"),
+    avaConfigFile: ["ava.config.js", "ava.config.cjs", "ava.config.mjs", "ava.config.ts"].some((name) => read(input.root, name) !== null),
+  });
+  const diag = (kind: SpecDiagKind, code: number | null, output: string) => specDiagnostic(kind, code, planned.cmd, output, input.root);
   if (commandNeedsInstall(input.testCommand) && !(input.nodeModules && existsSync(input.nodeModules))) {
     return { status: "cant", reason: "INSTALL_UNAVAILABLE", attempts: 0, diagnostic: diag("install_unavailable", null, "") };
   }
   const first = runSandboxed(input, input.testCommand);
   if (first.blocked) return { status: "blocked", reason: first.blocked, attempts: 0, diagnostic: diag(first.blocked === "SANDBOX_POISON" ? "sandbox_poison" : "unsafe", null, "") };
   const output = first.stdout;
+  const loaderName = declaredTypeScriptLoader(read(input.root, "package.json") ?? "", read(input.root, "tsconfig.json"))?.name ?? null;
+  const missingLoader = first.code === 0 ? null : loaderMissingDetail(output, loaderName);
+  if (missingLoader) {
+    const note = diag("loader_missing", first.code, `${missingLoader}\n${output}`);
+    if (note.lines[0] !== missingLoader) note.lines = [missingLoader, ...note.lines].slice(0, 5);
+    return { status: "cant", reason: "CANT_DO_YET_LOADER_MISSING", attempts: 0, diagnostic: note };
+  }
+  const early = avaEarlyDetail(output, first.code);
+  if (early) {
+    const note = diag("ava_early_exit", first.code, `${early}\n${output}`);
+    if (note.lines[0] !== early) note.lines = [early, ...note.lines].slice(0, 5);
+    return { status: "cant", reason: "CANT_DO_YET_AVA_EARLY_EXIT", attempts: 0, diagnostic: note };
+  }
   const seen = classifyRunnerOutput(output, first.code);
   if (seen === "runner_error" || /has no exported member|does not provide an export named|TypeError: [A-Za-z_$][\w$]* is not a function/.test(output)) {
     const built = finishScaffold(input, output, first.code, cap);

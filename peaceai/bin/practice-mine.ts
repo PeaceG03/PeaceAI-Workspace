@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  ENV_ALLOW, GIT_LOCK_ARGS, currentToolchain, diffChangesDeps, ensurePracticeInstall, heldOutWatchProblems, identitiesForRoots, isOwnerRepo, isTestFile, keptLicense, pairFiles, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, testCommandFor, visibleNodeBin, yarnIsModern,
+  ENV_ALLOW, GIT_LOCK_ARGS, applyPracticeTestLaunch, currentToolchain, diffChangesDeps, ensurePracticeInstall, heldOutWatchProblems, identitiesForRoots, isOwnerRepo, isTestFile, keptLicense, pairFiles, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, testCommandFor, visibleNodeBin, yarnIsModern,
   type LockFiles, type NameStatus, type PkgJson, type PracticeLicense, type PracticeManifest, type PracticePair, type PracticeRepo,
   LICENSE_FILES, MINE_REPORT_SCHEMA,
 } from "../lib/practicemine.ts";
@@ -106,9 +106,10 @@ function applyTest(dir: string, fix: string, testFile: string): boolean {
 }
 
 function runTest(dir: string, cmd: string[], nodePath: string): { code: number | null; poison: string[]; clean: boolean } {
+  const launch = applyPracticeTestLaunch(dir, cmd, [...cmd].reverse().find((part) => isTestFile(part)) ?? "");
   const before = poisonStamp(dir);
   const modules = existsSync(join(dir, "node_modules")) ? join(dir, "node_modules") : null;
-  const ran = runInPracticeSandbox(dir, cmd, TEST_MS, { nodePath, nodeModules: modules });
+  const ran = runInPracticeSandbox(dir, launch.cmd, TEST_MS, { nodePath, nodeModules: modules, extraEnv: launch.env });
   const released = releaseWorktree(dir, before);
   if (ran.unsafe) return { code: null, poison: released.poison, clean: released.clean };
   return { code: ran.code, poison: released.poison, clean: released.clean };
