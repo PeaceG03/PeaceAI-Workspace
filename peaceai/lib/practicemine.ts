@@ -299,7 +299,7 @@ export function gradedLaunchMode(phase: "before" | "after"): PracticeLaunchMode 
  * True when a TypeScript file under this checkout declares a const enum.
  * A const enum is inlined only while ts-node type-checks. Transpile-only leaves the use as a
  * property read on a value that was erased, so the worker dies before any test.
- * `node_modules` and dot directories are not scanned. The walk stops once one declaration is found.
+ * `node_modules` (including its `.d.ts` files) and dot directories are not scanned. At most 400 files are read.
  */
 export function treeHasConstEnum(root: string): boolean {
   const stack = [root];

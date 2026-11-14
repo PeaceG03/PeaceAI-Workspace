@@ -53,7 +53,7 @@ const MAX_CALLEES = 6;
 /** The fixed template order (rank = index). */
 export const TEMPLATES = ["missing-export", "nullish-check", "comparison", "arithmetic", "off-by-one", "logical", "default-value", "null-guard", "negate-condition", "boolean-return"] as const;
 /** M168: repair-v2's idiom templates, tried before TEMPLATES in this fixed order (decided before any dev-split run). */
-export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "trimmed-number", "class-keyword", "enum-values", "nan-bounds", "plain-keys", "nan-tag", "array-merge"] as const; // M172: + undefined-keeps-key
+export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "enum-values"] as const; // M172: + undefined-keeps-key
 export type Idiom = (typeof IDIOM_TEMPLATES)[number];
 /** M173 (spec: peaceai/spec/repair-v2-m173.md): repair-v2's module-scope constant template, tried after all others. */
 export const CONST_TEMPLATES = ["const-value"] as const;
@@ -92,13 +92,6 @@ export function namedSymbols(text: string): string[] {
     let span = m[1]!;
     span = span.replace(/(["'])(?:\\.|(?!\1).)*\1/g, " "); // guard:span-strings
     for (const w of span.matchAll(/[A-Za-z_$][\w$]*/g)) add(w[0]);
-    // `is.class` names the function isClass. The property is a keyword, so it is not a symbol on its own.
-    for (const prop of span.matchAll(/([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)/g)) {
-      const head = prop[1]!;
-      const tail = prop[2]!;
-      if (tail !== "class" && tail !== "function" && tail !== "default" && tail !== "new") continue; // cap-guard:dotted-name
-      add(head + tail[0]!.toUpperCase() + tail.slice(1));
-    }
   }
   const prose = text.replace(/`[^`]*`/g, " ");
   for (const w of prose.matchAll(/[A-Za-z_$][\w$]*/g)) if (/[a-z][A-Z]|^[A-Z][a-z]+[A-Z]|_/.test(w[0]) || /^[A-Z][A-Z0-9_]{2,}$/.test(w[0])) add(w[0]);
@@ -845,64 +838,75 @@ function undefinedKeepsKey(n: ts.Node, sf: ts.SourceFile): string | null {
 
 const srcOf = (sf: ts.SourceFile, n: ts.Node): string => sf.text.slice(n.getStart(sf), n.getEnd());
 
-/** own-keys: `for (const key in obj)` also walks enumerable inherited names. `Object.keys` keeps own names. */
+/** A call that already asks whether a property is the object's own. */
+function isOwnProbe(expr: ts.Node): boolean {
+  if (ts.isPropertyAccessExpression(expr) && expr.name.text === "hasOwnProperty") return true; // cap-guard:own-hasown
+  if (ts.isPropertyAccessExpression(expr) && expr.name.text === "hasOwn" && ts.isIdentifier(expr.expression) && expr.expression.text === "Object") return true; // cap-guard:own-object-hasown
+  if (ts.isPropertyAccessExpression(expr) && expr.name.text === "call") {
+    const recv = expr.expression;
+    if (!ts.isPropertyAccessExpression(recv) || recv.name.text !== "hasOwnProperty") return false;
+    const proto = recv.expression;
+    return ts.isPropertyAccessExpression(proto) && ts.isIdentifier(proto.expression) && proto.expression.text === "Object" && proto.name.text === "prototype"; // cap-guard:own-proto-call
+  }
+  return false;
+}
+
+/** True when the loop body already skips inherited names. A nested function does not count. */
+function ownPropertyGuard(stmt: ts.Node): boolean {
+  let found = false;
+  const walk = (node: ts.Node, top: boolean): void => {
+    if (found) return;
+    if (!top && (ts.isFunctionLike(node) || ts.isClassLike(node))) return; // cap-guard:own-nested
+    if (ts.isCallExpression(node) && isOwnProbe(node.expression)) found = true;
+    else ts.forEachChild(node, (child) => walk(child, false));
+  };
+  walk(stmt, true);
+  return found;
+}
+
+/**
+ * own-keys: `for (k in obj)` also visits enumerable names inherited from the prototype.
+ * Insert an own-property guard. The loop variable and the body stay. A loop that already
+ * calls `hasOwnProperty`, `Object.hasOwn`, or `Object.prototype.hasOwnProperty.call` is left alone.
+ */
 function ownKeys(n: ts.Node, sf: ts.SourceFile): string | null {
   if (!ts.isForInStatement(n)) return null; // cap-guard:own-forin
-  if (!ts.isVariableDeclarationList(n.initializer) || n.initializer.declarations.length !== 1) return null; // cap-guard:own-decl
-  const decl = n.initializer.declarations[0]!;
-  if (!ts.isIdentifier(decl.name) || decl.initializer) return null; // cap-guard:own-name
+  let binding = "";
+  let key = "";
+  if (ts.isVariableDeclarationList(n.initializer)) {
+    if (n.initializer.declarations.length !== 1) return null; // cap-guard:own-decl
+    const decl = n.initializer.declarations[0]!;
+    if (!ts.isIdentifier(decl.name) || decl.initializer) return null; // cap-guard:own-name
+    const flags = n.initializer.flags;
+    const keyword = flags & ts.NodeFlags.Const ? "const" : flags & ts.NodeFlags.Let ? "let" : "var";
+    key = decl.name.text;
+    binding = `${keyword} ${key}`;
+  } else if (ts.isIdentifier(n.initializer)) {
+    key = n.initializer.text;
+    binding = key;
+  } else return null;
   if (!plainRef(n.expression)) return null; // cap-guard:own-ref
-  const flags = n.initializer.flags;
-  const keyword = flags & ts.NodeFlags.Const ? "const" : flags & ts.NodeFlags.Let ? "let" : "var";
-  return `for (${keyword} ${decl.name.text} of Object.keys(${srcOf(sf, n.expression)})) ${srcOf(sf, n.statement)}`;
+  if (ownPropertyGuard(n.statement)) return null; // cap-guard:own-guarded
+  const obj = srcOf(sf, n.expression);
+  const guard = `if (!Object.hasOwn(${obj}, ${key})) continue;`;
+  const stmt = n.statement;
+  const body = ts.isBlock(stmt) ? `{ ${guard}${srcOf(sf, stmt).slice(1)}` : `{ ${guard} ${srcOf(sf, stmt)} }`;
+  return `for (${binding} in ${obj}) ${body}`;
 }
 
-function stringGuarded(text: string, name: string): boolean {
-  return new RegExp(`(?:isString|is\\.string)\\(\\s*${name}\\s*\\)`).test(text) || new RegExp(`typeof\\s+${name}\\s*===\\s*["']string["']`).test(text);
-}
-
-/** trimmed-number: `Number` / `parseFloat` / `parseInt` accept surrounding whitespace. A string check in the same statement does not. */
-function trimmedNumber(n: ts.Node, sf: ts.SourceFile): string | null {
-  if (!ts.isPrefixUnaryExpression(n) || n.operator !== ts.SyntaxKind.ExclamationToken) return null; // cap-guard:trim-bang
-  const call = n.operand;
-  if (!ts.isCallExpression(call) || call.arguments.length < 1 || call.questionDotToken) return null;
-  const callee = call.expression;
-  if (!ts.isPropertyAccessExpression(callee) || callee.questionDotToken || !ts.isIdentifier(callee.expression) || callee.expression.text !== "Number" || callee.name.text !== "isNaN") return null; // cap-guard:trim-isnan
-  const inner = call.arguments[0]!;
-  if (!ts.isCallExpression(inner) || inner.arguments.length < 1 || inner.questionDotToken) return null;
-  const arg = inner.arguments[0]!;
-  if (!ts.isIdentifier(arg)) return null; // cap-guard:trim-id
-  const innerName = ts.isIdentifier(inner.expression) ? inner.expression.text : ts.isPropertyAccessExpression(inner.expression) && ts.isIdentifier(inner.expression.expression) ? `${inner.expression.expression.text}.${inner.expression.name.text}` : "";
-  if (innerName !== "Number" && innerName !== "parseFloat" && innerName !== "parseInt") return null; // cap-guard:trim-convert
-  let host: ts.Node = n;
-  while (host.parent && !ts.isSourceFile(host.parent) && !ts.isStatement(host) && !ts.isArrowFunction(host) && !ts.isFunctionExpression(host)) host = host.parent;
-  const around = srcOf(sf, host);
-  if (around.includes(".trim()")) return null; // cap-guard:trim-already
-  if (!stringGuarded(around, arg.text)) return null; // cap-guard:trim-string
-  return `(${arg.text}.trim() === ${arg.text} && ${srcOf(sf, n)})`;
-}
-
-/** class-keyword: `toString().startsWith("class ")` misses a minified `class{`. */
-function classKeyword(n: ts.Node, sf: ts.SourceFile): string | null {
-  if (!ts.isCallExpression(n) || n.arguments.length !== 1 || n.questionDotToken) return null;
-  const callee = n.expression;
-  if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== "startsWith" || callee.questionDotToken) return null; // cap-guard:class-start
-  const arg = n.arguments[0]!;
-  if (!ts.isStringLiteral(arg) || arg.text !== "class ") return null; // cap-guard:class-literal
-  const recv = callee.expression;
-  if (!ts.isCallExpression(recv) || recv.questionDotToken || !ts.isPropertyAccessExpression(recv.expression) || recv.expression.name.text !== "toString") return null; // cap-guard:class-tostring
-  return `(${srcOf(sf, n)} || ${srcOf(sf, recv)}.startsWith("class{"))`;
-}
-
-/** enum-values: `Object.values(enum).includes(v)` also accepts a numeric enum's reverse-mapped key names. */
+/**
+ * enum-values: `Object.values(table).includes(member)` on a numeric enum also accepts the reverse-mapped
+ * member name (`0` stores `"Draft"` and `"Draft"` stores `0`). Drop a string only when it round-trips
+ * through a numeric property. Numbers and string-enum values stay.
+ */
 function enumValues(n: ts.Node, sf: ts.SourceFile): string | null {
-  if (!ts.isCallExpression(n) || n.arguments.length !== 1 || n.questionDotToken) return null;
+  if (!ts.isCallExpression(n) || n.arguments.length !== 1 || n.questionDotToken) return null; // cap-guard:enum-argc
   const callee = n.expression;
   if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== "includes" || callee.questionDotToken) return null; // cap-guard:enum-includes
   const values = callee.expression;
-  if (!ts.isCallExpression(values) || values.arguments.length !== 1 || values.questionDotToken) return null;
+  if (!ts.isCallExpression(values) || values.arguments.length !== 1 || values.questionDotToken) return null; // cap-guard:enum-values-call
   const head = values.expression;
-  if (!ts.isPropertyAccessExpression(head) || !ts.isIdentifier(head.expression) || head.expression.text !== "Object" || head.name.text !== "values") return null; // cap-guard:enum-values
+  if (!ts.isPropertyAccessExpression(head) || head.questionDotToken || !ts.isIdentifier(head.expression) || head.expression.text !== "Object" || head.name.text !== "values") return null; // cap-guard:enum-object-values
   const bare = (e: ts.Node): ts.Node => {
     let cur = e;
     while (ts.isAsExpression(cur) || ts.isTypeAssertionExpression(cur) || ts.isParenthesizedExpression(cur) || ts.isSatisfiesExpression(cur)) cur = cur.expression;
@@ -913,96 +917,8 @@ function enumValues(n: ts.Node, sf: ts.SourceFile): string | null {
   if (!plainRef(target) || !plainRef(item)) return null; // cap-guard:enum-ref
   const e = srcOf(sf, target);
   const v = srcOf(sf, item);
-  return `Object.values(${e}).filter((item) => typeof item !== "string" || Number.isNaN(Number((${e} as Record<PropertyKey, unknown>)[item as PropertyKey]))).includes(${v})`;
-}
-
-function spreadId(call: ts.CallExpression, method: string): string | null {
-  if (call.arguments.length !== 1 || call.questionDotToken) return null;
-  const callee = call.expression;
-  if (!ts.isPropertyAccessExpression(callee) || callee.questionDotToken || !ts.isIdentifier(callee.expression) || callee.expression.text !== "Math" || callee.name.text !== method) return null;
-  const arg = call.arguments[0]!;
-  if (!ts.isSpreadElement(arg) || !ts.isIdentifier(arg.expression)) return null;
-  return arg.expression.text;
-}
-
-/** nan-bounds: `Math.min(...xs)` and `Math.max(...xs)` are NaN when one bound is NaN, and every comparison with NaN is false. */
-function nanBounds(n: ts.Node, sf: ts.SourceFile): string | null {
-  if (!ts.isBlock(n) || n.statements.length === 0) return null; // cap-guard:nan-block
-  const min = new Set<string>();
-  const max = new Set<string>();
-  const walk = (node: ts.Node, top: boolean): void => {
-    if (!top && ts.isBlock(node)) return;
-    if (ts.isCallExpression(node)) {
-      const lo = spreadId(node, "min");
-      const hi = spreadId(node, "max");
-      if (lo) min.add(lo);
-      if (hi) max.add(hi);
-    }
-    ts.forEachChild(node, (child) => walk(child, false));
-  };
-  walk(n, true);
-  const ids = [...min].filter((id) => max.has(id));
-  if (ids.length !== 1) return null; // cap-guard:nan-pair
-  const id = ids[0]!;
-  if (srcOf(sf, n).includes("Number.isNaN")) return null; // cap-guard:nan-already
-  const inner = srcOf(sf, n).slice(1, -1);
-  return `{ if (${id}.some((item) => Number.isNaN(item))) throw new TypeError();${inner}}`;
-}
-
-/** plain-keys: an emptiness check on `Object.keys(x).length` still treats an array and a function as a plain object. */
-function plainKeys(n: ts.Node, sf: ts.SourceFile): string | null {
-  if (!ts.isReturnStatement(n) || !n.expression) return null; // cap-guard:plain-return
-  let id = "";
-  const walk = (node: ts.Node): void => {
-    if (id) return;
-    if (ts.isBinaryExpression(node) && ts.isPropertyAccessExpression(node.left) && node.left.name.text === "length") {
-      const keys = node.left.expression;
-      const op = node.operatorToken.kind;
-      const compared = op === ts.SyntaxKind.EqualsEqualsEqualsToken || op === ts.SyntaxKind.ExclamationEqualsEqualsToken || op === ts.SyntaxKind.GreaterThanToken || op === ts.SyntaxKind.GreaterThanEqualsToken || op === ts.SyntaxKind.LessThanToken;
-      if (compared && ts.isCallExpression(keys) && ts.isPropertyAccessExpression(keys.expression) && ts.isIdentifier(keys.expression.expression) && keys.expression.expression.text === "Object" && keys.expression.name.text === "keys" && keys.arguments.length === 1 && ts.isIdentifier(keys.arguments[0]!)) {
-        id = keys.arguments[0]!.text;
-      }
-    }
-    ts.forEachChild(node, walk);
-  };
-  walk(n.expression);
-  if (!id) return null; // cap-guard:plain-keys
-  const body = srcOf(sf, n.expression);
-  if (body.includes(`Array.isArray(${id})`) || body.includes(`typeof ${id} !== "function"`) || body.includes(`typeof ${id} !== 'function'`)) return null; // cap-guard:plain-already
-  return `return ${body} && !Array.isArray(${id}) && typeof ${id} !== "function";`;
-}
-
-/** nan-tag: `typeof x === "number"` includes NaN. A case that returns the tag `"number"` can name NaN first. */
-function nanTag(n: ts.Node, sf: ts.SourceFile): string | null {
-  if (!ts.isReturnStatement(n) || !n.expression || !ts.isStringLiteral(n.expression) || n.expression.text !== "number") return null; // cap-guard:tag-return
-  let clause: ts.Node | undefined = n.parent;
-  if (clause && ts.isBlock(clause)) clause = clause.parent;
-  if (!clause || !ts.isCaseClause(clause) || !ts.isStringLiteral(clause.expression) || clause.expression.text !== "number") return null; // cap-guard:tag-case
-  const block = clause.parent;
-  const stmt = block && ts.isCaseBlock(block) ? block.parent : undefined;
-  if (!stmt || !ts.isSwitchStatement(stmt) || !ts.isTypeOfExpression(stmt.expression)) return null; // cap-guard:tag-typeof
-  const subject = srcOf(sf, stmt.expression.expression);
-  return `return Number.isNaN(${subject}) ? "NaN" : "number";`;
-}
-
-/** array-merge: an object merge's else branch replaces an array. Keep both sides when each side is an array. */
-function arrayMerge(n: ts.Node, sf: ts.SourceFile): string | null {
-  if (!ts.isExpressionStatement(n) || !ts.isBinaryExpression(n.expression) || n.expression.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return null; // cap-guard:arr-assign
-  const { left, right } = n.expression;
-  if (!ts.isElementAccessExpression(left) || left.questionDotToken || !left.argumentExpression || !ts.isIdentifier(right)) return null; // cap-guard:arr-slot
-  if (!plainRef(left.expression)) return null;
-  const block = n.parent;
-  if (!ts.isBlock(block)) return null;
-  const iff = block.parent;
-  if (!ts.isIfStatement(iff) || iff.elseStatement !== block) return null; // cap-guard:arr-else
-  const cond = srcOf(sf, iff.expression);
-  if (!/isObject|isPlainObject|typeof /.test(cond)) return null; // cap-guard:arr-object
-  let fn: ts.Node | undefined = n;
-  while (fn && !isFn(fn)) fn = fn.parent;
-  if (!fn || srcOf(sf, fn).includes("Array.isArray")) return null; // cap-guard:arr-fresh
-  const slot = `${srcOf(sf, left.expression)}[${srcOf(sf, left.argumentExpression)}]`;
-  const val = right.text;
-  return `${slot} = Array.isArray(${val}) && Array.isArray(${slot}) ? [...${val}, ...${slot}] : ${val};`;
+  const box = `(${e} as Record<PropertyKey, unknown>)`;
+  return `Object.values(${e}).filter((member) => typeof member !== "string" || typeof ${box}[member] !== "number" || ${box}[${box}[member] as PropertyKey] !== member).includes(${v})`;
 }
 
 /** M168: every idiom candidate inside one site (no I/O); repair-v2 only. */
@@ -1019,13 +935,7 @@ export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: numbe
     add(protoSafeCopy(n, sf), "proto-safe-copy");
     add(undefinedKeepsKey(n, sf), "undefined-keeps-key");
     add(ownKeys(n, sf), "own-keys");
-    add(trimmedNumber(n, sf), "trimmed-number");
-    add(classKeyword(n, sf), "class-keyword");
     add(enumValues(n, sf), "enum-values");
-    add(nanBounds(n, sf), "nan-bounds");
-    add(plainKeys(n, sf), "plain-keys");
-    add(nanTag(n, sf), "nan-tag");
-    add(arrayMerge(n, sf), "array-merge");
     ts.forEachChild(n, visit);
   };
   visit(sf);
@@ -1401,7 +1311,7 @@ function reachReserved(all: readonly Mutation[], sites: readonly Site[], files: 
   return list;
 }
 
-const BUNDLE_IDIOMS = new Set<string>(["own-keys", "trimmed-number", "class-keyword", "enum-values", "nan-bounds", "plain-keys", "nan-tag", "array-merge"]);
+const BUNDLE_IDIOMS = new Set<string>(["own-keys", "enum-values"]);
 
 /** Every non-overlapping hit of one new idiom, as one candidate. Two to four hits. */
 function idiomBundles(all: readonly Mutation[], files: ReadonlyMap<string, string>, seen: Set<string>): Candidate[] {
@@ -1409,8 +1319,13 @@ function idiomBundles(all: readonly Mutation[], files: ReadonlyMap<string, strin
   for (const template of BUNDLE_IDIOMS) {
     const group = all.filter((m) => m.template === template);
     if (group.length < 2 || group.length > 4) continue; // cap-guard:bundle-size
-    if (group.some((a, i) => group.slice(i + 1).some((b) => overlaps(a, b)))) continue; // cap-guard:bundle-overlap
-    const c = candidateFor(files, group);
+    const disjoint: Mutation[] = [];
+    for (const m of group) {
+      if (disjoint.some((d) => overlaps(d, m))) continue; // cap-guard:bundle-overlap
+      disjoint.push(m);
+    }
+    if (disjoint.length < 2) continue;
+    const c = candidateFor(files, disjoint);
     if (!c || seen.has(c.key)) continue; // cap-guard:bundle-new
     seen.add(c.key);
     out.push(c);

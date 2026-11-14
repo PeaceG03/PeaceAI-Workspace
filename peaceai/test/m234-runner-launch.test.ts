@@ -10,7 +10,7 @@ import {
   PRACTICE_AVA_CONFIG, applyPracticeTestLaunch, declaredLoaderMissing, declaredTypeScriptLoader, dependencyFingerprint,
   INSTALL_READER_MARK, RETIRED_INSTALL_MS, ensurePracticeInstall, gradedLaunchMode, loaderFingerprintNote, loaderInstalled,
   practiceSandboxReady, practiceTestLaunch, publishInstallTree, reapRetiredInstalls,
-  sandboxExtraEnv, tsconfigOmitsTest, visibleNodeBin,
+  sandboxExtraEnv, treeHasConstEnum, tsconfigOmitsTest, visibleNodeBin,
 } from "../lib/practicemine.ts";
 import { runRecordedTest } from "../bin/practice-replay.ts";
 import { avaEarlyDetail, classifyRunnerOutput, loaderMissingDetail, runTestSpec, type SpecInput } from "../lib/testspec.ts";
@@ -112,6 +112,20 @@ test("sandbox env keeps the loader flag and drops every other key", () => {
   assert.deepEqual(sandboxExtraEnv({ TS_NODE_TRANSPILE_ONLY: "false", TSIMP_DIAG: "error" }), {});
 });
 
+test("a const enum under node_modules, or past 400 files, does not change the launch", () => {
+  const root = mkdtempSync(join(tmpdir(), "practice-enum-cap-"));
+  mkdirSync(join(root, "node_modules", "vendor"), { recursive: true });
+  writeFileSync(join(root, "node_modules", "vendor", "index.d.ts"), "export const enum VendorLevel { High = \"high\" }\n");
+  assert.equal(treeHasConstEnum(root), false);
+  for (let i = 0; i < 400; i++) writeFileSync(join(root, `note-${i}.ts`), "export const n = 1;\n");
+  mkdirSync(join(root, "later"));
+  writeFileSync(join(root, "later", "hidden.ts"), "export const enum Hidden { A = 1 }\n");
+  assert.equal(treeHasConstEnum(root), false);
+  rmSync(join(root, "note-0.ts"));
+  assert.equal(treeHasConstEnum(root), true);
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("a const enum keeps type-checking when the test file is outside include", () => {
   const root = mkdtempSync(join(tmpdir(), "practice-const-enum-"));
   mkdirSync(join(root, "source"), { recursive: true });
@@ -124,6 +138,9 @@ test("a const enum keeps type-checking when the test file is outside include", (
     const kept = applyPracticeTestLaunch(root, ["./node_modules/.bin/ava", "test/test.ts"], "test/test.ts", "relaxed");
     assert.equal(kept.env.TS_NODE_TRANSPILE_ONLY, undefined);
     rmSync(join(root, "source", "levels.ts"));
+    mkdirSync(join(root, "node_modules", "vendor"), { recursive: true });
+    writeFileSync(join(root, "node_modules", "vendor", "index.d.ts"), "export const enum VendorLevel { High = \"high\" }\n");
+    assert.equal(treeHasConstEnum(root), false);
     const plain = applyPracticeTestLaunch(root, ["./node_modules/.bin/ava", "test/test.ts"], "test/test.ts", "relaxed");
     assert.equal(plain.env.TS_NODE_TRANSPILE_ONLY, "true");
     const checked = applyPracticeTestLaunch(root, ["./node_modules/.bin/ava", "test/test.ts"], "test/test.ts", "typecheck");
