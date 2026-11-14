@@ -199,8 +199,11 @@ function writeTextRepairs(batches: readonly (readonly RepairEdit[])[]): number {
       diffLines: candidate.diff.split("\n").filter((line) => /^[+-](?![+-]{2} )/.test(line)).length,
     })),
   });
-  writeOutput({ nl: "unsure", nl_reason: nl.reason, nl_hint: nl.hint ?? "", nl_steps: "" });
-  console.log(`nl=unsure reason=${nl.reason}`);
+  // Candidates exist, so this is not an unsure refusal. peace-task.yml posts the phrasing
+  // list only when nl is unsure AND there are zero candidates. Reporting "repair" keeps
+  // that comment off even if a later step looks at nl alone. Job B keys off candidates.
+  writeOutput({ nl: "repair", nl_reason: "", nl_hint: "", nl_steps: "" });
+  console.log("nl=repair");
   console.log(`text-repair candidates=${candidates.length}`);
   return candidates.length;
 }

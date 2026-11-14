@@ -9,6 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openRepo } from "../lib/codesearch.ts";
+import { classifyJobOutput } from "../lib/capabilityjob.ts";
 import { editAim, textRepairBatches } from "../lib/editpropose.ts";
 import { understandIssue } from "../lib/issueunderstand.ts";
 import { CASES, setup, teardown } from "./m236-text-edit-cases.ts";
@@ -30,7 +31,10 @@ test("near misses stay unnamed, and the phrase list still refuses them", () => {
     "support the empty case",
     "Require Node.js 22",
     "foldDough looks ready",
+    "foldDough chosen for the kilnTemp schedule",
+    "Give users a clearer error",
     "lgtm",
+    "The patch looks fine after a careful read",
   ];
   for (const sentence of refusals) {
     assert.equal(editAim(sentence), null, sentence);
@@ -45,7 +49,9 @@ test("near misses stay unnamed, and the phrase list still refuses them", () => {
     "support whisk",
     "fix quoteLane when miles is empty",
     "add option insulated",
-    "foldDough selected for the default blend",
+    "`parseDate` returns wrong offset for a western zone",
+    "debounce fires twice on the trailing edge",
+    "Make the cache eviction respect TTL",
   ];
   for (const sentence of stillCant) {
     assert.ok(editAim(sentence), sentence);
@@ -72,16 +78,49 @@ test("handling a discarded trim in a bakery function rewrites that call", () => 
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("a second symbol in a selection sentence is not a repair target", () => {
-  const root = mkdtempSync(join(tmpdir(), "peaceai-m236-kiln-"));
+test("a symptom's subject is the repair target, and a later name is not", () => {
+  const root = mkdtempSync(join(tmpdir(), "peaceai-m236-date-"));
   try {
     mkdirSync(join(root, "src"));
-    writeFileSync(join(root, "src/dough.ts"), "export function foldDough(label: string): string {\n  label.trim();\n  return label;\n}\n");
-    writeFileSync(join(root, "src/kiln.ts"), "export function kilnTemp(celsius: number): number {\n  return celsius + 10;\n}\n");
-    const batches = textRepairBatches(openRepo(root), "foldDough selected for the kilnTemp schedule");
+    writeFileSync(join(root, "src/date.ts"), "export function parseDate(text: string): number {\n  text.trim();\n  return text.length;\n}\n");
+    writeFileSync(join(root, "src/zone.ts"), "export const zoneId = \"Z\";\n");
+    const batches = textRepairBatches(openRepo(root), "`parseDate` returns wrong offset for zoneId");
     assert.ok(batches.length > 0);
-    assert.ok(batches.every((edits) => edits.every((e) => e.path === "src/dough.ts")));
+    assert.ok(batches.every((edits) => edits.every((e) => e.path === "src/date.ts")));
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("verbless bug titles and a causative name the symbol, including a public React title", () => {
+  assert.deepEqual(editAim("`parseDate` returns wrong offset for a western zone")?.symbols, ["parseDate"]);
+  assert.deepEqual(editAim("debounce fires twice on the trailing edge")?.symbols, ["debounce"]);
+  assert.deepEqual(editAim("Make the cache eviction respect TTL")?.symbols, ["cacheEviction"]);
+  // React docs, "You Might Not Need an Effect" / Strict Mode: effects run twice in development.
+  assert.deepEqual(editAim("useEffect runs twice in Strict Mode")?.symbols, ["useEffect"]);
+});
+
+test("a plain word defined in two source files is not a target", () => {
+  const root = mkdtempSync(join(tmpdir(), "peaceai-m236-two-"));
+  try {
+    mkdirSync(join(root, "src/a"), { recursive: true });
+    mkdirSync(join(root, "src/b"), { recursive: true });
+    writeFileSync(join(root, "src/a/one.ts"), "export function debounce(fn: () => void): void {\n  fn();\n}\n");
+    writeFileSync(join(root, "src/b/two.ts"), "export function debounce(fn: () => void): void {\n  fn();\n}\n");
+    assert.deepEqual(editAim("debounce fires twice")?.symbols, ["debounce"]);
+    assert.equal(textRepairBatches(openRepo(root), "debounce fires twice").length, 0);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a repair with candidates is not an unsure refusal", () => {
+  const wf = readFileSync(join(resolve(import.meta.dirname, "../.."), ".github/workflows/peace-task.yml"), "utf8");
+  const unsure = wf.indexOf("Say the parser was unsure");
+  assert.ok(unsure > 0);
+  assert.match(wf.slice(unsure, unsure + 400), /if: env\.NL_REASON != '' && env\.NO_CANDIDATES == 'true'/);
+  assert.match(wf, /needs\.generate\.outputs\.candidates == '0'/);
+  const gen = readFileSync(join(resolve(import.meta.dirname, "../.."), "peaceai/bin/generate.ts"), "utf8");
+  assert.match(gen, /writeOutput\(\{ nl: "repair", nl_reason: "", nl_hint: "", nl_steps: "" \}\);/);
+  assert.match(gen, /can't do yet: \$\{understood\.reason\}/);
+  assert.equal(classifyJobOutput({ timedOut: false, code: 0, candidates: 1, stdout: "nl=repair\ntext-repair candidates=1\n" }).status, "pass");
+  assert.equal(classifyJobOutput({ timedOut: false, code: 0, candidates: 0, stdout: "nl=unsure reason=NOT_SUPPORTED\ncan't do yet: CANT_DO_YET_NO_EDIT\n" }).reason, "CANT_DO_YET_NO_EDIT");
 });
 
 const repo = resolve(import.meta.dirname, "../..");
@@ -129,6 +168,8 @@ test("Job A emits a repair diff for a handle sentence and refuses a thanks sente
     };
     const handled = run("handle foldDough");
     assert.equal(handled.r.status, 0, handled.r.stderr);
+    assert.match(handled.r.stdout, /nl=repair/);
+    assert.doesNotMatch(handled.r.stdout, /nl=unsure/);
     assert.match(handled.r.stdout, /text-repair candidates=/);
     assert.ok(handled.summary.candidates.length > 0);
     assert.deepEqual(handled.summary.candidates[0]!.transformations, ["REPAIR_V2"]);

@@ -102,22 +102,36 @@ export function namedSymbols(text: string): string[] {
 // A commit subject or issue sentence that does not fill an edit-family phrase can still name the
 // symbol to repair. The phrase list stays strict. This reader only chooses symbols, then the
 // existing repair-v2 proposer edits them. It does not invent a body, a new function, or a rename.
-// A sentence is an aim only when it asks for a change: an edit verb with an object, or a subject
-// that leads with a code name and says that name was chosen, added, fixed, or otherwise changed.
-// Thanks, questions, and renames are not body repairs. A plain word is a symbol only when the
-// repo defines it exactly once, so a vague noun is not a guess across the tree.
+//
+// Where the word lists come from (general English and TypeScript, not a task set):
+// - Edit verbs are the ordinary imperatives a commit uses to ask for a change (fix, handle, add,
+//   support, make, ...) plus their regular inflections. "make" is the causative ("make X do Y").
+//   "give" is not an edit verb: it names a recipient or a result ("give users an error").
+// - Symptom verbs are the ordinary verbs a bug title uses for what the code already does
+//   (returns, fires, throws, runs, ...). The symbol is the subject of that verb, which is the
+//   thing that misbehaves. Later names are the symptom's detail, not extra targets.
+// - "when" and "if" are the two English words that start a condition. Both end the object.
+// - After "make", a bare infinitive (respect, return, use, ...) starts the desired behavior,
+//   so the object is the noun phrase before it. Two plain words in that phrase are one camelCase
+//   name, the way TypeScript names a function ("cache eviction" → cacheEviction).
+// - Words that are never a target: English function words, TypeScript keywords, and generic roles
+//   (option, flag, helper, function). A plain word is kept only when one source file defines it.
+// Thanks, questions, and renames are not body repairs.
 
 export const TEXT_REPAIR_REASONS = ["CANT_DO_YET_NO_EDIT", "CANT_DO_YET_EDIT_UNSPECIFIED", "CANT_DO_YET_ADD_UNSPECIFIED", "CANT_DO_YET_NOT_A_FAMILY"] as const;
 /** How many repair-v2 candidates Job A may emit from a sentence. The proposer's own order, capped. */
 export const TEXT_REPAIR_LIMIT = 8;
 
-const AIM_VERBS = "fix|fixes|fixed|fixing|handle|handles|handled|handling|correct|corrects|corrected|correcting|support|supports|supported|supporting|add|adds|added|adding|implement|implements|implemented|implementing|allow|allows|allowed|allowing|enable|enables|enabled|enabling|expose|exposes|exposed|exposing|improve|improves|improved|improving|update|updates|updated|updating|change|changes|changed|changing|include|includes|included|including|accept|accepts|accepted|accepting|reject|rejects|rejected|rejecting|drop|drops|dropped|dropping|remove|removes|removed|removing|wrap|wraps|wrapped|wrapping|default|defaults|defaulted|defaulting|guard|guards|guarded|guarding|check|checks|checked|checking|validate|validates|validated|validating|keep|keeps|kept|keeping|give|gives|gave|given|giving";
+const AIM_VERBS = "fix|fixes|fixed|fixing|handle|handles|handled|handling|correct|corrects|corrected|correcting|support|supports|supported|supporting|add|adds|added|adding|implement|implements|implemented|implementing|allow|allows|allowed|allowing|enable|enables|enabled|enabling|expose|exposes|exposed|exposing|improve|improves|improved|improving|update|updates|updated|updating|change|changes|changed|changing|include|includes|included|including|accept|accepts|accepted|accepting|reject|rejects|rejected|rejecting|drop|drops|dropped|dropping|remove|removes|removed|removing|wrap|wraps|wrapped|wrapping|default|defaults|defaulted|defaulting|guard|guards|guarded|guarding|check|checks|checked|checking|validate|validates|validated|validating|keep|keeps|kept|keeping|make|makes|made|making";
 const AIM_VERB = new RegExp(String.raw`\b(?:please |can you |could you |we need to )?(?<verb>${AIM_VERBS})\b`, "i");
+const AIM_SYMPTOM = /\b(?:returns|return|fires|fire|throws|throw|runs|run|sends|send|emits|emit|yields|yield|crashes|crash|hangs|hang|leaks|leak|ignores|ignore)\b/i;
+const AIM_COMPLEMENT = /\b(?:respect|honor|honour|follow|preserve|keep|use|include|ignore|return|throw|fire|run|send|emit|call|apply|match|avoid|treat|remain|stay)\b/i;
 const AIM_THANKS = /^(?:thanks|thank you|lgtm|nit|wip)\b/i;
 const AIM_QUESTION = /\?\s*$/;
-const AIM_BOUNDARY = /\b(?:when|if)\b/i;
-const AIM_CUE = /\b(?:chosen|selected|picked|added|fixed|updated|removed|renamed|changed|handled|supported|implemented|returned|accepted|rejected|corrected|enabled|disabled|exposed|exported|replaced|dropped|skipped|included|excluded)\b/i;
-const AIM_META = new Set(`${AIM_VERBS.replaceAll("|", " ")} option options flag flags setting settings mode modes helper helpers function functions method methods predicate predicates property properties field fields value values type types array arrays object objects case cases edge bug issue error errors message messages assertion assertions export exports named missing new existing better default empty blank whitespace numeric key keys name names expression expressions factory detection narrowing range review candidate patch the a an it this that when if so to of in for and or with from on by is are be was were been not as into please can could should must would will we you our their than too very just more most only same other whole focused extra optional required simple real current previous next first last single multiple wrong incorrect silent silently incorrectly minified surrounding`.split(/\s+/));
+const AIM_FUNCTION = "a an the this that these those it its we you our their to of in for and or with from on by is are be was were been being not as into please can could should must would will than too very just more most only same other whole such per via without within about between over under after before so then also if when";
+const AIM_TS = "function functions method methods class classes type types interface const let var return export import async await null undefined true false string strings number boolean object objects array arrays promise void any unknown never new typeof instanceof case cases";
+const AIM_ROLE = "option options flag flags setting settings helper helpers property properties field fields value values parameter parameters argument arguments error errors bug bugs test tests module modules file files empty blank whitespace missing new existing default";
+const AIM_META = new Set(`${AIM_FUNCTION} ${AIM_TS} ${AIM_ROLE} ${AIM_VERBS.replaceAll("|", " ")} returns return fires fire throws throw runs run sends send emits emit yields yield crashes crash hangs hang leaks leak ignores ignore respect honor honour follow preserve use call apply match avoid treat remain stay`.split(/\s+/));
 const AIM_SOURCE = /\.(?:ts|tsx|mts|cts)$/;
 
 export interface EditAim { symbols: string[]; via: "verb" | "lead" }
@@ -140,10 +154,36 @@ function pushAim(out: string[], word: string): void {
   if (word.length >= 2 && word.length <= 64 && !out.includes(word)) out.push(word);
 }
 
+function aimWords(text: string): string[] {
+  const plain = text.replace(/`([^`]*)`/g, " $1 ");
+  return [...plain.matchAll(/[A-Za-z_$][\w$]*/g)].map((m) => m[0]);
+}
+
+function aimObject(region: string, symbols: string[]): void {
+  for (const m of region.matchAll(/`([^`]{1,80})`/g)) {
+    for (const w of m[1]!.matchAll(/[A-Za-z_$][\w$]*/g)) if (!AIM_META.has(w[0].toLowerCase())) pushAim(symbols, w[0]); // text-guard:backtick
+  }
+  const prose = region.replace(/`[^`]*`/g, " ");
+  for (const w of prose.matchAll(/[A-Za-z_$][\w$]*/g)) if (aimCodeName(w[0])) pushAim(symbols, w[0]); // text-guard:code-shape
+  let plain = false;
+  plain = symbols.length === 0; // text-guard:plain-fallback
+  if (!plain) return;
+  const parts: string[] = [];
+  for (const w of prose.matchAll(/[A-Za-z_$][\w$]*/g)) {
+    if (aimCodeName(w[0]) || w[0].length < 3 || AIM_META.has(w[0].toLowerCase())) continue; // text-guard:meta
+    parts.push(w[0]);
+  }
+  if (parts.length >= 2) {
+    let phrase = "";
+    phrase = parts[0] + parts.slice(1).map((w) => w[0]!.toUpperCase() + w.slice(1)).join(""); // text-guard:noun-phrase
+    if (phrase) pushAim(symbols, phrase);
+  } else if (parts[0]) pushAim(symbols, parts[0]);
+}
+
 /**
  * Symbols a sentence asks to change, or null when it is not that kind of sentence.
- * `verb`: an edit verb, and the code names (or, if there are none, the plain nouns) before when/if.
- * `lead`: the subject starts with a code name and a change word (selected, added, fixed, ...).
+ * `verb`: an edit imperative, and the names in its object (before when/if, and before a
+ * complement after "make"). `lead`: the subject of a symptom verb (returns, fires, throws, ...).
  */
 export function editAim(text: string): EditAim | null {
   const source = aimSource(text);
@@ -156,31 +196,28 @@ export function editAim(text: string): EditAim | null {
   if (verb) {
     let region = source;
     const rest = source.slice(verb.index + verb[0].length);
-    const boundary = AIM_BOUNDARY.exec(rest);
+    let boundarySrc = "when";
+    boundarySrc = "when|if"; // text-guard:if-boundary
+    const boundary = new RegExp(String.raw`\b(?:${boundarySrc})\b`, "i").exec(rest);
     if (boundary) region = source.slice(0, verb.index + verb[0].length + boundary.index); // text-guard:when-object
+    if (/^mak(?:e|es|ed|ing)$/i.test(verb.groups?.verb ?? "")) {
+      const after = region.slice(verb.index + verb[0].length);
+      const complement = AIM_COMPLEMENT.exec(after);
+      if (complement) region = region.slice(0, verb.index + verb[0].length + complement.index); // text-guard:make-object
+    }
     const symbols: string[] = [];
-    for (const m of region.matchAll(/`([^`]{1,80})`/g)) {
-      for (const w of m[1]!.matchAll(/[A-Za-z_$][\w$]*/g)) if (!AIM_META.has(w[0].toLowerCase())) pushAim(symbols, w[0]); // text-guard:backtick
-    }
-    const prose = region.replace(/`[^`]*`/g, " ");
-    for (const w of prose.matchAll(/[A-Za-z_$][\w$]*/g)) if (aimCodeName(w[0])) pushAim(symbols, w[0]); // text-guard:code-shape
-    let plain = false;
-    plain = symbols.length === 0; // text-guard:plain-fallback
-    if (plain) {
-      for (const w of prose.matchAll(/[A-Za-z_$][\w$]*/g)) {
-        if (aimCodeName(w[0]) || w[0].length < 3 || AIM_META.has(w[0].toLowerCase())) continue; // text-guard:meta
-        pushAim(symbols, w[0]);
-      }
-    }
+    aimObject(region, symbols);
     return symbols.length ? { symbols, via: "verb" } : null;
   }
-  const lead = /^([A-Za-z_$][\w$]*)/.exec(source);
-  if (!lead || !aimCodeName(lead[1]!)) return null; // text-guard:lead-symbol
-  if (!AIM_CUE.test(source)) return null; // text-guard:no-cue
-  const extras = [...source.matchAll(/[A-Za-z_$][\w$]*/g)].map((m) => m[0]).filter((w) => w !== lead[1] && aimCodeName(w));
-  let symbols = [lead[1]!, ...extras];
-  symbols = symbols.slice(0, 1); // text-guard:lead-only
-  return { symbols, via: "lead" };
+  let symptom: RegExpExecArray | null = null;
+  symptom = AIM_SYMPTOM.exec(source); // text-guard:symptom
+  if (!symptom) return null;
+  let window = source;
+  window = source.slice(0, symptom.index); // text-guard:symptom-subject
+  const prev = aimWords(window).filter((w) => w.length >= 2 && !AIM_META.has(w.toLowerCase()));
+  const subject = prev.at(-1);
+  if (!subject) return null;
+  return { symbols: [subject], via: "lead" };
 }
 
 /** Keep a code-shaped name even when several files define it. Keep a plain name only when one source file defines it. */

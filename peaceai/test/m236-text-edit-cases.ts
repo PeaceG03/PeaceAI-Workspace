@@ -25,23 +25,26 @@ function repo(ctx: Ctx, files: Record<string, string>): ReturnType<typeof openRe
 }
 
 const DOUGH = "export function foldDough(label: string): string {\n  label.trim();\n  return label;\n}\n";
-const KILN = "export function kilnTemp(celsius: number): number {\n  return celsius + 10;\n}\n";
+const PARSE = "export function parseDate(text: string): number {\n  return text.length;\n}\n";
+const ZONE = "export function zoneId(name: string): string {\n  return name;\n}\n";
 const LANE = "export function quoteLane(miles: number): number {\n  if (miles > 0 && miles < 100) return miles * 2;\n  return miles + 1 - 0;\n}\n";
 const STRING = "export function tuneString(note: string): string {\n  note.toLowerCase();\n  return note;\n}\n";
 
 export const CASES: Case[] = [
   { id: "thanks", run(l) { assert.equal(l.prop.editAim("Thanks, handle foldDough"), null); } },
   { id: "question", run(l) { assert.equal(l.prop.editAim("Can you handle foldDough?"), null); } },
-  { id: "rename", run(l) { assert.equal(l.prop.editAim("foldDough renamed to kneadDough"), null); } },
+  { id: "rename", run(l) { assert.equal(l.prop.editAim("handle foldDough renamed to kneadDough"), null); } },
   { id: "verb-handle", run(l) { assert.deepEqual(l.prop.editAim("handle foldDough")?.symbols, ["foldDough"]); } },
   { id: "when-cuts", run(l) { assert.deepEqual(l.prop.editAim("fix the parser when input is empty")?.symbols, ["parser"]); } },
+  { id: "if-boundary", run(l) { assert.deepEqual(l.prop.editAim("fix the parser if input is empty")?.symbols, ["parser"]); } },
   { id: "backtick", run(l) { assert.deepEqual(l.prop.editAim("support the `whisk` bowl")?.symbols, ["whisk"]); } },
   { id: "code-shape", run(l) { assert.deepEqual(l.prop.editAim("support foldDough")?.symbols, ["foldDough"]); } },
   { id: "plain-fallback", run(l) { assert.deepEqual(l.prop.editAim("support whisk")?.symbols, ["whisk"]); } },
   { id: "meta-option", run(l) { assert.equal(l.prop.editAim("add option"), null); } },
-  { id: "lead-symbol", run(l) { assert.equal(l.prop.editAim("selected foldDough for the blend"), null); } },
-  { id: "no-cue", run(l) { assert.equal(l.prop.editAim("foldDough looks ready"), null); } },
-  { id: "lead-only", run(l) { assert.deepEqual(l.prop.editAim("foldDough selected for the kilnTemp schedule")?.symbols, ["foldDough"]); } },
+  { id: "symptom", run(l) { assert.deepEqual(l.prop.editAim("debounce fires twice on the trailing edge")?.symbols, ["debounce"]); } },
+  { id: "symptom-subject", run(l) { assert.deepEqual(l.prop.editAim("`parseDate` returns wrong offset for zoneId")?.symbols, ["parseDate"]); } },
+  { id: "noun-phrase", run(l) { assert.deepEqual(l.prop.editAim("Make the cache eviction respect TTL")?.symbols, ["cacheEviction"]); } },
+  { id: "make-object", run(l) { assert.deepEqual(l.prop.editAim("Make the cache eviction respect TTL")?.symbols, ["cacheEviction"]); } },
   { id: "plain-with-code", run(l) { assert.deepEqual(l.prop.editAim("handle foldDough tonight")?.symbols, ["foldDough"]); } },
   { id: "add-option-name", run(l) { assert.deepEqual(l.prop.editAim("add option insulated")?.symbols, ["insulated"]); } },
   { id: "fix-when-code", run(l) { assert.deepEqual(l.prop.editAim("fix quoteLane when miles is empty")?.symbols, ["quoteLane"]); } },
@@ -71,13 +74,14 @@ export const CASES: Case[] = [
   {
     id: "hide-other",
     run(l, ctx) {
-      const search = repo(ctx, { "src/dough.ts": DOUGH, "src/kiln.ts": KILN });
-      const aim = l.prop.editAim("foldDough selected for the kilnTemp schedule");
-      assert.deepEqual(aim?.symbols, ["foldDough"]);
-      const request = l.prop.textRepairRequest("foldDough selected for the kilnTemp schedule", aim!.symbols);
+      const search = repo(ctx, { "src/date.ts": PARSE, "src/zone.ts": ZONE });
+      const sentence = "`parseDate` returns wrong offset for zoneId";
+      const aim = l.prop.editAim(sentence);
+      assert.deepEqual(aim?.symbols, ["parseDate"]);
+      const request = l.prop.textRepairRequest(sentence, aim!.symbols);
       const sites = l.prop.locate(search, { request, failing: [] }, l.prop.CALLEE_DEPTH.v2);
-      assert.ok(sites.some((s) => s.name === "foldDough"));
-      assert.equal(sites.some((s) => s.name === "kilnTemp"), false);
+      assert.ok(sites.some((s) => s.name === "parseDate"));
+      assert.equal(sites.some((s) => s.name === "zoneId"), false);
     },
   },
   {
