@@ -17,6 +17,7 @@ import { classifyJobOutput } from "../lib/capabilityjob.ts";
 import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, applyPracticeTestLaunch, cloneCheckProblems, ensurePracticeInstall, gradedLaunchMode, isTestFile, materializeSolverTree, mergeCloneRootCollisions, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, processStartId, readPairFingerprint, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
 import {
   PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, targetIsScorable, textFlipVerdict, writePracticeOutputs,
+  type GradeInput,
   type GradedRow, type Understanding,
 } from "../lib/practicereplay.ts";
 import { gradeBehavior, type BehaviorGrade } from "../lib/specgrade.ts";
@@ -317,23 +318,48 @@ function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: st
     const gateOut = `${gated.stdout ?? ""}\n${gated.stderr ?? ""}`;
     const gatePass = gated.status === 0 && /GATE PASS/.test(gateOut);
     if (!gatePass) return { ...blank(pair, "text"), ...gradePracticeRow({ scorable: true, core: "ok", job, gatePass: false, beforeExit: null, afterExit: null }) };
-    let beforeExit: number | null = null;
-    let afterExit: number | null = null;
-    let fixed = false;
+    const runs: { beforeExit: number | null; afterExit: number | null }[] = [];
     const summary = JSON.parse(readFileSync(summaryPath, "utf8")) as { candidates?: { file: string }[] };
     for (const candidate of summary.candidates ?? []) {
       const diff = readFileSync(join(outDir, candidate.file), "utf8");
-      const graded = gradeCandidate(repoDir, pair, diff, modules);
-      if (beforeExit === null) beforeExit = graded.beforeExit;
-      if (graded.beforeExit !== null && graded.beforeExit !== 0 && graded.afterExit === 0) { afterExit = 0; fixed = true; break; }
-      if (afterExit === null) afterExit = graded.afterExit;
+      runs.push(gradeCandidate(repoDir, pair, diff, modules));
     }
-    if (!fixed && afterExit === null) afterExit = null;
-    return { ...blank(pair, "text"), ...gradePracticeRow({ scorable: true, core: "ok", job, gatePass: true, beforeExit, afterExit: fixed ? 0 : afterExit, behavior: textFlipVerdict(fixed) }) };
+    return { ...blank(pair, "text"), ...gradeTextRuns(runs, { scorable: true, core: "ok", job, gatePass: true }) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(outDir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Before and after come from one candidate. A base that already passes is not a fix.
+ * A same-candidate fail-then-pass is test-only, never a text pass.
+ */
+export function pickTextRun(runs: readonly { beforeExit: number | null; afterExit: number | null }[]): { beforeExit: number | null; afterExit: number | null; fixed: boolean } {
+  let failing: { beforeExit: number; afterExit: number | null } | null = null;
+  let basePass: { beforeExit: 0; afterExit: number | null } | null = null;
+  for (const run of runs) {
+    if (run.beforeExit === null) continue;
+    if (run.beforeExit === 0) {
+      if (!basePass) basePass = { beforeExit: 0, afterExit: run.afterExit };
+      continue;
+    }
+    if (run.afterExit === 0) return { beforeExit: run.beforeExit, afterExit: 0, fixed: true };
+    if (!failing) failing = { beforeExit: run.beforeExit, afterExit: run.afterExit };
+  }
+  if (failing) return { ...failing, fixed: false };
+  if (basePass) return { ...basePass, fixed: false };
+  return { beforeExit: null, afterExit: null, fixed: false };
+}
+
+export function gradeTextRuns(runs: readonly { beforeExit: number | null; afterExit: number | null }[], row: Omit<GradeInput, "beforeExit" | "afterExit" | "behavior">) {
+  const picked = pickTextRun(runs);
+  return gradePracticeRow({
+    ...row,
+    beforeExit: picked.beforeExit,
+    afterExit: picked.afterExit,
+    ...(picked.fixed ? { behavior: textFlipVerdict() } : {}), // replay-guard:text-behavior
+  });
 }
 
 function blank(pair: PracticePair, understanding: Understanding): Pick<GradedRow, "repo" | "split" | "fixSha" | "understanding"> {

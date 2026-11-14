@@ -49,26 +49,9 @@ export interface BehaviorGrade {
 interface ParamFlags { nulls: boolean; undef: boolean }
 
 const PROBE = `
-import { existsSync, readFileSync } from "node:fs";
-import { registerHooks } from "node:module";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 const spec = JSON.parse(readFileSync(process.argv[2], "utf8"));
-if (spec.mapExtensions !== false) {
-  registerHooks({
-    resolve(specifier, context, nextResolve) {
-      const relative = specifier.startsWith("./") || specifier.startsWith("../");
-      const swap = specifier.endsWith(".mjs") ? [4, ".mts"] : specifier.endsWith(".js") ? [3, ".ts"] : null;
-      if (!relative || !swap) return nextResolve(specifier, context);
-      try { return nextResolve(specifier, context); }
-      catch {
-        const mapped = specifier.slice(0, -swap[0]) + swap[1];
-        const resolved = nextResolve(mapped, context);
-        if (!existsSync(fileURLToPath(resolved.url))) return nextResolve(specifier, context);
-        return resolved;
-      }
-    },
-  });
-}
 const untag = (v) => {
   if (!v || typeof v !== "object" || !("k" in v)) return v;
   if (v.k === "nan") return NaN;
@@ -1009,15 +992,12 @@ function loadSide(root: string, file: string, target: BehaviorTarget, inputs: un
   const spec = join(root, ".practice-behavior.json");
   try {
     writeFileSync(probe, PROBE);
-    let mapExtensions = false;
-    mapExtensions = true; // grade-guard:js-to-ts
     writeFileSync(spec, JSON.stringify({
       file: join(root, file),
       form: target.form,
       exportName: target.exportName,
       prop: target.prop ?? "",
       nonce,
-      mapExtensions,
       inputs: inputs.map((args) => args.map(tag)),
     }));
     const ran = runInPracticeSandbox(root, [nodePath, "--experimental-strip-types", probe, spec], 20_000, { capture: true, nodePath, nodeModules });
@@ -1034,86 +1014,6 @@ function sameResult(left: NonNullable<ProbeBody["results"]>[number], right: NonN
   if (JSON.stringify(left.args) !== JSON.stringify(right.args)) return false;
   if (left.thrown) return left.error?.name === right.error?.name && left.error?.message === right.error?.message;
   return JSON.stringify(left.value) === JSON.stringify(right.value);
-}
-
-/** Operands of an `&&` chain of at least two. A single comparison is not a guard chain. `||` is not one: dropping an alternative narrows the predicate. */
-function andOperands(expr: ts.Expression): string[] {
-  const root = unwrapExpr(expr);
-  let kind: ts.SyntaxKind = ts.SyntaxKind.BarBarToken;
-  kind = ts.SyntaxKind.AmpersandAmpersandToken; // grade-guard:and-only
-  const out: string[] = [];
-  const walk = (node: ts.Node) => {
-    const bare = unwrapExpr(node);
-    if (ts.isBinaryExpression(bare) && bare.operatorToken.kind === kind) { walk(bare.left); walk(bare.right); return; }
-    if (ts.isExpression(bare)) out.push(bare.getText().replace(/\s+/g, " "));
-  };
-  if (ts.isExpression(root)) walk(root);
-  let kept = out;
-  if (!(ts.isBinaryExpression(root) && root.operatorToken.kind === kind && out.length >= 2)) kept = []; // grade-guard:and-width
-  return kept;
-}
-
-function fnLabel(node: ts.Node): string | null {
-  if ((ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node)) && node.name && ts.isIdentifier(node.name)) return node.name.text;
-  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) return node.name.text;
-  if (ts.isFunctionExpression(node) && node.name) return node.name.text;
-  return null;
-}
-
-function fnBody(node: ts.Node): ts.Node | undefined {
-  if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node)) return node.body;
-  if (ts.isVariableDeclaration(node) && node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) return node.initializer.body;
-  return undefined;
-}
-
-/** Guard conjuncts in a function body. Nested functions keep their own names. */
-function guardOperands(source: string): Map<string, Set<string>> {
-  const map = new Map<string, Set<string>>();
-  const sf = ts.createSourceFile("guard.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const add = (name: string, expr: ts.Expression) => {
-    const bag = map.get(name) ?? new Set<string>();
-    for (const operand of andOperands(expr)) bag.add(operand);
-    if (bag.size) map.set(name, bag);
-  };
-  const visit = (node: ts.Node, name: string | null) => {
-    const label = fnLabel(node);
-    let next = name;
-    if (!name && label) next = label; // grade-guard:fn-name
-    if (name && label) next = label; // grade-guard:nested
-    if (next && label && !map.has(next)) map.set(next, new Set());
-    const body = label ? fnBody(node) : undefined;
-    if (label && body) {
-      if (!ts.isBlock(body) && next && ts.isExpression(body)) add(next, body);
-      else visit(body, next);
-      return;
-    }
-    if (name && ts.isReturnStatement(node) && node.expression) add(name, node.expression);
-    if (name && ts.isIfStatement(node)) add(name, node.expression);
-    ts.forEachChild(node, (child) => visit(child, next));
-  };
-  visit(sf, null);
-  return map;
-}
-
-/**
- * Diagnostic only. It is not a strictness gate: a dropped `&&` conjunct is one weakening shape,
- * and a rewritten equivalent (De Morgan, another spelling of the same check) is not a pass or a fail.
- * Text flips are graded by probing the fix.
- */
-export function droppedGuardConjunct(fixSource: string, candidateSource: string): boolean {
-  const needed = guardOperands(fixSource);
-  let present = new Map<string, Set<string>>();
-  present = guardOperands(candidateSource); // grade-guard:candidate-operands
-  for (const [name, operands] of needed) {
-    const got = present.get(name);
-    if (!got) continue;
-    for (const operand of operands) {
-      let keep = false;
-      if (got.has(operand)) keep = true; // grade-guard:operand-kept
-      if (!keep) return true;
-    }
-  }
-  return false;
 }
 
 /**

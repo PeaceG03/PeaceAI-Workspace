@@ -15,22 +15,6 @@ function check(id: string, run: () => void): void {
   }
 }
 
-const bake = (body: string) => `export function bake(batch: { ok: boolean; hot: boolean }): boolean {\n  ${body}\n}\n`;
-const fix = bake("return batch.ok && batch.hot;");
-const weak = bake("return batch.ok;");
-const nestedFix = "export function bake(batch: { ok: boolean; hot: boolean }): boolean {\n  function note(x: { left: boolean; right: boolean }): boolean { return x.left && x.right; }\n  return batch.ok && batch.hot;\n}\n";
-const nestedWeak = "export function bake(batch: { ok: boolean; hot: boolean }): boolean {\n  function note(x: { left: boolean; right: boolean }): boolean { return x.left; }\n  return batch.ok && batch.hot && x.left && x.right;\n}\n";
-
-if (suite === "grade") {
-  check("and-only", () => { assert.equal(mod.droppedGuardConjunct(fix, weak), true); });
-  check("and-width", () => { assert.equal(mod.droppedGuardConjunct("export function tally(count: number): number { return count + 1; }\n", "export function tally(count: number): number { return count + 2; }\n"), false); });
-  check("fn-name", () => { assert.equal(mod.droppedGuardConjunct(fix, weak), true); });
-  check("nested", () => { assert.equal(mod.droppedGuardConjunct(nestedFix, nestedWeak), true); });
-  check("candidate-operands", () => { assert.equal(mod.droppedGuardConjunct(fix, weak), true); });
-  check("operand-kept", () => { assert.equal(mod.droppedGuardConjunct(fix, fix), false); });
-  check("or-kept", () => { assert.equal(mod.droppedGuardConjunct("export function serve(fresh: boolean, cached: boolean): boolean { return fresh || cached; }\n", "export function serve(fresh: boolean, cached: boolean): boolean { return fresh; }\n"), false); });
-}
-
 if (suite === "report") {
   const dev = { repo: "sindresorhus/is", split: "dev", fixSha: "cb4ee0e92cd3bff8353bb6738bd1f54db87dc293", status: "pass", reason: "GATE_PASS_AND_TEST", gap: false, understanding: "text" };
   const held = { ...dev, split: "held-out" };
@@ -43,14 +27,22 @@ if (suite === "report") {
     assert.deepEqual(doc.excludedFromCredit.map((row: { idiom: string }) => row.idiom).sort(), ["enum-values", "own-keys"]);
     assert.equal(doc.creditCounts.text.dev.pass, 0);
   });
-  const row = { scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: 1, afterExit: 0 };
+  const row = { scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true };
   check("text-cap", () => {
-    assert.equal(mod.textFlipVerdict(true, false), "verified_test_only");
-    assert.equal(mod.gradePracticeRow({ ...row, behavior: mod.textFlipVerdict(true, false) }).reason, "VERIFIED_TEST_ONLY");
+    assert.equal(mod.textFlipVerdict(), "verified_test_only");
+    assert.equal(mod.gradePracticeRow({ ...row, beforeExit: 1, afterExit: 0, behavior: mod.textFlipVerdict() }).reason, "VERIFIED_TEST_ONLY");
   });
-  check("probe-agree", () => {
-    assert.equal(mod.textFlipVerdict(true, true), "verified_test_only");
-    assert.notEqual(mod.gradePracticeRow({ ...row, behavior: mod.textFlipVerdict(true, true) }).status, "pass");
+}
+
+if (suite === "replay") {
+  const row = { scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true };
+  check("text-behavior", () => {
+    const graded = mod.gradeTextRuns([{ beforeExit: 1, afterExit: 0 }], row);
+    assert.equal(graded.reason, "VERIFIED_TEST_ONLY");
+    assert.notEqual(graded.status, "pass");
+    const mixed = mod.gradeTextRuns([{ beforeExit: 1, afterExit: null }, { beforeExit: 0, afterExit: 0 }], row);
+    assert.notEqual(mixed.status, "pass");
+    assert.notEqual(mixed.reason, "GATE_PASS_AND_TEST");
   });
 }
 

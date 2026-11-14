@@ -91,18 +91,12 @@ export function seededIdiom(row: { repo: string; split: string; fixSha: string }
 
 /**
  * Text mode is test-only for now. A recorded test that goes from fail to pass is
- * VERIFIED_TEST_ONLY. Probe agreement cannot raise that to verified_strict.
+ * VERIFIED_TEST_ONLY. There is no path back to verified_strict.
  * Strict text credit will be redesigned around real rows later.
  */
-export function textFlipVerdict(fixed: boolean, agreed = false): Behavior | undefined {
-  if (!fixed) return undefined;
+export function textFlipVerdict(): Behavior {
   let verdict: Behavior = "verified_strict";
-  let cap = false;
-  cap = true; // grade-guard:text-cap
-  if (cap) verdict = "verified_test_only";
-  let ignoreProbe = false;
-  ignoreProbe = true; // grade-guard:probe-agree
-  if (agreed && !ignoreProbe) verdict = "verified_strict";
+  verdict = "verified_test_only"; // grade-guard:text-cap
   return verdict;
 }
 

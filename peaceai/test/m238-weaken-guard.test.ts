@@ -4,7 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { gradePracticeRow, replayDocument, seededIdiom, textFlipVerdict } from "../lib/practicereplay.ts";
+import { gradeTextRuns } from "../bin/practice-replay.ts";
+import { replayDocument, seededIdiom } from "../lib/practicereplay.ts";
 import { visibleNodeBin } from "../lib/practicemine.ts";
 import { gradeBehavior, type Behavior } from "../lib/specgrade.ts";
 
@@ -68,27 +69,27 @@ test("thirteen weakenings are not strict, and an equivalent rewrite still can be
   ), "verified_strict");
 });
 
-test("a text flip is test-only even when probes would agree", () => {
+test("a text flip is test-only, and a flaky base from another candidate is not a pass", () => {
+  const row = {
+    scorable: true, core: "ok" as const, job: { status: "pass" as const, reason: "JOB_A_CANDIDATES:1" }, gatePass: true,
+  };
   const shapes = [
     "exact isPositive fix: return isNumber(value) && value > 0",
     "FLAGS.strict = false",
     "isClass = Boolean as never",
-    "closing brace and a statement on the same line: } warm(n)",
+    "closing brace and a statement on the same line",
   ];
-  const passed = {
-    scorable: true, core: "ok" as const, job: { status: "pass" as const, reason: "JOB_A_CANDIDATES:1" },
-    gatePass: true, beforeExit: 1, afterExit: 0,
-  };
   for (const shape of shapes) {
-    for (const agreed of [false, true]) {
-      const behavior = textFlipVerdict(true, agreed);
-      assert.equal(behavior, "verified_test_only", shape);
-      const graded = gradePracticeRow({ ...passed, behavior });
-      assert.equal(graded.reason, "VERIFIED_TEST_ONLY", shape);
-      assert.notEqual(graded.status, "pass", shape);
-    }
+    const graded = gradeTextRuns([{ beforeExit: 1, afterExit: 0 }], row);
+    assert.equal(graded.reason, "VERIFIED_TEST_ONLY", shape);
+    assert.notEqual(graded.status, "pass", shape);
   }
-  assert.equal(textFlipVerdict(false, true), undefined);
+  const mixed = gradeTextRuns([{ beforeExit: 1, afterExit: null }, { beforeExit: 0, afterExit: 0 }], row);
+  assert.notEqual(mixed.status, "pass");
+  assert.equal(mixed.reason, "TEST_NOT_RUN");
+  const flake = gradeTextRuns([{ beforeExit: 0, afterExit: 0 }], row);
+  assert.equal(flake.status, "unmeasured");
+  assert.equal(flake.reason, "TEST_BASE_NOT_FAILING");
 });
 
 test("seeded idiom rows are excluded from credit, and a held-out row with the same sha is not", () => {

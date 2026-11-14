@@ -10,8 +10,8 @@ import { pathToFileURL } from "node:url";
 
 const libDir = resolve(import.meta.dirname, "../lib");
 const sources = {
-  grade: { file: "specgrade.ts", root: libDir, tag: /\/\/ grade-guard:(and-only|and-width|fn-name|nested|candidate-operands|operand-kept)\s*$/, suite: "grade", ids: ["and-only", "and-width", "candidate-operands", "fn-name", "nested", "operand-kept"] },
-  report: { file: "practicereplay.ts", root: libDir, tag: /\/\/ (?:report-guard:(dev-only|seed-sha)|grade-guard:(probe-agree|text-cap))\s*$/, suite: "report", ids: ["dev-only", "probe-agree", "seed-sha", "text-cap"] },
+  report: { file: "practicereplay.ts", root: libDir, tag: /\/\/ (?:report-guard:(dev-only|seed-sha)|grade-guard:(text-cap))\s*$/, suite: "report", ids: ["dev-only", "seed-sha", "text-cap"] },
+  replay: { file: "practice-replay.ts", root: resolve(import.meta.dirname, "../bin"), tag: /\/\/ replay-guard:(text-behavior)\s*$/, suite: "replay", ids: ["text-behavior"] },
 } as const;
 
 let dir: string;
