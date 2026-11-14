@@ -10,7 +10,7 @@ import { pathToFileURL } from "node:url";
 
 const libDir = resolve(import.meta.dirname, "../lib");
 const sources = {
-  propose: { file: "editpropose.ts", tag: /\/\/ cap-guard:(own-alias-init|own-alias-use|own-alias-order|own-alias-scope|own-alias-optional|own-alias-optional-proto|enum-roundtrip|bundle-max)\s*$/, suite: "propose" },
+  propose: { file: "editpropose.ts", tag: /\/\/ cap-guard:(own-alias-init|own-alias-use|own-alias-order|own-alias-scope|own-alias-optional|own-alias-optional-proto|own-alias-block|own-alias-shadow|own-alias-reassign|enum-roundtrip|bundle-max)\s*$/, suite: "propose" },
   spec: { file: "testspec.ts", tag: /\/\/ spec-guard:(ava-cross|ava-fail|ava-summary-count|ava-summary-one|ava-banner|ava-banner-error)\s*$/, suite: "spec" },
 } as const;
 
@@ -52,7 +52,7 @@ for (const spec of Object.values(sources)) {
   test(`${spec.file} follow-up guard tags are present`, () => {
     assert.deepEqual(guards.map((g) => g.id).sort(), spec.tag.source.includes("ava")
       ? ["ava-banner", "ava-banner-error", "ava-cross", "ava-fail", "ava-summary-count", "ava-summary-one"]
-      : ["bundle-max", "enum-roundtrip", "own-alias-init", "own-alias-optional", "own-alias-optional-proto", "own-alias-order", "own-alias-scope", "own-alias-use"]);
+      : ["bundle-max", "enum-roundtrip", "own-alias-block", "own-alias-init", "own-alias-optional", "own-alias-optional-proto", "own-alias-order", "own-alias-reassign", "own-alias-scope", "own-alias-shadow", "own-alias-use"]);
   });
   test(`${spec.file} unmutated follow-up cases pass`, async () => {
     const r = await runMutant(`${spec.suite}-control`, text, spec.suite);

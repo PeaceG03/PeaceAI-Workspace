@@ -277,4 +277,44 @@ test("an aliased own-property check is already a guard, and a different alias is
   assert.equal(hits(later, "own-keys").length, 1);
   assert.equal(hits(optional, "own-keys").length, 1);
   assert.equal(hits(optionalProto, "own-keys").length, 1);
+  const sibling = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  if (bins) { const has = Object.hasOwn; void has; }",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const shadow = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  const has = Object.hasOwn;",
+    "  let total = 0;",
+    "  {",
+    "    const has = Object.keys;",
+    "    for (const label in bins) {",
+    "      if (!has(bins, label)) continue;",
+    "      total += bins[label] ?? 0;",
+    "    }",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const rebound = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  let has = Object.hasOwn;",
+    "  has = Object.keys;",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  assert.equal(hits(sibling, "own-keys").length, 1);
+  assert.equal(hits(shadow, "own-keys").length, 1);
+  assert.equal(hits(rebound, "own-keys").length, 1);
 });

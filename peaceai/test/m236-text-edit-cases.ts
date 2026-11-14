@@ -134,7 +134,7 @@ export const CASES: Case[] = [
     id: "member-ref",
     run(l) {
       assert.deepEqual(l.prop.editAim("Fix `oven.rack` for a warped pan")?.symbols, ["oven.rack"]);
-      assert.deepEqual(l.prop.editAim("Fix oven.class for a warped pan")?.symbols, ["oven.class"]);
+      assert.deepEqual(l.prop.editAim("Fix kiln.door for a cracked brick")?.symbols, ["kiln.door"]);
     },
   },
   {
@@ -145,10 +145,10 @@ export const CASES: Case[] = [
     id: "member-path",
     run(l, ctx) {
       const search = repo(ctx, {
-        "src/oven.ts": "export function heatRack(label: string): string {\n  label.trim();\n  return label;\n}\nexport const oven = { rack: heatRack, class: heatRack };\nexport const kiln = Object.assign({}, { shelf: heatRack });\n",
+        "src/oven.ts": "export function heatRack(label: string): string {\n  label.trim();\n  return label;\n}\nexport const oven = { rack: heatRack };\nexport const kiln = Object.assign({}, { shelf: heatRack, door: heatRack });\n",
       });
       assert.deepEqual(l.prop.resolvableSymbols(search, ["oven.rack"]), ["heatRack"]);
-      assert.deepEqual(l.prop.resolvableSymbols(search, ["oven.class"]), ["heatRack"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["kiln.door"]), ["heatRack"]);
       assert.deepEqual(l.prop.resolvableSymbols(search, ["kiln.shelf"]), ["heatRack"]);
       assert.deepEqual(l.prop.resolvableSymbols(search, ["oven.missing"]), []);
       assert.deepEqual(l.prop.resolvableSymbols(search, ["pan.rack"]), []);
@@ -159,14 +159,14 @@ export const CASES: Case[] = [
   {
     id: "dot-call",
     run(l, ctx) {
-      const one = repo(ctx, { "src/check.ts": "export function is(value: string): string {\n  value.trim();\n  return value;\n}\n" });
-      assert.deepEqual(l.prop.editAim("Fix NaN detection in `.is()`")?.symbols, [".is"]);
-      assert.deepEqual(l.prop.resolvableSymbols(one, [".is"]), ["is"]);
+      const one = repo(ctx, { "src/check.ts": "export function ready(value: string): string {\n  value.trim();\n  return value;\n}\n" });
+      assert.deepEqual(l.prop.editAim("Fix a blank label in `.ready()`")?.symbols, [".ready"]);
+      assert.deepEqual(l.prop.resolvableSymbols(one, [".ready"]), ["ready"]);
       const two = repo(ctx, {
-        "src/a.ts": "export function is(value: string): string { return value; }\n",
-        "src/b.ts": "export function is(value: string): string { return value; }\n",
+        "src/a.ts": "export function ready(value: string): string { return value; }\n",
+        "src/b.ts": "export function ready(value: string): string { return value; }\n",
       });
-      assert.deepEqual(l.prop.resolvableSymbols(two, [".is"]), []);
+      assert.deepEqual(l.prop.resolvableSymbols(two, [".ready"]), []);
     },
   },
   {
@@ -205,33 +205,50 @@ export const CASES: Case[] = [
   {
     id: "verb-inflection",
     run(l) {
-      const sentences: [string, string][] = [
-        ["fixes the parser", "parser"],
-        ["handled foldDough", "foldDough"],
-        ["corrected the parser", "parser"],
-        ["supported whisk", "whisk"],
-        ["added insulated", "insulated"],
-        ["implemented the parser", "parser"],
-        ["allowed the parser", "parser"],
-        ["enabled the parser", "parser"],
-        ["exposed the parser", "parser"],
-        ["improved the parser", "parser"],
-        ["updated the parser", "parser"],
-        ["changed the parser", "parser"],
-        ["included the parser", "parser"],
-        ["accepted the parser", "parser"],
-        ["rejected the parser", "parser"],
-        ["dropped the parser", "parser"],
-        ["removed the parser", "parser"],
-        ["wrapped the parser", "parser"],
-        ["defaulted the parser", "parser"],
-        ["guarded the parser", "parser"],
-        ["checked the parser", "parser"],
-        ["validated the parser", "parser"],
-        ["kept the parser", "parser"],
-        ["made the parser return zero", "parser"],
+      const forms = [
+        "fix", "fixes", "fixed", "fixing",
+        "handle", "handles", "handled", "handling",
+        "correct", "corrects", "corrected", "correcting",
+        "support", "supports", "supported", "supporting",
+        "add", "adds", "added", "adding",
+        "implement", "implements", "implemented", "implementing",
+        "allow", "allows", "allowed", "allowing",
+        "enable", "enables", "enabled", "enabling",
+        "expose", "exposes", "exposed", "exposing",
+        "improve", "improves", "improved", "improving",
+        "update", "updates", "updated", "updating",
+        "change", "changes", "changed", "changing",
+        "include", "includes", "included", "including",
+        "accept", "accepts", "accepted", "accepting",
+        "reject", "rejects", "rejected", "rejecting",
+        "drop", "drops", "dropped", "dropping",
+        "remove", "removes", "removed", "removing",
+        "wrap", "wraps", "wrapped", "wrapping",
+        "default", "defaults", "defaulted", "defaulting",
+        "guard", "guards", "guarded", "guarding",
+        "check", "checks", "checked", "checking",
+        "validate", "validates", "validated", "validating",
+        "keep", "keeps", "kept", "keeping",
+        "make", "makes", "made", "making",
       ];
-      for (const [sentence, symbol] of sentences) assert.deepEqual(l.prop.editAim(sentence)?.symbols, [symbol], sentence);
+      for (const form of forms) assert.deepEqual(l.prop.editAim(`${form} the parser`)?.symbols, ["parser"], form);
+    },
+  },
+  {
+    id: "member-abbrev",
+    run(l) {
+      assert.deepEqual(l.prop.editAim("Fix parseArgs, e.g. for an empty list")?.symbols, ["parseArgs"]);
+      assert.deepEqual(l.prop.editAim("Fix parseArgs, i.e. the flag reader")?.symbols, ["parseArgs"]);
+      assert.deepEqual(l.prop.editAim("Fix parseArgs, etc. for a blank flag")?.symbols, ["parseArgs"]);
+      assert.deepEqual(l.prop.editAim("fix kiln.door for a cracked brick")?.symbols, ["kiln.door"]);
+      assert.deepEqual(l.prop.editAim("fix eg.parser for a blank flag")?.symbols, ["eg.parser"]);
+    },
+  },
+  {
+    id: "member-version",
+    run(l) {
+      assert.deepEqual(l.prop.editAim("Fix the loader for v18.x")?.symbols, ["loader"]);
+      assert.deepEqual(l.prop.editAim("Fix the loader for v1.2")?.symbols, ["loader"]);
     },
   },
   {

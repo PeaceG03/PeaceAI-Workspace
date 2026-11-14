@@ -349,14 +349,6 @@ export function failingTestNames(output: string): string[] {
     if (banner(title) || summary(title)) continue;
     names.push(title);
   }
-  for (const match of output.matchAll(/^[ \t]*(\d+ tests failed)\b/gm)) {
-    if (summary(match[1]!)) continue;
-    names.push(match[1]!);
-  }
-  for (const match of output.matchAll(/^[ \t]*(\d+ test failed)\b/gm)) {
-    if (summary(match[1]!)) continue;
-    names.push(match[1]!);
-  }
   return [...new Set(names)].filter(Boolean).slice(0, 8);
 }
 
