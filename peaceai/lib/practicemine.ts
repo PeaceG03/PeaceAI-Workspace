@@ -95,6 +95,264 @@ export function testCommandFor(pkg: PkgJson, testFile: string): string[] | null 
   return null;
 }
 
+/** Loaders a repo can name in its ava config or test script. Anything else is not installed and not guessed. */
+const TS_LOADER_PACKAGES = new Set(["ts-node", "tsx", "tsimp", "esbuild-register", "@swc/register"]);
+const AVA_CONFIG_FILES = ["ava.config.js", "ava.config.cjs", "ava.config.mjs", "ava.config.ts"];
+/** Written beside the checkout. Ava loads it with `--config`. It is not a package script. */
+export const PRACTICE_AVA_CONFIG = ".practice-ava.cjs";
+
+export interface DeclaredLoader {
+  /** Package name, taken from the specifier the repo already wrote. */
+  name: string;
+  /** The specifier, such as `ts-node/register` or `tsimp/import`. */
+  specifier: string;
+  /** Version range from dependencies or devDependencies. Empty when the repo did not declare one. */
+  range: string;
+  /** True when the specifier or the repo's tsconfig `ts-node.transpileOnly` says so. */
+  transpileOnly: boolean;
+}
+
+function packageOfSpecifier(spec: string): string | null {
+  const text = spec.trim();
+  if (!text || text.includes("\0") || text.includes(" ")) return null;
+  if (text.startsWith("@")) {
+    const [scope, name] = text.split("/");
+    if (!scope || !name) return null;
+    return `${scope}/${name}`;
+  }
+  const name = text.split("/")[0];
+  return name || null;
+}
+
+function parseConfigJson(text: string): unknown {
+  // tsconfig is JSONC: comments and a trailing comma are valid there and rejected by JSON.parse.
+  const stripped = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/,\s*([}\]])/g, "$1");
+  try { return JSON.parse(stripped); } catch { return null; }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function stringsOf(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+/** Specifiers named by `--require`, `--loader`, and `--import`, including the `=` form. */
+function specifiersInArgs(args: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] ?? "";
+    for (const flag of ["--require", "--loader", "--import", "-r"]) {
+      if (arg === flag) {
+        const next = args[i + 1];
+        if (next && !next.startsWith("-")) out.push(next);
+      } else if (arg.startsWith(`${flag}=`)) out.push(arg.slice(flag.length + 1));
+    }
+  }
+  return out;
+}
+
+function specifiersInScript(script: string): string[] {
+  return specifiersInArgs(script.split(/\s+/).filter(Boolean));
+}
+
+function avaRecord(pkg: Record<string, unknown>): Record<string, unknown> | null {
+  return asRecord(pkg.ava);
+}
+
+/**
+ * The TypeScript loader the repo already named. Ava's require list and node arguments win over the
+ * test script, because that is what `ava <file>` loads. A version is taken only from the manifest.
+ */
+export function declaredTypeScriptLoader(packageJson: string, tsconfig: string | null): DeclaredLoader | null {
+  const pkg = asRecord(parseConfigJson(packageJson));
+  if (!pkg) return null;
+  const ava = avaRecord(pkg);
+  const testScript = asRecord(pkg.scripts)?.test;
+  const specs = [
+    ...(ava ? stringsOf(ava.require) : []),
+    ...(ava ? specifiersInArgs(stringsOf(ava.nodeArguments)) : []),
+    ...specifiersInScript(typeof testScript === "string" ? testScript : ""),
+  ];
+  let specifier = "";
+  let name = "";
+  for (const spec of specs) {
+    const pkgName = packageOfSpecifier(spec);
+    if (pkgName && TS_LOADER_PACKAGES.has(pkgName)) { specifier = spec.trim(); name = pkgName; break; }
+  }
+  if (!name) return null;
+  const deps = { ...(asRecord(pkg.dependencies) ?? {}), ...(asRecord(pkg.devDependencies) ?? {}) };
+  const range = typeof deps[name] === "string" ? String(deps[name]) : "";
+  const tsNode = asRecord(asRecord(parseConfigJson(tsconfig ?? ""))?.["ts-node"]);
+  const transpileOnly = specifier.includes("transpile-only") || tsNode?.transpileOnly === true;
+  return { name, specifier, range, transpileOnly };
+}
+
+/** True when the manifest's version range can be passed to `npm install` without picking a version. */
+export function installableLoaderRange(range: string): boolean {
+  return /^(?:\d+\.\d+\.\d+|[~^]\d+\.\d+\.\d+)$/.test(range);
+}
+
+function entryFileExists(pkgDir: string, rel: string): boolean {
+  if (!rel || rel.includes("\0")) return false;
+  const cleaned = rel.replace(/^\.\//, "");
+  if (!cleaned || cleaned.split("/").includes("..")) return false;
+  return existsSync(join(pkgDir, cleaned));
+}
+
+function exportTarget(value: unknown): string {
+  if (typeof value === "string") return value;
+  const rec = asRecord(value);
+  if (!rec) return "";
+  for (const key of ["default", "import", "require", "node"]) {
+    if (typeof rec[key] === "string") return String(rec[key]);
+  }
+  return "";
+}
+
+/** The loader package is installed only when its bin or its entry file is actually in the tree. */
+export function loaderInstalled(modulesDir: string, name: string): boolean {
+  if (!name || name.includes("\0") || name.split("/").includes("..")) return false;
+  const pkgDir = join(modulesDir, name);
+  let pkg: Record<string, unknown>;
+  try { pkg = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")) as Record<string, unknown>; } catch { return false; }
+  const bin = pkg.bin;
+  if (typeof bin === "string") return entryFileExists(pkgDir, bin);
+  if (bin && typeof bin === "object") {
+    const files = Object.values(bin as Record<string, unknown>).filter((value): value is string => typeof value === "string");
+    if (files.length) return files.some((rel) => entryFileExists(pkgDir, rel));
+  }
+  if (typeof pkg.main === "string" && entryFileExists(pkgDir, pkg.main)) return true;
+  const exported = exportTarget(asRecord(pkg.exports)?.["."] ?? (typeof pkg.exports === "string" ? pkg.exports : undefined));
+  if (exported && entryFileExists(pkgDir, exported)) return true;
+  if (typeof pkg.main === "string" || exported) return false;
+  return ["index.js", "index.cjs", "index.mjs"].some((rel) => entryFileExists(pkgDir, rel));
+}
+
+/**
+ * The declared loader's package name when the manifest gives it a range and the install tree does
+ * not contain it. Null when there is nothing to repair.
+ */
+export function declaredLoaderMissing(modulesDir: string, packageJson: string): string | null {
+  const loader = declaredTypeScriptLoader(packageJson, null);
+  if (!loader || !installableLoaderRange(loader.range)) return null;
+  if (loaderInstalled(modulesDir, loader.name)) return null;
+  return loader.name;
+}
+
+function configCovers(pattern: string, file: string): boolean {
+  const pat = pattern.replace(/\\/g, "/").replace(/^\.\//, "");
+  const rel = file.replace(/\\/g, "/").replace(/^\.\//, "");
+  if (!pat || !rel || pat.includes("\0")) return false;
+  // Brace groups, `?`, and character classes are not interpreted. Treating them as a match keeps
+  // the type-checking launch. `*` and `**` are a simplified glob and are a follow-up.
+  if (/[{}?[\]]/.test(pat)) return true;
+  if (!pat.includes("*")) {
+    if (rel === pat) return true;
+    if (!/\.[A-Za-z0-9]+$/.test(pat)) return rel.startsWith(pat.endsWith("/") ? pat : `${pat}/`);
+    return false;
+  }
+  const body = pat.split("**").map((part) => part.split("*").map((bit) => bit.replace(/[.+^${}()|[\]\\]/g, "\\$&")).join("[^/]*")).join(".*");
+  return new RegExp(`^${body}$`).test(rel);
+}
+
+/**
+ * True when this tsconfig has an include or files list and the test file is outside both.
+ * No include, a parse failure, or an `extends` with no include of its own stays false: the
+ * launch then type-checks. `extends` is not loaded.
+ */
+export function tsconfigOmitsTest(tsconfig: string | null, testFile: string): boolean {
+  const json = asRecord(parseConfigJson(tsconfig ?? ""));
+  if (!json) return false;
+  if (typeof json.extends === "string" && !Array.isArray(json.include) && !Array.isArray(json.files)) return false;
+  const include = Array.isArray(json.include) ? json.include.filter((item): item is string => typeof item === "string") : [];
+  const files = Array.isArray(json.files) ? json.files.filter((item): item is string => typeof item === "string") : [];
+  const exclude = Array.isArray(json.exclude) ? json.exclude.filter((item): item is string => typeof item === "string") : [];
+  if (!include.length && !files.length) return false;
+  const covered = files.some((file) => configCovers(file, testFile)) || include.some((pattern) => configCovers(pattern, testFile));
+  if (!covered) return true;
+  return exclude.some((pattern) => configCovers(pattern, testFile));
+}
+
+function isAvaCommand(command: readonly string[]): boolean {
+  return command.some((part) => /(?:^|\/)ava$/.test(part));
+}
+
+export interface PracticeLaunch { cmd: string[]; env: Record<string, string>; configText: string | null }
+
+/** `relaxed` is only for spec diagnostics. Graded fail-before and pass-after both type-check. */
+export type PracticeLaunchMode = "relaxed" | "typecheck";
+
+/**
+ * Both graded runs use the repo's type-checking launch. A failure that exists only under the
+ * relaxed launch is not a fail-before, so it cannot pair with a type-checked pass-after.
+ */
+export function gradedLaunchMode(phase: "before" | "after"): PracticeLaunchMode {
+  void phase;
+  return "typecheck";
+}
+
+/**
+ * How to run one recorded test command. `relaxed` is for spec diagnostics only: it copies the ava
+ * key and, when the repo tsconfig does not cover the overlaid test, compiles it transpile-only.
+ * `typecheck` is the recorded command with no extra env, so ts-node type-checks the test and the
+ * source it imports. Graded fail-before and pass-after both use `typecheck`.
+ * `ts-node.transpileOnly` in the repo's own tsconfig is part of that type-checking launch.
+ * Package scripts are not rewritten.
+ */
+export function practiceTestLaunch(input: {
+  command: readonly string[];
+  testFile: string;
+  packageJson: string | null;
+  tsconfig: string | null;
+  /** True when the checkout already has ava.config.js or a sibling. That file stays in charge. */
+  avaConfigFile?: boolean;
+  /** Defaults to the type-checking launch. */
+  mode?: PracticeLaunchMode;
+}): PracticeLaunch {
+  const command = [...input.command];
+  const mode = input.mode ?? "typecheck";
+  if (mode === "typecheck") return { cmd: command, env: {}, configText: null };
+  const env: Record<string, string> = {};
+  const pkgText = input.packageJson ?? "";
+  const loader = declaredTypeScriptLoader(pkgText, input.tsconfig);
+  const omitted = tsconfigOmitsTest(input.tsconfig, input.testFile);
+  if (loader?.name === "ts-node" && (loader.transpileOnly || omitted)) env.TS_NODE_TRANSPILE_ONLY = "true";
+  const pkg = asRecord(parseConfigJson(pkgText));
+  const ava = pkg ? avaRecord(pkg) : null;
+  if (!isAvaCommand(command) || !ava || input.avaConfigFile || command.includes("--config") || command.includes(PRACTICE_AVA_CONFIG)) {
+    return { cmd: command, env, configText: null };
+  }
+  const next = JSON.parse(JSON.stringify(ava)) as Record<string, unknown>;
+  const variables = asRecord(next.environmentVariables) ?? {};
+  if (omitted && variables.TSIMP_DIAG === "error") {
+    next.environmentVariables = { ...variables, TSIMP_DIAG: "ignore" };
+  }
+  const at = command.lastIndexOf(input.testFile);
+  const cmd = at >= 0
+    ? [...command.slice(0, at), "--config", PRACTICE_AVA_CONFIG, ...command.slice(at)]
+    : [...command, "--config", PRACTICE_AVA_CONFIG];
+  return { cmd, env, configText: `module.exports = ${JSON.stringify(next)};\n` };
+}
+
+/** Write the ava config the launch asked for, and return the command and env to spawn. */
+export function applyPracticeTestLaunch(workDir: string, command: readonly string[], testFile: string, mode: PracticeLaunchMode = "typecheck"): PracticeLaunch {
+  const read = (name: string): string | null => {
+    try { return readFileSync(join(workDir, name), "utf8"); } catch { return null; }
+  };
+  const launch = practiceTestLaunch({
+    command, testFile, packageJson: read("package.json"), tsconfig: read("tsconfig.json"),
+    avaConfigFile: AVA_CONFIG_FILES.some((name) => existsSync(join(workDir, name))),
+    mode,
+  });
+  const dest = join(workDir, PRACTICE_AVA_CONFIG);
+  if (launch.configText) writeFileSync(dest, launch.configText);
+  return launch;
+}
+
 export interface LockFiles { npm: boolean; pnpm: boolean; yarn: boolean }
 
 /** Install argv. `--ignore-scripts` so a package's install hooks do not run. Null when there is nothing to install. */
@@ -219,7 +477,16 @@ export const SANDBOX_RAN = ".practice-sandbox-ran";
 
 export interface SandboxRun { unsafe: boolean; code: number | null; stdout: string }
 
-export interface SandboxOpts { bwrap?: string; capture?: boolean; nodePath?: string | null; nodeModules?: string | null }
+export interface SandboxOpts { bwrap?: string; capture?: boolean; nodePath?: string | null; nodeModules?: string | null; extraEnv?: Readonly<Record<string, string>> }
+
+/** Env the practice launch may add. Every other key is dropped, including tokens. */
+export function sandboxExtraEnv(src: Readonly<Record<string, string>> | undefined): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  if (!src) return out;
+  if (src.TS_NODE_TRANSPILE_ONLY === "true") out.TS_NODE_TRANSPILE_ONLY = "true";
+  if (src.TSIMP_DIAG === "ignore") out.TSIMP_DIAG = "ignore";
+  return out;
+}
 
 /** Run `cmd` inside the practice sandbox. `unsafe` means bwrap is missing or the sandbox could not be created. */
 export function runInPracticeSandbox(workDir: string, cmd: readonly string[], timeoutMs: number, opts: SandboxOpts = {}): SandboxRun {
@@ -236,6 +503,7 @@ export function runInPracticeSandbox(workDir: string, cmd: readonly string[], ti
   env.TMP = home;
   env.TEMP = home;
   env.PATH = `${join(workDir, "node_modules", ".bin")}:${dirname(nodePath)}:/usr/bin:/bin`;
+  Object.assign(env, sandboxExtraEnv(opts.extraEnv));
   const ran = spawnSync(prefix[0]!, [...prefix.slice(1), ...cmd], {
     cwd: workDir, env, timeout: timeoutMs, encoding: "utf8",
     stdio: opts.capture ? ["ignore", "pipe", "pipe"] : "ignore",
@@ -453,6 +721,13 @@ export function readPairFingerprint(
   return dependencyFingerprint(pkg.out, locked.ok ? locked.out : "", toolchain);
 }
 
+/** `name@range` for a loader this install will repair. Empty when there is nothing to add. */
+export function loaderFingerprintNote(packageJson: string): string {
+  const loader = declaredTypeScriptLoader(packageJson, null);
+  if (!loader || !installableLoaderRange(loader.range)) return "";
+  return `${loader.name}@${loader.range}`;
+}
+
 export function dependencyFingerprint(packageJson: string, lockfile: string, toolchain: Pick<PracticeToolchain, "manager" | "managerVersion" | "nodeVersion">): string {
   return createHash("sha256")
     .update("peaceai-practice-deps:v1\n")
@@ -460,8 +735,57 @@ export function dependencyFingerprint(packageJson: string, lockfile: string, too
     .update(toolchain.managerVersion).update("\0")
     .update(toolchain.nodeVersion).update("\0")
     .update(packageJson).update("\0")
-    .update(lockfile)
+    .update(lockfile).update("\0")
+    .update(loaderFingerprintNote(packageJson))
     .digest("hex");
+}
+
+/** Retired install trees are left on disk until they are older than this. */
+export const RETIRED_INSTALL_MS = 24 * 60 * 60 * 1000;
+/** A reader drops this file in a tree it is using. Reaping skips the tree while the file is there. */
+export const INSTALL_READER_MARK = ".practice-reader";
+const RETIRED_NAME = /^([0-9a-f]+)\.retired-(\d+)-(\d+)$/;
+
+/**
+ * Put `staging` in place of `dest` by renaming. The previous tree is renamed aside and not deleted
+ * here. A process whose cwd is that tree can still read it until a later reap.
+ */
+export function publishInstallTree(staging: string, dest: string): void {
+  mkdirSync(dirname(dest), { recursive: true });
+  if (!existsSync(dest)) {
+    renameSync(staging, dest);
+    return;
+  }
+  const retired = `${dest}.retired-${process.pid}-${Date.now()}`;
+  renameSync(dest, retired);
+  try {
+    renameSync(staging, dest);
+  } catch (err) {
+    try { if (!existsSync(dest)) renameSync(retired, dest); } catch { /* the retired tree stays if dest is already published */ }
+    throw err;
+  }
+}
+
+/**
+ * Delete retired install directories older than a day. A lock file for that fingerprint, or a
+ * reader mark inside the tree, keeps it. This does not prove a sandboxed bind stays valid.
+ */
+export function reapRetiredInstalls(cacheRoot: string, now = Date.now()): string[] {
+  const root = join(cacheRoot, "installs");
+  if (!existsSync(root)) return [];
+  const removed: string[] = [];
+  for (const name of readdirSync(root)) {
+    const match = RETIRED_NAME.exec(name);
+    if (!match) continue;
+    const stamped = Number(match[3]);
+    if (!Number.isFinite(stamped) || now - stamped < RETIRED_INSTALL_MS) continue;
+    const dir = join(root, name);
+    if (existsSync(join(dir, INSTALL_READER_MARK))) continue;
+    if (existsSync(installLock(cacheRoot, match[1]!))) continue;
+    rmSync(dir, { recursive: true, force: true });
+    removed.push(dir);
+  }
+  return removed;
 }
 
 export function cacheSpace(path: string): { freeBytes: number; freeInodes: number } {
@@ -523,7 +847,9 @@ function pruneInstalls(cacheRoot: string, max: number): void {
     const root = join(cacheRoot, "installs");
     if (!existsSync(root)) return;
     const rows: { name: string; used: number }[] = [];
+    reapRetiredInstalls(cacheRoot);
     for (const name of readdirSync(root)) {
+      if (name.includes(".retired-")) continue;
       const fingerprint = name.endsWith(".partial") ? name.slice(0, -".partial".length) : name;
       const lock = installLock(cacheRoot, fingerprint);
       if (existsSync(lock) && !lockIsStale(lock)) continue;
@@ -626,6 +952,39 @@ function isBusy<T>(value: T | { busy: true }): value is { busy: true } {
  * `<cacheRoot>/installs/<fingerprint>/` holds only package.json, the lockfile, and node_modules.
  * The files come from `git archive` of the base commit, not from a later fix.
  */
+/**
+ * `npm install <name>@<range> --no-save` when the manifest names a loader the tree does not have.
+ * The range is the one in package.json. The package script is not edited. Other managers are not
+ * given an add command, because that would rewrite the manifest.
+ */
+function installDeclaredLoader(
+  partial: string,
+  packageJson: string,
+  toolchain: Pick<PracticeToolchain, "nodePath" | "manager">,
+  store: string,
+  timeoutMs: number,
+): PracticeInstall | null {
+  const missing = declaredLoaderMissing(join(partial, "node_modules"), packageJson);
+  if (!missing) return null;
+  const loader = declaredTypeScriptLoader(packageJson, null);
+  const line = `declared loader ${missing} is not in the install`;
+  if (!loader || toolchain.manager !== "npm") return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: [line] };
+  const argv = ["npm", "install", `${loader.name}@${loader.range}`, "--no-save", "--ignore-scripts", "--no-audit", "--no-fund"];
+  const home = mkdtempSync(join(tmpdir(), "peaceai-install-home-"));
+  try {
+    const ran = spawnSync(argv[0]!, argv.slice(1), {
+      cwd: partial, env: installEnv(toolchain.nodePath, home, store, toolchain.manager), encoding: "utf8", timeout: timeoutMs, maxBuffer: 8 << 20,
+    });
+    const output = `${ran.error?.message ?? ""}\n${ran.stdout ?? ""}\n${ran.stderr ?? ""}`;
+    if (ran.status !== 0 || declaredLoaderMissing(join(partial, "node_modules"), packageJson)) {
+      return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: [line, ...sanitizeInstallLines(output)] };
+    }
+    return null;
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 export function ensurePracticeInstall(
   repoDir: string,
   pair: Pick<PracticePair, "repo" | "baseSha" | "toolchain">,
@@ -655,6 +1014,8 @@ export function ensurePracticeInstall(
       const ready = (): PracticeInstall | null => {
         if (existsSync(join(dest, SANDBOX_RAN))) return { ok: false, modules: null, reason: "SANDBOX_POISON", lines: ["install dir was used by a sandboxed test"], fingerprint };
         if (existsSync(join(dest, INSTALL_COMPLETE)) && existsSync(modules)) {
+          // A shared tree that lost the repo's declared loader is not reused. The next step reinstalls it.
+          if (declaredLoaderMissing(modules, packageJson)) return null;
           touchUsed(dest);
           return { ok: true, modules, reason: null, lines: [], fingerprint };
         }
@@ -667,7 +1028,8 @@ export function ensurePracticeInstall(
       const held = withLock(installLock(cacheRoot, fingerprint), () => {
         const again = ready();
         if (again) return again;
-        if (existsSync(dest)) rmSync(dest, { recursive: true, force: true });
+        // An unfinished directory is not a live install. A complete one stays until publishInstallTree swaps it.
+        if (existsSync(dest) && !(existsSync(join(dest, INSTALL_COMPLETE)) && existsSync(join(dest, "node_modules")))) rmSync(dest, { recursive: true, force: true });
         pruneInstalls(cacheRoot, opts.maxInstalls ?? INSTALL_MAX_ENTRIES);
         const partial = `${dest}.partial`;
         rmSync(partial, { recursive: true, force: true });
@@ -678,7 +1040,7 @@ export function ensurePracticeInstall(
         const finish = (): PracticeInstall => {
           writeFileSync(join(partial, INSTALL_COMPLETE), `${fingerprint}\n`);
           touchUsed(partial);
-          renameSync(partial, dest);
+          publishInstallTree(partial, dest);
           return { ok: true, modules: join(dest, "node_modules"), reason: null, lines: [], fingerprint };
         };
         if (!argv) {
@@ -708,6 +1070,8 @@ export function ensurePracticeInstall(
           rmSync(home, { recursive: true, force: true });
         }
         if (!existsSync(join(partial, "node_modules"))) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: ["install produced no node_modules"], fingerprint };
+        const repaired = installDeclaredLoader(partial, packageJson, pair.toolchain, store, opts.timeoutMs ?? INSTALL_TIMEOUT_MS);
+        if (repaired) return { ...repaired, fingerprint };
         return finish();
       });
       if (isBusy(held)) return { ok: false, modules: null, reason: "INSTALL_FAILED", lines: ["install lock is busy"], fingerprint };
