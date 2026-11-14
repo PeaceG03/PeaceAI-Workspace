@@ -11,9 +11,17 @@ import { join, resolve } from "node:path";
 import { openRepo } from "../lib/codesearch.ts";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
 import { editAim, resolvableSymbols, textRepairBatches } from "../lib/editpropose.ts";
+import { validateSummary } from "../lib/gate.ts";
 import { understandIssue } from "../lib/issueunderstand.ts";
 import { CASES, setup, teardown } from "./m236-text-edit-cases.ts";
 import * as prop from "../lib/editpropose.ts";
+
+test("five repair candidates fit the summary schema and six do not", () => {
+  const one = (i: number) => ({ id: `candidate-${i}`, file: `candidates/candidate-${i}.diff`, transformations: ["REPAIR_V2"], operationId: null, diffBytes: 1, diffLines: 1 });
+  const summary = (n: number) => ({ schema: "peaceai-workspace-candidates:v1", taskId: "workspace-issue-1", baseSha: "a".repeat(40), candidates: Array.from({ length: n }, (_, i) => one(i + 1)) });
+  assert.equal(validateSummary(summary(5)), true);
+  assert.equal(validateSummary(summary(6)), false);
+});
 
 test("a sentence the phrase list refuses still names the symbol it asks to change", () => {
   const ctx = setup();

@@ -242,3 +242,65 @@ test("an aliased own-property check is already a guard, and a different alias is
   assert.equal(hits(other, "own-keys").length, 1);
   assert.equal(hits(elsewhere, "own-keys").length, 1);
 });
+
+test("enum-keys drops a reverse-mapped number and keeps the name", () => {
+  const text = [
+    "export function ticketListed(code: unknown, statuses: object): boolean {",
+    "  return Object.values(statuses).includes(code);",
+    "}",
+  ].join("\n");
+  const got = hits(text, "enum-keys");
+  assert.equal(got.length, 1);
+  assert.match(got[0]!, /typeof member === "number" && typeof \(statuses as Record<PropertyKey, unknown>\)\[member\] === "string"/);
+  assert.match(got[0]!, /\.includes\(code\)/);
+  const numeric: Record<PropertyKey, unknown> = { Fresh: 0, Sent: 1, 0: "Fresh", 1: "Sent" };
+  const keep = (member: unknown) => {
+    if (typeof member !== "number") return true;
+    const name = numeric[member];
+    return typeof name !== "string" || numeric[name] !== member;
+  };
+  assert.deepEqual(Object.values(numeric).filter(keep).sort(), ["Fresh", "Sent"]);
+  assert.equal(keep(0), false);
+  const textual: Record<PropertyKey, unknown> = { Fresh: "fresh" };
+  assert.deepEqual(Object.values(textual).filter((member) => typeof member === "number" ? false : true), ["fresh"]);
+  const lone = "export function amount(code: unknown, counts: object): boolean {\n  return Object.values(counts).includes(code);\n}\n";
+  const keys = "export function named(code: string, statuses: object): boolean {\n  return Object.keys(statuses).includes(code);\n}\n";
+  assert.equal(hits(lone, "enum-keys").length, 1);
+  assert.deepEqual(hits(keys, "enum-keys"), []);
+});
+
+test("numeric-trim rejects surrounding whitespace and leaves a number alone", () => {
+  const text = "export function readPrice(price: unknown): boolean {\n  return typeof price === \"string\" && !Number.isNaN(Number(price));\n}\n";
+  const got = hits(text, "numeric-trim");
+  assert.equal(got.length, 1);
+  assert.match(got[0]!, /price\.trim\(\) === price/);
+  assert.match(got[0]!, /Number\(price\)/);
+  const padded = (price: unknown) => typeof price === "string" && !Number.isNaN(Number(price)) && price.trim() === price;
+  assert.equal(padded(" 4 "), false);
+  assert.equal(padded("4"), true);
+  assert.equal(padded(4), false);
+  const bare = "export function readPrice(price: unknown): boolean {\n  return !Number.isNaN(Number(price));\n}\n";
+  const already = "export function readPrice(price: unknown): boolean {\n  return typeof price === \"string\" && price.trim() === price && !Number.isNaN(Number(price));\n}\n";
+  const other = "export function readPrice(price: unknown, label: unknown): boolean {\n  return typeof label === \"string\" && !Number.isNaN(Number(price));\n}\n";
+  assert.deepEqual(hits(bare, "numeric-trim"), []);
+  assert.deepEqual(hits(already, "numeric-trim"), []);
+  assert.deepEqual(hits(other, "numeric-trim"), []);
+});
+
+test("plain-object emptiness excludes an array and a function", () => {
+  const text = "export function vacant(bin: object): boolean {\n  return Object.keys(bin).length === 0;\n}\n";
+  const got = hits(text, "plain-object");
+  assert.equal(got.length, 1);
+  assert.match(got[0]!, /Object\.keys\(bin\)\.length === 0 && !Array\.isArray\(bin\) && typeof bin !== "function"/);
+  const emptyArray: object = [];
+  const fn: object = function bin() { return 0; };
+  const box: object = {};
+  const plain = (bin: object) => Object.keys(bin).length === 0 && !Array.isArray(bin) && typeof bin !== "function";
+  assert.equal(plain(emptyArray), false);
+  assert.equal(plain(fn), false);
+  assert.equal(plain(box), true);
+  const guarded = "export function vacant(bin: object): boolean {\n  return !Array.isArray(bin) && Object.keys(bin).length === 0;\n}\n";
+  const listed = "export function names(bin: object): string[] {\n  return Object.keys(bin);\n}\n";
+  assert.deepEqual(hits(guarded, "plain-object"), []);
+  assert.deepEqual(hits(listed, "plain-object"), []);
+});

@@ -120,6 +120,64 @@ export const CASES: Case[] = [
     },
   },
   {
+    id: "summary-cap",
+    run(l, ctx) {
+      const search = repo(ctx, { "src/lane.ts": LANE });
+      const aim = l.prop.editAim("fix quoteLane when miles is empty");
+      assert.ok(aim);
+      const open = l.prop.proposeTextEdits(search, l.prop.textRepairRequest("fix quoteLane when miles is empty", aim!.symbols), 8);
+      assert.ok(open.length >= 6, `need six repairs to see the summary cap, got ${open.length}`);
+      assert.equal(l.prop.textRepairBatches(search, "fix quoteLane when miles is empty", 8).length, 5);
+    },
+  },
+  {
+    id: "member-ref",
+    run(l) {
+      assert.deepEqual(l.prop.editAim("Fix `oven.rack` for a warped pan")?.symbols, ["oven.rack"]);
+      assert.deepEqual(l.prop.editAim("Fix oven.class for a warped pan")?.symbols, ["oven.class"]);
+    },
+  },
+  {
+    id: "member-ext",
+    run(l) { assert.deepEqual(l.prop.editAim("fix quoteLane in src/index.ts")?.symbols, ["quoteLane"]); },
+  },
+  {
+    id: "member-path",
+    run(l, ctx) {
+      const search = repo(ctx, {
+        "src/oven.ts": "export function heatRack(label: string): string {\n  label.trim();\n  return label;\n}\nexport const oven = { rack: heatRack, class: heatRack };\nexport const kiln = Object.assign({}, { shelf: heatRack });\n",
+      });
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["oven.rack"]), ["heatRack"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["oven.class"]), ["heatRack"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["kiln.shelf"]), ["heatRack"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["oven.missing"]), []);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["pan.rack"]), []);
+      const batches = l.prop.textRepairBatches(search, "fix oven.rack for a warped pan");
+      assert.ok(batches.some((edits) => edits.some((e) => e.content.includes("label = label.trim()"))));
+    },
+  },
+  {
+    id: "dot-call",
+    run(l, ctx) {
+      const one = repo(ctx, { "src/check.ts": "export function is(value: string): string {\n  value.trim();\n  return value;\n}\n" });
+      assert.deepEqual(l.prop.editAim("Fix NaN detection in `.is()`")?.symbols, [".is"]);
+      assert.deepEqual(l.prop.resolvableSymbols(one, [".is"]), ["is"]);
+      const two = repo(ctx, {
+        "src/a.ts": "export function is(value: string): string { return value; }\n",
+        "src/b.ts": "export function is(value: string): string { return value; }\n",
+      });
+      assert.deepEqual(l.prop.resolvableSymbols(two, [".is"]), []);
+    },
+  },
+  {
+    id: "shaped-exists",
+    run(l, ctx) {
+      const search = repo(ctx, { "src/a.ts": "export function foldDough(n: number): number { return n; }\n" });
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["proofDough"]), []);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["foldDough"]), ["foldDough"]);
+    },
+  },
+  {
     id: "tune",
     run(l, ctx) {
       const search = repo(ctx, { "src/string.ts": STRING });

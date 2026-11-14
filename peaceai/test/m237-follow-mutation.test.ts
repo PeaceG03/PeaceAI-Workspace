@@ -10,7 +10,7 @@ import { pathToFileURL } from "node:url";
 
 const libDir = resolve(import.meta.dirname, "../lib");
 const sources = {
-  propose: { file: "editpropose.ts", tag: /\/\/ cap-guard:(own-alias-init|own-alias-use|enum-roundtrip|bundle-max)\s*$/, suite: "propose" },
+  propose: { file: "editpropose.ts", tag: /\/\/ cap-guard:(own-alias-init|own-alias-use|enum-roundtrip|bundle-max|enum-keys|numeric-trim|plain-object)\s*$/, suite: "propose" },
   spec: { file: "testspec.ts", tag: /\/\/ spec-guard:(ava-cross|ava-summary|ava-banner)\s*$/, suite: "spec" },
 } as const;
 
@@ -52,7 +52,7 @@ for (const spec of Object.values(sources)) {
   test(`${spec.file} follow-up guard tags are present`, () => {
     assert.deepEqual(guards.map((g) => g.id).sort(), spec.tag.source.includes("ava")
       ? ["ava-banner", "ava-cross", "ava-summary"]
-      : ["bundle-max", "enum-roundtrip", "own-alias-init", "own-alias-use"]);
+      : ["bundle-max", "enum-keys", "enum-roundtrip", "numeric-trim", "own-alias-init", "own-alias-use", "plain-object"]);
   });
   test(`${spec.file} unmutated follow-up cases pass`, async () => {
     const r = await runMutant(`${spec.suite}-control`, text, spec.suite);

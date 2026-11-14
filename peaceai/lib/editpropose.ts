@@ -53,7 +53,7 @@ const MAX_CALLEES = 6;
 /** The fixed template order (rank = index). */
 export const TEMPLATES = ["missing-export", "nullish-check", "comparison", "arithmetic", "off-by-one", "logical", "default-value", "null-guard", "negate-condition", "boolean-return"] as const;
 /** M168: repair-v2's idiom templates, tried before TEMPLATES in this fixed order (decided before any dev-split run). */
-export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "enum-values"] as const; // M172: + undefined-keeps-key
+export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "enum-values", "enum-keys", "numeric-trim", "plain-object"] as const; // M172: + undefined-keeps-key
 export type Idiom = (typeof IDIOM_TEMPLATES)[number];
 /** M173 (spec: peaceai/spec/repair-v2-m173.md): repair-v2's module-scope constant template, tried after all others. */
 export const CONST_TEMPLATES = ["const-value"] as const;
@@ -117,7 +117,14 @@ export function namedSymbols(text: string): string[] {
 // - Pronouns and the tested degree adjectives faster and clearer are not objects. Other
 //   adjectives are not listed, because an untested word would survive a deletion.
 // - A plain word, including a single capitalized word such as Docs, is kept only when one source
-//   file defines it. A code-shaped name may be defined in several files.
+//   file defines it. A code-shaped name may be defined in several files, and is not a target when
+//   no source file defines it: a name that does not exist is not an edit site.
+// - `oven.rack` and `.is()` are member references, including inside a cleaned sentence whose
+//   backticks were removed. A file extension (`index.ts`) is not a member. The member is followed
+//   to the function the property holds (`rack: heatRack`, or the same literal passed to
+//   Object.assign). A missing property is not a reason to edit the whole object.
+// - Job A's summary schema rejects more than five candidates, so a longer list fails the gate
+//   before any diff is read. textRepairBatches stops at five.
 // Thanks, questions, and renames are not body repairs.
 
 export const TEXT_REPAIR_REASONS = ["CANT_DO_YET_NO_EDIT", "CANT_DO_YET_EDIT_UNSPECIFIED", "CANT_DO_YET_ADD_UNSPECIFIED", "CANT_DO_YET_NOT_A_FAMILY"] as const;
@@ -151,8 +158,27 @@ const AIM_TS = "function functions method methods class classes type types inter
 const AIM_ROLE = "option options flag flags setting settings helper helpers property properties field fields value values parameter parameters argument arguments error errors bug bugs test tests module modules file files empty blank whitespace missing new existing default";
 const AIM_META = new Set(`${AIM_FUNCTION} ${AIM_TS} ${AIM_ROLE} ${AIM_VERBS.replaceAll("|", " ")} ${AIM_SYMPTOM_WORDS.join(" ")} ${AIM_COMPLEMENT_WORDS.join(" ")}`.split(/\s+/));
 const AIM_SOURCE = /\.(?:ts|tsx|mts|cts)$/;
+const MEMBER_EXT = new Set(["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts", "json", "md"]);
 
 export interface EditAim { symbols: string[]; via: "verb" | "lead" }
+
+/** Dotted names in a sentence: `oven.rack`, and a call with no receiver (`.is()`). A filename extension is not a member. */
+function memberRefs(region: string): string[] {
+  const out: string[] = [];
+  const add = (path: string) => { if (path.length <= 80 && !out.includes(path)) out.push(path); };
+  for (const m of region.matchAll(/(^|[^A-Za-z0-9_$])([A-Za-z_$][\w$]{1,})\.([A-Za-z_$][\w$]{1,})\b/g)) {
+    if (MEMBER_EXT.has(m[3]!)) continue; // text-guard:member-ext
+    add(`${m[2]}.${m[3]}`);
+  }
+  for (const m of region.matchAll(/(^|[^A-Za-z0-9_$])\.([A-Za-z_$][\w$]{1,})\s*\(/g)) add(`.${m[2]}`);
+  return out;
+}
+
+function aimMembers(region: string): string[] {
+  let found: string[] = [];
+  found = memberRefs(region); // text-guard:member-ref
+  return found;
+}
 
 /** The same conventional-commit and issue-number cleanup the phrase reader applies, plus a bang (`feat!:`). */
 export function aimSource(text: string): string {
@@ -233,10 +259,14 @@ export function editAim(text: string): EditAim | null {
       const complement = AIM_COMPLEMENT.exec(after);
       if (complement) region = region.slice(0, verb.index + verb[0].length + complement.index); // text-guard:make-object
     }
+    const members = aimMembers(region);
+    if (members.length > 0) return { symbols: members, via: "verb" };
     const symbols: string[] = [];
     aimObject(region, symbols);
     return symbols.length ? { symbols, via: "verb" } : null;
   }
+  const leadMembers = aimMembers(clause);
+  if (leadMembers.length > 0) return { symbols: leadMembers, via: "lead" };
   let symptom: RegExpExecArray | null = null;
   symptom = AIM_SYMPTOM.exec(clause); // text-guard:symptom
   if (!symptom) return null;
@@ -248,15 +278,80 @@ export function editAim(text: string): EditAim | null {
   return { symbols: [subject], via: "lead" };
 }
 
-/** A code-shaped name is kept even when several files define it. A plain name, including one capitalized
- * word (Docs, Server), is kept only when exactly one non-test source defines it. */
+function sourceDefs(search: CodeRepo, name: string): { path: string }[] {
+  const sym = search.symbol(name);
+  if (!sym.ok) return [];
+  return sym.definitions.filter((d) => AIM_SOURCE.test(d.path) && !d.path.endsWith(".d.ts") && !isTestPath(d.path) && !isGeneratedPath(d.path));
+}
+
+function objectLiteralsOf(init: ts.Expression | undefined): ts.ObjectLiteralExpression[] {
+  if (!init) return [];
+  if (ts.isObjectLiteralExpression(init)) return [init];
+  if (!ts.isCallExpression(init) || init.arguments.length < 2) return [];
+  const callee = init.expression;
+  if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== "assign" || !ts.isIdentifier(callee.expression) || callee.expression.text !== "Object") return [];
+  return init.arguments.filter((arg): arg is ts.ObjectLiteralExpression => ts.isObjectLiteralExpression(arg));
+}
+
+/** The function a property holds: an identifier (`rack: heatRack`), or the property's own method. */
+function memberFunction(search: CodeRepo, path: string): string | null {
+  const dot = path.indexOf(".");
+  if (dot <= 0 || path.includes(".", dot + 1)) return null;
+  const recv = path.slice(0, dot);
+  const prop = path.slice(dot + 1);
+  const found: string[] = [];
+  for (const def of sourceDefs(search, recv)) {
+    const read = search.read(def.path);
+    if (!read.ok || read.truncated) continue;
+    const sf = parseSource(def.path, read.text);
+    const visit = (n: ts.Node) => {
+      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === recv) {
+        for (const literal of objectLiteralsOf(n.initializer)) {
+          for (const el of literal.properties) {
+            const key = el.name && (ts.isIdentifier(el.name) || ts.isStringLiteral(el.name)) ? el.name.text : null;
+            if (key !== prop) continue;
+            if (ts.isPropertyAssignment(el) && ts.isIdentifier(el.initializer)) found.push(el.initializer.text);
+            else if (ts.isShorthandPropertyAssignment(el) || ts.isMethodDeclaration(el)) found.push(prop);
+            else if (ts.isPropertyAssignment(el) && (ts.isFunctionExpression(el.initializer) || ts.isArrowFunction(el.initializer))) found.push(prop);
+          }
+        }
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+  }
+  const unique = [...new Set(found)];
+  if (unique.length !== 1) return null;
+  return sourceDefs(search, unique[0]!).length > 0 ? unique[0]! : null;
+}
+
+/** A code-shaped name is kept when at least one source file defines it, even if several do.
+ * A plain name, including one capitalized word (Docs, Server), is kept only when exactly one
+ * non-test source defines it. A dotted member is the function that property holds. */
 export function resolvableSymbols(search: CodeRepo, symbols: readonly string[]): string[] {
   const out: string[] = [];
   for (const name of symbols) {
-    if (aimCodeName(name)) { out.push(name); continue; } // text-guard:shaped-keep
-    const sym = search.symbol(name);
-    if (!sym.ok) continue;
-    const defs = sym.definitions.filter((d) => AIM_SOURCE.test(d.path) && !d.path.endsWith(".d.ts") && !isTestPath(d.path) && !isGeneratedPath(d.path));
+    if (name.startsWith(".")) {
+      const bare = name.slice(1);
+      const defs = sourceDefs(search, bare);
+      if (defs.length !== 1) continue; // text-guard:dot-call
+      out.push(bare);
+      continue;
+    }
+    if (name.includes(".")) {
+      let target = "";
+      target = memberFunction(search, name) ?? ""; // text-guard:member-path
+      if (!target || out.includes(target)) continue;
+      out.push(target);
+      continue;
+    }
+    if (aimCodeName(name)) {
+      const defs = sourceDefs(search, name);
+      if (defs.length < 1) continue; // text-guard:shaped-exists
+      out.push(name);
+      continue; // text-guard:shaped-keep
+    }
+    const defs = sourceDefs(search, name);
     if (defs.length !== 1) continue; // text-guard:plain-unique
     out.push(name);
   }
@@ -309,7 +404,10 @@ export function textRepairBatches(search: CodeRepo, text: string, limit = TEXT_R
   if (!aim) return [];
   const symbols = resolvableSymbols(search, aim.symbols);
   if (symbols.length === 0) return [];
-  return proposeTextEdits(search, textRepairRequest(text, symbols), limit);
+  // The summary schema accepts at most five candidates. A longer list fails the gate before a diff is read.
+  let cap = limit;
+  if (cap > 5) cap = 5; // text-guard:summary-cap
+  return proposeTextEdits(search, textRepairRequest(text, symbols), cap);
 }
 
 // ---- sites
@@ -1180,6 +1278,100 @@ function enumValues(n: ts.Node, sf: ts.SourceFile): string | null {
   return `Object.values(${e}).filter((member) => typeof member !== "string" || typeof ${box}[member] !== "number" || ${roundTrip}).includes(${v})`;
 }
 
+/**
+ * enum-keys: the other half of a numeric enum's `Object.values`. The reverse map stores the number
+ * under the name and the name under the number, so the number is a key as well as a value. Drop a
+ * number only when that lookup is the same number. String names and string-enum values stay.
+ * This is not a replacement for enum-values; a caller that wanted the name instead of the number
+ * needs the other filter, and both are candidates.
+ */
+function enumKeys(n: ts.Node, sf: ts.SourceFile): string | null {
+  if (!enumValues(n, sf)) return null;
+  const callee = (n as ts.CallExpression).expression as ts.PropertyAccessExpression;
+  const values = callee.expression as ts.CallExpression;
+  const bare = (e: ts.Node): ts.Node => {
+    let cur = e;
+    while (ts.isAsExpression(cur) || ts.isTypeAssertionExpression(cur) || ts.isParenthesizedExpression(cur) || ts.isSatisfiesExpression(cur)) cur = cur.expression;
+    return cur;
+  };
+  const e = srcOf(sf, bare(values.arguments[0]!));
+  const v = srcOf(sf, bare((n as ts.CallExpression).arguments[0]!));
+  const box = `(${e} as Record<PropertyKey, unknown>)`;
+  let dropNumber = "false";
+  dropNumber = `typeof member === "number" && typeof ${box}[member] === "string" && ${box}[${box}[member] as PropertyKey] === member`; // cap-guard:enum-keys
+  return `Object.values(${e}).filter((member) => !(${dropNumber})).includes(${v})`;
+}
+
+/** The identifier inside `Number.isNaN(Number(ident))` when the same && chain already treats that same identifier as a string. */
+function numericIdent(n: ts.Node): string | null {
+  if (!ts.isBinaryExpression(n) || n.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken) return null;
+  if (n.parent && ts.isBinaryExpression(n.parent) && n.parent.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) return null;
+  let converted: string | null = null;
+  let stringCheck: string | null = null;
+  const walk = (node: ts.Node) => {
+    if (ts.isCallExpression(node) && node.arguments.length === 1 && ts.isIdentifier(node.arguments[0]) && ts.isIdentifier(node.expression) && node.expression.text === "Number" && node.parent && ts.isCallExpression(node.parent) && node.parent.arguments[0] === node) {
+      const outer = node.parent.expression;
+      if (ts.isPropertyAccessExpression(outer) && outer.name.text === "isNaN" && ts.isIdentifier(outer.expression) && outer.expression.text === "Number") converted = node.arguments[0].text;
+    } else if (ts.isCallExpression(node) && node.arguments.length === 1 && ts.isIdentifier(node.arguments[0]) && ts.isIdentifier(node.expression) && node.expression.text !== "Number" && node.expression.text !== "isNaN") {
+      stringCheck = node.arguments[0].text;
+    }
+    if (ts.isTypeOfExpression(node) && ts.isIdentifier(node.expression) && node.parent && ts.isBinaryExpression(node.parent) && node.parent.left === node && node.parent.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken && ts.isStringLiteral(node.parent.right) && node.parent.right.text === "string") {
+      stringCheck = node.expression.text;
+    }
+    ts.forEachChild(node, walk);
+  };
+  walk(n);
+  if (!converted || stringCheck !== converted) return null;
+  return converted;
+}
+
+/**
+ * numeric-trim: `Number(" 1 ")` is `1`, so a string check plus `!Number.isNaN(Number(s))` still
+ * accepts surrounding whitespace. Require the string to equal its trim. A chain that does not
+ * already treat the value as a string is left alone, because `trim` on a number throws.
+ */
+function numericTrim(n: ts.Node, sf: ts.SourceFile): string | null {
+  const ident = numericIdent(n);
+  if (!ident) return null;
+  const text = srcOf(sf, n);
+  if (text.includes(`${ident}.trim(`)) return null;
+  let extra = "";
+  extra = ` && ${ident}.trim() === ${ident}`; // cap-guard:numeric-trim
+  return `${text}${extra}`;
+}
+
+function keysLengthIdent(expr: ts.Node): string | null {
+  if (!ts.isPropertyAccessExpression(expr) || expr.name.text !== "length") return null;
+  const keys = expr.expression;
+  if (!ts.isCallExpression(keys) || keys.arguments.length !== 1 || keys.questionDotToken) return null;
+  const head = keys.expression;
+  if (!ts.isPropertyAccessExpression(head) || !ts.isIdentifier(head.expression) || head.expression.text !== "Object" || head.name.text !== "keys") return null;
+  const arg = keys.arguments[0]!;
+  return ts.isIdentifier(arg) ? arg.text : null;
+}
+
+/**
+ * plain-object: `Object.keys(obj).length` is `0` for an empty array and for a function, so an
+ * emptiness test written for a plain object also matches those. Exclude both. A test that already
+ * mentions `Array.isArray` or a `typeof` check on the same object is left alone.
+ */
+function plainObject(n: ts.Node, sf: ts.SourceFile): string | null {
+  if (!ts.isBinaryExpression(n)) return null;
+  const op = n.operatorToken.kind;
+  const compared = op === ts.SyntaxKind.EqualsEqualsEqualsToken || op === ts.SyntaxKind.ExclamationEqualsEqualsToken || op === ts.SyntaxKind.GreaterThanToken || op === ts.SyntaxKind.LessThanToken || op === ts.SyntaxKind.GreaterThanEqualsToken || op === ts.SyntaxKind.LessThanEqualsToken;
+  if (!compared) return null;
+  const ident = keysLengthIdent(n.left) ?? keysLengthIdent(n.right);
+  if (!ident) return null;
+  let chain: ts.Node = n;
+  while (chain.parent && ts.isBinaryExpression(chain.parent) && chain.parent.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) chain = chain.parent;
+  const around = srcOf(sf, chain);
+  if (around.includes("Array.isArray") || around.includes(`typeof ${ident}`)) return null;
+  const text = srcOf(sf, n);
+  let guard = "";
+  guard = ` && !Array.isArray(${ident}) && typeof ${ident} !== "function"`; // cap-guard:plain-object
+  return `${text}${guard}`;
+}
+
 /** M168: every idiom candidate inside one site (no I/O); repair-v2 only. */
 export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: number): Mutation[] {
   const out: Mutation[] = [];
@@ -1195,6 +1387,9 @@ export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: numbe
     add(undefinedKeepsKey(n, sf), "undefined-keeps-key");
     add(ownKeys(n, sf), "own-keys");
     add(enumValues(n, sf), "enum-values");
+    add(enumKeys(n, sf), "enum-keys");
+    add(numericTrim(n, sf), "numeric-trim");
+    add(plainObject(n, sf), "plain-object");
     ts.forEachChild(n, visit);
   };
   visit(sf);

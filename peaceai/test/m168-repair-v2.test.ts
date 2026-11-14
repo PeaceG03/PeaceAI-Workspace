@@ -25,7 +25,7 @@ for (const c of CASES) test(`M168: ${c.id}`, () => c.run({ prop }, ctx));
 
 test("M168: repair-v1 is unchanged: its template list, its imports and its default name; repair-v2 only adds idioms in front", () => {
   assert.deepEqual([...prop.TEMPLATES], ["missing-export", "nullish-check", "comparison", "arithmetic", "off-by-one", "logical", "default-value", "null-guard", "negate-condition", "boolean-return"]);
-  assert.deepEqual([...prop.IDIOM_TEMPLATES], ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "enum-values"]);
+  assert.deepEqual([...prop.IDIOM_TEMPLATES], ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "enum-values", "enum-keys", "numeric-trim", "plain-object"]);
   assert.deepEqual([...prop.TEMPLATES_V2], [...prop.IDIOM_TEMPLATES, ...prop.TEMPLATES, ...prop.CONST_TEMPLATES, ...prop.SSTUB_TEMPLATES, ...prop.STMT_TEMPLATES]); // M173: + const-value; M176: + SStuB classes; M177: + statement edits last
   assert.deepEqual(prop.CALLEE_DEPTH, { v1: 1, v2: 2 });
   assert.equal(prop.REPAIR_PROPOSER, "repair-v1");

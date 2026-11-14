@@ -61,6 +61,27 @@ if (suite === "propose") {
     const queued = mod.repairCandidates([{ path: "src/tally.ts", name: "tally", start: 0, end: five.length, tier: 0 }], new Map([["src/tally.ts", five]]), new Set(), true);
     assert.equal(queued.filter((c: { muts: { template: string }[] }) => c.muts.length >= 5 && c.muts.every((m) => m.template === "own-keys")).length, 0);
   });
+  check("enum-keys", () => {
+    const text = "export function listed(code: unknown, statuses: object): boolean {\n  return Object.values(statuses).includes(code);\n}\n";
+    const site = { path: "src/desk.ts", name: "listed", start: 0, end: text.length, tier: 0 };
+    const got = mod.idiomMutationsIn(mod.parseSource("src/desk.ts", text), site, 0).filter((m: { template: string }) => m.template === "enum-keys").map((m: { text: string }) => m.text);
+    assert.equal(got.length, 1);
+    assert.match(got[0], /typeof member === "number"/);
+  });
+  check("numeric-trim", () => {
+    const text = "export function readPrice(price: unknown): boolean {\n  return typeof price === \"string\" && !Number.isNaN(Number(price));\n}\n";
+    const site = { path: "src/till.ts", name: "readPrice", start: 0, end: text.length, tier: 0 };
+    const got = mod.idiomMutationsIn(mod.parseSource("src/till.ts", text), site, 0).filter((m: { template: string }) => m.template === "numeric-trim").map((m: { text: string }) => m.text);
+    assert.equal(got.length, 1);
+    assert.match(got[0], /price\.trim\(\) === price/);
+  });
+  check("plain-object", () => {
+    const text = "export function vacant(bin: object): boolean {\n  return Object.keys(bin).length === 0;\n}\n";
+    const site = { path: "src/bin.ts", name: "vacant", start: 0, end: text.length, tier: 0 };
+    const got = mod.idiomMutationsIn(mod.parseSource("src/bin.ts", text), site, 0).filter((m: { template: string }) => m.template === "plain-object").map((m: { text: string }) => m.text);
+    assert.equal(got.length, 1);
+    assert.match(got[0], /!Array\.isArray\(bin\)/);
+  });
 }
 
 if (suite === "spec") {

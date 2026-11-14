@@ -49,9 +49,9 @@ test("text-guard tags are unique and name every condition", () => {
   const ids = guards.map((g) => g.id);
   assert.equal(new Set(ids).size, ids.length);
   assert.deepEqual([...ids].sort(), [
-    "backtick", "code-shape", "complement-respect", "complement-return", "complement-use", "fronted-clause",
-    "generic-object", "hide-other", "if-boundary", "limit", "make-object", "meta", "noun-phrase",
-    "plain-fallback", "plain-unique", "proposer", "question", "rename", "shaped-keep", "symptom",
+    "backtick", "code-shape", "complement-respect", "complement-return", "complement-use", "dot-call", "fronted-clause",
+    "generic-object", "hide-other", "if-boundary", "limit", "make-object", "member-ext", "member-path", "member-ref", "meta", "noun-phrase",
+    "plain-fallback", "plain-unique", "proposer", "question", "rename", "shaped-exists", "shaped-keep", "summary-cap", "symptom",
     "symptom-fires", "symptom-returns", "symptom-run", "symptom-runs", "symptom-sends", "symptom-subject",
     "symptom-throws", "thanks", "verb", "verb-clause",
   ]);
