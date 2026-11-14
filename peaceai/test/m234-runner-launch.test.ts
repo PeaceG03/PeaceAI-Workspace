@@ -171,6 +171,7 @@ test("ava's cross marks a failed test title, and a compiler stop is not a test r
   // Ava 4.3.3 worker-failed (figures 4 cross ✖): "exited due to an error:" and "exited with a non-zero exit code:".
   assert.deepEqual(failingTestNames("  ✖ 2 tests failed\n✖ test/crate.ts exited with a non-zero exit code: 1\n✔ accepts a labeled crate\n"), []);
   assert.deepEqual(failingTestNames("2 tests failed\n1 test failed\n✖ test/crate.ts exited due to an error:\n"), []);
+  assert.deepEqual(failingTestNames("  ✘ [fail]: rejects an empty crate\n  ✘ [fail]: 2 tests failed\n  ✘ [fail]: test/pad.ts exited due to an error:\n"), ["rejects an empty crate"]);
   const typeStop = [
     "Uncaught exception in test/crate.ts",
     "test/crate.ts(4,10): error TS2339: Property 'weight' does not exist on type 'Crate'.",
