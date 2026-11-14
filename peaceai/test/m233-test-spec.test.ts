@@ -9,8 +9,8 @@ import { openRepo } from "../lib/codesearch.ts";
 import { CALLEE_DEPTH, locate, MAX_CANDIDATES } from "../lib/editpropose.ts";
 import { MAX_ATTEMPTS } from "../lib/loop.ts";
 import { GIT_LOCK_ARGS, materializeSolverTree, practiceGit, practiceGitEnv, practiceSandboxReady, visibleNodeBin, writeCommitFile } from "../lib/practicemine.ts";
-import { adjacentFloat, behaviorInputs, comparisonBounds, gradeBehavior, INPUT_CAP, parseProbe, PROBE_SENTINEL } from "../lib/specgrade.ts";
-import { classifyRunnerOutput, expectationsIn, integerCmpClass, originalSuiteArgv, runTestSpec, sanitizeRunnerLines, scaffoldPlan, SPEC_ATTEMPT_CAP, specTask, type SpecInput } from "../lib/testspec.ts";
+import { adjacentFloat, behaviorInputSet, behaviorInputs, comparisonBounds, gradeBehavior, INPUT_CAP, parseProbe, PROBE_SENTINEL, readFieldProbes } from "../lib/specgrade.ts";
+import { classifyRunnerOutput, expectationsIn, failingTestNames, integerCmpClass, originalSuiteArgv, runTestSpec, sanitizeRunnerLines, scaffoldPlan, SPEC_ATTEMPT_CAP, specTask, type SpecInput } from "../lib/testspec.ts";
 
 const PATTERN = "^src/.+\\.ts$";
 
@@ -114,6 +114,7 @@ test("runner output from vitest, node:assert, and ava is told apart from a start
   assert.ok(found.some((row) => row.kind === "boolean" && row.expected === "false"));
   assert.ok(found.some((row) => row.kind === "throws"));
   assert.ok(found.filter((row) => row.symbol === "pad").length >= 5);
+  assert.deepEqual(failingTestNames("not ok 72 - is.enumCase\n✘ [fail]: is.class\nFAIL  src/num.test.ts > pad\n"), ["is.enumCase", "is.class", "pad"]);
 });
 
 test("repair-v2 makes the failing test pass and leaves the other function alone", (t) => {
@@ -134,6 +135,39 @@ test("repair-v2 makes the failing test pass and leaves the other function alone"
     const nodePath = visibleNodeBin()!;
     const after = spawnSync(nodePath, ["--experimental-strip-types", "--test", "src/pad.test.ts", "src/keep.test.ts"], { cwd: root, encoding: "utf8" });
     assert.equal(after.status, 0, `${after.stdout ?? ""}\n${after.stderr ?? ""}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("expectations come from the failing test, so a later function is not hidden by the cap", (t) => {
+  const early = Array.from({ length: 33 }, (_, i) => `  assert.equal(early(${i}), ${i});`).join("\n");
+  const text = [
+    'import assert from "node:assert/strict";',
+    'import test from "node:test";',
+    'import { early, late } from "./nums.ts";',
+    'test("early", () => {',
+    early,
+    "});",
+    'test("late", () => { assert.equal(late(2), 3); });',
+  ].join("\n");
+  const exists = (path: string) => path === "src/nums.ts";
+  const all = expectationsIn("src/nums.test.ts", text, PATTERN, [], exists);
+  const picked = expectationsIn("src/nums.test.ts", text, PATTERN, [], exists, ["late"]);
+  assert.equal(all.some((row) => row.symbol === "late"), false);
+  assert.equal(all.every((row) => row.symbol === "early"), true);
+  assert.deepEqual(picked.map((row) => row.symbol), ["late"]);
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const root = repo({
+    "src/nums.ts": "export function early(n: number): number {\n  return n;\n}\nexport function late(n: number): number {\n  return n + 0;\n}\n",
+    "src/nums.test.ts": text,
+  });
+  try {
+    const got = runTestSpec(specInput(root, "src/nums.test.ts", { subject: "late is short by one" }));
+    assert.equal(got.status, "diff", got.status === "diff" ? "" : got.reason);
+    if (got.status !== "diff") return;
+    assert.match(got.diff, /n \+ 1/);
+    assert.equal(readFileSync(join(root, "src/nums.ts"), "utf8").includes("n + 0"), true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1179,4 +1213,81 @@ test("module constants, string carve-outs, scale, and regex are not strict when 
   assert.equal(comparisonBounds("export function f(a: Record<string, boolean>): boolean {\n  return a[0.3] === true;\n}\n").thresholds.includes(0.3), true);
   assert.equal(comparisonBounds('export function f(a: number): boolean {\n  return String(a) !== "1e-9";\n}\n').thresholds.includes(1e-9), true);
   assert.equal(comparisonBounds("export function f(a: number): boolean {\n  return a === 0x100;\n}\n").thresholds.includes(256), true);
+  assert.equal(comparisonBounds('export function f(a: number): boolean {\n  return String(a) !== "0.3abc";\n}\n').thresholds.includes(0.3), false);
+  assert.equal(grade(num('typeof a === "string"'), num("false"), ints), "verified_strict");
+  const inner = "export function f(a: number): boolean {\n  const BAD = new Set([0.3]);\n  return BAD.has(a);\n}\n";
+  assert.notEqual(grade(inner, num("false"), ints), "verified_strict");
+  assert.equal(grade(inner, inner, ints), "verified_strict");
+  for (const expr of ["a === 3 / 10", "~~(a * 10) === 3", "Math.floor(a * 10) === 3", "Math.trunc(a * 10) === 3", "Math.round(a * 10) === 7", "Math.ceil(a * 10) === 7", "(a * 10) >> 0 === 3", "a * 10 === 3", "a / 10 === 0.03", "Math.floor(a / 0.1) === 3", "/0[.]3/.test(String(a))", "Math.abs(a - 0.1) ** 2 < 1e-18"]) {
+    assert.notEqual(grade(num(expr), num("false"), ints), "verified_strict");
+    assert.equal(grade(num(expr), num(expr), ints), "verified_strict");
+  }
+  assert.notEqual(grade(str('a.toLowerCase() === "x"'), str("false"), words), "verified_strict");
+  assert.equal(grade(str('a.toLowerCase() === "x"'), str('a.toLowerCase() === "x"'), words), "verified_strict");
+  assert.notEqual(grade(str('a.toLowerCase() === "x"'), str('a === "x"'), words), "verified_strict");
+  assert.notEqual(grade(str('a.trim() === "x"'), str("false"), words), "verified_strict");
+  assert.equal(grade(str('a.trim() === "x"'), str('a.trim() === "x"'), words), "verified_strict");
+  const shadowed = "const BAD = new Set([0.3]);\nexport function f(a: number): boolean {\n  const BAD = new Set([9]);\n  return BAD.has(a);\n}\n";
+  assert.notEqual(grade(shadowed, num("false"), ints), "verified_strict");
+  assert.equal(grade(shadowed, shadowed, ints), "verified_strict");
+  const destructured = "export function f(a: number): boolean {\n  const { BAD } = { BAD: new Set([0.3]) };\n  return BAD.has(a);\n}\n";
+  assert.equal(grade(destructured, destructured, ints), "verified_test_only");
+  const member = "export function f(a: number): boolean {\n  const C = { BAD: new Set([0.3]) };\n  return C.BAD.has(a);\n}\n";
+  assert.notEqual(grade(member, num("false"), ints), "verified_strict");
+  assert.equal(grade(member, member, ints), "verified_strict");
+  const foreign = "export function f(a: number): boolean {\n  const C = new Set([0.3]);\n  return (C as { BAD: Set<number> }).BAD.has(a);\n}\n";
+  assert.equal(grade(foreign, foreign, ints), "verified_test_only");
+  const spread = "function extra(): number[] { return [9]; }\nexport function f(a: number): boolean {\n  const BAD = new Set([0.3, ...extra()]);\n  return BAD.has(a);\n}\n";
+  assert.equal(grade(spread, spread, ints), "verified_test_only");
+  const literalSpread = "export function f(a: number): boolean {\n  const BAD = new Set([...[0.3]]);\n  return BAD.has(a);\n}\n";
+  assert.notEqual(grade(literalSpread, num("false"), ints), "verified_strict");
+  assert.equal(grade(literalSpread, literalSpread, ints), "verified_strict");
+  const split = str('a.split(" ")[0] === "x"');
+  assert.equal(grade(split, split, words), "verified_test_only");
+  assert.equal(comparisonBounds('import { BAD } from "./c";\nexport function f(a: number): boolean {\n  return BAD.has(a);\n}\n').unprobed, true);
+  const record = "export function f(a: Record<string, boolean>): boolean {\n  return a[0.3] === true;\n}\n";
+  const recordFalse = "export function f(a: Record<string, boolean>): boolean {\n  return false;\n}\n";
+  assert.notEqual(grade(record, recordFalse, [[{}]]), "verified_strict");
+  assert.equal(grade(record, record, [[{}]]), "verified_test_only");
+  const reassigned = "export function f(a: number): boolean {\n  let BAD = new Set([0.3]);\n  BAD = new Set([1]);\n  return BAD.has(a);\n}\n";
+  assert.equal(grade(reassigned, reassigned, ints), "verified_test_only");
+  const recordArg = (expr: string) => `export function f(a: Record<string, unknown>): boolean {\n  return ${expr};\n}\n`;
+  const empty = [[{}]];
+  for (const expr of ["a.x === 1", "Object.keys(a).length === 2", "a[0.3] === 'yes'", "a[0.3] === 2", "a[0.3] === true && a.y === 1"]) {
+    assert.notEqual(grade(recordArg(expr), recordArg("false"), empty), "verified_strict", expr);
+  }
+  const retries = "export function f(opts: { retries?: number }): boolean {\n  return opts.retries > 3;\n}\n";
+  const retriesFalse = "export function f(opts: { retries?: number }): boolean {\n  return false;\n}\n";
+  assert.notEqual(grade(retries, retriesFalse, empty), "verified_strict");
+  const list = "export function f(a: { list: number[] }): boolean {\n  return a.list.includes(1);\n}\n";
+  assert.equal(grade(list, list, [[{ list: [0] }]]), "verified_strict");
+  const klass = "class K { static S = new Set([0.3]); }\nexport function f(a: number): boolean {\n  return K.S.has(a);\n}\n";
+  assert.equal(grade(klass, klass, ints), "verified_strict");
+  assert.notEqual(grade(klass, num("false"), ints), "verified_strict");
+  const reassignedStatic = "class K { static S = new Set([1]); }\nK.S = new Set([0.3]);\nexport function f(a: number): boolean {\n  return K.S.has(a);\n}\n";
+  assert.notEqual(grade(reassignedStatic, num("false"), ints), "verified_strict");
+  const mutatedField = "export function f(a: { list: number[] }): boolean {\n  a.list = [0];\n  return a.list.includes(1);\n}\n";
+  assert.equal(grade(mutatedField, mutatedField, [[{ list: [0] }]]), "verified_test_only");
+  const gaps = [
+    ["a.x > 3", "a.x > 3.5"],
+    ["a.x > 3", "a.x > 3 && a.x !== 7"],
+    ["a.x > 3", "a.x > 3 && a.x < 100"],
+    ["a.x < 5", "a.x < 5 && a.x > 0"],
+    ["a.x > 3 && a.x < 5", "a.x === 4"],
+    ["a.x === 1", "a.x == 1"],
+    ["a.x === 1", "a.x === 1 && a.y !== 2"],
+    ["a.x === 1", "a.x === 1 && !a.z"],
+    ["a.x > 3", "a.x > 3 && Number.isInteger(a.x)"],
+    ["a.x === 'ab'", "typeof a.x === 'string' && a.x.startsWith('a')"],
+  ];
+  for (const [left, right] of gaps) assert.equal(grade(recordArg(left), recordArg(right), empty), "verified_test_only", left);
+  const numbered = behaviorInputSet([[{ n: 0 }]], [], "seed", [], [], [], [[{ n: 4 }]]);
+  assert.equal(numbered.inputs.some((row) => JSON.stringify(row) === JSON.stringify([{ n: 4 }])), false);
+  const quotient = comparisonBounds("export function f(a: number): boolean {\n  return a === 3 / 10;\n}\n");
+  assert.equal(quotient.thresholds.includes(0.3), true);
+  assert.equal(quotient.thresholds.includes(3), false);
+  const nested = "export function f(a: { x: number }): boolean {\n  const g = () => a.x > 3;\n  return false;\n}\n";
+  assert.deepEqual(readFieldProbes(nested, "f"), [{}]);
+  const chain = "export function f(a: { b: { x: number } }): boolean {\n  return a.b.x > 3;\n}\n";
+  assert.deepEqual(readFieldProbes(chain, "f"), [{}]);
 });
