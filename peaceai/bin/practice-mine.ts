@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  ENV_ALLOW, GIT_LOCK_ARGS, applyPracticeTestLaunch, currentToolchain, diffChangesDeps, ensurePracticeInstall, heldOutWatchProblems, identitiesForRoots, isOwnerRepo, isTestFile, keptLicense, pairFiles, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, testCommandFor, visibleNodeBin, yarnIsModern,
+  ENV_ALLOW, GIT_LOCK_ARGS, applyPracticeTestLaunch, currentToolchain, diffChangesDeps, ensurePracticeInstall, gradedLaunchMode, heldOutWatchProblems, identitiesForRoots, isOwnerRepo, isTestFile, keptLicense, pairFiles, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, releaseWorktree, runInPracticeSandbox, testCommandFor, visibleNodeBin, yarnIsModern,
   type LockFiles, type NameStatus, type PkgJson, type PracticeLicense, type PracticeManifest, type PracticePair, type PracticeRepo,
   LICENSE_FILES, MINE_REPORT_SCHEMA,
 } from "../lib/practicemine.ts";
@@ -105,8 +105,8 @@ function applyTest(dir: string, fix: string, testFile: string): boolean {
   return git(dir, ["checkout", fix, "--", testFile]).ok;
 }
 
-function runTest(dir: string, cmd: string[], nodePath: string): { code: number | null; poison: string[]; clean: boolean } {
-  const launch = applyPracticeTestLaunch(dir, cmd, [...cmd].reverse().find((part) => isTestFile(part)) ?? "");
+function runTest(dir: string, cmd: string[], nodePath: string, phase: "before" | "after"): { code: number | null; poison: string[]; clean: boolean } {
+  const launch = applyPracticeTestLaunch(dir, cmd, [...cmd].reverse().find((part) => isTestFile(part)) ?? "", gradedLaunchMode(phase));
   const before = poisonStamp(dir);
   const modules = existsSync(join(dir, "node_modules")) ? join(dir, "node_modules") : null;
   const ran = runInPracticeSandbox(dir, launch.cmd, TEST_MS, { nodePath, nodeModules: modules, extraEnv: launch.env });
@@ -233,12 +233,12 @@ function reverifyRepo(repo: PracticeRepo, dir: string, rows: PracticePair[], cac
     if (!installed.ok || !installed.modules) { drop(pair.fixSha, installed.reason ?? "INSTALL_FAILED"); continue; }
     if (!checkout(dir, pair.baseSha) || !applyTest(dir, pair.fixSha, pair.testFile)) { drop(pair.fixSha, "CHECKOUT"); continue; }
     linkModules(installed.modules, dir);
-    const before = runTest(dir, pair.testCommand, toolchain.nodePath);
+    const before = runTest(dir, pair.testCommand, toolchain.nodePath, "before");
     if (!before.clean) return { kept, excluded, reason: "SANDBOX_CLEAN_FAILED" };
     if (before.poison.length || before.code === null || before.code === 0) { drop(pair.fixSha, "NOT_REPLAY_ADMITTED"); continue; }
     if (!checkout(dir, pair.fixSha)) { drop(pair.fixSha, "CHECKOUT"); continue; }
     linkModules(installed.modules, dir);
-    const after = runTest(dir, pair.testCommand, toolchain.nodePath);
+    const after = runTest(dir, pair.testCommand, toolchain.nodePath, "after");
     if (!after.clean) return { kept, excluded, reason: "SANDBOX_CLEAN_FAILED" };
     if (after.poison.length || after.code !== 0) { drop(pair.fixSha, "NOT_REPLAY_ADMITTED"); continue; }
     const next: PracticePair = { ...pair, beforeExit: before.code, afterExit: 0, toolchain };

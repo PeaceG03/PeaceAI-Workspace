@@ -388,7 +388,7 @@ type SandboxHit = { blocked: SpecBlock } | { blocked: null; code: number | null;
 
 /** One test inside the practice sandbox. A poison or unsafe result is cleaned and blocks the next git step. */
 function runSandboxed(input: SpecInput, cmd: readonly string[]): SandboxHit {
-  const launch = applyPracticeTestLaunch(input.root, cmd, input.testFile);
+  const launch = applyPracticeTestLaunch(input.root, cmd, input.testFile, "relaxed");
   const before = poisonStamp(input.root);
   const modules = input.nodeModules && existsSync(input.nodeModules) ? input.nodeModules : null;
   const ran = runInPracticeSandbox(input.root, launch.cmd, 60_000, { capture: true, nodePath: input.toolchain.nodePath, nodeModules: modules, extraEnv: launch.env });
@@ -1155,6 +1155,7 @@ export function runTestSpec(input: SpecInput): SpecResult {
     packageJson: read(input.root, "package.json"),
     tsconfig: read(input.root, "tsconfig.json"),
     avaConfigFile: ["ava.config.js", "ava.config.cjs", "ava.config.mjs", "ava.config.ts"].some((name) => read(input.root, name) !== null),
+    mode: "relaxed",
   });
   const diag = (kind: SpecDiagKind, code: number | null, output: string) => specDiagnostic(kind, code, planned.cmd, output, input.root);
   if (commandNeedsInstall(input.testCommand) && !(input.nodeModules && existsSync(input.nodeModules))) {

@@ -1,14 +1,17 @@
 // Practice runner launch. The fixtures are synthetic. They are not practice-set rows.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
   PRACTICE_AVA_CONFIG, applyPracticeTestLaunch, declaredLoaderMissing, declaredTypeScriptLoader, dependencyFingerprint,
-  ensurePracticeInstall, practiceSandboxReady, practiceTestLaunch, sandboxExtraEnv, tsconfigOmitsTest, visibleNodeBin,
+  ensurePracticeInstall, gradedLaunchMode, loaderFingerprintNote, loaderInstalled, practiceSandboxReady, practiceTestLaunch,
+  sandboxExtraEnv, tsconfigOmitsTest, visibleNodeBin,
 } from "../lib/practicemine.ts";
+import { runRecordedTest } from "../bin/practice-replay.ts";
 import { avaEarlyDetail, classifyRunnerOutput, loaderMissingDetail, runTestSpec, type SpecInput } from "../lib/testspec.ts";
 
 const SOURCE_ONLY = JSON.stringify({ compilerOptions: { strict: true }, include: ["source"] });
@@ -54,34 +57,45 @@ test("the declared loader is the one the ava config names, at the manifest range
 test("an overlaid test outside the tsconfig include is transpiled, and one inside it is not", () => {
   assert.equal(tsconfigOmitsTest(SOURCE_ONLY, "test/test.ts"), true);
   assert.equal(tsconfigOmitsTest('{\n\t"include": [\n\t\t"source",\n\t],\n}\n', "test/test.ts"), true);
+  assert.equal(tsconfigOmitsTest(JSON.stringify({ include: ["{src,test}/**/*.ts"] }), "test/t.ts"), false);
+  assert.equal(tsconfigOmitsTest(JSON.stringify({ extends: "@sindresorhus/tsconfig" }), "test/t.ts"), false);
   assert.equal(tsconfigOmitsTest(TEST_INCLUDED, "test/test.ts"), false);
   assert.equal(tsconfigOmitsTest(JSON.stringify({ files: ["source/index.ts"] }), "test/test.ts"), true);
   assert.equal(tsconfigOmitsTest("{}", "test/test.ts"), false);
-  const outside = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: AVA3, tsconfig: SOURCE_ONLY });
+  const outside = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: AVA3, tsconfig: SOURCE_ONLY, mode: "relaxed" });
   assert.equal(outside.env.TS_NODE_TRANSPILE_ONLY, "true");
   assert.deepEqual(outside.cmd.slice(0, 3), ["./node_modules/.bin/ava", "--config", PRACTICE_AVA_CONFIG]);
   assert.equal(outside.cmd.at(-1), "test/test.ts");
   assert.match(outside.configText ?? "", /ts-node\/register/);
   assert.doesNotMatch(outside.configText ?? "", /TSIMP_DIAG/);
-  const inside = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: AVA3, tsconfig: TEST_INCLUDED });
+  const inside = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: AVA3, tsconfig: TEST_INCLUDED, mode: "relaxed" });
   assert.equal(inside.env.TS_NODE_TRANSPILE_ONLY, undefined);
-  const already = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: LOADER, tsconfig: TRANSPILE });
+  const checked = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: AVA3, tsconfig: SOURCE_ONLY, mode: "typecheck" });
+  assert.deepEqual(checked.env, {});
+  assert.equal(checked.configText, null);
+  assert.deepEqual(checked.cmd, ["./node_modules/.bin/ava", "test/test.ts"]);
+  assert.equal(gradedLaunchMode("after"), "typecheck");
+  assert.equal(gradedLaunchMode("before"), "relaxed");
+  const already = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: LOADER, tsconfig: TRANSPILE, mode: "relaxed" });
   assert.equal(already.env.TS_NODE_TRANSPILE_ONLY, "true");
 });
 
 test("tsimp diagnostics stay on when the test is in the tsconfig, and drop only for an omitted overlay", () => {
-  const omitted = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: TSIMP, tsconfig: SOURCE_ONLY });
+  const omitted = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: TSIMP, tsconfig: SOURCE_ONLY, mode: "relaxed" });
   assert.match(omitted.configText ?? "", /"TSIMP_DIAG":"ignore"/);
   assert.match(omitted.configText ?? "", /tsimp\/import/);
   assert.equal(omitted.env.TS_NODE_TRANSPILE_ONLY, undefined);
-  const covered = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: TSIMP, tsconfig: TEST_INCLUDED });
+  const covered = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: TSIMP, tsconfig: TEST_INCLUDED, mode: "relaxed" });
+  const typecheckTsimp = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: TSIMP, tsconfig: SOURCE_ONLY });
+  assert.equal(typecheckTsimp.configText, null);
+  assert.equal(typecheckTsimp.env.TSIMP_DIAG, undefined);
   assert.match(covered.configText ?? "", /"TSIMP_DIAG":"error"/);
   const fileWins = practiceTestLaunch({
-    command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: TSIMP, tsconfig: SOURCE_ONLY, avaConfigFile: true,
+    command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: TSIMP, tsconfig: SOURCE_ONLY, avaConfigFile: true, mode: "relaxed",
   });
   assert.equal(fileWins.configText, null);
   assert.deepEqual(fileWins.cmd, ["./node_modules/.bin/ava", "test/test.ts"]);
-  const plain = practiceTestLaunch({ command: ["node", "--test", "test/test.ts"], testFile: "test/test.ts", packageJson: AVA3, tsconfig: SOURCE_ONLY });
+  const plain = practiceTestLaunch({ command: ["node", "--test", "test/test.ts"], testFile: "test/test.ts", packageJson: AVA3, tsconfig: SOURCE_ONLY, mode: "relaxed" });
   assert.equal(plain.configText, null);
   assert.equal(plain.env.TS_NODE_TRANSPILE_ONLY, "true");
 });
@@ -118,7 +132,7 @@ test("a finished install without the declared ts-node is rebuilt, and the repair
   const cache = mkdtempSync(join(tmpdir(), "practice-loader-cache-"));
   const bin = mkdtempSync(join(tmpdir(), "practice-loader-bin-"));
   const log = join(cache, "npm-args");
-  writeFileSync(join(bin, "npm"), `#!/bin/sh\necho "$@" >> ${JSON.stringify(log)}\nif echo "$@" | grep -q 'ts-node@'; then mkdir -p node_modules/ts-node; echo '{"name":"ts-node"}' > node_modules/ts-node/package.json; exit 0; fi\nmkdir -p node_modules/ava\necho '{"name":"ava"}' > node_modules/ava/package.json\nexit 0\n`);
+  writeFileSync(join(bin, "npm"), `#!/bin/sh\necho "$@" >> ${JSON.stringify(log)}\nif echo "$@" | grep -q 'ts-node@'; then mkdir -p node_modules/ts-node; printf '%s\\n' '{"name":"ts-node","version":"8.10.2","main":"index.js"}' > node_modules/ts-node/package.json; printf '%s\\n' 'module.exports={}' > node_modules/ts-node/index.js; exit 0; fi\nmkdir -p node_modules/ava\nprintf '%s\\n' '{"name":"ava","main":"index.js"}' > node_modules/ava/package.json\nprintf '%s\\n' 'module.exports={}' > node_modules/ava/index.js\nexit 0\n`);
   spawnSync("chmod", ["+x", join(bin, "npm")], { stdio: "ignore" });
   spawnSync("ln", ["-s", node, join(bin, "node")], { stdio: "ignore" });
   const tool = { nodePath: join(bin, "node"), nodeVersion: "v22.23.4", manager: "npm" as const, managerVersion: "10.9.9" };
@@ -127,19 +141,32 @@ test("a finished install without the declared ts-node is rebuilt, and the repair
   spawnSync("git", ["-C", origin, "add", "package.json"], { stdio: "ignore" });
   spawnSync("git", ["-C", origin, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "init"], { stdio: "ignore" });
   const sha = spawnSync("git", ["-C", origin, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
-  const fingerprint = dependencyFingerprint(readFileSync(join(origin, "package.json"), "utf8"), "", tool);
+  const pkgText = readFileSync(join(origin, "package.json"), "utf8");
+  assert.equal(loaderFingerprintNote(pkgText), "ts-node@^8.3.0");
+  const fingerprint = dependencyFingerprint(pkgText, "", tool);
+  const bare = createHash("sha256").update("peaceai-practice-deps:v1\n").update("npm\0").update("10.9.9\0").update("v22.23.4\0").update(pkgText).update("\0").update("").update("\0").update("").digest("hex");
+  assert.notEqual(fingerprint, bare);
+  const noted = createHash("sha256").update("peaceai-practice-deps:v1\n").update("npm\0").update("10.9.9\0").update("v22.23.4\0").update(pkgText).update("\0").update("").update("\0").update("ts-node@^8.3.0").digest("hex");
+  assert.equal(fingerprint, noted);
   const stale = join(cache, "installs", fingerprint);
   mkdirSync(join(stale, "node_modules"), { recursive: true });
   writeFileSync(join(stale, ".practice-complete"), `${fingerprint}\n`);
   writeFileSync(join(stale, "node_modules", "stale"), "kept\n");
+  const homesBefore = new Set(readdirSync(tmpdir()).filter((name) => name.startsWith("peaceai-install-home-")));
   try {
     const installed = ensurePracticeInstall(origin, { repo: "example/loader", baseSha: sha, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false);
     assert.equal(installed.ok, true, installed.lines.join("\n"));
     assert.equal(existsSync(join(installed.modules ?? "", "ts-node", "package.json")), true);
     assert.equal(existsSync(join(installed.modules ?? "", "stale")), false);
     const args = readFileSync(log, "utf8");
-    assert.match(args, /ts-node@\^8\.3\.0/);
-    assert.doesNotMatch(args, /ts-node@latest/);
+    const repair = args.split("\n").find((line) => line.includes("ts-node@"));
+    assert.ok(repair, args);
+    assert.match(repair ?? "", /ts-node@\^8\.3\.0/);
+    assert.match(repair ?? "", /--ignore-scripts/);
+    assert.match(repair ?? "", /--no-save/);
+    assert.doesNotMatch(repair ?? "", /ts-node@latest/);
+    const leaked = readdirSync(tmpdir()).filter((name) => name.startsWith("peaceai-install-home-") && !homesBefore.has(name));
+    assert.deepEqual(leaked, []);
     const again = ensurePracticeInstall(origin, { repo: "example/loader", baseSha: sha, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false);
     assert.equal(again.ok, true);
     assert.equal(readFileSync(log, "utf8"), args);
@@ -187,7 +214,7 @@ test("the spec reports a missing declared loader and an ava early exit, and keep
       assert.equal(early.diagnostic.lines[0], "TypeError: Cannot read properties of undefined (reading emptyString)");
       assert.ok(early.diagnostic.lines.some((line) => line.includes("loader-transpile yes")));
     }
-    const applied = applyPracticeTestLaunch(root, ["./node_modules/.bin/ava", testFile], testFile);
+    const applied = applyPracticeTestLaunch(root, ["./node_modules/.bin/ava", testFile], testFile, "relaxed");
     assert.equal(readFileSync(join(root, PRACTICE_AVA_CONFIG), "utf8").includes("ts-node/register"), true);
     assert.equal(readFileSync(join(root, "package.json"), "utf8").includes("\"test\":\"xo && ava\""), true);
     assert.deepEqual(applied.cmd.slice(0, 3), ["./node_modules/.bin/ava", "--config", PRACTICE_AVA_CONFIG]);
@@ -200,5 +227,129 @@ test("the spec reports a missing declared loader and an ava early exit, and keep
     }
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a loader package.json with no resolvable entry is not installed", () => {
+  const dir = mkdtempSync(join(tmpdir(), "practice-loader-entry-"));
+  const pkg = join(dir, "node_modules", "ts-node");
+  mkdirSync(pkg, { recursive: true });
+  writeFileSync(join(pkg, "package.json"), "{\"name\":\"ts-node\",\"main\":\"dist/index.js\"}\n");
+  assert.equal(loaderInstalled(join(dir, "node_modules"), "ts-node"), false);
+  mkdirSync(join(pkg, "dist"), { recursive: true });
+  writeFileSync(join(pkg, "dist", "index.js"), "module.exports={}\n");
+  assert.equal(loaderInstalled(join(dir, "node_modules"), "ts-node"), true);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a live install stays in place while a missing loader is rebuilt beside it", async () => {
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const origin = mkdtempSync(join(tmpdir(), "practice-live-"));
+  const cache = mkdtempSync(join(tmpdir(), "practice-live-cache-"));
+  const bin = mkdtempSync(join(tmpdir(), "practice-live-bin-"));
+  const phase = join(cache, "phase");
+  const log = join(cache, "npm-args");
+  writeFileSync(join(bin, "npm"), `#!/bin/sh\necho start > ${JSON.stringify(phase)}\nsleep 0.4\necho "$@" >> ${JSON.stringify(log)}\nif echo "$@" | grep -q 'ts-node@'; then mkdir -p node_modules/ts-node; printf '%s\\n' '{"name":"ts-node","version":"8.10.2","main":"index.js"}' > node_modules/ts-node/package.json; printf '%s\\n' 'module.exports={}' > node_modules/ts-node/index.js; echo done > ${JSON.stringify(phase)}; exit 0; fi\nmkdir -p node_modules/ava\nprintf '%s\\n' '{"name":"ava","main":"index.js"}' > node_modules/ava/package.json\nprintf '%s\\n' 'module.exports={}' > node_modules/ava/index.js\necho done > ${JSON.stringify(phase)}\nexit 0\n`);
+  spawnSync("chmod", ["+x", join(bin, "npm")], { stdio: "ignore" });
+  spawnSync("ln", ["-s", node, join(bin, "node")], { stdio: "ignore" });
+  const tool = { nodePath: join(bin, "node"), nodeVersion: "v22.23.4", manager: "npm" as const, managerVersion: "10.9.9" };
+  spawnSync("git", ["init", "-q", origin], { stdio: "ignore" });
+  writeFileSync(join(origin, "package.json"), `${AVA3}\n`);
+  spawnSync("git", ["-C", origin, "add", "package.json"], { stdio: "ignore" });
+  spawnSync("git", ["-C", origin, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "init"], { stdio: "ignore" });
+  const sha = spawnSync("git", ["-C", origin, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+  const fingerprint = dependencyFingerprint(readFileSync(join(origin, "package.json"), "utf8"), "", tool);
+  const stale = join(cache, "installs", fingerprint);
+  mkdirSync(join(stale, "node_modules"), { recursive: true });
+  writeFileSync(join(stale, ".practice-complete"), `${fingerprint}\n`);
+  writeFileSync(join(stale, "node_modules", "kept"), "live\n");
+  const watch = join(cache, "watch");
+  const child = spawn(node, ["-e", `
+    const fs = require("fs");
+    const dest = process.argv[1];
+    const phase = process.argv[2];
+    const out = process.argv[3];
+    fs.writeFileSync(out, "watching\\n");
+    let gap = false;
+    let saw = false;
+    const end = Date.now() + 5000;
+    while (Date.now() < end) {
+      let text = "";
+      try { text = fs.readFileSync(phase, "utf8").trim(); } catch { text = ""; }
+      if (text === "start") {
+        saw = true;
+        if (!fs.existsSync(dest + "/node_modules/kept")) gap = true;
+      }
+      if (text === "done") break;
+    }
+    fs.appendFileSync(out, (gap ? "gap" : "held") + "\\n" + (saw ? "saw" : "missed") + "\\n");
+  `, stale, phase, watch], { stdio: "ignore" });
+  try {
+    const started = Date.now();
+    while (!existsSync(watch) && Date.now() - started < 2000) spawnSync("sleep", ["0.01"]);
+    const installed = ensurePracticeInstall(origin, { repo: "example/live", baseSha: sha, toolchain: tool }, cache, { npm: false, pnpm: false, yarn: false }, false);
+    assert.equal(installed.ok, true, installed.lines.join("\n"));
+    await new Promise((resolve) => child.on("exit", resolve));
+    const report = readFileSync(watch, "utf8");
+    assert.match(report, /saw/);
+    assert.match(report, /held/);
+    assert.doesNotMatch(report, /gap/);
+    assert.equal(existsSync(join(installed.modules ?? "", "ts-node", "index.js")), true);
+  } finally {
+    child.kill();
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(cache, { recursive: true, force: true });
+    rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test("a candidate with a type error does not pass-after", { timeout: 120_000 }, (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const root = mkdtempSync(join(tmpdir(), "practice-type-after-"));
+  const pkg = {
+    scripts: { test: "node -r ts-node/register test/t.ts" },
+    devDependencies: { "ts-node": "10.9.2", typescript: "5.4.5" },
+  };
+  writeFileSync(join(root, "package.json"), JSON.stringify(pkg) + "\n");
+  writeFileSync(join(root, "tsconfig.json"), JSON.stringify({
+    compilerOptions: { strict: true, esModuleInterop: true, module: "commonjs", moduleResolution: "node", target: "es2020", skipLibCheck: true },
+    include: ["src"],
+  }) + "\n");
+  mkdirSync(join(root, "src"), { recursive: true });
+  mkdirSync(join(root, "test"), { recursive: true });
+  writeFileSync(join(root, "src", "f.ts"), "export function f(a: number): number {\n  const bad: string = 1;\n  return a + 1;\n}\n");
+  writeFileSync(join(root, "test", "t.ts"), "import assert from \"node:assert/strict\";\nimport { f } from \"../src/f\";\nassert.equal(f(1), 2);\n");
+  const installed = spawnSync("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], {
+    cwd: root, encoding: "utf8", timeout: 90_000,
+  });
+  if (installed.status !== 0) { rmSync(root, { recursive: true, force: true }); assert.fail(installed.stderr || installed.stdout); }
+  const store = mkdtempSync(join(tmpdir(), "practice-type-modules-"));
+  rmSync(store, { recursive: true, force: true });
+  spawnSync("cp", ["-a", join(root, "node_modules"), store], { stdio: "ignore" });
+  rmSync(join(root, "package-lock.json"), { force: true });
+  spawnSync("git", ["init", "-q", root], { stdio: "ignore" });
+  spawnSync("git", ["-C", root, "add", "package.json", "tsconfig.json", "src/f.ts", "test/t.ts"], { stdio: "ignore" });
+  spawnSync("git", ["-C", root, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "base"], { stdio: "ignore" });
+  const restore = () => {
+    rmSync(join(root, "node_modules"), { recursive: true, force: true });
+    spawnSync("cp", ["-a", store, join(root, "node_modules")], { stdio: "ignore" });
+  };
+  const cmd = [join(root, "node_modules/.bin/ts-node"), "test/t.ts"];
+  const modules = join(root, "node_modules");
+  try {
+    restore();
+    const before = runRecordedTest(root, cmd, node, modules, "before", "test/t.ts");
+    assert.equal(before.blocked, false, "relaxed run was blocked");
+    assert.equal(before.code, 0, "relaxed launch hides TS2322 and the runtime assertion passes");
+    restore();
+    const after = runRecordedTest(root, cmd, node, modules, "after", "test/t.ts");
+    assert.equal(after.blocked, false, "type-checking run was blocked");
+    assert.notEqual(after.code, 0, "pass-after must type-check and fail on const bad: string = 1");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(store, { recursive: true, force: true });
   }
 });

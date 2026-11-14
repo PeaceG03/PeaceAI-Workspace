@@ -14,7 +14,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
-import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, applyPracticeTestLaunch, cloneCheckProblems, ensurePracticeInstall, isTestFile, materializeSolverTree, mergeCloneRootCollisions, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, processStartId, readPairFingerprint, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
+import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, applyPracticeTestLaunch, cloneCheckProblems, ensurePracticeInstall, gradedLaunchMode, isTestFile, materializeSolverTree, mergeCloneRootCollisions, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, processStartId, readPairFingerprint, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
 import {
   PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, targetIsScorable, writePracticeOutputs,
   type GradedRow, type Understanding,
@@ -242,8 +242,10 @@ function linkModules(modules: string, dir: string): void {
   spawnSync("ln", ["-s", modules, dest], { stdio: "ignore" });
 }
 
-function runTest(dir: string, cmd: string[], nodePath: string, modules: string): { code: number | null; blocked: boolean } {
-  const launch = applyPracticeTestLaunch(dir, cmd, [...cmd].reverse().find((part) => isTestFile(part)) ?? "");
+/** Fail-before may use the relaxed launch. Pass-after uses the repo's type-checking launch. */
+export function runRecordedTest(dir: string, cmd: string[], nodePath: string, modules: string, phase: "before" | "after", testFile?: string): { code: number | null; blocked: boolean } {
+  const file = testFile ?? [...cmd].reverse().find((part) => isTestFile(part)) ?? "";
+  const launch = applyPracticeTestLaunch(dir, cmd, file, gradedLaunchMode(phase));
   const before = poisonStamp(dir);
   const ran = runInPracticeSandbox(dir, launch.cmd, TEST_MS, { nodePath, nodeModules: modules, extraEnv: launch.env });
   const released = releaseWorktree(dir, before);
@@ -259,13 +261,13 @@ function gradeCandidate(repoDir: string, pair: PracticePair, diff: string, modul
     if (!existsSync(pair.toolchain.nodePath)) return { beforeExit: null, afterExit: null };
     linkModules(modules, dir);
     if (!writeCommitFile(repoDir, pair.fixSha, pair.testFile, dir)) return { beforeExit: null, afterExit: null };
-    const before = runTest(dir, pair.testCommand, pair.toolchain.nodePath, modules);
+    const before = runRecordedTest(dir, pair.testCommand, pair.toolchain.nodePath, modules, "before", pair.testFile);
     if (before.blocked) return { beforeExit: before.code, afterExit: null };
     linkModules(modules, dir);
     if (!writeCommitFile(repoDir, pair.fixSha, pair.testFile, dir)) return { beforeExit: before.code, afterExit: null };
     const applied = spawnSync("git", ["-C", dir, ...GIT_LOCK_ARGS, "apply", "--whitespace=nowarn", "-"], { input: diff, encoding: "utf8", env: practiceGitEnv(), stdio: ["pipe", "ignore", "ignore"] });
     if (applied.status !== 0) return { beforeExit: before.code, afterExit: null };
-    const after = runTest(dir, pair.testCommand, pair.toolchain.nodePath, modules);
+    const after = runRecordedTest(dir, pair.testCommand, pair.toolchain.nodePath, modules, "after", pair.testFile);
     if (after.blocked) return { beforeExit: before.code, afterExit: null };
     return { beforeExit: before.code, afterExit: after.code };
   } finally {
