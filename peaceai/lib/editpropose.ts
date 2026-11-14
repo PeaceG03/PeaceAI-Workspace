@@ -135,30 +135,102 @@ export const TEXT_REPAIR_LIMIT = 8;
 
 // Each stem's inflections share its line. Deleting the line drops that stem, including the form a test uses.
 const AIM_VERB_FORMS = [
-  "fix|fixes|fixed|fixing", // text-guard:verb-fix
-  "handle|handles|handled|handling", // text-guard:verb-handle
-  "correct|corrects|corrected|correcting", // text-guard:verb-correct
-  "support|supports|supported|supporting", // text-guard:verb-support
-  "add|adds|added|adding", // text-guard:verb-add
-  "implement|implements|implemented|implementing", // text-guard:verb-implement
-  "allow|allows|allowed|allowing", // text-guard:verb-allow
-  "enable|enables|enabled|enabling", // text-guard:verb-enable
-  "expose|exposes|exposed|exposing", // text-guard:verb-expose
-  "improve|improves|improved|improving", // text-guard:verb-improve
-  "update|updates|updated|updating", // text-guard:verb-update
-  "change|changes|changed|changing", // text-guard:verb-change
-  "include|includes|included|including", // text-guard:verb-include
-  "accept|accepts|accepted|accepting", // text-guard:verb-accept
-  "reject|rejects|rejected|rejecting", // text-guard:verb-reject
-  "drop|drops|dropped|dropping", // text-guard:verb-drop
-  "remove|removes|removed|removing", // text-guard:verb-remove
-  "wrap|wraps|wrapped|wrapping", // text-guard:verb-wrap
-  "default|defaults|defaulted|defaulting", // text-guard:verb-default
-  "guard|guards|guarded|guarding", // text-guard:verb-guard
-  "check|checks|checked|checking", // text-guard:verb-check
-  "validate|validates|validated|validating", // text-guard:verb-validate
-  "keep|keeps|kept|keeping", // text-guard:verb-keep
-  "make|makes|made|making", // text-guard:verb-make
+  "fix", // text-guard:verb-fix
+  "fixes", // text-guard:verb-fixes
+  "fixed", // text-guard:verb-fixed
+  "fixing", // text-guard:verb-fixing
+  "handle", // text-guard:verb-handle
+  "handles", // text-guard:verb-handles
+  "handled", // text-guard:verb-handled
+  "handling", // text-guard:verb-handling
+  "correct", // text-guard:verb-correct
+  "corrects", // text-guard:verb-corrects
+  "corrected", // text-guard:verb-corrected
+  "correcting", // text-guard:verb-correcting
+  "support", // text-guard:verb-support
+  "supports", // text-guard:verb-supports
+  "supported", // text-guard:verb-supported
+  "supporting", // text-guard:verb-supporting
+  "add", // text-guard:verb-add
+  "adds", // text-guard:verb-adds
+  "added", // text-guard:verb-added
+  "adding", // text-guard:verb-adding
+  "implement", // text-guard:verb-implement
+  "implements", // text-guard:verb-implements
+  "implemented", // text-guard:verb-implemented
+  "implementing", // text-guard:verb-implementing
+  "allow", // text-guard:verb-allow
+  "allows", // text-guard:verb-allows
+  "allowed", // text-guard:verb-allowed
+  "allowing", // text-guard:verb-allowing
+  "enable", // text-guard:verb-enable
+  "enables", // text-guard:verb-enables
+  "enabled", // text-guard:verb-enabled
+  "enabling", // text-guard:verb-enabling
+  "expose", // text-guard:verb-expose
+  "exposes", // text-guard:verb-exposes
+  "exposed", // text-guard:verb-exposed
+  "exposing", // text-guard:verb-exposing
+  "improve", // text-guard:verb-improve
+  "improves", // text-guard:verb-improves
+  "improved", // text-guard:verb-improved
+  "improving", // text-guard:verb-improving
+  "update", // text-guard:verb-update
+  "updates", // text-guard:verb-updates
+  "updated", // text-guard:verb-updated
+  "updating", // text-guard:verb-updating
+  "change", // text-guard:verb-change
+  "changes", // text-guard:verb-changes
+  "changed", // text-guard:verb-changed
+  "changing", // text-guard:verb-changing
+  "include", // text-guard:verb-include
+  "includes", // text-guard:verb-includes
+  "included", // text-guard:verb-included
+  "including", // text-guard:verb-including
+  "accept", // text-guard:verb-accept
+  "accepts", // text-guard:verb-accepts
+  "accepted", // text-guard:verb-accepted
+  "accepting", // text-guard:verb-accepting
+  "reject", // text-guard:verb-reject
+  "rejects", // text-guard:verb-rejects
+  "rejected", // text-guard:verb-rejected
+  "rejecting", // text-guard:verb-rejecting
+  "drop", // text-guard:verb-drop
+  "drops", // text-guard:verb-drops
+  "dropped", // text-guard:verb-dropped
+  "dropping", // text-guard:verb-dropping
+  "remove", // text-guard:verb-remove
+  "removes", // text-guard:verb-removes
+  "removed", // text-guard:verb-removed
+  "removing", // text-guard:verb-removing
+  "wrap", // text-guard:verb-wrap
+  "wraps", // text-guard:verb-wraps
+  "wrapped", // text-guard:verb-wrapped
+  "wrapping", // text-guard:verb-wrapping
+  "default", // text-guard:verb-default
+  "defaults", // text-guard:verb-defaults
+  "defaulted", // text-guard:verb-defaulted
+  "defaulting", // text-guard:verb-defaulting
+  "guard", // text-guard:verb-guard
+  "guards", // text-guard:verb-guards
+  "guarded", // text-guard:verb-guarded
+  "guarding", // text-guard:verb-guarding
+  "check", // text-guard:verb-check
+  "checks", // text-guard:verb-checks
+  "checked", // text-guard:verb-checked
+  "checking", // text-guard:verb-checking
+  "validate", // text-guard:verb-validate
+  "validates", // text-guard:verb-validates
+  "validated", // text-guard:verb-validated
+  "validating", // text-guard:verb-validating
+  "keep", // text-guard:verb-keep
+  "keeps", // text-guard:verb-keeps
+  "kept", // text-guard:verb-kept
+  "keeping", // text-guard:verb-keeping
+  "make", // text-guard:verb-make
+  "makes", // text-guard:verb-makes
+  "made", // text-guard:verb-made
+  "making", // text-guard:verb-making
 ];
 const AIM_VERBS = AIM_VERB_FORMS.join("|");
 const AIM_VERB = new RegExp(String.raw`\b(?:please |can you |could you |we need to )?(?<verb>${AIM_VERBS})\b`, "i");
@@ -217,7 +289,7 @@ const MEMBER_EXT = new Set(["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts"
 
 export interface EditAim { symbols: string[]; via: "verb" | "lead" }
 
-/** Dotted names in a sentence: `oven.rack`, and a call with no receiver (`.is()`). A filename extension is not a member. */
+/** Dotted names in a sentence: `kiln.door`, and a call with no receiver (`.ready()`). A filename extension, a call (`path.join()`), the abbreviations `e.g.` and `i.e.`, and a version token (`v18.x`, `v1.2`) are not members. `etc.` is a word and a period, so it is not a dotted name. */
 function memberRefs(region: string): string[] {
   const out: string[] = [];
   const add = (path: string) => { if (path.length <= 80 && !out.includes(path)) out.push(path); };
@@ -228,7 +300,10 @@ function memberRefs(region: string): string[] {
     if (MEMBER_EXT.has(m[3]!)) continue; // text-guard:member-ext
     const after = region[m.index + m[0].length];
     if (after === "(") continue; // text-guard:member-call
-    add(`${m[2]}.${m[3]}`);
+    const pair = `${m[2]}.${m[3]}`;
+    if (/^(?:e\.g|i\.e)$/i.test(pair)) continue; // text-guard:member-abbrev
+    if (/^v\d+\.(?:x|\d+)$/i.test(pair)) continue; // text-guard:member-version
+    add(pair);
   }
   for (const m of region.matchAll(/(^|[^A-Za-z0-9_$])\.([A-Za-z_$][\w$]{0,})\s*\(/g)) if (m[2]) add(`.${m[2]}`);
   return out;
@@ -276,6 +351,7 @@ function aimObject(region: string, symbols: string[]): void {
   for (const w of prose.matchAll(/[A-Za-z_$][\w$]*/g)) {
     if (aimCodeName(w[0]) || w[0].length < 3 || AIM_META.has(w[0].toLowerCase())) continue; // text-guard:meta
     if (AIM_GENERIC.has(w[0].toLowerCase())) continue; // text-guard:generic-object
+    if (/^v\d+$/i.test(w[0])) continue; // text-guard:version-word
     parts.push(w[0]);
   }
   if (parts.length >= 2) {
@@ -1229,7 +1305,35 @@ function isOwnAliasInit(expr: ts.Expression): boolean {
 function aliasScope(node: ts.Node): ts.Node {
   let parent = node.parent;
   while (parent && !ts.isFunctionLike(parent) && !ts.isSourceFile(parent)) parent = parent.parent;
+  let block: ts.Node | undefined = node;
+  while (block && !ts.isBlock(block) && !ts.isSourceFile(block) && !ts.isCaseClause(block) && !ts.isModuleBlock(block)) block = block.parent;
+  if (block) parent = block; // cap-guard:own-alias-block
   return parent ?? node;
+}
+
+function scopeDistance(scope: ts.Node, at: ts.Node): number | null {
+  let depth = 0;
+  for (let parent: ts.Node | undefined = at; parent; parent = parent.parent) {
+    if (parent === scope) return depth;
+    depth++;
+  }
+  return null;
+}
+
+/** A later `name = …` before the use means the binding is no longer the own-property function. */
+function rebound(decl: ts.VariableDeclaration, at: ts.Node, sf: ts.SourceFile): boolean {
+  if (!ts.isIdentifier(decl.name)) return false;
+  const name = decl.name.text;
+  let hit = false;
+  const visit = (n: ts.Node) => {
+    if (hit || n === decl) return;
+    const start = n.getStart(sf);
+    if (start < decl.getEnd() || start >= at.getStart(sf)) { ts.forEachChild(n, visit); return; }
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(n.left) && n.left.text === name && !isOwnAliasInit(n.right)) hit = true;
+    else ts.forEachChild(n, visit);
+  };
+  visit(aliasScope(decl));
+  return hit;
 }
 
 function aliasVisible(decl: ts.Node, at: ts.Node, sf: ts.SourceFile): boolean {
@@ -1240,12 +1344,29 @@ function aliasVisible(decl: ts.Node, at: ts.Node, sf: ts.SourceFile): boolean {
 }
 
 function ownAliasNames(sf: ts.SourceFile, at: ts.Node): Set<string> {
-  const names = new Set<string>();
+  const found: { name: string; decl: ts.VariableDeclaration; dist: number; own: boolean }[] = [];
   const visit = (node: ts.Node) => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isOwnAliasInit(node.initializer) && aliasVisible(node, at, sf)) names.add(node.name.text);
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && aliasVisible(node, at, sf)) {
+      const dist = scopeDistance(aliasScope(node), at);
+      if (dist !== null) found.push({ name: node.name.text, decl: node, dist, own: isOwnAliasInit(node.initializer) });
+    }
     ts.forEachChild(node, visit);
   };
   visit(sf);
+  const best = new Map<string, { decl: ts.VariableDeclaration; dist: number; own: boolean }>();
+  for (const item of found) {
+    const prev = best.get(item.name);
+    let take = !prev;
+    if (prev && item.dist < prev.dist) take = true; // cap-guard:own-alias-shadow
+    if (take) best.set(item.name, item);
+  }
+  const names = new Set<string>();
+  for (const [name, info] of best) {
+    if (!info.own) continue;
+    let live = true;
+    if (rebound(info.decl, at, sf)) live = false; // cap-guard:own-alias-reassign
+    if (live) names.add(name);
+  }
   return names;
 }
 

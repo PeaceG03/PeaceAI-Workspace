@@ -48,6 +48,31 @@ const optional = [
   "  return total;",
   "}",
 ].join("\n");
+const sibling = [
+  "export function counted(bins: Record<string, number>): number {",
+  "  if (bins) { const has = Object.hasOwn; void has; }",
+  "  let total = 0;",
+  "  for (const label in bins) { if (!has(bins, label)) continue; total += bins[label] ?? 0; }",
+  "  return total;",
+  "}",
+].join("\n");
+const shadow = [
+  "export function counted(bins: Record<string, number>): number {",
+  "  const has = Object.hasOwn;",
+  "  let total = 0;",
+  "  { const has = Object.keys; for (const label in bins) { if (!has(bins, label)) continue; total += bins[label] ?? 0; } }",
+  "  return total;",
+  "}",
+].join("\n");
+const rebound = [
+  "export function counted(bins: Record<string, number>): number {",
+  "  let has = Object.hasOwn;",
+  "  has = Object.keys;",
+  "  let total = 0;",
+  "  for (const label in bins) { if (!has(bins, label)) continue; total += bins[label] ?? 0; }",
+  "  return total;",
+  "}",
+].join("\n");
 const optionalProto = [
   "export function counted(bins: Record<string, number>): number {",
   "  const has = Object?.prototype.hasOwnProperty;",
@@ -85,6 +110,9 @@ if (suite === "propose") {
   check("own-alias-scope", () => { assert.equal(ownHits(direct).length, 0); });
   check("own-alias-optional", () => { assert.equal(ownHits(optional).length, 1); });
   check("own-alias-optional-proto", () => { assert.equal(ownHits(optionalProto).length, 1); });
+  check("own-alias-block", () => { assert.equal(ownHits(sibling).length, 1); });
+  check("own-alias-shadow", () => { assert.equal(ownHits(shadow).length, 1); });
+  check("own-alias-reassign", () => { assert.equal(ownHits(rebound).length, 1); });
   check("bundle-max", () => {
     const five = loops(5);
     const queued = mod.repairCandidates([{ path: "src/tally.ts", name: "tally", start: 0, end: five.length, tier: 0 }], new Map([["src/tally.ts", five]]), new Set(), true);
@@ -96,10 +124,10 @@ if (suite === "spec") {
   const titles = ["  ✖ rejects an empty crate", "  ✖ ships a crate twice", "  ✘ [fail]: pads a label"].join("\n");
   check("ava-cross", () => { assert.deepEqual(mod.failingTestNames(titles), ["pads a label", "rejects an empty crate", "ships a crate twice"]); });
   check("ava-fail", () => { assert.deepEqual(mod.failingTestNames("  ✘ [fail]: rejects an empty crate"), ["rejects an empty crate"]); });
-  check("ava-summary-count", () => { assert.equal(mod.failingTestNames("2 tests failed").includes("2 tests failed"), false); });
-  check("ava-summary-one", () => { assert.equal(mod.failingTestNames("1 test failed").includes("1 test failed"), false); });
-  check("ava-banner", () => { assert.deepEqual(mod.failingTestNames("✖ test/crate.ts exited with a non-zero exit code: 1"), []); });
-  check("ava-banner-error", () => { assert.deepEqual(mod.failingTestNames("✖ test/crate.ts exited due to an error:"), []); });
+  check("ava-summary-count", () => { assert.deepEqual(mod.failingTestNames("  ✘ [fail]: 2 tests failed"), []); });
+  check("ava-summary-one", () => { assert.deepEqual(mod.failingTestNames("  ✘ [fail]: 1 test failed"), []); });
+  check("ava-banner", () => { assert.deepEqual(mod.failingTestNames("  ✘ [fail]: test/pad.ts exited with a non-zero exit code: 1"), []); });
+  check("ava-banner-error", () => { assert.deepEqual(mod.failingTestNames("  ✘ [fail]: test/pad.ts exited due to an error:"), []); });
 }
 
 process.stdout.write(JSON.stringify({ failed, crashed }) + "\n");
