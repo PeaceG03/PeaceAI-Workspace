@@ -43,6 +43,20 @@ export const CASES: Case[] = [
   { id: "meta-option", run(l) { assert.equal(l.prop.editAim("add option"), null); } },
   { id: "symptom", run(l) { assert.deepEqual(l.prop.editAim("debounce fires twice on the trailing edge")?.symbols, ["debounce"]); } },
   { id: "symptom-subject", run(l) { assert.deepEqual(l.prop.editAim("`parseDate` returns wrong offset for zoneId")?.symbols, ["parseDate"]); } },
+  { id: "symptom-throws", run(l) { assert.deepEqual(l.prop.editAim("decodeFrame throws on a short buffer")?.symbols, ["decodeFrame"]); } },
+  { id: "symptom-runs", run(l) { assert.deepEqual(l.prop.editAim("useEffect runs twice in Strict Mode")?.symbols, ["useEffect"]); } },
+  { id: "symptom-sends", run(l) {
+    const got = l.prop.editAim("Server sends duplicate headers when gzip wraps the body");
+    assert.deepEqual(got?.symbols, ["Server"]);
+    assert.notEqual(got?.symbols.join(""), "ServerSendsDuplicateHeadersGzip");
+  } },
+  { id: "symptom-run", run(l) { assert.deepEqual(l.prop.editAim("loader run before the build")?.symbols, ["loader"]); } },
+  { id: "verb-clause", run(l) { assert.deepEqual(l.prop.editAim("Server sends duplicate headers when gzip wraps the body")?.symbols, ["Server"]); } },
+  { id: "fronted-clause", run(l) { assert.deepEqual(l.prop.editAim("When the buffer is short, fix the parser")?.symbols, ["parser"]); } },
+  { id: "generic-object", run(l) { assert.equal(l.prop.editAim("Make it faster"), null); } },
+  { id: "generic-clearer", run(l) { assert.equal(l.prop.editAim("Make them clearer"), null); } },
+  { id: "complement-use", run(l) { assert.deepEqual(l.prop.editAim("Make the retry budget use jitter")?.symbols, ["retryBudget"]); } },
+  { id: "complement-return", run(l) { assert.deepEqual(l.prop.editAim("Make the parser return zero")?.symbols, ["parser"]); } },
   { id: "noun-phrase", run(l) { assert.deepEqual(l.prop.editAim("Make the cache eviction respect TTL")?.symbols, ["cacheEviction"]); } },
   { id: "make-object", run(l) { assert.deepEqual(l.prop.editAim("Make the cache eviction respect TTL")?.symbols, ["cacheEviction"]); } },
   { id: "plain-with-code", run(l) { assert.deepEqual(l.prop.editAim("handle foldDough tonight")?.symbols, ["foldDough"]); } },

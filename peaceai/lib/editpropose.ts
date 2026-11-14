@@ -107,15 +107,17 @@ export function namedSymbols(text: string): string[] {
 // - Edit verbs are the ordinary imperatives a commit uses to ask for a change (fix, handle, add,
 //   support, make, ...) plus their regular inflections. "make" is the causative ("make X do Y").
 //   "give" is not an edit verb: it names a recipient or a result ("give users an error").
-// - Symptom verbs are the ordinary verbs a bug title uses for what the code already does
-//   (returns, fires, throws, runs, ...). The symbol is the subject of that verb, which is the
-//   thing that misbehaves. Later names are the symptom's detail, not extra targets.
-// - "when" and "if" are the two English words that start a condition. Both end the object.
-// - After "make", a bare infinitive (respect, return, use, ...) starts the desired behavior,
-//   so the object is the noun phrase before it. Two plain words in that phrase are one camelCase
-//   name, the way TypeScript names a function ("cache eviction" → cacheEviction).
-// - Words that are never a target: English function words, TypeScript keywords, and generic roles
-//   (option, flag, helper, function). A plain word is kept only when one source file defines it.
+// - Symptom verbs are the bug-title verbs this reader tests: returns, fires, throws, runs, sends, run.
+//   Untested synonyms were removed so a deleted word cannot hide. The symbol is the subject of that
+//   verb. A verb inside a when/if clause is not the edit verb, so the condition is not joined into
+//   a camelCase name.
+// - "when" and "if" both start a condition. A fronted "when/if …," clause is dropped first.
+// - After "make", the tested bare infinitives are respect, return, and use. They start the desired
+//   behavior, so the object is the noun phrase before them ("cache eviction" → cacheEviction).
+// - Pronouns and the tested degree adjectives faster and clearer are not objects. Other
+//   adjectives are not listed, because an untested word would survive a deletion.
+// - A plain word, including a single capitalized word such as Docs, is kept only when one source
+//   file defines it. A code-shaped name may be defined in several files.
 // Thanks, questions, and renames are not body repairs.
 
 export const TEXT_REPAIR_REASONS = ["CANT_DO_YET_NO_EDIT", "CANT_DO_YET_EDIT_UNSPECIFIED", "CANT_DO_YET_ADD_UNSPECIFIED", "CANT_DO_YET_NOT_A_FAMILY"] as const;
@@ -124,14 +126,30 @@ export const TEXT_REPAIR_LIMIT = 8;
 
 const AIM_VERBS = "fix|fixes|fixed|fixing|handle|handles|handled|handling|correct|corrects|corrected|correcting|support|supports|supported|supporting|add|adds|added|adding|implement|implements|implemented|implementing|allow|allows|allowed|allowing|enable|enables|enabled|enabling|expose|exposes|exposed|exposing|improve|improves|improved|improving|update|updates|updated|updating|change|changes|changed|changing|include|includes|included|including|accept|accepts|accepted|accepting|reject|rejects|rejected|rejecting|drop|drops|dropped|dropping|remove|removes|removed|removing|wrap|wraps|wrapped|wrapping|default|defaults|defaulted|defaulting|guard|guards|guarded|guarding|check|checks|checked|checking|validate|validates|validated|validating|keep|keeps|kept|keeping|make|makes|made|making";
 const AIM_VERB = new RegExp(String.raw`\b(?:please |can you |could you |we need to )?(?<verb>${AIM_VERBS})\b`, "i");
-const AIM_SYMPTOM = /\b(?:returns|return|fires|fire|throws|throw|runs|run|sends|send|emits|emit|yields|yield|crashes|crash|hangs|hang|leaks|leak|ignores|ignore)\b/i;
-const AIM_COMPLEMENT = /\b(?:respect|honor|honour|follow|preserve|keep|use|include|ignore|return|throw|fire|run|send|emit|call|apply|match|avoid|treat|remain|stay)\b/i;
+// Each word is one line so a deletion is a mutant. Longer forms are joined first so `return` does not eat `returns`.
+const AIM_SYMPTOM_WORDS = [
+  "returns", // text-guard:symptom-returns
+  "fires", // text-guard:symptom-fires
+  "throws", // text-guard:symptom-throws
+  "runs", // text-guard:symptom-runs
+  "sends", // text-guard:symptom-sends
+  "run", // text-guard:symptom-run
+];
+const AIM_COMPLEMENT_WORDS = [
+  "respect", // text-guard:complement-respect
+  "return", // text-guard:complement-return
+  "use", // text-guard:complement-use
+];
+const aimAlt = (words: readonly string[]) => [...words].sort((a, b) => b.length - a.length).join("|");
+const AIM_SYMPTOM = new RegExp(String.raw`\b(?:${aimAlt(AIM_SYMPTOM_WORDS)})\b`, "i");
+const AIM_COMPLEMENT = new RegExp(String.raw`\b(?:${aimAlt(AIM_COMPLEMENT_WORDS)})\b`, "i");
 const AIM_THANKS = /^(?:thanks|thank you|lgtm|nit|wip)\b/i;
 const AIM_QUESTION = /\?\s*$/;
-const AIM_FUNCTION = "a an the this that these those it its we you our their to of in for and or with from on by is are be was were been being not as into please can could should must would will than too very just more most only same other whole such per via without within about between over under after before so then also if when";
+const AIM_FUNCTION = "a an the this that these those it its them they him her us me we you our their to of in for and or with from on by is are be was were been being not as into please can could should must would will than too very just more most only same other whole such per via without within about between over under after before so then also if when";
+const AIM_GENERIC = new Set(["faster", "clearer"]);
 const AIM_TS = "function functions method methods class classes type types interface const let var return export import async await null undefined true false string strings number boolean object objects array arrays promise void any unknown never new typeof instanceof case cases";
 const AIM_ROLE = "option options flag flags setting settings helper helpers property properties field fields value values parameter parameters argument arguments error errors bug bugs test tests module modules file files empty blank whitespace missing new existing default";
-const AIM_META = new Set(`${AIM_FUNCTION} ${AIM_TS} ${AIM_ROLE} ${AIM_VERBS.replaceAll("|", " ")} returns return fires fire throws throw runs run sends send emits emit yields yield crashes crash hangs hang leaks leak ignores ignore respect honor honour follow preserve use call apply match avoid treat remain stay`.split(/\s+/));
+const AIM_META = new Set(`${AIM_FUNCTION} ${AIM_TS} ${AIM_ROLE} ${AIM_VERBS.replaceAll("|", " ")} ${AIM_SYMPTOM_WORDS.join(" ")} ${AIM_COMPLEMENT_WORDS.join(" ")}`.split(/\s+/));
 const AIM_SOURCE = /\.(?:ts|tsx|mts|cts)$/;
 
 export interface EditAim { symbols: string[]; via: "verb" | "lead" }
@@ -171,6 +189,7 @@ function aimObject(region: string, symbols: string[]): void {
   const parts: string[] = [];
   for (const w of prose.matchAll(/[A-Za-z_$][\w$]*/g)) {
     if (aimCodeName(w[0]) || w[0].length < 3 || AIM_META.has(w[0].toLowerCase())) continue; // text-guard:meta
+    if (AIM_GENERIC.has(w[0].toLowerCase())) continue; // text-guard:generic-object
     parts.push(w[0]);
   }
   if (parts.length >= 2) {
@@ -185,21 +204,30 @@ function aimObject(region: string, symbols: string[]): void {
  * `verb`: an edit imperative, and the names in its object (before when/if, and before a
  * complement after "make"). `lead`: the subject of a symptom verb (returns, fires, throws, ...).
  */
+/** The clause that can name an edit. A leading "when"/"if" clause is dropped through its comma, then the
+ * rest is cut at the next "when" or "if". A verb inside that condition is not the edit verb. */
+function aimClause(source: string): string {
+  let boundarySrc = "when";
+  boundarySrc = "when|if"; // text-guard:if-boundary
+  const boundary = new RegExp(String.raw`\b(?:${boundarySrc})\b`, "i");
+  let clause = source;
+  clause = source.replace(/^(?:when|if)\b[^,]*,\s*/i, ""); // text-guard:fronted-clause
+  const at = clause.search(boundary);
+  if (at >= 0) clause = clause.slice(0, at); // text-guard:verb-clause
+  return clause;
+}
+
 export function editAim(text: string): EditAim | null {
   const source = aimSource(text);
   if (!source) return null;
   if (AIM_THANKS.test(source)) return null; // text-guard:thanks
   if (AIM_QUESTION.test(source)) return null; // text-guard:question
   if (/\brenam(?:e|ed|ing)\b/i.test(source) && /\bto\b/i.test(source)) return null; // text-guard:rename
+  const clause = aimClause(source);
   let verb: RegExpExecArray | null = null;
-  verb = AIM_VERB.exec(source); // text-guard:verb
+  verb = AIM_VERB.exec(clause); // text-guard:verb
   if (verb) {
-    let region = source;
-    const rest = source.slice(verb.index + verb[0].length);
-    let boundarySrc = "when";
-    boundarySrc = "when|if"; // text-guard:if-boundary
-    const boundary = new RegExp(String.raw`\b(?:${boundarySrc})\b`, "i").exec(rest);
-    if (boundary) region = source.slice(0, verb.index + verb[0].length + boundary.index); // text-guard:when-object
+    let region = clause;
     if (/^mak(?:e|es|ed|ing)$/i.test(verb.groups?.verb ?? "")) {
       const after = region.slice(verb.index + verb[0].length);
       const complement = AIM_COMPLEMENT.exec(after);
@@ -210,17 +238,18 @@ export function editAim(text: string): EditAim | null {
     return symbols.length ? { symbols, via: "verb" } : null;
   }
   let symptom: RegExpExecArray | null = null;
-  symptom = AIM_SYMPTOM.exec(source); // text-guard:symptom
+  symptom = AIM_SYMPTOM.exec(clause); // text-guard:symptom
   if (!symptom) return null;
-  let window = source;
-  window = source.slice(0, symptom.index); // text-guard:symptom-subject
-  const prev = aimWords(window).filter((w) => w.length >= 2 && !AIM_META.has(w.toLowerCase()));
+  let window = clause;
+  window = clause.slice(0, symptom.index); // text-guard:symptom-subject
+  const prev = aimWords(window).filter((w) => w.length >= 2 && !AIM_META.has(w.toLowerCase()) && !AIM_GENERIC.has(w.toLowerCase()));
   const subject = prev.at(-1);
   if (!subject) return null;
   return { symbols: [subject], via: "lead" };
 }
 
-/** Keep a code-shaped name even when several files define it. Keep a plain name only when one source file defines it. */
+/** A code-shaped name is kept even when several files define it. A plain name, including one capitalized
+ * word (Docs, Server), is kept only when exactly one non-test source defines it. */
 export function resolvableSymbols(search: CodeRepo, symbols: readonly string[]): string[] {
   const out: string[] = [];
   for (const name of symbols) {
@@ -1024,6 +1053,48 @@ function undefinedKeepsKey(n: ts.Node, sf: ts.SourceFile): string | null {
 const srcOf = (sf: ts.SourceFile, n: ts.Node): string => sf.text.slice(n.getStart(sf), n.getEnd());
 
 /** A call that already asks whether a property is the object's own. */
+function isOwnAliasInit(expr: ts.Expression): boolean {
+  if (!ts.isPropertyAccessExpression(expr) || expr.questionDotToken) return false;
+  if (expr.name.text === "hasOwn" && ts.isIdentifier(expr.expression) && expr.expression.text === "Object") return true;
+  if (expr.name.text !== "hasOwnProperty") return false;
+  const mid = expr.expression;
+  if (!ts.isPropertyAccessExpression(mid) || mid.questionDotToken || mid.name.text !== "prototype" || !ts.isIdentifier(mid.expression) || mid.expression.text !== "Object") return false;
+  return true; // cap-guard:own-alias-init
+}
+
+function aliasScope(node: ts.Node): ts.Node {
+  let parent = node.parent;
+  while (parent && !ts.isFunctionLike(parent) && !ts.isSourceFile(parent)) parent = parent.parent;
+  return parent ?? node;
+}
+
+function aliasVisible(decl: ts.Node, at: ts.Node, sf: ts.SourceFile): boolean {
+  if (decl.getEnd() > at.getStart(sf)) return false;
+  const scope = aliasScope(decl);
+  for (let parent: ts.Node | undefined = at; parent; parent = parent.parent) if (parent === scope) return true;
+  return false;
+}
+
+function ownAliasNames(sf: ts.SourceFile, at: ts.Node): Set<string> {
+  const names = new Set<string>();
+  const visit = (node: ts.Node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isOwnAliasInit(node.initializer) && aliasVisible(node, at, sf)) names.add(node.name.text);
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return names;
+}
+
+function isAliasedOwnCall(call: ts.CallExpression, aliases: ReadonlySet<string>): boolean {
+  if (aliases.size === 0) return false;
+  const expr = call.expression;
+  let hit = false;
+  if (ts.isIdentifier(expr) && aliases.has(expr.text)) hit = true;
+  if (ts.isPropertyAccessExpression(expr) && expr.name.text === "call" && ts.isIdentifier(expr.expression) && aliases.has(expr.expression.text)) hit = true;
+  if (!hit) return false;
+  return true; // cap-guard:own-alias-use
+}
+
 function isOwnProbe(expr: ts.Node): boolean {
   if (ts.isPropertyAccessExpression(expr) && expr.name.text === "hasOwnProperty") return true; // cap-guard:own-hasown
   if (ts.isPropertyAccessExpression(expr) && expr.name.text === "hasOwn" && ts.isIdentifier(expr.expression) && expr.expression.text === "Object") return true; // cap-guard:own-object-hasown
@@ -1037,12 +1108,12 @@ function isOwnProbe(expr: ts.Node): boolean {
 }
 
 /** True when the loop body already skips inherited names. A nested function does not count. */
-function ownPropertyGuard(stmt: ts.Node): boolean {
+function ownPropertyGuard(stmt: ts.Node, aliases: ReadonlySet<string>): boolean {
   let found = false;
   const walk = (node: ts.Node, top: boolean): void => {
     if (found) return;
     if (!top && (ts.isFunctionLike(node) || ts.isClassLike(node))) return; // cap-guard:own-nested
-    if (ts.isCallExpression(node) && isOwnProbe(node.expression)) found = true;
+    if (ts.isCallExpression(node) && (isOwnProbe(node.expression) || isAliasedOwnCall(node, aliases))) found = true;
     else ts.forEachChild(node, (child) => walk(child, false));
   };
   walk(stmt, true);
@@ -1052,7 +1123,8 @@ function ownPropertyGuard(stmt: ts.Node): boolean {
 /**
  * own-keys: `for (k in obj)` also visits enumerable names inherited from the prototype.
  * Insert an own-property guard. The loop variable and the body stay. A loop that already
- * calls `hasOwnProperty`, `Object.hasOwn`, or `Object.prototype.hasOwnProperty.call` is left alone.
+ * calls `hasOwnProperty`, `Object.hasOwn`, `Object.prototype.hasOwnProperty.call`, or a same-scope
+ * alias of those two values, is left alone. An alias of a different function is not a guard.
  */
 function ownKeys(n: ts.Node, sf: ts.SourceFile): string | null {
   if (!ts.isForInStatement(n)) return null; // cap-guard:own-forin
@@ -1071,7 +1143,7 @@ function ownKeys(n: ts.Node, sf: ts.SourceFile): string | null {
     binding = key;
   } else return null;
   if (!plainRef(n.expression)) return null; // cap-guard:own-ref
-  if (ownPropertyGuard(n.statement)) return null; // cap-guard:own-guarded
+  if (ownPropertyGuard(n.statement, ownAliasNames(sf, n))) return null; // cap-guard:own-guarded
   const obj = srcOf(sf, n.expression);
   const guard = `if (!Object.hasOwn(${obj}, ${key})) continue;`;
   const stmt = n.statement;
@@ -1103,7 +1175,9 @@ function enumValues(n: ts.Node, sf: ts.SourceFile): string | null {
   const e = srcOf(sf, target);
   const v = srcOf(sf, item);
   const box = `(${e} as Record<PropertyKey, unknown>)`;
-  return `Object.values(${e}).filter((member) => typeof member !== "string" || typeof ${box}[member] !== "number" || ${box}[${box}[member] as PropertyKey] !== member).includes(${v})`;
+  let roundTrip = "false";
+  roundTrip = `${box}[${box}[member] as PropertyKey] !== member`; // cap-guard:enum-roundtrip
+  return `Object.values(${e}).filter((member) => typeof member !== "string" || typeof ${box}[member] !== "number" || ${roundTrip}).includes(${v})`;
 }
 
 /** M168: every idiom candidate inside one site (no I/O); repair-v2 only. */
@@ -1503,7 +1577,8 @@ function idiomBundles(all: readonly Mutation[], files: ReadonlyMap<string, strin
   const out: Candidate[] = [];
   for (const template of BUNDLE_IDIOMS) {
     const group = all.filter((m) => m.template === template);
-    if (group.length < 2 || group.length > 4) continue; // cap-guard:bundle-size
+    if (group.length < 2) continue;
+    if (group.length > 4) continue; // cap-guard:bundle-max
     const disjoint: Mutation[] = [];
     for (const m of group) {
       if (disjoint.some((d) => overlaps(d, m))) continue; // cap-guard:bundle-overlap

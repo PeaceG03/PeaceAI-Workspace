@@ -310,12 +310,22 @@ export function expectationsIn(testFile: string, text: string, sourcePattern: st
   return out;
 }
 
-/** Names of the tests the runner reported as failed. Only the runner's own labels, capped. */
+/** Names of the tests the runner reported as failed. Only the runner's own labels, capped.
+ * Ava's default reporter marks a failed test with ✖ and the title. The summary ("2 tests failed")
+ * and the worker-exit banner are not titles. */
 export function failingTestNames(output: string): string[] {
   const names: string[] = [];
   for (const match of output.matchAll(/^not ok \d+ - (.+)$/gm)) names.push(match[1]!.trim());
   for (const match of output.matchAll(/^✘ \[fail\]: (.+)$/gm)) names.push(match[1]!.trim());
   for (const match of output.matchAll(/^FAIL\s+\S+\s+>\s+(.+)$/gm)) names.push(match[1]!.trim());
+  let avaCross: RegExp | null = null;
+  avaCross = /^[ \t]*✖[ \t]+(.+)$/gm; // spec-guard:ava-cross
+  if (avaCross) for (const match of output.matchAll(avaCross)) {
+    const title = match[1]!.trim();
+    if (/^(?:\d+ )?tests? failed\b/.test(title)) continue; // spec-guard:ava-summary
+    if (/\bexited (?:due to an error|with a non-zero exit code)\b/.test(title)) continue; // spec-guard:ava-banner
+    names.push(title);
+  }
   return [...new Set(names)].filter(Boolean).slice(0, 8);
 }
 
@@ -337,6 +347,11 @@ const AVA_EARLY_BANNER = /exited due to an error|exited with a non-zero exit cod
 /**
  * Ava's worker-exit banner, when no test result was reported. The return value is the worker's own
  * error line, or a short fallback when the banner is the only line. An assertion failure is not one.
+ *
+ * A TS2339 or TS2769 line here means the TypeScript compiler stopped the worker before any test body
+ * ran. The line names a type mismatch. It does not say whether the test, the declaration, or a caller
+ * is what should change, and there is no assertion value to repair toward. That is not turned into an
+ * edit. The caller reports CANT_DO_YET_AVA_EARLY_EXIT and keeps the compiler line as the diagnostic.
  */
 export function avaEarlyDetail(output: string, code: number | null): string | null {
   if (code === null || code === 0) return null;
