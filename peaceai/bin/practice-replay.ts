@@ -63,9 +63,9 @@ function ownerStamp(): string {
   return `${process.pid} ${processStartId(process.pid) ?? "0"}\n`;
 }
 
-function ownerStillAlive(pid: number, start: string): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); } catch { return false; }
+function ownerStillAlive(pid: number, start: string, signal: SignalFn, procHas: ProcHas): boolean {
+  const state = pidState(pid, signal, procHas);
+  if (state !== "alive") return state === "unknown";
   const now = processStartId(pid);
   return now !== null && now === start;
 }
@@ -75,9 +75,38 @@ export const HELD_OWNERLESS_MS = 24 * 60 * 60 * 1000;
 /** Dead start-time-0 temps older than this, or beyond this many fresh ones, are reaped. A live pid is kept. */
 export const HELD_START0_CAP = 4;
 
-function pidAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch { return false; }
+type SignalFn = (pid: number) => void;
+/** null when this process cannot see a process table. false when it can and the pid is absent. */
+type ProcHas = (pid: number) => boolean | null;
+
+function defaultSignal(pid: number): void {
+  process.kill(pid, 0);
+}
+
+function defaultProcHas(pid: number): boolean | null {
+  try {
+    if (!existsSync("/proc")) return null;
+    return existsSync(join("/proc", String(pid)));
+  } catch {
+    return null;
+  }
+}
+
+/** Alive, proven dead, or unknown. EPERM is alive. ESRCH is dead only when the process table shows the pid is gone. */
+export function pidState(pid: number, signal: SignalFn = defaultSignal, procHas: ProcHas = defaultProcHas): "alive" | "dead" | "unknown" {
+  if (!Number.isInteger(pid) || pid <= 0) return "unknown";
+  try {
+    signal(pid);
+    return "alive";
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "EPERM") return "alive";
+    if (code !== "ESRCH") return "unknown";
+    const seen = procHas(pid);
+    if (seen === true) return "alive";
+    if (seen === false) return "dead";
+    return "unknown";
+  }
 }
 
 function reapLog(message: string): void {
@@ -85,7 +114,13 @@ function reapLog(message: string): void {
 }
 
 /** Delete held-out temp dirs whose owner is dead. Errors are logged and do not stop the scan. */
-export function reapStaleHeldTemps(root = tmpdir(), remove: (dir: string) => void = (dir) => rmSync(dir, { recursive: true, force: true })): string[] {
+export function reapStaleHeldTemps(
+  root = tmpdir(),
+  remove: (dir: string) => void = (dir) => rmSync(dir, { recursive: true, force: true }),
+  hooks: { signal?: SignalFn; procHas?: ProcHas } = {},
+): string[] {
+  const signal = hooks.signal ?? defaultSignal;
+  const procHas = hooks.procHas ?? defaultProcHas;
   const removed: string[] = [];
   let names: string[] = [];
   try { names = readdirSync(root); } catch (err) {
@@ -116,11 +151,11 @@ export function reapStaleHeldTemps(root = tmpdir(), remove: (dir: string) => voi
         if (!Number.isInteger(pid) || pid <= 0 || pidText !== String(pid)) continue;
         // Start time 0 means the start id could not be read. A live pid is never that owner's replacement.
         if (start === "0") {
-          if (pidAlive(pid)) continue;
+          if (pidState(pid, signal, procHas) !== "dead") continue;
           deadStart0.push({ dir, mtime: lstatSync(dir).mtimeMs });
           continue;
         }
-        if (ownerStillAlive(pid, start ?? "")) continue;
+        if (ownerStillAlive(pid, start ?? "", signal, procHas)) continue;
       }
       drop(dir);
     } catch (err) {

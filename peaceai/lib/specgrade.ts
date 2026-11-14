@@ -281,29 +281,79 @@ function unwrapExpr(node: ts.Node): ts.Node {
   return cur;
 }
 
-/** Numbers written in an array, a Set or Map constructor, or an object-literal key. */
-function collectLiteralNumbers(node: ts.Node, out: number[]): void {
+function stringText(node: ts.Node): string | null {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  return null;
+}
+
+const TYPEOF_NAMES = new Set(["number", "string", "boolean", "undefined", "object", "function", "symbol", "bigint"]);
+
+/** Same-file bindings. A module-level `const BAD = new Set([0.3])` is visible to `BAD.has(a)`. */
+let boundNames = new Map<string, ts.Expression>();
+
+function remember(text: string, numbers: number[], strings: string[]): void {
+  strings.push(text);
+  if (text === "Infinity") numbers.push(Number.POSITIVE_INFINITY);
+  else if (text === "-Infinity") numbers.push(Number.NEGATIVE_INFINITY);
+  else if (text === "NaN") numbers.push(Number.NaN);
+  else {
+    const n = numericText(text);
+    if (n !== null) numbers.push(n);
+  }
+}
+
+/** Numbers and strings written in an array, a Set or Map, an object key, or a same-file binding. */
+function collectLiteralNumbers(node: ts.Node, numbers: number[], strings: string[], seen = new Set<string>()): void {
   const cur = unwrapExpr(node);
-  const direct = numericLiteral(cur) ?? numericString(cur);
-  if (direct !== null && Number.isFinite(direct)) { out.push(direct); return; }
+  if (ts.isIdentifier(cur)) {
+    if (seen.has(cur.text)) return;
+    const init = boundNames.get(cur.text);
+    if (!init) return;
+    seen.add(cur.text);
+    collectLiteralNumbers(init, numbers, strings, seen);
+    return;
+  }
+  const direct = numericLiteral(cur);
+  if (direct !== null && Number.isFinite(direct)) { numbers.push(direct); return; }
+  const text = stringText(cur);
+  if (text !== null) { remember(text, numbers, strings); return; }
   if (ts.isArrayLiteralExpression(cur)) {
-    for (const el of cur.elements) if (ts.isExpression(el)) collectLiteralNumbers(el, out);
+    for (const el of cur.elements) if (ts.isExpression(el)) collectLiteralNumbers(el, numbers, strings, seen);
     return;
   }
   if (ts.isObjectLiteralExpression(cur)) {
     for (const prop of cur.properties) {
       if (!ts.isPropertyAssignment(prop)) continue;
-      if (ts.isNumericLiteral(prop.name) || ts.isStringLiteral(prop.name)) {
-        const key = numericText(prop.name.text);
-        if (key !== null) out.push(key);
-      }
-      collectLiteralNumbers(prop.initializer, out);
+      if (ts.isNumericLiteral(prop.name) || ts.isStringLiteral(prop.name) || ts.isIdentifier(prop.name)) remember(prop.name.text, numbers, strings);
+      collectLiteralNumbers(prop.initializer, numbers, strings, seen);
     }
     return;
   }
   if (ts.isNewExpression(cur) && cur.arguments) {
-    for (const arg of cur.arguments) collectLiteralNumbers(arg, out);
+    for (const arg of cur.arguments) collectLiteralNumbers(arg, numbers, strings, seen);
   }
+}
+
+function collectAllNumbers(node: ts.Node, numbers: number[]): void {
+  const n = numericLiteral(node) ?? numericString(node);
+  if (n !== null && Number.isFinite(n)) numbers.push(n);
+  ts.forEachChild(node, (child) => collectAllNumbers(child, numbers));
+}
+
+/** `(a * 10 | 0) === 3` stands for 0.3. */
+function scaledProbe(node: ts.BinaryExpression): number | null {
+  if (node.operatorToken.kind !== ts.SyntaxKind.BarToken) return null;
+  if (numericLiteral(node.right) !== 0) return null;
+  const left = unwrapExpr(node.left);
+  if (!ts.isBinaryExpression(left) || left.operatorToken.kind !== ts.SyntaxKind.AsteriskToken) return null;
+  const scale = numericLiteral(left.left) ?? numericLiteral(left.right);
+  if (scale === null || scale === 0) return null;
+  let parent: ts.Node = node.parent;
+  while (ts.isParenthesizedExpression(parent)) parent = parent.parent;
+  if (!ts.isBinaryExpression(parent)) return null;
+  const target = numericLiteral(parent.left) ?? numericLiteral(parent.right);
+  if (target === null) return null;
+  return target / scale;
 }
 
 /** The next representable float above or below `value`. A bound and these neighbors are the probe, not a fixed 1e-6 gap. */
@@ -322,11 +372,24 @@ export function adjacentFloat(value: number, direction: 1 | -1): number {
 }
 
 /** Literal bounds, including a literal on the left and a negative literal, plus `.length` bounds and inequality literals. */
-export function comparisonBounds(source: string): { thresholds: number[]; lengthThresholds: number[]; unprobed: boolean } {
+export function comparisonBounds(source: string): { thresholds: number[]; lengthThresholds: number[]; strings: string[]; unprobed: boolean } {
   const sf = ts.createSourceFile("candidate.ts", source, ts.ScriptTarget.Latest, true);
+  boundNames = new Map();
+  for (const st of sf.statements) {
+    if (!ts.isVariableStatement(st)) continue;
+    for (const decl of st.declarationList.declarations) {
+      if (ts.isIdentifier(decl.name) && decl.initializer) boundNames.set(decl.name.text, decl.initializer);
+    }
+  }
   const thresholds: number[] = [];
   const lengthThresholds: number[] = [];
+  const strings: string[] = [];
   let unprobed = false;
+  const noteSide = (side: ts.Node, other: ts.Node) => {
+    if (ts.isTypeOfExpression(side) || ts.isTypeOfExpression(other)) return;
+    const text = stringText(side);
+    if (text !== null && !TYPEOF_NAMES.has(text)) remember(text, thresholds, strings);
+  };
   const visit = (node: ts.Node) => {
     if (ts.isBinaryExpression(node)) {
       const kind = node.operatorToken.kind;
@@ -340,43 +403,84 @@ export function comparisonBounds(source: string): { thresholds: number[]; length
           thresholds.push(bound);
           if (ordered && (isLengthAccess(node.left) || isLengthAccess(node.right))) lengthThresholds.push(bound);
         } else if (ordered || !(isNonNumericLiteral(node.left) || isNonNumericLiteral(node.right))) unprobed = true;
+        noteSide(node.left, node.right);
+        noteSide(node.right, node.left);
+      }
+      if (kind === ts.SyntaxKind.InKeyword) collectLiteralNumbers(node.right, thresholds, strings);
+      const scaled = scaledProbe(node);
+      if (scaled !== null && Number.isFinite(scaled)) thresholds.push(scaled);
+    }
+    if (ts.isRegularExpressionLiteral(node)) {
+      const src = node.text.replace(/\\\./g, ".");
+      for (const match of src.match(/[+-]?(?:\d+\.\d+|\.\d+|\d+)(?:e[+-]?\d+)?/gi) ?? []) {
+        const n = numericText(match);
+        if (n !== null) thresholds.push(n);
       }
     }
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && ts.isIdentifier(node.expression.name)) {
       const called = node.expression.name.text;
       const objectIs = called === "is" && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Object";
-      const lookup = called === "includes" || called === "indexOf" || called === "has" || called === "get";
+      const mathAbs = called === "abs" && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Math";
+      const lookup = called === "includes" || called === "indexOf" || called === "has" || called === "get" || called === "startsWith" || called === "endsWith";
+      if (mathAbs && node.arguments[0]) collectAllNumbers(node.arguments[0], thresholds);
       if (objectIs || lookup) {
         const args = objectIs ? [...node.arguments] : node.arguments.slice(0, 1);
         const found: number[] = [];
         for (const arg of args) {
-          const n = numericLiteral(arg) ?? numericString(arg);
+          const n = numericLiteral(arg);
           if (n !== null && Number.isFinite(n)) found.push(n);
+          const text = stringText(arg);
+          if (text !== null) remember(text, found, strings);
         }
-        if (lookup) collectLiteralNumbers(node.expression.expression, found);
+        if (lookup) collectLiteralNumbers(node.expression.expression, found, strings);
         if (found.length) for (const n of found) thresholds.push(n);
-        else if ((objectIs || called === "includes") && args.some((arg) => !isNonNumericLiteral(arg))) unprobed = true;
+        else if ((objectIs || called === "includes") && args.some((arg) => numericLiteral(arg) === null && stringText(arg) === null && !isNonNumericLiteral(arg))) unprobed = true;
       }
     }
     if (ts.isElementAccessExpression(node) && node.argumentExpression) {
-      const found: number[] = [];
-      collectLiteralNumbers(node.expression, found);
-      const idx = numericLiteral(node.argumentExpression) ?? numericString(node.argumentExpression);
-      if (idx !== null && Number.isFinite(idx)) found.push(idx);
-      for (const n of found) thresholds.push(n);
+      collectLiteralNumbers(node.expression, thresholds, strings);
+      const idx = numericLiteral(node.argumentExpression);
+      if (idx !== null && Number.isFinite(idx)) thresholds.push(idx);
+      const idxText = stringText(node.argumentExpression);
+      if (idxText !== null) remember(idxText, thresholds, strings);
     }
     if (ts.isCaseClause(node)) {
       const bound = numericLiteral(node.expression);
+      const text = stringText(node.expression);
       if (bound !== null && Number.isFinite(bound)) thresholds.push(bound);
+      else if (text !== null) remember(text, thresholds, strings);
       else if (!isNonNumericLiteral(node.expression)) unprobed = true;
     }
     ts.forEachChild(node, visit);
   };
   visit(sf);
-  return { thresholds: [...new Set(thresholds)], lengthThresholds: [...new Set(lengthThresholds)], unprobed };
+  return { thresholds: [...new Set(thresholds)], lengthThresholds: [...new Set(lengthThresholds)], strings: [...new Set(strings)], unprobed };
 }
 
 type NumPath = (string | number)[];
+
+function stringPaths(value: unknown, prefix: NumPath = []): NumPath[] {
+  if (typeof value === "string") return [prefix];
+  if (Array.isArray(value)) return value.flatMap((item, index) => stringPaths(item, [...prefix, index]));
+  if (value && typeof value === "object" && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)) {
+    return Object.keys(value).flatMap((key) => stringPaths((value as Record<string, unknown>)[key], [...prefix, key]));
+  }
+  return [];
+}
+
+function setAtAny(value: unknown, path: NumPath, next: unknown): unknown {
+  if (path.length === 0) return next;
+  const [head, ...rest] = path;
+  if (Array.isArray(value) && typeof head === "number") {
+    const copy = [...value];
+    copy[head] = setAtAny(value[head], rest, next);
+    return copy;
+  }
+  if (value && typeof value === "object") {
+    return { ...(value as Record<string, unknown>), [String(head)]: setAtAny((value as Record<string, unknown>)[String(head)], rest, next) };
+  }
+  return value;
+}
 
 function numberPaths(value: unknown, prefix: NumPath = []): NumPath[] {
   if (typeof value === "number" && Number.isFinite(value)) return [prefix];
@@ -469,7 +573,7 @@ function withLength(value: unknown, path: NumPath, length: number): unknown {
 export interface BehaviorInputSet { inputs: unknown[][]; truncated: boolean }
 
 /** Originals and mutants share INPUT_CAP. Probes use PROBE_CAP and do not push mutants out. */
-export function behaviorInputSet(examples: readonly (readonly unknown[])[], flags: readonly ParamFlags[], seedText: string, thresholds: readonly number[] = [], lengthThresholds: readonly number[] = []): BehaviorInputSet {
+export function behaviorInputSet(examples: readonly (readonly unknown[])[], flags: readonly ParamFlags[], seedText: string, thresholds: readonly number[] = [], lengthThresholds: readonly number[] = [], stringThresholds: readonly string[] = []): BehaviorInputSet {
   const originals: unknown[][] = [];
   const seen = new Set<string>();
   const add = (bucket: unknown[][], args: unknown[]) => {
@@ -507,14 +611,25 @@ export function behaviorInputSet(examples: readonly (readonly unknown[])[], flag
         add(probed, withLength(example, path, length) as unknown[]);
       }
     }
+    for (const path of stringPaths(example)) {
+      for (const text of stringThresholds) add(probed, setAtAny(example, path, text) as unknown[]);
+    }
+    for (const path of numberPaths(example)) {
+      for (const text of stringThresholds) {
+        if (text === "Infinity") add(probed, setAt(example, path, Number.POSITIVE_INFINITY) as unknown[]);
+        else if (text === "-Infinity") add(probed, setAt(example, path, Number.NEGATIVE_INFINITY) as unknown[]);
+        else if (text === "NaN") add(probed, setAt(example, path, Number.NaN) as unknown[]);
+        else add(probed, setAtAny(example, path, text) as unknown[]);
+      }
+    }
   }
   const keptProbes = probed.slice(0, PROBE_CAP);
   return { inputs: [...originals, ...keptMutants, ...keptProbes], truncated: varied.length > keptMutants.length || probed.length > keptProbes.length };
 }
 
 /** The test's own argument lists, then mutants, then probes. Mutants are not sliced away to make room for probes. */
-export function behaviorInputs(examples: readonly (readonly unknown[])[], flags: readonly ParamFlags[], seedText: string, thresholds: readonly number[] = [], lengthThresholds: readonly number[] = []): unknown[][] {
-  return behaviorInputSet(examples, flags, seedText, thresholds, lengthThresholds).inputs;
+export function behaviorInputs(examples: readonly (readonly unknown[])[], flags: readonly ParamFlags[], seedText: string, thresholds: readonly number[] = [], lengthThresholds: readonly number[] = [], stringThresholds: readonly string[] = []): unknown[][] {
+  return behaviorInputSet(examples, flags, seedText, thresholds, lengthThresholds, stringThresholds).inputs;
 }
 
 interface ProbeBody {
@@ -610,6 +725,7 @@ export function gradeBehavior(input: {
     `${input.target.symbol}\0${input.target.file}\0${JSON.stringify(input.target.args.map(tag))}`,
     [...candidateBounds.thresholds, ...fixBounds.thresholds],
     [...candidateBounds.lengthThresholds, ...fixBounds.lengthThresholds],
+    [...candidateBounds.strings, ...fixBounds.strings],
   );
   const inputs = planned.inputs;
   if (!inputs.length) return { behavior: "diff_unavailable", compared: 0 };
