@@ -21,7 +21,9 @@ import { buildVariants, cleanIssueText } from "../lib/taskmap.ts";
 // The practice grader is outside self-change. Naming these paths pulls them, and the modules they import, into the never-zone.
 const PRACTICE_GRADER_FILES = ["peaceai/lib/specgrade.ts", "peaceai/lib/practicereplay.ts", "peaceai/bin/practice-replay.ts", "peaceai/bin/practice-mine.ts", "peaceai/lib/issueunderstand.ts"] as const;
 void PRACTICE_GRADER_FILES;
-import { nlDecision, understandIssue, UNDERSTAND_REASONS } from "../lib/nlparse.ts";
+import { nlDecision, taskSource, understandIssue, UNDERSTAND_REASONS } from "../lib/nlparse.ts";
+import { openRepo } from "../lib/codesearch.ts";
+import { TEXT_REPAIR_LIMIT, TEXT_REPAIR_REASONS, textRepairBatches, type RepairEdit } from "../lib/editpropose.ts";
 import { regradeOf, type RegradeRequest } from "../lib/regrade.ts";
 import { regularFileReader, repoFileLists } from "../lib/learned-test-existing.ts";
 import { spawnSync } from "node:child_process";
@@ -123,7 +125,8 @@ if (process.env.PEACEAI_REGRADE_FILE && existsSync(process.env.PEACEAI_REGRADE_F
 // M10: plain-language tasks. Canonical wording passes unchanged; plain wording becomes the canonical plan;
 // anything unclear is refused here (no candidates, enum-only outputs) and the issue gets the phrasing list.
 // Issue and commit sentences that the phrase list does not cover are read by understandIssue. A complete
-// mapping becomes the plan the engines already run. Anything short of that answers "can't do yet".
+// mapping becomes the plan the engines already run. A sentence that names a symbol but not a whole
+// phrase is handed to repair-v2. Anything short of a symbol answers "can't do yet".
 const approvedKinds = new Set(admissions.filter((a) => a.decision === "APPROVED" && a.spec).map((a) => a.spec!.kind));
 const nl = nlDecision(issueTask, process.env.PEACEAI_NL_PARSE, approvedKinds);
 const understood = nl.status === "unsure" && (UNDERSTAND_REASONS as readonly string[]).includes(nl.reason)
@@ -136,12 +139,82 @@ const understood = nl.status === "unsure" && (UNDERSTAND_REASONS as readonly str
       approvedKinds,
     })
   : null;
-if (nl.status === "unsure" && understood?.status !== "mapped") {
+
+/** Repair-v2 batches for a sentence the phrase list could not map. Empty when the sentence names no symbol. */
+function textRepairFromIssue(): RepairEdit[][] {
+  if (understood?.status !== "cant" || !(TEXT_REPAIR_REASONS as readonly string[]).includes(understood.reason)) return [];
+  return textRepairBatches(openRepo(repo), taskSource({ title: issueTask.title, body: issueTask.body }), TEXT_REPAIR_LIMIT);
+}
+
+/** Write repair batches as scoped candidate diffs. Returns how many were kept. */
+function writeTextRepairs(batches: readonly (readonly RepairEdit[])[]): number {
+  const work = mkdtempSync(join(tmpdir(), "peaceai-text-"));
+  rmSync(work, { recursive: true, force: true });
+  git(repo, "worktree", "add", "--quiet", "--detach", work, baseSha);
+  const seen = new Set<string>();
+  const candidates: { id: string; diff: string }[] = [];
+  const one = (edits: readonly RepairEdit[]): string | null => {
+    try {
+      for (const edit of edits) {
+        const target = join(work, edit.path);
+        if (!target.startsWith(`${work}/`)) return null;
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, edit.content);
+      }
+      git(work, "add", "-A", "--intent-to-add", ".");
+      const diff = git(work, "diff", "--no-color", "--no-ext-diff", "--no-renames", "--full-index");
+      return diff.trim() ? diff : null;
+    } catch {
+      return null;
+    } finally {
+      git(work, "reset", "--quiet", "--hard", baseSha);
+      git(work, "clean", "-fdqx");
+    }
+  };
+  try {
+    for (const edits of batches) {
+      if (candidates.length >= TEXT_REPAIR_LIMIT) break;
+      const diff = one(edits);
+      if (!diff) continue;
+      const key = createHash("sha256").update(diff).digest("hex");
+      if (seen.has(key)) continue;
+      if (checkCandidateScope(parseDiff(diff), baseFiles, scope).length > 0) continue;
+      seen.add(key);
+      candidates.push({ id: `candidate-${candidates.length + 1}`, diff });
+    }
+  } finally {
+    git(repo, "worktree", "remove", "--force", work);
+  }
+  if (candidates.length === 0 || nl.status !== "unsure" || !outDir) return 0;
+  mkdirSync(join(outDir, "candidates"), { recursive: true });
+  for (const candidate of candidates) writeFileSync(join(outDir, "candidates", `${candidate.id}.diff`), candidate.diff);
+  writeSummary({
+    schema: "peaceai-workspace-candidates:v1", taskId, baseSha,
+    candidates: candidates.map((candidate) => ({
+      id: candidate.id,
+      file: `candidates/${candidate.id}.diff`,
+      transformations: ["REPAIR_V2"],
+      operationId: null,
+      diffBytes: Buffer.byteLength(candidate.diff),
+      diffLines: candidate.diff.split("\n").filter((line) => /^[+-](?![+-]{2} )/.test(line)).length,
+    })),
+  });
   writeOutput({ nl: "unsure", nl_reason: nl.reason, nl_hint: nl.hint ?? "", nl_steps: "" });
   console.log(`nl=unsure reason=${nl.reason}`);
-  if (understood?.status === "cant") console.log(`can't do yet: ${understood.reason}`);
-  mkdirSync(join(outDir, "candidates"), { recursive: true });
-  writeSummary({ schema: "peaceai-workspace-candidates:v1", taskId, baseSha, candidates: [] });
+  console.log(`text-repair candidates=${candidates.length}`);
+  return candidates.length;
+}
+
+if (nl.status === "unsure" && understood?.status !== "mapped") {
+  const batches = textRepairFromIssue();
+  if (batches.length === 0 || writeTextRepairs(batches) === 0) {
+    writeOutput({ nl: "unsure", nl_reason: nl.reason, nl_hint: nl.hint ?? "", nl_steps: "" });
+    console.log(`nl=unsure reason=${nl.reason}`);
+    if (understood?.status === "cant") console.log(`can't do yet: ${understood.reason}`);
+    mkdirSync(join(outDir, "candidates"), { recursive: true });
+    writeSummary({ schema: "peaceai-workspace-candidates:v1", taskId, baseSha, candidates: [] });
+    process.exit(0);
+  }
   process.exit(0);
 }
 const parsedSteps = understood?.status === "mapped" ? understood.steps : nl.status === "parsed" ? nl.steps : null;

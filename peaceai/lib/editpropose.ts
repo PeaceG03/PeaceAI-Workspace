@@ -98,6 +98,154 @@ export function namedSymbols(text: string): string[] {
   return out;
 }
 
+// ---- plain-language aim
+// A commit subject or issue sentence that does not fill an edit-family phrase can still name the
+// symbol to repair. The phrase list stays strict. This reader only chooses symbols, then the
+// existing repair-v2 proposer edits them. It does not invent a body, a new function, or a rename.
+// A sentence is an aim only when it asks for a change: an edit verb with an object, or a subject
+// that leads with a code name and says that name was chosen, added, fixed, or otherwise changed.
+// Thanks, questions, and renames are not body repairs. A plain word is a symbol only when the
+// repo defines it exactly once, so a vague noun is not a guess across the tree.
+
+export const TEXT_REPAIR_REASONS = ["CANT_DO_YET_NO_EDIT", "CANT_DO_YET_EDIT_UNSPECIFIED", "CANT_DO_YET_ADD_UNSPECIFIED", "CANT_DO_YET_NOT_A_FAMILY"] as const;
+/** How many repair-v2 candidates Job A may emit from a sentence. The proposer's own order, capped. */
+export const TEXT_REPAIR_LIMIT = 8;
+
+const AIM_VERBS = "fix|fixes|fixed|fixing|handle|handles|handled|handling|correct|corrects|corrected|correcting|support|supports|supported|supporting|add|adds|added|adding|implement|implements|implemented|implementing|allow|allows|allowed|allowing|enable|enables|enabled|enabling|expose|exposes|exposed|exposing|improve|improves|improved|improving|update|updates|updated|updating|change|changes|changed|changing|include|includes|included|including|accept|accepts|accepted|accepting|reject|rejects|rejected|rejecting|drop|drops|dropped|dropping|remove|removes|removed|removing|wrap|wraps|wrapped|wrapping|default|defaults|defaulted|defaulting|guard|guards|guarded|guarding|check|checks|checked|checking|validate|validates|validated|validating|keep|keeps|kept|keeping|give|gives|gave|given|giving";
+const AIM_VERB = new RegExp(String.raw`\b(?:please |can you |could you |we need to )?(?<verb>${AIM_VERBS})\b`, "i");
+const AIM_THANKS = /^(?:thanks|thank you|lgtm|nit|wip)\b/i;
+const AIM_QUESTION = /\?\s*$/;
+const AIM_BOUNDARY = /\b(?:when|if)\b/i;
+const AIM_CUE = /\b(?:chosen|selected|picked|added|fixed|updated|removed|renamed|changed|handled|supported|implemented|returned|accepted|rejected|corrected|enabled|disabled|exposed|exported|replaced|dropped|skipped|included|excluded)\b/i;
+const AIM_META = new Set(`${AIM_VERBS.replaceAll("|", " ")} option options flag flags setting settings mode modes helper helpers function functions method methods predicate predicates property properties field fields value values type types array arrays object objects case cases edge bug issue error errors message messages assertion assertions export exports named missing new existing better default empty blank whitespace numeric key keys name names expression expressions factory detection narrowing range review candidate patch the a an it this that when if so to of in for and or with from on by is are be was were been not as into please can could should must would will we you our their than too very just more most only same other whole focused extra optional required simple real current previous next first last single multiple wrong incorrect silent silently incorrectly minified surrounding`.split(/\s+/));
+const AIM_SOURCE = /\.(?:ts|tsx|mts|cts)$/;
+
+export interface EditAim { symbols: string[]; via: "verb" | "lead" }
+
+/** The same conventional-commit and issue-number cleanup the phrase reader applies, plus a bang (`feat!:`). */
+export function aimSource(text: string): string {
+  return text.replace(/\s+/g, " ").trim()
+    .replace(/^(?:fix|feat|chore|docs|refactor|test|perf|style)(?:\([^)]{0,40}\))?!?:\s+/i, (m) => /^fix/i.test(m) ? "fix " : "")
+    .replace(/\s*\(#\d+\)/g, "")
+    .replace(/\s+#\d+\b/g, "")
+    .trim();
+}
+
+function aimCodeName(word: string): boolean {
+  const named = namedSymbols(word);
+  return named.length === 1 && named[0] === word;
+}
+
+function pushAim(out: string[], word: string): void {
+  if (word.length >= 2 && word.length <= 64 && !out.includes(word)) out.push(word);
+}
+
+/**
+ * Symbols a sentence asks to change, or null when it is not that kind of sentence.
+ * `verb`: an edit verb, and the code names (or, if there are none, the plain nouns) before when/if.
+ * `lead`: the subject starts with a code name and a change word (selected, added, fixed, ...).
+ */
+export function editAim(text: string): EditAim | null {
+  const source = aimSource(text);
+  if (!source) return null;
+  if (AIM_THANKS.test(source)) return null; // text-guard:thanks
+  if (AIM_QUESTION.test(source)) return null; // text-guard:question
+  if (/\brenam(?:e|ed|ing)\b/i.test(source) && /\bto\b/i.test(source)) return null; // text-guard:rename
+  let verb: RegExpExecArray | null = null;
+  verb = AIM_VERB.exec(source); // text-guard:verb
+  if (verb) {
+    let region = source;
+    const rest = source.slice(verb.index + verb[0].length);
+    const boundary = AIM_BOUNDARY.exec(rest);
+    if (boundary) region = source.slice(0, verb.index + verb[0].length + boundary.index); // text-guard:when-object
+    const symbols: string[] = [];
+    for (const m of region.matchAll(/`([^`]{1,80})`/g)) {
+      for (const w of m[1]!.matchAll(/[A-Za-z_$][\w$]*/g)) if (!AIM_META.has(w[0].toLowerCase())) pushAim(symbols, w[0]); // text-guard:backtick
+    }
+    const prose = region.replace(/`[^`]*`/g, " ");
+    for (const w of prose.matchAll(/[A-Za-z_$][\w$]*/g)) if (aimCodeName(w[0])) pushAim(symbols, w[0]); // text-guard:code-shape
+    let plain = false;
+    plain = symbols.length === 0; // text-guard:plain-fallback
+    if (plain) {
+      for (const w of prose.matchAll(/[A-Za-z_$][\w$]*/g)) {
+        if (aimCodeName(w[0]) || w[0].length < 3 || AIM_META.has(w[0].toLowerCase())) continue; // text-guard:meta
+        pushAim(symbols, w[0]);
+      }
+    }
+    return symbols.length ? { symbols, via: "verb" } : null;
+  }
+  const lead = /^([A-Za-z_$][\w$]*)/.exec(source);
+  if (!lead || !aimCodeName(lead[1]!)) return null; // text-guard:lead-symbol
+  if (!AIM_CUE.test(source)) return null; // text-guard:no-cue
+  const extras = [...source.matchAll(/[A-Za-z_$][\w$]*/g)].map((m) => m[0]).filter((w) => w !== lead[1] && aimCodeName(w));
+  let symbols = [lead[1]!, ...extras];
+  symbols = symbols.slice(0, 1); // text-guard:lead-only
+  return { symbols, via: "lead" };
+}
+
+/** Keep a code-shaped name even when several files define it. Keep a plain name only when one source file defines it. */
+export function resolvableSymbols(search: CodeRepo, symbols: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const name of symbols) {
+    if (aimCodeName(name)) { out.push(name); continue; } // text-guard:shaped-keep
+    const sym = search.symbol(name);
+    if (!sym.ok) continue;
+    const defs = sym.definitions.filter((d) => AIM_SOURCE.test(d.path) && !d.path.endsWith(".d.ts") && !isTestPath(d.path) && !isGeneratedPath(d.path));
+    if (defs.length !== 1) continue; // text-guard:plain-unique
+    out.push(name);
+  }
+  return out;
+}
+
+/** The request the repair proposer reads: the sentence, with every code name except the aim blanked, and the aim in code spans. */
+export function textRepairRequest(text: string, symbols: readonly string[]): string {
+  const keep = new Set(symbols);
+  const prose = aimSource(text).replace(/`[^`]*`/g, " ").replace(/[A-Za-z_$][\w$]*/g, (w) => {
+    if (keep.has(w)) return w;
+    if (aimCodeName(w)) return " "; // text-guard:hide-other
+    return w;
+  });
+  return `${prose}\n${symbols.map((s) => `\`${s}\``).join(" ")}`;
+}
+
+/**
+ * Repair-v2 candidates for a sentence, in the proposer's own order, at most `limit`.
+ * An empty list means the sentence named nothing this repo defines, or the proposer has no edit there.
+ */
+export function proposeTextEdits(search: CodeRepo, request: string, limit = TEXT_REPAIR_LIMIT): RepairEdit[][] {
+  const sites = locate(search, { request, failing: [] }, CALLEE_DEPTH.v2);
+  const files: { path: string; content: string }[] = [];
+  const seenPath = new Set<string>();
+  for (const site of sites) {
+    if (seenPath.has(site.path)) continue;
+    seenPath.add(site.path);
+    const read = search.read(site.path);
+    if (!read.ok || read.truncated) continue;
+    files.push({ path: site.path, content: read.text });
+  }
+  const proposer = repairProposer({ v2: true });
+  proposer.prepare(search, { request, failing: [] }); // text-guard:proposer
+  const out: RepairEdit[][] = [];
+  const feedback: RepairFeedback[] = [];
+  for (let attempt = 1; attempt <= MAX_CANDIDATES; attempt++) {
+    if (out.length >= limit) break; // text-guard:limit
+    const proposal = proposer.next({ files, attempt, feedback, baseline: null });
+    if ("refuse" in proposal) break;
+    out.push(proposal.edits);
+    feedback.push({ attempt, codes: ["TEST_FAIL"], failing: [], tests: null });
+  }
+  return out;
+}
+
+/** The sentence's aim, resolved against this repo, handed to repair-v2. */
+export function textRepairBatches(search: CodeRepo, text: string, limit = TEXT_REPAIR_LIMIT): RepairEdit[][] {
+  const aim = editAim(text);
+  if (!aim) return [];
+  const symbols = resolvableSymbols(search, aim.symbols);
+  if (symbols.length === 0) return [];
+  return proposeTextEdits(search, textRepairRequest(text, symbols), limit);
+}
+
 // ---- sites
 
 type FnLike = ts.FunctionDeclaration | ts.FunctionExpression | ts.ArrowFunction | ts.MethodDeclaration | ts.GetAccessorDeclaration | ts.SetAccessorDeclaration | ts.ConstructorDeclaration;

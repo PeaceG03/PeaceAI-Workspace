@@ -757,7 +757,7 @@ function hole(clause: string): Hit {
   return { kind: "cant", reason: "CANT_DO_YET_NO_EDIT" };
 }
 
-function taskSource(input: UnderstandInput): string {
+export function taskSource(input: UnderstandInput): string {
   const title = cleanIssueText({ title: input.title, body: "" });
   const body = cleanIssueText({ title: "", body: input.body });
   const source = (body.trim() || title)
