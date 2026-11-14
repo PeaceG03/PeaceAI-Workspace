@@ -1,5 +1,6 @@
 // Text mode is test-only. Test-as-spec probes can still be strict. Bakery fixtures only.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,11 +8,11 @@ import { test } from "node:test";
 import { gradeTextRuns } from "../bin/practice-replay.ts";
 import { replayDocument, seededIdiom } from "../lib/practicereplay.ts";
 import { visibleNodeBin } from "../lib/practicemine.ts";
-import { gradeBehavior, type Behavior } from "../lib/specgrade.ts";
+import { gradeBehavior, type BehaviorGrade } from "../lib/specgrade.ts";
 
 const nodePath = visibleNodeBin() ?? process.execPath;
 
-function grade(candidate: string, fix: string, args: unknown[][], target: { symbol: string; exportName: string; form?: "named" | "named-prop"; prop?: string } = { symbol: "warm", exportName: "warm" }): Behavior {
+function grade(candidate: string, fix: string, args: unknown[][], target: { symbol: string; exportName: string; form?: "named" | "named-prop"; prop?: string } = { symbol: "warm", exportName: "warm" }): BehaviorGrade {
   const write = (text: string) => {
     const root = mkdtempSync(join(tmpdir(), "peaceai-guard-"));
     mkdirSync(join(root, "src"), { recursive: true });
@@ -24,7 +25,7 @@ function grade(candidate: string, fix: string, args: unknown[][], target: { symb
     return gradeBehavior({
       candidateRoot: left, fixRoot: right, nodePath,
       target: { symbol: target.symbol, file: "src/oven.ts", form: target.form ?? "named", exportName: target.exportName, prop: target.prop, args },
-    }).behavior;
+    });
   } finally {
     rmSync(left, { recursive: true, force: true });
     rmSync(right, { recursive: true, force: true });
@@ -33,7 +34,8 @@ function grade(candidate: string, fix: string, args: unknown[][], target: { symb
 
 const range = "export function warm(n: number): boolean {\n  return n > 0 && n < 10;\n}\n";
 
-test("thirteen weakenings are not strict, and an equivalent rewrite still can be", () => {
+test("thirteen weakenings are not strict, and an equivalent rewrite still can be", (t) => {
+  if (spawnSync("bwrap", ["--version"], { stdio: "ignore" }).error) { t.skip("bwrap is not installed on this host"); return; }
   const weak: [string, string, unknown[][]][] = [
     ["export function warm(n: number): boolean {\n  return n > 0;\n}\n", range, [[3], [12]]],
     ["export function warm(n: number): boolean {\n  if (n > 0) return true;\n  return n < 10;\n}\n", range, [[12]]],
@@ -49,24 +51,32 @@ test("thirteen weakenings are not strict, and an equivalent rewrite still can be
     ["export function warm(n: number): boolean {\n  return n === n || n > 100;\n}\n", range, [[12]]],
   ];
   assert.equal(weak.length, 12);
-  const method = grade(
+  const weakened = (got: BehaviorGrade, label: string) => {
+    assert.notEqual(got.behavior, "verified_strict", label);
+    assert.notEqual(got.behavior, "diff_unavailable", label);
+    assert.ok(got.compared > 0, label);
+  };
+  weakened(grade(
     "export const oven = { warm(n: number): boolean { return n > 0; } };\n",
     "export const oven = { warm(n: number): boolean { return n > 0 && n < 10; } };\n",
     [[12]],
     { symbol: "warm", exportName: "oven", form: "named-prop", prop: "warm" },
-  );
-  assert.notEqual(method, "verified_strict");
-  for (const [candidate, fix, args] of weak) assert.notEqual(grade(candidate, fix, args), "verified_strict");
-  assert.equal(grade(
+  ), "object method");
+  for (const [candidate, fix, args] of weak) weakened(grade(candidate, fix, args), candidate.slice(0, 60));
+  const equivalent = (got: BehaviorGrade, label: string) => {
+    assert.equal(got.behavior, "verified_strict", label);
+    assert.ok(got.compared > 0, label);
+  };
+  equivalent(grade(
     "export function warm(a: boolean, b: boolean): boolean {\n  return !a || !b;\n}\n",
     "export function warm(a: boolean, b: boolean): boolean {\n  return !(a && b);\n}\n",
     [[true, true]],
-  ), "verified_strict");
-  assert.equal(grade(
+  ), "De Morgan");
+  equivalent(grade(
     "export function warm(label: string): boolean {\n  return new RegExp(\"^loaf \").test(label);\n}\n",
     "export function warm(label: string): boolean {\n  return /^loaf /.test(label);\n}\n",
     [["loaf rye"]],
-  ), "verified_strict");
+  ), "RegExp");
 });
 
 test("a text flip is test-only, and a flaky base from another candidate is not a pass", () => {
