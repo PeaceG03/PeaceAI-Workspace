@@ -11,8 +11,8 @@ import { pathToFileURL } from "node:url";
 const libDir = resolve(import.meta.dirname, "../lib");
 const sources = {
   report: { file: "practicereplay.ts", root: libDir, tag: /\/\/ (?:report-guard:(dev-only|seed-sha)|grade-guard:(text-cap))\s*$/, suite: "report", ids: ["dev-only", "seed-sha", "text-cap"] },
-  replay: { file: "practice-replay.ts", root: resolve(import.meta.dirname, "../bin"), tag: /\/\/ replay-guard:(text-behavior|same-candidate|stop-at-fix)\s*$/, suite: "replay", ids: ["same-candidate", "stop-at-fix", "text-behavior"] },
-  budget: { file: "testspec.ts", root: libDir, tag: /\/\/ spec-guard:(attempt-budget)\s*$/, suite: "budget", ids: ["attempt-budget"] },
+  replay: { file: "practice-replay.ts", root: resolve(import.meta.dirname, "../bin"), tag: /\/\/ replay-guard:(text-behavior|same-candidate|stop-at-fix|replay-call|empty-runs)\s*$/, suite: "replay", ids: ["empty-runs", "replay-call", "same-candidate", "stop-at-fix", "text-behavior"] },
+  budget: { file: "testspec.ts", root: libDir, tag: /\/\/ spec-guard:(attempt-clamp)\s*$/, suite: "budget", ids: ["attempt-clamp"] },
 } as const;
 
 let dir: string;

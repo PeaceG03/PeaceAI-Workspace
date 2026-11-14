@@ -282,9 +282,36 @@ function gradeCandidate(repoDir: string, pair: PracticePair, diff: string, modul
   }
 }
 
-function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: string, pair: PracticePair, modules: string): GradedRow {
+/** Stubbed candidate runs for a test of replayOne. Production calls omit this. */
+export interface ReplayTextInject {
+  candidates: readonly { file: string }[];
+  gradeOne: (file: string) => { beforeExit: number | null; afterExit: number | null };
+}
+
+export function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: string, pair: PracticePair, modules: string, inject?: ReplayTextInject): GradedRow {
   const scorable = targetIsScorable(pair.repo);
   if (!scorable) return { ...blank(pair, "text"), ...gradePracticeRow({ scorable: false, core: "ok", job: null, gatePass: false, beforeExit: null, afterExit: null }) };
+  const gradeText = (
+    candidates: readonly { file: string }[],
+    gradeOne: (file: string) => { beforeExit: number | null; afterExit: number | null },
+    job: { status: "pass"; reason: string },
+  ): GradedRow => {
+    const row = { scorable: true as const, core: "ok" as const, job, gatePass: true as const };
+    let paired = false;
+    paired = true; // replay-guard:replay-call
+    if (!paired) {
+      let beforeExit: number | null = null;
+      let afterExit: number | null = null;
+      for (const candidate of candidates) {
+        const graded = gradeOne(candidate.file);
+        if (beforeExit === null) beforeExit = graded.beforeExit;
+        if (afterExit === null) afterExit = graded.afterExit;
+      }
+      return { ...blank(pair, "text"), ...gradePracticeRow({ ...row, beforeExit, afterExit }) };
+    }
+    return { ...blank(pair, "text"), ...finishTextReplay(candidates, gradeOne, row) };
+  };
+  if (inject) return gradeText(inject.candidates, inject.gradeOne, { status: "pass", reason: `JOB_A_CANDIDATES:${inject.candidates.length}` });
   const outDir = mkdtempSync(join(tmpdir(), "peaceai-practice-out-"));
   const dir = mkdtempSync(join(tmpdir(), "peaceai-practice-base-"));
   try {
@@ -319,13 +346,10 @@ function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: st
     const gatePass = gated.status === 0 && /GATE PASS/.test(gateOut);
     if (!gatePass) return { ...blank(pair, "text"), ...gradePracticeRow({ scorable: true, core: "ok", job, gatePass: false, beforeExit: null, afterExit: null }) };
     const summary = JSON.parse(readFileSync(summaryPath, "utf8")) as { candidates?: { file: string }[] };
-    return {
-      ...blank(pair, "text"),
-      ...finishTextReplay(summary.candidates ?? [], (file) => {
-        const diff = readFileSync(join(outDir, file), "utf8");
-        return gradeCandidate(repoDir, pair, diff, modules);
-      }, { scorable: true, core: "ok", job, gatePass: true }),
-    };
+    return gradeText(summary.candidates ?? [], (file) => {
+      const diff = readFileSync(join(outDir, file), "utf8");
+      return gradeCandidate(repoDir, pair, diff, modules);
+    }, { status: "pass", reason: job.reason });
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(outDir, { recursive: true, force: true });
@@ -376,19 +400,23 @@ export function finishTextReplay(
   gradeOne: (file: string) => { beforeExit: number | null; afterExit: number | null },
   row: Omit<GradeInput, "beforeExit" | "afterExit" | "behavior">,
 ): ReturnType<typeof gradePracticeRow> & { flakyBase?: true } {
-  let beforeExit: number | null = null;
-  let afterExit: number | null = null;
-  let fixed = false;
+  if (candidates.length === 0) {
+    let beforeExit: number | null = 1;
+    let afterExit: number | null = 0;
+    beforeExit = null; afterExit = null; // replay-guard:empty-runs
+    return gradePracticeRow({ ...row, beforeExit, afterExit });
+  }
   const runs: { beforeExit: number | null; afterExit: number | null }[] = [];
+  let mixBefore: number | null = null;
+  let mixAfter: number | null = null;
   for (const candidate of candidates) {
     const graded = gradeOne(candidate.file);
-    if (beforeExit === null) beforeExit = graded.beforeExit;
-    if (graded.beforeExit !== null && graded.beforeExit !== 0 && graded.afterExit === 0) { afterExit = 0; fixed = true; }
-    else if (afterExit === null) afterExit = graded.afterExit;
+    if (mixBefore === null) mixBefore = graded.beforeExit;
+    if (mixAfter === null) mixAfter = graded.afterExit;
     runs.push(graded); // replay-guard:same-candidate
     if (graded.beforeExit !== null && graded.beforeExit !== 0 && graded.afterExit === 0) break; // replay-guard:stop-at-fix
   }
-  if (runs.length === 0) return gradePracticeRow({ ...row, beforeExit, afterExit: fixed ? 0 : afterExit });
+  if (runs.length === 0) return gradePracticeRow({ ...row, beforeExit: mixBefore, afterExit: mixAfter });
   const graded = gradeTextRuns(runs, row);
   const sawFix = runs.some((run) => run.beforeExit !== null && run.beforeExit !== 0 && run.afterExit === 0);
   const sawBasePass = runs.some((run) => run.beforeExit === 0);

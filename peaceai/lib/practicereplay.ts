@@ -72,7 +72,7 @@ export interface GradedRow {
   afterExit?: number;
   /**
    * A same-candidate fail-then-pass shared the row with another candidate whose base already passed.
-   * Published on dev rows only. Held-out rows contribute to the count and keep their reason.
+   * Published on dev rows only. Held-out rows do not publish the flag or a count.
    */
   flakyBase?: boolean;
 }
@@ -168,11 +168,11 @@ export function gapRecord(row: GradedRow): Record<string, unknown> {
   };
 }
 
-/** How many rows had a base pass beside a same-candidate flip. Counts only: no exits and no diff. */
-export function flakyBaseCounts(rows: readonly Pick<GradedRow, "split" | "flakyBase">[]): { dev: number; "held-out": number } {
-  const out = { dev: 0, "held-out": 0 };
-  for (const row of rows) if (row.flakyBase) out[row.split] += 1;
-  return out;
+/** Dev rows with a base pass beside a same-candidate flip. Held-out rows are not counted. */
+export function flakyBaseDevCount(rows: readonly Pick<GradedRow, "split" | "flakyBase">[]): number {
+  let n = 0;
+  for (const row of rows) if (row.split === "dev" && row.flakyBase) n += 1;
+  return n;
 }
 
 /** Write replay.json and gaps.jsonl. Both go through gapRecord, so a held-out row cannot keep lines or a command. */
@@ -251,8 +251,8 @@ export function replayDocument(rows: readonly GradedRow[]): {
   creditCounts: ReturnType<typeof countsByUnderstanding>;
   excludedFromCredit: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; idiom: "enum-values" | "own-keys" }[];
   behavior: ReturnType<typeof behaviorBySplit>;
-  /** Base passes that sat beside a same-candidate flip. A count per split, not a held-out detail. */
-  flakyBase: ReturnType<typeof flakyBaseCounts>;
+  /** Dev rows with a base pass beside a same-candidate flip. Held-out rows are not included. */
+  flakyBase: number;
   rows: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string; beforeExit?: number; afterExit?: number; diagnostic?: GradedRow["diagnostic"]; shape?: string; examples?: number; behavior?: Behavior; diff?: string; counterexample?: BehaviorCounterexample; lines?: string[]; excludedFromCredit?: "enum-values" | "own-keys"; flakyBase?: true }[];
 } {
   const excludedFromCredit = rows.flatMap((row) => {
@@ -270,7 +270,7 @@ export function replayDocument(rows: readonly GradedRow[]): {
     creditCounts: countsByUnderstanding(rows.filter((row) => !seededIdiom(row))),
     excludedFromCredit,
     behavior: behaviorBySplit(rows),
-    flakyBase: flakyBaseCounts(rows),
+    flakyBase: flakyBaseDevCount(rows),
     rows: rows.map((row) => gapRecord(row) as {
       repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string;
       beforeExit?: number; afterExit?: number;

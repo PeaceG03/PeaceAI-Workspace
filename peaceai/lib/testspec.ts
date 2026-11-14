@@ -41,20 +41,15 @@ export const SPEC_CANT = [
 ] as const;
 export type SpecCant = (typeof SPEC_CANT)[number];
 
-/**
- * How many repair-v2 proposals test-as-spec will run.
- * The loop's own MAX_ATTEMPTS stays 20. This cap is the proposer's candidate list:
- * a row used to stop at 20 while next() still had a proposal, which is CANT_DO_YET_CAP.
- * It does not rise above MAX_CANDIDATES, and a caller's maxAttempts still clamps it down.
- */
-export function specAttemptCap(): number {
-  let cap = Math.min(MAX_ATTEMPTS, MAX_CANDIDATES);
-  cap = MAX_CANDIDATES; // spec-guard:attempt-budget
+/** The attempt cap. It cannot rise above the loop's cap or the proposer's candidate cap. Dev and held-out use the same cap. */
+export const SPEC_ATTEMPT_CAP = Math.min(MAX_ATTEMPTS, MAX_CANDIDATES);
+
+/** A caller's maxAttempts cannot rise above SPEC_ATTEMPT_CAP. Omitting it uses that cap. */
+export function clampSpecAttempts(asked: number | undefined): number {
+  let cap = Math.max(1, Math.floor(asked ?? SPEC_ATTEMPT_CAP));
+  cap = Math.min(SPEC_ATTEMPT_CAP, cap); // spec-guard:attempt-clamp
   return cap;
 }
-
-/** The attempt cap. A caller's maxAttempts cannot rise above it. */
-export const SPEC_ATTEMPT_CAP = specAttemptCap();
 
 export interface Expectation {
   kind: "equal" | "throws" | "type" | "boolean";
@@ -1223,7 +1218,7 @@ export function commandNeedsInstall(command: readonly string[]): boolean {
 }
 
 export function runTestSpec(input: SpecInput): SpecResult {
-  const cap = Math.min(SPEC_ATTEMPT_CAP, Math.max(1, Math.floor(input.maxAttempts ?? SPEC_ATTEMPT_CAP)));
+  const cap = clampSpecAttempts(input.maxAttempts);
   const deny = input.denyPatterns ?? [];
   const planned = practiceTestLaunch({
     command: input.testCommand,

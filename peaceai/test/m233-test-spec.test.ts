@@ -10,7 +10,7 @@ import { CALLEE_DEPTH, locate, MAX_CANDIDATES } from "../lib/editpropose.ts";
 import { MAX_ATTEMPTS } from "../lib/loop.ts";
 import { GIT_LOCK_ARGS, materializeSolverTree, practiceGit, practiceGitEnv, practiceSandboxReady, visibleNodeBin, writeCommitFile } from "../lib/practicemine.ts";
 import { adjacentFloat, behaviorInputSet, behaviorInputs, comparisonBounds, gradeBehavior, INPUT_CAP, parseProbe, PROBE_SENTINEL, readFieldProbes } from "../lib/specgrade.ts";
-import { classifyRunnerOutput, expectationsIn, failingTestNames, integerCmpClass, originalSuiteArgv, runTestSpec, sanitizeRunnerLines, scaffoldPlan, SPEC_ATTEMPT_CAP, specAttemptCap, specTask, type SpecInput } from "../lib/testspec.ts";
+import { clampSpecAttempts, classifyRunnerOutput, expectationsIn, failingTestNames, integerCmpClass, originalSuiteArgv, runTestSpec, sanitizeRunnerLines, scaffoldPlan, SPEC_ATTEMPT_CAP, specTask, type SpecInput } from "../lib/testspec.ts";
 
 const PATTERN = "^src/.+\\.ts$";
 
@@ -36,10 +36,12 @@ const keep = `export function keep(n: number): number {\n  return n;\n}\n`;
 const padTest = `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { pad } from "./pad.ts";\ntest("pad of 2", () => { assert.equal(pad(2), 3); });\n`;
 const keepTest = `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { keep } from "./keep.ts";\ntest("keep of 2", () => { assert.equal(keep(2), 2); });\n`;
 
-test("the attempt cap is the proposer's list, and the loop cap stays 20", () => {
-  assert.equal(MAX_ATTEMPTS, 20);
-  assert.equal(SPEC_ATTEMPT_CAP, MAX_CANDIDATES);
-  assert.ok(SPEC_ATTEMPT_CAP > MAX_ATTEMPTS);
+test("the attempt cap stays inside the loop and the proposer caps", () => {
+  assert.equal(SPEC_ATTEMPT_CAP, Math.min(MAX_ATTEMPTS, MAX_CANDIDATES));
+  assert.ok(SPEC_ATTEMPT_CAP <= MAX_ATTEMPTS);
+  assert.equal(clampSpecAttempts(undefined), SPEC_ATTEMPT_CAP);
+  assert.equal(clampSpecAttempts(1), 1);
+  assert.equal(clampSpecAttempts(10_000), SPEC_ATTEMPT_CAP);
   assert.equal(specTask("Fix the total"), "make this failing test pass, context: Fix the total");
   assert.deepEqual(originalSuiteArgv(["node", "--test", "src/pad.test.ts"], "src/pad.test.ts", "full"), ["node", "--test"]);
   assert.deepEqual(
@@ -138,39 +140,6 @@ test("repair-v2 makes the failing test pass and leaves the other function alone"
     assert.equal(after.status, 0, `${after.stdout ?? ""}\n${after.stderr ?? ""}`);
   } finally {
     rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("a catalog edit past the old 20-attempt budget is reached, and a related test that disagrees is still a refusal", (t) => {
-  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
-  assert.equal(specAttemptCap(), MAX_CANDIDATES);
-  const guards = Array.from({ length: 21 }, () => "  if (a > b) n = n;").join("\n");
-  const source = `export function tally(a: number, b: number, n: number): number {\n${guards}\n  return n + 0;\n}\n`;
-  const recorded = `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { tally } from "./tally.ts";\ntest("tally", () => { assert.equal(tally(1, 0, 2), 3); });\n`;
-  const late = repo({ "src/tally.ts": source, "src/tally.test.ts": recorded });
-  const clash = repo({
-    "src/pad.ts": pad,
-    "src/pad.test.ts": padTest,
-    "src/other.test.ts": `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { pad } from "./pad.ts";\ntest("pad stays", () => { assert.equal(pad(2), 2); });\n`,
-  });
-  try {
-    const stopped = runTestSpec(specInput(late, "src/tally.test.ts", { subject: "tally is short by one", maxAttempts: 20 }));
-    assert.equal(stopped.status, "cant");
-    if (stopped.status === "cant") assert.equal(stopped.reason, "CANT_DO_YET_CAP");
-    const got = runTestSpec(specInput(late, "src/tally.test.ts", { subject: "tally is short by one" }));
-    assert.equal(got.status, "diff", got.status === "diff" ? "" : got.reason);
-    if (got.status !== "diff") return;
-    assert.ok(got.attempts > 20);
-    assert.match(got.diff, /n \+ 1/);
-    const refused = runTestSpec(specInput(clash, "src/pad.test.ts", {
-      subject: "pad is short by one", originalSuite: "related", relatedTests: ["src/other.test.ts"],
-    }));
-    assert.notEqual(refused.status, "diff");
-    assert.equal(refused.status, "cant");
-    if (refused.status === "cant") assert.ok(refused.reason === "CANT_DO_YET_NO_VERIFY" || refused.reason === "CANT_DO_YET_CAP");
-  } finally {
-    rmSync(late, { recursive: true, force: true });
-    rmSync(clash, { recursive: true, force: true });
   }
 });
 

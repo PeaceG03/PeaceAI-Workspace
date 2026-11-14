@@ -62,12 +62,33 @@ if (suite === "replay") {
     );
     assert.equal(calls, 1);
   });
+  check("empty-runs", () => {
+    const none = mod.finishTextReplay([], () => ({ beforeExit: 1, afterExit: 0 }), row);
+    assert.notEqual(none.status, "pass");
+    assert.equal(none.reason, "TEST_NOT_RUN");
+  });
+  check("replay-call", () => {
+    const pair = {
+      schema: "peaceai-practice-pair:v1", credit: false, repo: "PeaceG03/PeaceSTOCKS", license: "owner", split: "dev",
+      baseSha: "a".repeat(40), fixSha: "b".repeat(40), testFile: "test/a.test.ts", testCommand: ["node", "--test", "test/a.test.ts"],
+      beforeExit: 1, afterExit: 0, files: ["src/a.ts", "test/a.test.ts"], subject: "Fix the parser",
+      toolchain: { nodePath: "/usr/bin/node", nodeVersion: "v22.23.4", manager: "npm", managerVersion: "10.0.0" },
+    };
+    const graded = mod.replayOne("", "", "", "", pair, "", {
+      candidates: [{ file: "a.diff" }, { file: "b.diff" }],
+      gradeOne: (file: string) => file === "a.diff" ? { beforeExit: 1, afterExit: null } : { beforeExit: 0, afterExit: 0 },
+    });
+    assert.notEqual(graded.status, "pass");
+    assert.notEqual(graded.reason, "GATE_PASS_AND_TEST");
+  });
 }
 
 if (suite === "budget") {
-  check("attempt-budget", () => {
-    assert.equal(mod.specAttemptCap(), 60);
-    assert.ok(mod.specAttemptCap() > 20);
+  check("attempt-clamp", () => {
+    assert.equal(mod.SPEC_ATTEMPT_CAP, 20);
+    assert.equal(mod.clampSpecAttempts(10_000), mod.SPEC_ATTEMPT_CAP);
+    assert.equal(mod.clampSpecAttempts(1), 1);
+    assert.equal(mod.clampSpecAttempts(undefined), mod.SPEC_ATTEMPT_CAP);
   });
 }
 

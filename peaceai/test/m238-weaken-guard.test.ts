@@ -4,7 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { finishTextReplay, gradeTextRuns } from "../bin/practice-replay.ts";
+import { finishTextReplay, gradeTextRuns, replayOne } from "../bin/practice-replay.ts";
+import type { PracticePair } from "../lib/practicemine.ts";
 import { replayDocument, seededIdiom } from "../lib/practicereplay.ts";
 import { visibleNodeBin } from "../lib/practicemine.ts";
 import { gradeBehavior, type Behavior } from "../lib/specgrade.ts";
@@ -129,14 +130,30 @@ test("a text flip is test-only, and a flaky base from another candidate is not a
     repo: "fixture/oven", split: "held-out", fixSha: "b".repeat(40), understanding: "text",
     status: beside.status, reason: beside.reason, gap: true, beforeExit: beside.beforeExit, afterExit: beside.afterExit, flakyBase: true,
   }]);
-  assert.equal(dev.flakyBase.dev, 1);
+  assert.equal(dev.flakyBase, 1);
   assert.equal(dev.rows[0]?.reason, "VERIFIED_TEST_ONLY");
   assert.equal(dev.rows[0]?.flakyBase, true);
-  assert.equal(held.flakyBase["held-out"], 1);
+  assert.equal(held.flakyBase, 0);
   assert.equal(held.rows[0]?.reason, "VERIFIED_TEST_ONLY");
   assert.equal("flakyBase" in (held.rows[0] ?? {}), false);
   assert.equal(held.rows[0]?.beforeExit, 1);
   assert.equal(held.rows[0]?.afterExit, 0);
+  const none = finishTextReplay([], () => ({ beforeExit: 1, afterExit: 0 }), row);
+  assert.notEqual(none.status, "pass");
+  assert.equal(none.reason, "TEST_NOT_RUN");
+  const pair: PracticePair = {
+    schema: "peaceai-practice-pair:v1", credit: false, repo: "PeaceG03/PeaceSTOCKS", license: "owner", split: "dev",
+    baseSha: "a".repeat(40), fixSha: "b".repeat(40), testFile: "test/a.test.ts", testCommand: ["node", "--test", "test/a.test.ts"],
+    beforeExit: 1, afterExit: 0, files: ["src/a.ts", "test/a.test.ts"], subject: "Fix the parser",
+    toolchain: { nodePath: "/usr/bin/node", nodeVersion: "v22.23.4", manager: "npm", managerVersion: "10.0.0" },
+  };
+  const fromReplay = replayOne("", "", "", "", pair, "", {
+    candidates: [{ file: "a.diff" }, { file: "b.diff" }],
+    gradeOne: (file) => file === "a.diff" ? { beforeExit: 1, afterExit: null } : { beforeExit: 0, afterExit: 0 },
+  });
+  assert.notEqual(fromReplay.status, "pass");
+  assert.notEqual(fromReplay.reason, "GATE_PASS_AND_TEST");
+  assert.equal(fromReplay.reason, "TEST_NOT_RUN");
 });
 
 test("seeded idiom rows are excluded from credit, and a held-out row with the same sha is not", () => {
