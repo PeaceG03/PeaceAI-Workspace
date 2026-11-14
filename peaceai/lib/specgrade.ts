@@ -298,6 +298,21 @@ export function comparisonBounds(source: string): { thresholds: number[]; length
         } else if (ordered || !(isNonNumericLiteral(node.left) || isNonNumericLiteral(node.right))) unprobed = true;
       }
     }
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && ts.isIdentifier(node.expression.name)) {
+      const called = node.expression.name.text;
+      const objectIs = called === "is" && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Object";
+      if (objectIs || called === "includes") {
+        const args = objectIs ? [...node.arguments] : node.arguments.slice(0, 1);
+        const literals = args.map((arg) => numericLiteral(arg)).filter((n): n is number => n !== null && Number.isFinite(n));
+        if (literals.length) for (const n of literals) thresholds.push(n);
+        else if (args.some((arg) => !isNonNumericLiteral(arg))) unprobed = true;
+      }
+    }
+    if (ts.isCaseClause(node)) {
+      const bound = numericLiteral(node.expression);
+      if (bound !== null && Number.isFinite(bound)) thresholds.push(bound);
+      else if (!isNonNumericLiteral(node.expression)) unprobed = true;
+    }
     ts.forEachChild(node, visit);
   };
   visit(sf);
@@ -437,7 +452,7 @@ export function behaviorInputSet(examples: readonly (readonly unknown[])[], flag
     }
   }
   const keptProbes = probed.slice(0, PROBE_CAP);
-  return { inputs: [...originals, ...keptMutants, ...keptProbes], truncated: varied.length > keptMutants.length };
+  return { inputs: [...originals, ...keptMutants, ...keptProbes], truncated: varied.length > keptMutants.length || probed.length > keptProbes.length };
 }
 
 /** The test's own argument lists, then mutants, then probes. Mutants are not sliced away to make room for probes. */
