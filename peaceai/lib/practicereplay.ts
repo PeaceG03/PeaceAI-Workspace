@@ -70,6 +70,11 @@ export interface GradedRow {
   beforeExit?: number;
   /** Recorded test exit after the candidate. */
   afterExit?: number;
+  /**
+   * A same-candidate fail-then-pass shared the row with another candidate whose base already passed.
+   * Published on dev rows only. Held-out rows contribute to the count and keep their reason.
+   */
+  flakyBase?: boolean;
 }
 
 /**
@@ -159,7 +164,15 @@ export function gapRecord(row: GradedRow): Record<string, unknown> {
     ...(diagnostic ? { diagnostic } : {}),
     ...(fit ? { shape: fit.shape, examples: fit.examples, behavior: fit.behavior, ...(fit.diff ? { diff: fit.diff } : {}), ...(fit.counterexample ? { counterexample: fit.counterexample } : {}) } : {}),
     ...(seededIdiom(row) ? { excludedFromCredit: seededIdiom(row) } : {}),
+    ...(row.split === "dev" && row.flakyBase ? { flakyBase: true } : {}),
   };
+}
+
+/** How many rows had a base pass beside a same-candidate flip. Counts only: no exits and no diff. */
+export function flakyBaseCounts(rows: readonly Pick<GradedRow, "split" | "flakyBase">[]): { dev: number; "held-out": number } {
+  const out = { dev: 0, "held-out": 0 };
+  for (const row of rows) if (row.flakyBase) out[row.split] += 1;
+  return out;
 }
 
 /** Write replay.json and gaps.jsonl. Both go through gapRecord, so a held-out row cannot keep lines or a command. */
@@ -238,7 +251,9 @@ export function replayDocument(rows: readonly GradedRow[]): {
   creditCounts: ReturnType<typeof countsByUnderstanding>;
   excludedFromCredit: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; idiom: "enum-values" | "own-keys" }[];
   behavior: ReturnType<typeof behaviorBySplit>;
-  rows: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string; diagnostic?: GradedRow["diagnostic"]; shape?: string; examples?: number; behavior?: Behavior; diff?: string; counterexample?: BehaviorCounterexample; lines?: string[]; excludedFromCredit?: "enum-values" | "own-keys" }[];
+  /** Base passes that sat beside a same-candidate flip. A count per split, not a held-out detail. */
+  flakyBase: ReturnType<typeof flakyBaseCounts>;
+  rows: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string; beforeExit?: number; afterExit?: number; diagnostic?: GradedRow["diagnostic"]; shape?: string; examples?: number; behavior?: Behavior; diff?: string; counterexample?: BehaviorCounterexample; lines?: string[]; excludedFromCredit?: "enum-values" | "own-keys"; flakyBase?: true }[];
 } {
   const excludedFromCredit = rows.flatMap((row) => {
     const idiom = seededIdiom(row);
@@ -255,10 +270,13 @@ export function replayDocument(rows: readonly GradedRow[]): {
     creditCounts: countsByUnderstanding(rows.filter((row) => !seededIdiom(row))),
     excludedFromCredit,
     behavior: behaviorBySplit(rows),
+    flakyBase: flakyBaseCounts(rows),
     rows: rows.map((row) => gapRecord(row) as {
       repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string;
+      beforeExit?: number; afterExit?: number;
       diagnostic?: GradedRow["diagnostic"]; shape?: string; examples?: number; behavior?: Behavior; diff?: string; counterexample?: BehaviorCounterexample; lines?: string[];
       excludedFromCredit?: "enum-values" | "own-keys";
+      flakyBase?: true;
     }),
   };
 }

@@ -11,7 +11,8 @@ import { pathToFileURL } from "node:url";
 const libDir = resolve(import.meta.dirname, "../lib");
 const sources = {
   report: { file: "practicereplay.ts", root: libDir, tag: /\/\/ (?:report-guard:(dev-only|seed-sha)|grade-guard:(text-cap))\s*$/, suite: "report", ids: ["dev-only", "seed-sha", "text-cap"] },
-  replay: { file: "practice-replay.ts", root: resolve(import.meta.dirname, "../bin"), tag: /\/\/ replay-guard:(text-behavior)\s*$/, suite: "replay", ids: ["text-behavior"] },
+  replay: { file: "practice-replay.ts", root: resolve(import.meta.dirname, "../bin"), tag: /\/\/ replay-guard:(text-behavior|same-candidate|stop-at-fix)\s*$/, suite: "replay", ids: ["same-candidate", "stop-at-fix", "text-behavior"] },
+  budget: { file: "testspec.ts", root: libDir, tag: /\/\/ spec-guard:(attempt-budget)\s*$/, suite: "budget", ids: ["attempt-budget"] },
 } as const;
 
 let dir: string;

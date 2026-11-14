@@ -41,8 +41,20 @@ export const SPEC_CANT = [
 ] as const;
 export type SpecCant = (typeof SPEC_CANT)[number];
 
-/** The attempt cap. It cannot rise above the loop's cap or the proposer's candidate cap. */
-export const SPEC_ATTEMPT_CAP = Math.min(MAX_ATTEMPTS, MAX_CANDIDATES);
+/**
+ * How many repair-v2 proposals test-as-spec will run.
+ * The loop's own MAX_ATTEMPTS stays 20. This cap is the proposer's candidate list:
+ * a row used to stop at 20 while next() still had a proposal, which is CANT_DO_YET_CAP.
+ * It does not rise above MAX_CANDIDATES, and a caller's maxAttempts still clamps it down.
+ */
+export function specAttemptCap(): number {
+  let cap = Math.min(MAX_ATTEMPTS, MAX_CANDIDATES);
+  cap = MAX_CANDIDATES; // spec-guard:attempt-budget
+  return cap;
+}
+
+/** The attempt cap. A caller's maxAttempts cannot rise above it. */
+export const SPEC_ATTEMPT_CAP = specAttemptCap();
 
 export interface Expectation {
   kind: "equal" | "throws" | "type" | "boolean";

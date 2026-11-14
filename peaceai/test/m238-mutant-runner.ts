@@ -44,6 +44,31 @@ if (suite === "replay") {
     assert.notEqual(mixed.status, "pass");
     assert.notEqual(mixed.reason, "GATE_PASS_AND_TEST");
   });
+  check("same-candidate", () => {
+    const mixed = mod.finishTextReplay(
+      [{ file: "a.diff" }, { file: "b.diff" }],
+      (file: string) => file === "a.diff" ? { beforeExit: 1, afterExit: null } : { beforeExit: 0, afterExit: 0 },
+      row,
+    );
+    assert.notEqual(mixed.status, "pass");
+    assert.notEqual(mixed.reason, "GATE_PASS_AND_TEST");
+  });
+  check("stop-at-fix", () => {
+    let calls = 0;
+    mod.finishTextReplay(
+      [{ file: "a.diff" }, { file: "b.diff" }, { file: "c.diff" }],
+      () => { calls += 1; return { beforeExit: 1, afterExit: 0 }; },
+      row,
+    );
+    assert.equal(calls, 1);
+  });
+}
+
+if (suite === "budget") {
+  check("attempt-budget", () => {
+    assert.equal(mod.specAttemptCap(), 60);
+    assert.ok(mod.specAttemptCap() > 20);
+  });
 }
 
 process.stdout.write(JSON.stringify({ failed, crashed }) + "\n");

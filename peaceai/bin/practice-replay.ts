@@ -318,13 +318,14 @@ function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: st
     const gateOut = `${gated.stdout ?? ""}\n${gated.stderr ?? ""}`;
     const gatePass = gated.status === 0 && /GATE PASS/.test(gateOut);
     if (!gatePass) return { ...blank(pair, "text"), ...gradePracticeRow({ scorable: true, core: "ok", job, gatePass: false, beforeExit: null, afterExit: null }) };
-    const runs: { beforeExit: number | null; afterExit: number | null }[] = [];
     const summary = JSON.parse(readFileSync(summaryPath, "utf8")) as { candidates?: { file: string }[] };
-    for (const candidate of summary.candidates ?? []) {
-      const diff = readFileSync(join(outDir, candidate.file), "utf8");
-      runs.push(gradeCandidate(repoDir, pair, diff, modules));
-    }
-    return { ...blank(pair, "text"), ...gradeTextRuns(runs, { scorable: true, core: "ok", job, gatePass: true }) };
+    return {
+      ...blank(pair, "text"),
+      ...finishTextReplay(summary.candidates ?? [], (file) => {
+        const diff = readFileSync(join(outDir, file), "utf8");
+        return gradeCandidate(repoDir, pair, diff, modules);
+      }, { scorable: true, core: "ok", job, gatePass: true }),
+    };
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(outDir, { recursive: true, force: true });
@@ -360,6 +361,38 @@ export function gradeTextRuns(runs: readonly { beforeExit: number | null; afterE
     afterExit: picked.afterExit,
     ...(picked.fixed ? { behavior: textFlipVerdict() } : {}), // replay-guard:text-behavior
   });
+}
+
+/**
+ * The gradeTextRuns call inside replayOne. Each candidate stays its own pair.
+ * Without the paired push, the first base exit is joined to a later after exit
+ * and graded with no behavior, which is the mix-and-match pass.
+ * Grading stops at the first same-candidate fail-then-pass. pickTextRun returns
+ * that pair and does not read a later run, so the status, the reason, and those
+ * exits cannot change. A base pass already recorded before that pair is kept.
+ */
+export function finishTextReplay(
+  candidates: readonly { file: string }[],
+  gradeOne: (file: string) => { beforeExit: number | null; afterExit: number | null },
+  row: Omit<GradeInput, "beforeExit" | "afterExit" | "behavior">,
+): ReturnType<typeof gradePracticeRow> & { flakyBase?: true } {
+  let beforeExit: number | null = null;
+  let afterExit: number | null = null;
+  let fixed = false;
+  const runs: { beforeExit: number | null; afterExit: number | null }[] = [];
+  for (const candidate of candidates) {
+    const graded = gradeOne(candidate.file);
+    if (beforeExit === null) beforeExit = graded.beforeExit;
+    if (graded.beforeExit !== null && graded.beforeExit !== 0 && graded.afterExit === 0) { afterExit = 0; fixed = true; }
+    else if (afterExit === null) afterExit = graded.afterExit;
+    runs.push(graded); // replay-guard:same-candidate
+    if (graded.beforeExit !== null && graded.beforeExit !== 0 && graded.afterExit === 0) break; // replay-guard:stop-at-fix
+  }
+  if (runs.length === 0) return gradePracticeRow({ ...row, beforeExit, afterExit: fixed ? 0 : afterExit });
+  const graded = gradeTextRuns(runs, row);
+  const sawFix = runs.some((run) => run.beforeExit !== null && run.beforeExit !== 0 && run.afterExit === 0);
+  const sawBasePass = runs.some((run) => run.beforeExit === 0);
+  return sawFix && sawBasePass ? { ...graded, flakyBase: true } : graded;
 }
 
 function blank(pair: PracticePair, understanding: Understanding): Pick<GradedRow, "repo" | "split" | "fixSha" | "understanding"> {

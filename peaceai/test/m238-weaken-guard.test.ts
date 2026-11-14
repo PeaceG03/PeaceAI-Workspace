@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { gradeTextRuns } from "../bin/practice-replay.ts";
+import { finishTextReplay, gradeTextRuns } from "../bin/practice-replay.ts";
 import { replayDocument, seededIdiom } from "../lib/practicereplay.ts";
 import { visibleNodeBin } from "../lib/practicemine.ts";
 import { gradeBehavior, type Behavior } from "../lib/specgrade.ts";
@@ -90,6 +90,53 @@ test("a text flip is test-only, and a flaky base from another candidate is not a
   const flake = gradeTextRuns([{ beforeExit: 0, afterExit: 0 }], row);
   assert.equal(flake.status, "unmeasured");
   assert.equal(flake.reason, "TEST_BASE_NOT_FAILING");
+  let calls = 0;
+  const throughReplay = finishTextReplay(
+    [{ file: "a.diff" }, { file: "b.diff" }],
+    () => {
+      calls += 1;
+      return calls === 1 ? { beforeExit: 1, afterExit: null } : { beforeExit: 0, afterExit: 0 };
+    },
+    row,
+  );
+  assert.equal(calls, 2);
+  assert.notEqual(throughReplay.status, "pass");
+  assert.notEqual(throughReplay.reason, "GATE_PASS_AND_TEST");
+  assert.equal(throughReplay.reason, "TEST_NOT_RUN");
+  const beside = finishTextReplay(
+    [{ file: "a.diff" }, { file: "b.diff" }, { file: "c.diff" }],
+    (file) => file === "b.diff" ? { beforeExit: 0, afterExit: 0 } : file === "c.diff" ? { beforeExit: 1, afterExit: 0 } : { beforeExit: 1, afterExit: null },
+    row,
+  );
+  assert.equal(beside.reason, "VERIFIED_TEST_ONLY");
+  assert.equal(beside.flakyBase, true);
+  assert.equal(beside.beforeExit, 1);
+  assert.equal(beside.afterExit, 0);
+  let stopped = 0;
+  const early = finishTextReplay(
+    [{ file: "a.diff" }, { file: "b.diff" }, { file: "c.diff" }],
+    () => { stopped += 1; return { beforeExit: 1, afterExit: 0 }; },
+    row,
+  );
+  assert.equal(stopped, 1);
+  assert.equal(early.reason, "VERIFIED_TEST_ONLY");
+  assert.equal(early.flakyBase, undefined);
+  const dev = replayDocument([{
+    repo: "fixture/oven", split: "dev", fixSha: "a".repeat(40), understanding: "text",
+    status: beside.status, reason: beside.reason, gap: true, beforeExit: beside.beforeExit, afterExit: beside.afterExit, flakyBase: true,
+  }]);
+  const held = replayDocument([{
+    repo: "fixture/oven", split: "held-out", fixSha: "b".repeat(40), understanding: "text",
+    status: beside.status, reason: beside.reason, gap: true, beforeExit: beside.beforeExit, afterExit: beside.afterExit, flakyBase: true,
+  }]);
+  assert.equal(dev.flakyBase.dev, 1);
+  assert.equal(dev.rows[0]?.reason, "VERIFIED_TEST_ONLY");
+  assert.equal(dev.rows[0]?.flakyBase, true);
+  assert.equal(held.flakyBase["held-out"], 1);
+  assert.equal(held.rows[0]?.reason, "VERIFIED_TEST_ONLY");
+  assert.equal("flakyBase" in (held.rows[0] ?? {}), false);
+  assert.equal(held.rows[0]?.beforeExit, 1);
+  assert.equal(held.rows[0]?.afterExit, 0);
 });
 
 test("seeded idiom rows are excluded from credit, and a held-out row with the same sha is not", () => {
