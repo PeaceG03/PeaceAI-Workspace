@@ -1218,12 +1218,13 @@ test("module constants, string carve-outs, scale, and regex are not strict when 
   const inner = "export function f(a: number): boolean {\n  const BAD = new Set([0.3]);\n  return BAD.has(a);\n}\n";
   assert.notEqual(grade(inner, num("false"), ints), "verified_strict");
   assert.equal(grade(inner, inner, ints), "verified_strict");
-  for (const expr of ["a === 3 / 10", "~~(a * 10) === 3", "Math.floor(a * 10) === 3", "Math.trunc(a * 10) === 3", "(a * 10) >> 0 === 3", "a * 10 === 3", "/0[.]3/.test(String(a))", "Math.abs(a - 0.1) ** 2 < 1e-18"]) {
+  for (const expr of ["a === 3 / 10", "~~(a * 10) === 3", "Math.floor(a * 10) === 3", "Math.trunc(a * 10) === 3", "Math.round(a * 10) === 3", "Math.ceil(a * 10) === 3", "(a * 10) >> 0 === 3", "a * 10 === 3", "a / 10 === 0.03", "Math.floor(a / 0.1) === 3", "/0[.]3/.test(String(a))", "Math.abs(a - 0.1) ** 2 < 1e-18"]) {
     assert.notEqual(grade(num(expr), num("false"), ints), "verified_strict");
     assert.equal(grade(num(expr), num(expr), ints), "verified_strict");
   }
   assert.notEqual(grade(str('a.toLowerCase() === "x"'), str("false"), words), "verified_strict");
   assert.equal(grade(str('a.toLowerCase() === "x"'), str('a.toLowerCase() === "x"'), words), "verified_strict");
+  assert.notEqual(grade(str('a.toLowerCase() === "x"'), str('a === "x"'), words), "verified_strict");
   assert.notEqual(grade(str('a.trim() === "x"'), str("false"), words), "verified_strict");
   assert.equal(grade(str('a.trim() === "x"'), str('a.trim() === "x"'), words), "verified_strict");
   const shadowed = "const BAD = new Set([0.3]);\nexport function f(a: number): boolean {\n  const BAD = new Set([9]);\n  return BAD.has(a);\n}\n";
@@ -1250,4 +1251,17 @@ test("module constants, string carve-outs, scale, and regex are not strict when 
   assert.equal(grade(record, record, [[{}]]), "verified_strict");
   const reassigned = "export function f(a: number): boolean {\n  let BAD = new Set([0.3]);\n  BAD = new Set([1]);\n  return BAD.has(a);\n}\n";
   assert.equal(grade(reassigned, reassigned, ints), "verified_test_only");
+  const recordArg = (expr: string) => `export function f(a: Record<string, unknown>): boolean {\n  return ${expr};\n}\n`;
+  const empty = [[{}]];
+  for (const expr of ["a.x === 1", "Object.keys(a).length === 2", "a[0.3] === 'yes'", "a[0.3] === 2", "a[0.3] === true && a.y === 1"]) {
+    assert.notEqual(grade(recordArg(expr), recordArg("false"), empty), "verified_strict", expr);
+  }
+  const retries = "export function f(opts: { retries?: number }): boolean {\n  return opts.retries > 3;\n}\n";
+  const retriesFalse = "export function f(opts: { retries?: number }): boolean {\n  return false;\n}\n";
+  assert.notEqual(grade(retries, retriesFalse, empty), "verified_strict");
+  const list = "export function f(a: { list: number[] }): boolean {\n  return a.list.includes(1);\n}\n";
+  assert.equal(grade(list, list, [[{ list: [0] }]]), "verified_strict");
+  const klass = "class K { static S = new Set([0.3]); }\nexport function f(a: number): boolean {\n  return K.S.has(a);\n}\n";
+  assert.equal(grade(klass, klass, ints), "verified_strict");
+  assert.notEqual(grade(klass, num("false"), ints), "verified_strict");
 });

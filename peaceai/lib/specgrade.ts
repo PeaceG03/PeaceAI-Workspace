@@ -355,6 +355,24 @@ function remember(text: string, numbers: number[], strings: string[]): void {
   }
 }
 
+/** A class static initializer written in this file, such as `class K { static S = new Set([0.3]); }`. */
+function staticMemberInit(className: string, prop: string, at: ts.Node): ts.Expression | null {
+  let cur: ts.Node | undefined = at;
+  while (cur && !ts.isSourceFile(cur)) cur = cur.parent;
+  if (!cur || !ts.isSourceFile(cur)) return null;
+  for (const st of cur.statements) {
+    if (!ts.isClassDeclaration(st) || st.name?.text !== className) continue;
+    for (const member of st.members) {
+      if (!ts.isPropertyDeclaration(member) || !member.initializer) continue;
+      const isStatic = member.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.StaticKeyword) === true;
+      const name = member.name;
+      const text = ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name) ? name.text : "";
+      if (isStatic && text === prop) return member.initializer;
+    }
+  }
+  return null;
+}
+
 /** Numbers and strings written in an array, a Set or Map, an object key, or a same-file binding. */
 function collectLiteralNumbers(node: ts.Node, numbers: number[], strings: string[], seen = new Set<string>()): void {
   const cur = unwrapExpr(node);
@@ -370,17 +388,24 @@ function collectLiteralNumbers(node: ts.Node, numbers: number[], strings: string
   }
   if (ts.isPropertyAccessExpression(cur)) {
     const obj = unwrapExpr(cur.expression);
-    const init = ts.isIdentifier(obj) ? bindingAt(obj, obj.text)?.init : null;
-    const literal = init ? unwrapExpr(init) : obj;
-    if (ts.isObjectLiteralExpression(literal)) {
-      for (const prop of literal.properties) {
-        if (!ts.isPropertyAssignment(prop)) continue;
-        const key = ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name) || ts.isNumericLiteral(prop.name) ? prop.name.text : null;
-        if (key === cur.name.text) collectLiteralNumbers(prop.initializer, numbers, strings, seen);
+    if (!ts.isIdentifier(obj)) { unresolvedBinding = true; return; }
+    const found = bindingAt(obj, obj.text);
+    if (found) {
+      if (found.opaque || !found.init) { unresolvedBinding = true; return; }
+      const literal = unwrapExpr(found.init);
+      if (ts.isObjectLiteralExpression(literal)) {
+        for (const prop of literal.properties) {
+          if (!ts.isPropertyAssignment(prop)) continue;
+          const key = ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name) || ts.isNumericLiteral(prop.name) ? prop.name.text : null;
+          if (key === cur.name.text) collectLiteralNumbers(prop.initializer, numbers, strings, seen);
+        }
+        return;
       }
+      unresolvedBinding = true;
       return;
     }
-    unresolvedBinding = true;
+    const member = staticMemberInit(obj.text, cur.name.text, obj);
+    if (member) collectLiteralNumbers(member, numbers, strings, seen);
     return;
   }
   if (ts.isSpreadElement(cur)) {
@@ -427,16 +452,21 @@ function stripIntegerize(node: ts.Node): ts.Node {
     const inner = unwrapExpr(cur.operand);
     if (ts.isPrefixUnaryExpression(inner) && inner.operator === ts.SyntaxKind.TildeToken) return unwrapExpr(inner.operand);
   }
-  if (ts.isCallExpression(cur) && ts.isPropertyAccessExpression(cur.expression) && ts.isIdentifier(cur.expression.name) && (cur.expression.name.text === "floor" || cur.expression.name.text === "trunc") && ts.isIdentifier(cur.expression.expression) && cur.expression.expression.text === "Math" && cur.arguments[0]) return unwrapExpr(cur.arguments[0]);
+  if (ts.isCallExpression(cur) && ts.isPropertyAccessExpression(cur.expression) && ts.isIdentifier(cur.expression.name) && (cur.expression.name.text === "floor" || cur.expression.name.text === "trunc" || cur.expression.name.text === "round" || cur.expression.name.text === "ceil") && ts.isIdentifier(cur.expression.expression) && cur.expression.expression.text === "Math" && cur.arguments[0]) return unwrapExpr(cur.arguments[0]);
   if (ts.isBinaryExpression(cur) && (cur.operatorToken.kind === ts.SyntaxKind.BarToken || cur.operatorToken.kind === ts.SyntaxKind.GreaterThanGreaterThanToken) && numericLiteral(cur.right) === 0) return unwrapExpr(cur.left);
   return cur;
 }
 
-/** `(a * 10 | 0) === 3`, `~~(a * 10) === 3`, `Math.floor(a * 10) === 3`, `(a * 10) >> 0 === 3`, and `a * 10 === 3` stand for 0.3. */
+/** `(a * 10 | 0) === 3`, `~~(a * 10) === 3`, `Math.floor(a * 10) === 3`, `(a * 10) >> 0 === 3`, `a * 10 === 3`, and `a / 10 === 0.03` stand for 0.3. */
 function scaledProbe(node: ts.BinaryExpression): number | null {
   const core = stripIntegerize(node);
-  if (!ts.isBinaryExpression(core) || core.operatorToken.kind !== ts.SyntaxKind.AsteriskToken) return null;
-  const scale = numericLiteral(core.left) ?? numericLiteral(core.right);
+  if (!ts.isBinaryExpression(core)) return null;
+  const mul = core.operatorToken.kind === ts.SyntaxKind.AsteriskToken;
+  const div = core.operatorToken.kind === ts.SyntaxKind.SlashToken;
+  if (!mul && !div) return null;
+  // `3 / 10` is the quotient itself. A scaled variable is the left operand of `/`.
+  if (div && numericLiteral(core.left) !== null) return null;
+  const scale = div ? numericLiteral(core.right) : (numericLiteral(core.left) ?? numericLiteral(core.right));
   if (scale === null || scale === 0) return null;
   let parent: ts.Node = node.parent;
   while (ts.isParenthesizedExpression(parent) || (ts.isPrefixUnaryExpression(parent) && parent.operator === ts.SyntaxKind.TildeToken)) parent = parent.parent;
@@ -445,7 +475,8 @@ function scaledProbe(node: ts.BinaryExpression): number | null {
   if (!ts.isBinaryExpression(parent)) return null;
   const target = numericLiteral(parent.left) ?? numericLiteral(parent.right);
   if (target === null) return null;
-  return target / scale;
+  const value = div ? target * scale : target / scale;
+  return Number.isFinite(value) ? value : null;
 }
 
 /** The next representable float above or below `value`. A bound and these neighbors are the probe, not a fixed 1e-6 gap. */
@@ -577,16 +608,6 @@ export function comparisonBounds(source: string): { thresholds: number[]; length
 
 type NumPath = (string | number)[];
 
-function plainObjectPaths(value: unknown, prefix: NumPath = []): NumPath[] {
-  const out: NumPath[] = [];
-  if (Array.isArray(value)) value.forEach((item, index) => out.push(...plainObjectPaths(item, [...prefix, index])));
-  else if (value && typeof value === "object" && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)) {
-    out.push(prefix);
-    for (const key of Object.keys(value)) out.push(...plainObjectPaths((value as Record<string, unknown>)[key], [...prefix, key]));
-  }
-  return out;
-}
-
 function withProp(value: unknown, path: NumPath, key: string, prop: unknown): unknown {
   if (path.length === 0) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return value;
@@ -715,10 +736,95 @@ function withLength(value: unknown, path: NumPath, length: number): unknown {
   return value;
 }
 
+function gradedFunction(sf: ts.SourceFile, symbol: string): ts.FunctionLikeDeclaration | null {
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name?.text === symbol) return st;
+    if (!ts.isVariableStatement(st)) continue;
+    for (const decl of st.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name) || decl.name.text !== symbol || !decl.initializer) continue;
+      const init = decl.initializer;
+      if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) return init;
+    }
+  }
+  return null;
+}
+
+function concreteLiteral(node: ts.Node): unknown {
+  const cur = unwrapExpr(node);
+  if (ts.isStringLiteral(cur) || ts.isNoSubstitutionTemplateLiteral(cur)) return cur.text;
+  if (cur.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (cur.kind === ts.SyntaxKind.FalseKeyword) return false;
+  const n = numericLiteral(cur);
+  if (n !== null && Number.isFinite(n)) return n;
+  return undefined;
+}
+
+function fieldOfParam(node: ts.Node, params: ReadonlyMap<string, number>): { index: number; key: string } | null {
+  const cur = unwrapExpr(node);
+  const obj = ts.isPropertyAccessExpression(cur) || ts.isElementAccessExpression(cur) ? unwrapExpr(cur.expression) : null;
+  if (!obj || !ts.isIdentifier(obj)) return null;
+  const index = params.get(obj.text);
+  if (index === undefined) return null;
+  if (ts.isPropertyAccessExpression(cur) && ts.isIdentifier(cur.name)) return { index, key: cur.name.text };
+  if (ts.isElementAccessExpression(cur) && cur.argumentExpression) {
+    const key = concreteLiteral(cur.argumentExpression);
+    if (typeof key === "string" || typeof key === "number") return { index, key: String(key) };
+  }
+  return null;
+}
+
+function valueThatPasses(kind: ts.SyntaxKind, bound: number): number | undefined {
+  if (!Number.isFinite(bound)) return undefined;
+  if (kind === ts.SyntaxKind.GreaterThanToken) return Number.isSafeInteger(bound) ? bound + 1 : adjacentFloat(bound, 1);
+  if (kind === ts.SyntaxKind.GreaterThanEqualsToken) return bound;
+  if (kind === ts.SyntaxKind.LessThanToken) return Number.isSafeInteger(bound) ? bound - 1 : adjacentFloat(bound, -1);
+  if (kind === ts.SyntaxKind.LessThanEqualsToken) return bound;
+  return undefined;
+}
+
+/** Fields a parameter comparison reads, set to a value that makes that comparison true. One map per parameter. */
+export function readFieldProbes(source: string, symbol: string): Array<Record<string, unknown>> {
+  const sf = ts.createSourceFile("candidate.ts", source, ts.ScriptTarget.Latest, true);
+  const fn = gradedFunction(sf, symbol);
+  if (!fn) return [];
+  const params = new Map<string, number>();
+  fn.parameters.forEach((param, index) => { if (ts.isIdentifier(param.name)) params.set(param.name.text, index); });
+  const fields = fn.parameters.map(() => ({} as Record<string, unknown>));
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionLike(node) && node !== fn) return;
+    if (ts.isBinaryExpression(node)) {
+      const kind = node.operatorToken.kind;
+      const left = fieldOfParam(node.left, params);
+      const right = fieldOfParam(node.right, params);
+      const leftLit = concreteLiteral(node.left);
+      const rightLit = concreteLiteral(node.right);
+      const equality = kind === ts.SyntaxKind.EqualsEqualsToken || kind === ts.SyntaxKind.EqualsEqualsEqualsToken;
+      const ordered = kind === ts.SyntaxKind.GreaterThanToken || kind === ts.SyntaxKind.GreaterThanEqualsToken
+        || kind === ts.SyntaxKind.LessThanToken || kind === ts.SyntaxKind.LessThanEqualsToken;
+      if (equality && left && rightLit !== undefined) fields[left.index]![left.key] = rightLit;
+      else if (equality && right && leftLit !== undefined) fields[right.index]![right.key] = leftLit;
+      else if (ordered && left && typeof rightLit === "number") {
+        const value = valueThatPasses(kind, rightLit);
+        if (value !== undefined) fields[left.index]![left.key] = value;
+      } else if (ordered && right && typeof leftLit === "number") {
+        const flipped = kind === ts.SyntaxKind.GreaterThanToken ? ts.SyntaxKind.LessThanToken
+          : kind === ts.SyntaxKind.GreaterThanEqualsToken ? ts.SyntaxKind.LessThanEqualsToken
+            : kind === ts.SyntaxKind.LessThanToken ? ts.SyntaxKind.GreaterThanToken
+              : ts.SyntaxKind.LessThanEqualsToken;
+        const value = valueThatPasses(flipped, leftLit);
+        if (value !== undefined) fields[right.index]![right.key] = value;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  if (fn.body) visit(fn.body);
+  return fields;
+}
+
 export interface BehaviorInputSet { inputs: unknown[][]; truncated: boolean }
 
 /** Originals and mutants share INPUT_CAP. Probes use PROBE_CAP and do not push mutants out. */
-export function behaviorInputSet(examples: readonly (readonly unknown[])[], flags: readonly ParamFlags[], seedText: string, thresholds: readonly number[] = [], lengthThresholds: readonly number[] = [], stringThresholds: readonly string[] = []): BehaviorInputSet {
+export function behaviorInputSet(examples: readonly (readonly unknown[])[], flags: readonly ParamFlags[], seedText: string, thresholds: readonly number[] = [], lengthThresholds: readonly number[] = [], stringThresholds: readonly string[] = [], fieldSets: ReadonlyArray<ReadonlyArray<Readonly<Record<string, unknown>>>> = []): BehaviorInputSet {
   const originals: unknown[][] = [];
   const seen = new Set<string>();
   const add = (bucket: unknown[][], args: unknown[]) => {
@@ -759,13 +865,17 @@ export function behaviorInputSet(examples: readonly (readonly unknown[])[], flag
     for (const path of stringPaths(example)) {
       for (const text of stringThresholds) add(probed, setAtAny(example, path, text) as unknown[]);
     }
-    for (const path of plainObjectPaths(example)) {
-      const obj = readAt(example, path);
-      if (numberPaths(obj).length > 0) continue;
-      for (const n of thresholds) {
-        if (!Number.isFinite(n)) continue;
-        add(probed, withProp(example, path, String(n), true) as unknown[]);
-      }
+    // A key is set only when the graded function reads that field. One object carries every such field,
+    // so `a[0.3] === true && a.y === 1` is not "proved" by writing an unread key.
+    for (const maps of fieldSets) {
+      maps.forEach((fields, index) => {
+        if (Object.keys(fields).length === 0) return;
+        const obj = example[index];
+        if (!plainObject(obj) || numberPaths(obj).length > 0) return;
+        let next: unknown = [...example];
+        for (const [key, value] of Object.entries(fields)) next = withProp(next, [index], key, value);
+        add(probed, next as unknown[]);
+      });
     }
     for (const path of numberPaths(example)) {
       for (const text of stringThresholds) {
@@ -871,7 +981,8 @@ export function gradeBehavior(input: {
   if (input.target.args.some((args) => args.some(containsOpaque))) return { behavior: "diff_unavailable", compared: 0 };
   const candidateBounds = comparisonBounds(source);
   const fixBounds = comparisonBounds(fixSource);
-  const flags = paramFlags(source, input.target.form === "named" ? input.target.exportName : input.target.symbol);
+  const symbol = input.target.form === "named" ? input.target.exportName : input.target.symbol;
+  const flags = paramFlags(source, symbol);
   const planned = behaviorInputSet(
     input.target.args,
     flags,
@@ -879,6 +990,7 @@ export function gradeBehavior(input: {
     [...candidateBounds.thresholds, ...fixBounds.thresholds],
     [...candidateBounds.lengthThresholds, ...fixBounds.lengthThresholds],
     [...candidateBounds.strings, ...fixBounds.strings],
+    [readFieldProbes(source, symbol), readFieldProbes(fixSource, symbol)],
   );
   const inputs = planned.inputs;
   if (!inputs.length) return { behavior: "diff_unavailable", compared: 0 };

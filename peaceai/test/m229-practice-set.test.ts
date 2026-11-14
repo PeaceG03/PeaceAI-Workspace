@@ -1300,6 +1300,8 @@ test("EPERM on a live start-time-0 pid reaps nothing, and a stale unknown start-
     assert.equal(existsSync(hidden), false);
     const freshUnknown = mkdtempSync(join(root, "peaceai-held-clone-"));
     writeFileSync(join(freshUnknown, ".peaceai-owner"), "2147483645 0\n");
+    const freshStamp = new Date(Date.now() - 5_000);
+    utimesSync(freshUnknown, freshStamp, freshStamp);
     assert.equal(reapStaleHeldTemps(root, undefined, { signal: esrch, procHas: () => null }).includes(freshUnknown), false);
     assert.equal(existsSync(freshUnknown), true);
     const realStart = mkdtempSync(join(root, "peaceai-held-clone-"));
@@ -1316,6 +1318,9 @@ test("EPERM on a live start-time-0 pid reaps nothing, and a stale unknown start-
     for (let i = 0; i < HELD_START0_CAP + 1; i++) {
       const dir = mkdtempSync(join(root, "peaceai-held-clone-"));
       writeFileSync(join(dir, ".peaceai-owner"), `214748200${i} 0\n`);
+      // Newer than freshUnknown, and distinct from each other, so the cap's oldest-first order does not depend on readdir.
+      const stamp = new Date(Date.now() - 1_000 * (HELD_START0_CAP - i));
+      utimesSync(dir, stamp, stamp);
       noProc.push(dir);
     }
     const gone = reapStaleHeldTemps(root, undefined, { signal: esrch, procRoot: join(root, "no-such-proc") });
