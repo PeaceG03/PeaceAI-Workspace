@@ -297,6 +297,186 @@ export function declaredExport(source: string, imported: string, member: string)
   return name;
 }
 
+/**
+ * A changed line is covered only when it sits in the body of `symbol` and not in a nested function.
+ * A nested edit is not covered by a probe of the outer function: the probe calls the outer function,
+ * and that does not show the nested function ran. New and removed nested functions are the same.
+ * A line that also contains a parameter is not entirely inside the body, so it is not covered.
+ */
+function bodyHit(source: string, symbol: string, line: number, blockNested: boolean, blockFresh: boolean, other: string): boolean {
+  if (!source) return false;
+  const sf = ts.createSourceFile("mod.ts", source, ts.ScriptTarget.Latest, true);
+  const otherSf = ts.createSourceFile("other.ts", other, ts.ScriptTarget.Latest, true);
+  let fn = findFunction(sf, symbol);
+  if (!fn) fn = findArrow(sf, symbol); // cover-guard:arrow-body
+  if (!fn) fn = findMethod(sf, symbol); // cover-guard:method-body
+  const body = fn && functionBody(fn);
+  if (!fn || !body) return false;
+  const start = lineNumber(sf, body.getStart(sf));
+  const end = lineNumber(sf, body.getEnd());
+  if (line < start || line > end) return false;
+  if (fn.parameters.length > 0) {
+    const ps = lineNumber(sf, fn.parameters[0]!.getStart(sf));
+    const pe = lineNumber(sf, fn.parameters[fn.parameters.length - 1]!.getEnd());
+    if (line >= ps && line <= pe) return false;
+  }
+  const names = new Set(nestedFns(findFunction(otherSf, symbol) ?? findArrow(otherSf, symbol) ?? findMethod(otherSf, symbol), otherSf).map((span) => span.name));
+  let blocked = false;
+  for (const span of nestedFns(fn, sf)) {
+    if (line < span.start || line > span.end) continue;
+    const known = names.has(span.name);
+    if (known) blocked = blocked || blockNested;
+    else blocked = blocked || blockFresh;
+  }
+  return !blocked;
+}
+
+function lineNumber(sf: ts.SourceFile, pos: number): number {
+  return sf.getLineAndCharacterOfPosition(pos).line + 1;
+}
+
+function functionBody(fn: ts.FunctionLikeDeclaration): ts.Node | null {
+  return fn.body ?? null;
+}
+
+function findFunction(sf: ts.SourceFile, symbol: string): ts.FunctionLikeDeclaration | null {
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name?.text === symbol && st.body) return st;
+  }
+  return null;
+}
+
+function findArrow(sf: ts.SourceFile, symbol: string): ts.FunctionLikeDeclaration | null {
+  for (const st of sf.statements) {
+    if (!ts.isVariableStatement(st)) continue;
+    for (const decl of st.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name) || decl.name.text !== symbol || !decl.initializer) continue;
+      const init = decl.initializer;
+      if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) return init;
+    }
+  }
+  return null;
+}
+
+function withBody(fn: ts.Node): fn is ts.FunctionLikeDeclaration & { body: ts.Node } {
+  return (ts.isFunctionDeclaration(fn) || ts.isMethodDeclaration(fn) || ts.isGetAccessorDeclaration(fn) || ts.isSetAccessorDeclaration(fn) || ts.isConstructorDeclaration(fn) || ts.isFunctionExpression(fn) || ts.isArrowFunction(fn)) && fn.body != null;
+}
+
+function findMethod(sf: ts.SourceFile, symbol: string): ts.FunctionLikeDeclaration | null {
+  const found: ts.FunctionLikeDeclaration[] = [];
+  const add = (name: string | undefined, fn: ts.Node) => {
+    if (name !== symbol) return;
+    if (withBody(fn)) found.push(fn);
+  };
+  const visit = (node: ts.Node) => {
+    if (ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) {
+      const name = node.name && ts.isIdentifier(node.name) ? node.name.text : undefined;
+      add(name, node);
+    } else if ((ts.isPropertyAssignment(node) || ts.isPropertyDeclaration(node)) && node.initializer) {
+      const name = node.name && (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) && !ts.isComputedPropertyName(node.name) ? node.name.text : undefined;
+      add(name, node.initializer);
+    }
+    if (ts.isFunctionLike(node)) return;
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found.length === 1 ? found[0]! : null;
+}
+
+function nestedFns(fn: ts.FunctionLikeDeclaration | null, sf: ts.SourceFile): { name: string; start: number; end: number }[] {
+  if (!fn?.body) return [];
+  const out: { name: string; start: number; end: number }[] = [];
+  const visit = (node: ts.Node) => {
+    if (node === fn) { ts.forEachChild(node, visit); return; }
+    if (withBody(node)) {
+      const name = node.name && ts.isIdentifier(node.name) ? node.name.text : "";
+      out.push({ name, start: lineNumber(sf, node.getStart(sf)), end: lineNumber(sf, node.getEnd()) });
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(fn);
+  return out;
+}
+
+interface DiffSide { file: string; added: number[]; removed: number[] }
+
+function parseDiffLines(diff: string): DiffSide[] | null {
+  const files: DiffSide[] = [];
+  let cur: DiffSide | null = null;
+  let oldLine = 0;
+  let newLine = 0;
+  let inHunk = false;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("diff --git ")) { inHunk = false; cur = null; continue; }
+    if (line.startsWith("--- ")) { inHunk = false; continue; }
+    if (line.startsWith("+++ ")) {
+      inHunk = false;
+      const plus = /^\+\+\+ b\/(.+)$/.exec(line);
+      if (plus && plus[1] !== "/dev/null") {
+        cur = { file: plus[1]!, added: [], removed: [] };
+        files.push(cur);
+      } else cur = null;
+      continue;
+    }
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (hunk) {
+      if (!cur) return null;
+      inHunk = true;
+      oldLine = Number(hunk[1]);
+      newLine = Number(hunk[2]);
+      continue;
+    }
+    if (!inHunk || !cur || line === "" || line.startsWith("\\")) continue;
+    if (line.startsWith("+")) { cur.added.push(newLine); newLine += 1; continue; }
+    if (line.startsWith("-")) { cur.removed.push(oldLine); oldLine += 1; continue; }
+    if (line.startsWith(" ")) { oldLine += 1; newLine += 1; continue; }
+    return null;
+  }
+  return files;
+}
+
+/**
+ * True only when every changed line of the candidate diff lies inside a probed function body.
+ * An empty diff, a line that cannot be placed, a module-level line, another file, a parameter
+ * line, or a nested function is not covered.
+ */
+export function textHunksCovered(
+  diff: string,
+  files: readonly { path: string; before: string; after: string }[],
+  probes: readonly { file: string; symbol: string }[],
+): boolean {
+  const parsed = parseDiffLines(diff);
+  if (!parsed) return false;
+  const byPath = new Map(files.map((file) => [file.path, file]));
+  const added: { file: string; line: number }[] = [];
+  const removed: { file: string; line: number }[] = [];
+  for (const side of parsed) {
+    if (!byPath.has(side.file)) return false;
+    for (const line of side.added) added.push({ file: side.file, line });
+    for (const line of side.removed) removed.push({ file: side.file, line });
+  }
+  let lines = added.map((row) => row);
+  lines = lines.concat(removed); // cover-guard:removed-lines
+  let outside = false;
+  if (added.length + removed.length === 0) outside = true; // cover-guard:empty-change
+  const hit = (row: { file: string; line: number }, side: "before" | "after") => {
+    const file = byPath.get(row.file);
+    if (!file) return false;
+    const source = side === "after" ? file.after : file.before;
+    const other = side === "after" ? file.before : file.after;
+    const symbols = probes.filter((probe) => probe.file === row.file).map((probe) => probe.symbol);
+    if (symbols.length === 0) return false;
+    let nested = false;
+    nested = true; // cover-guard:nested-exclude
+    let fresh = false;
+    fresh = true; // cover-guard:new-helper
+    return symbols.some((symbol) => bodyHit(source, symbol, row.line, nested, fresh, other));
+  };
+  outside = outside || lines.some((row) => !hit(row, added.includes(row) ? "after" : "before")); // cover-guard:probe-all
+  return !outside;
+}
+
 /** Functions whose text differs between the two sides of a candidate diff. Nested functions count on their own. */
 export function changedFunctionNames(before: string, after: string): string[] {
   const texts = (source: string) => {

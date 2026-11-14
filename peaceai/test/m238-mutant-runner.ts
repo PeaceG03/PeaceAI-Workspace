@@ -91,15 +91,6 @@ if (suite === "replay") {
     const labelDiff = git("diff", "--", "src/oven.ts").stdout;
     git("add", "src/oven.ts");
     git("commit", "-q", "-m", "relabel");
-    const labelFix = git("rev-parse", "HEAD").stdout.trim();
-    check("no-targets", () => {
-      const empty = mod.gradeTextCandidate({
-        repoDir: repo, baseSha: labelBase, fixSha: labelFix, diff: labelDiff, testFile: "test/oven.test.ts",
-        sourcePattern: "^src/.*\\.ts$", nodePath: process.execPath,
-      });
-      assert.notEqual(empty.behavior, "verified_strict");
-      assert.notEqual(mod.finishTextRow(true, empty, row).reason, "GATE_PASS_AND_TEST");
-    });
     check("unavailable", () => {
       const missing = mod.gradeTextCandidate({
         repoDir: repo, baseSha: labelBase, fixSha: "0".repeat(40), diff: labelDiff, testFile: "test/oven.test.ts",
@@ -111,6 +102,54 @@ if (suite === "replay") {
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
+}
+
+if (suite === "cover") {
+  const file = "src/oven.ts";
+  const probe = [{ file, symbol: "warm" }];
+  const pack = (before: string, after: string, diff: string, probes = probe) => mod.textHunksCovered(diff, [{ path: file, before, after }], probes);
+  const diff = (body: string) => ["--- a/src/oven.ts", "+++ b/src/oven.ts", body, ""].join("\n");
+  check("arrow-body", () => {
+    const before = "export const warm = (n: number): boolean => {\n  return n > 0;\n};\n";
+    const after = "export const warm = (n: number): boolean => {\n  return n > 0 && n < 10;\n};\n";
+    const text = diff("@@ -1,3 +1,3 @@\n export const warm = (n: number): boolean => {\n-  return n > 0;\n+  return n > 0 && n < 10;\n };");
+    assert.equal(pack(before, after, text), true);
+  });
+  check("method-body", () => {
+    const before = "export const oven = {\n  warm(n: number): boolean {\n    return n > 0;\n  },\n};\n";
+    const after = "export const oven = {\n  warm(n: number): boolean {\n    return n > 0 && n < 10;\n  },\n};\n";
+    const text = diff("@@ -1,5 +1,5 @@\n export const oven = {\n   warm(n: number): boolean {\n-    return n > 0;\n+    return n > 0 && n < 10;\n   },\n };");
+    assert.equal(pack(before, after, text), true);
+  });
+  check("probe-all", () => {
+    const before = "export const pattern = /[a-z]/;\nexport function warm(n: number): boolean {\n  return n > 0;\n}\n";
+    const after = "export const pattern = /^/;\nexport function warm(n: number): boolean {\n  return n > 0;\n}\n";
+    const text = diff("@@ -1,4 +1,4 @@\n-export const pattern = /[a-z]/;\n+export const pattern = /^/;\n export function warm(n: number): boolean {\n   return n > 0;\n }");
+    assert.equal(pack(before, after, text), false);
+  });
+  check("empty-change", () => {
+    const source = "export function warm(n: number): boolean {\n  return n > 0;\n}\n";
+    const text = diff("@@ -1,3 +1,3 @@\n export function warm(n: number): boolean {\n   return n > 0;\n }");
+    assert.equal(pack(source, source, text), false);
+  });
+  check("removed-lines", () => {
+    const before = "export function warm(n: number): boolean {\n  return n > 0;\n}\nexport function heat(n: number): boolean {\n  return n > 1;\n}\n";
+    const after = "export function warm(n: number): boolean {\n  return n > 0;\n}\n";
+    const text = diff("@@ -1,6 +1,3 @@\n export function warm(n: number): boolean {\n   return n > 0;\n }\n-export function heat(n: number): boolean {\n-  return n > 1;\n-}");
+    assert.equal(pack(before, after, text), false);
+  });
+  check("nested-exclude", () => {
+    const before = "export function warm(n: number): boolean {\n  function helper(x: number): boolean { return x > 0; }\n  return n > 0;\n}\n";
+    const after = "export function warm(n: number): boolean {\n  function helper(x: number): boolean { return x > 1; }\n  return n > 0;\n}\n";
+    const text = diff("@@ -1,4 +1,4 @@\n export function warm(n: number): boolean {\n-  function helper(x: number): boolean { return x > 0; }\n+  function helper(x: number): boolean { return x > 1; }\n   return n > 0;\n }");
+    assert.equal(pack(before, after, text), false);
+  });
+  check("new-helper", () => {
+    const before = "export function warm(n: number): boolean {\n  return n > 0;\n}\n";
+    const after = "export function warm(n: number): boolean {\n  function helper(x: number): boolean { return x > 1; }\n  return n > 0;\n}\n";
+    const text = diff("@@ -1,3 +1,4 @@\n export function warm(n: number): boolean {\n+  function helper(x: number): boolean { return x > 1; }\n   return n > 0;\n }");
+    assert.equal(pack(before, after, text), false);
+  });
 }
 
 process.stdout.write(JSON.stringify({ failed, crashed }) + "\n");

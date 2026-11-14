@@ -215,6 +215,105 @@ test("no recognized call and a diff that cannot be loaded are not strict", () =>
   }
 });
 
+test("a hunk is strict only inside the probed function body", () => {
+  const row = (baseFiles: Record<string, string>, fixFiles: Record<string, string>, candidateFiles: Record<string, string>, testText: string) => {
+    const repo = mkdtempSync(join(tmpdir(), "peaceai-hunk-"));
+    const git = (...args: string[]) => spawnSync("git", ["-C", repo, ...args], { encoding: "utf8" });
+    const write = (files: Record<string, string>) => {
+      for (const [path, text] of Object.entries(files)) {
+        mkdirSync(join(repo, path, ".."), { recursive: true });
+        writeFileSync(join(repo, path), text);
+      }
+    };
+    try {
+      git("init", "-q");
+      git("config", "user.email", "guard@example.com");
+      git("config", "user.name", "guard");
+      mkdirSync(join(repo, "test"));
+      write(baseFiles);
+      writeFileSync(join(repo, "test/oven.test.ts"), testText);
+      git("add", ".");
+      git("commit", "-q", "-m", "base");
+      const base = git("rev-parse", "HEAD").stdout.trim();
+      write(fixFiles);
+      git("add", ".");
+      git("commit", "-q", "-m", "fix");
+      const fix = git("rev-parse", "HEAD").stdout.trim();
+      git("checkout", "-q", "-f", base);
+      write(candidateFiles);
+      const diff = git("diff", "--", "src").stdout;
+      return gradeTextCandidate({
+        repoDir: repo, baseSha: base, fixSha: fix, diff, testFile: "test/oven.test.ts",
+        sourcePattern: "^src/.*\\.ts$", nodePath,
+      }).behavior;
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  };
+  const call = "import assert from \"node:assert/strict\";\nimport { warm } from \"../src/oven.ts\";\nassert.equal(warm(3), true);\n";
+  const body = "export function warm(n: number): boolean {\n  return n > 0 && n < 10;\n}\n";
+  const swapped = "export function warm(n: number): boolean {\n  return n < 10 && n > 0;\n}\n";
+  assert.equal(row({ "src/oven.ts": body }, { "src/oven.ts": swapped }, { "src/oven.ts": swapped }, call), "verified_strict");
+  const arrow = "export const warm = (n: number): boolean => {\n  return n > 0 && n < 10;\n};\n";
+  const arrowSwap = "export const warm = (n: number): boolean => {\n  return n < 10 && n > 0;\n};\n";
+  assert.equal(row({ "src/oven.ts": arrow }, { "src/oven.ts": arrowSwap }, { "src/oven.ts": arrowSwap }, call), "verified_strict", "arrow");
+  const loose = (extra: string, edited: string) => row(
+    { "src/oven.ts": `${extra}${body}` },
+    { "src/oven.ts": `${extra}${swapped}` },
+    { "src/oven.ts": `${edited}${swapped}` },
+    call,
+  );
+  const cases: [string, string, string][] = [
+    ["regex", "export const pattern = /[a-z]/;\n", "export const pattern = /^/;\n"],
+    ["opts", "export const opts = { limit: 1 };\n", "export const opts = { limit: 1 } as { limit: number };\n"],
+    ["flags", "export const FLAGS = { strict: true };\n", "export const FLAGS = { strict: true };\nFLAGS.strict = false;\n"],
+    ["alias", "export const checks = { check: warm };\n", "export const checks = { check: warm };\nexport const check = checks.check;\n"],
+    ["comment", "// rack\n", "// oven\n"],
+    ["getter", "export const box = { get ready(): number { return 1; } };\n", "export const box = { get ready(): number { return 2; } };\n"],
+    ["object-arrow", "export const shape = { isPositive: (n: number): boolean => n > 0 };\n", "export const shape = { isPositive: (n: number): boolean => n >= 0 };\n"],
+    ["class-field", "export class Box { isPositive = (n: number): boolean => n > 0; }\n", "export class Box { isPositive = (n: number): boolean => n >= 0; }\n"],
+    ["computed", "export const checks = { [\"check\"](): boolean { return true; } };\n", "export const checks = { [\"check\"](): boolean { return false; } };\n"],
+    ["object-method", "export const shape = { isPositive(n: number): boolean { return n > 0; } };\n", "export const shape = { isPositive(n: number): boolean { return n >= 0; } };\n"],
+    ["class-method", "export class Shape { isPositive(n: number): boolean { return n > 0; } }\n", "export class Shape { isPositive(n: number): boolean { return n >= 0; } };\n"],
+    ["other-arrow", "export const parse = (label: string): boolean => label.length > 0;\n", "export const parse = (label: string): boolean => label.length >= 0;\n"],
+  ];
+  for (const [name, before, after] of cases) assert.equal(loose(before, after), "verified_test_only", name);
+  const sameBase = "export function isPositive(n: number): boolean { return n > 0 && n < 10; }\nexport const shape = { isPositive(n: number): boolean { return n > 0; } };\n";
+  const sameFix = "export function isPositive(n: number): boolean { return n < 10 && n > 0; }\nexport const shape = { isPositive(n: number): boolean { return n > 0; } };\n";
+  const sameBad = "export function isPositive(n: number): boolean { return n < 10 && n > 0; }\nexport const shape = { isPositive(n: number): boolean { return n >= 0; } };\n";
+  const sameTest = "import assert from \"node:assert/strict\";\nimport { isPositive } from \"../src/oven.ts\";\nassert.equal(isPositive(3), true);\n";
+  assert.equal(row({ "src/oven.ts": sameBase }, { "src/oven.ts": sameFix }, { "src/oven.ts": sameBad }, sameTest), "verified_test_only", "same-name");
+  const helperBase = "export function warm(n: number): boolean {\n  function helper(x: number): boolean { return x > 0; }\n  return n > 0 && n < 10;\n}\n";
+  const helperBad = "export function warm(n: number): boolean {\n  function helper(x: number): boolean { return x >= 0; }\n  return n < 10 && n > 0;\n}\n";
+  assert.equal(row({ "src/oven.ts": helperBase }, { "src/oven.ts": swapped }, { "src/oven.ts": helperBad }, call), "verified_test_only", "helper");
+  const defBase = "export function warm(n: number = 1): boolean {\n  return n > 0 && n < 10;\n}\n";
+  const defBad = "export function warm(n: number = 0): boolean {\n  return n < 10 && n > 0;\n}\n";
+  assert.equal(row({ "src/oven.ts": defBase }, { "src/oven.ts": swapped }, { "src/oven.ts": defBad }, call), "verified_test_only", "default");
+  const moved = row(
+    { "src/oven.ts": `export const pattern = /[a-z]/;\n${body}`, "src/other.ts": "export const spare = 1;\n" },
+    { "src/oven.ts": `// rack\n${swapped}`, "src/other.ts": "export const spare = 1;\nexport const pattern = /[a-z]/;\n" },
+    { "src/oven.ts": `// oven\n${swapped}`, "src/other.ts": "export const spare = 1;\nexport const pattern = /^/;\n" },
+    call,
+  );
+  assert.equal(moved, "verified_test_only", "two-files");
+  const imported = row(
+    {
+      "src/oven.ts": "import { helper } from \"./side.ts\";\nexport function warm(n: number): boolean { return helper(n); }\n",
+      "src/side.ts": "export function helper(n: number): boolean { return n > 0 && n < 10; }\n",
+    },
+    {
+      "src/oven.ts": "import { helper } from \"./side.ts\";\nexport function warm(n: number): boolean { return helper(n); }\n",
+      "src/side.ts": "export function helper(n: number): boolean { return n < 10 && n > 0; }\n",
+    },
+    {
+      "src/oven.ts": "import { helper } from \"./side.ts\";\nexport function warm(n: number): boolean { return helper(n); }\n",
+      "src/side.ts": "export function helper(n: number): boolean { return n >= 0 && n < 10; }\n",
+    },
+    call,
+  );
+  assert.equal(imported, "verified_test_only", "import");
+});
+
 test("source paths skip test files and test directories", () => {
   const diff = [
     "--- a/src/oven.ts", "+++ b/src/oven.ts",

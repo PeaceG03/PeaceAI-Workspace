@@ -20,7 +20,7 @@ import {
   type GradedRow, type Understanding,
 } from "../lib/practicereplay.ts";
 import { gradeBehavior, type Behavior, type BehaviorGrade } from "../lib/specgrade.ts";
-import { behaviorTargets, changedFunctionNames, runTestSpec, type SpecResult } from "../lib/testspec.ts";
+import { behaviorTargets, runTestSpec, textHunksCovered, type SpecResult } from "../lib/testspec.ts";
 import { loadTargets } from "../lib/target.ts";
 import { pinnedKernel, readCorePin } from "./capability-job.ts";
 
@@ -384,36 +384,21 @@ export function gradeTextCandidate(input: {
     };
     const targets = behaviorTargets(input.testFile, shown.out, input.sourcePattern, input.denyPatterns ?? [], (path) => existsSync(join(candDir, path)), read)
       .filter((target) => paths.includes(target.file) && target.args.length > 0);
-    let empty: Behavior = "verified_strict";
-    if (targets.length === 0) empty = "verified_test_only"; // replay-guard:no-targets
-    if (empty !== "verified_strict") return { behavior: empty, compared: 0 };
+    if (targets.length === 0) return { behavior: "verified_test_only", compared: 0 };
     if (input.nodeModules) { linkModules(input.nodeModules, fixDir); linkModules(input.nodeModules, candDir); }
-    const changed: string[] = [];
-    for (const path of paths) {
+    const texts = paths.map((path) => {
       const before = practiceGit(input.repoDir, ["show", `${input.baseSha}:${path}`]);
-      const prior = before.ok ? before.out : "";
-      const next = read(path) ?? "";
-      for (const name of changedFunctionNames(prior, next)) if (!changed.includes(name)) changed.push(name);
-    }
-    const probed = targets.map((target) => target.symbol);
+      return { path, before: before.ok ? before.out : "", after: read(path) ?? "" };
+    });
     let uncovered = false;
-    uncovered = changed.some((name) => !probed.includes(name)); // replay-guard:changed-cover
-    const queue = changed.length === 0 ? targets : targets.filter((target) => changed.includes(target.symbol));
-    const extra = uncovered ? targets.filter((target) => !changed.includes(target.symbol)) : [];
+    uncovered = !textHunksCovered(input.diff, texts, targets.map((target) => ({ file: target.file, symbol: target.symbol }))); // replay-guard:changed-cover
     let grade: BehaviorGrade = { behavior: "verified_strict", compared: 0 };
-    const run = (list: typeof targets, stopWhenCompared: boolean) => {
-      for (const target of list) {
-        const one = gradeBehavior({ candidateRoot: candDir, fixRoot: fixDir, target, nodePath: input.nodePath, nodeModules: input.nodeModules });
-        grade = { behavior: one.behavior, compared: grade.compared + one.compared, ...(one.counterexample ? { counterexample: one.counterexample } : {}) };
-        if (one.behavior !== "verified_strict") return;
-        if (stopWhenCompared && grade.compared > 0) return;
-      }
-    };
-    run(queue, false);
-    if (uncovered && grade.behavior === "verified_strict") {
-      run(extra, true);
-      if (grade.behavior === "verified_strict") grade = { ...grade, behavior: "verified_test_only" };
+    for (const target of targets) {
+      const one = gradeBehavior({ candidateRoot: candDir, fixRoot: fixDir, target, nodePath: input.nodePath, nodeModules: input.nodeModules });
+      grade = { behavior: one.behavior, compared: grade.compared + one.compared, ...(one.counterexample ? { counterexample: one.counterexample } : {}) };
+      if (one.behavior !== "verified_strict") break;
     }
+    if (uncovered && grade.behavior === "verified_strict") grade = { ...grade, behavior: "verified_test_only" };
     return grade;
   } finally {
     rmSync(fixDir, { recursive: true, force: true });

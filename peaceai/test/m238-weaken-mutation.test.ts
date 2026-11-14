@@ -13,7 +13,8 @@ const binDir = resolve(import.meta.dirname, "../bin");
 const sources = {
   grade: { file: "specgrade.ts", root: libDir, tag: /\/\/ grade-guard:(and-only|and-width|fn-name|nested|candidate-operands|operand-kept)\s*$/, suite: "grade", ids: ["and-only", "and-width", "candidate-operands", "fn-name", "nested", "operand-kept"] },
   report: { file: "practicereplay.ts", root: libDir, tag: /\/\/ (?:report-guard:(dev-only|seed-sha)|grade-guard:(path-filter|text-probe|probe-cap|text-wire))\s*$/, suite: "report", ids: ["dev-only", "path-filter", "probe-cap", "seed-sha", "text-probe", "text-wire"] },
-  replay: { file: "practice-replay.ts", root: binDir, tag: /\/\/ replay-guard:(changed-cover|no-targets|row-behavior|unavailable)\s*$/, suite: "replay", ids: ["changed-cover", "no-targets", "row-behavior", "unavailable"] },
+  replay: { file: "practice-replay.ts", root: binDir, tag: /\/\/ replay-guard:(changed-cover|row-behavior|unavailable)\s*$/, suite: "replay", ids: ["changed-cover", "row-behavior", "unavailable"] },
+  cover: { file: "testspec.ts", root: libDir, tag: /\/\/ cover-guard:(arrow-body|empty-change|method-body|nested-exclude|new-helper|probe-all|removed-lines)\s*$/, suite: "cover", ids: ["arrow-body", "empty-change", "method-body", "nested-exclude", "new-helper", "probe-all", "removed-lines"] },
 } as const;
 
 let dir: string;
