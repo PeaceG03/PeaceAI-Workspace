@@ -112,19 +112,55 @@ export function namedSymbols(text: string): string[] {
 //   verb. A verb inside a when/if clause is not the edit verb, so the condition is not joined into
 //   a camelCase name.
 // - "when" and "if" both start a condition. A fronted "when/if …," clause is dropped first.
-// - After "make", the tested bare infinitives are respect, return, and use. They start the desired
-//   behavior, so the object is the noun phrase before them ("cache eviction" → cacheEviction).
-// - Pronouns and the tested degree adjectives faster and clearer are not objects. Other
-//   adjectives are not listed, because an untested word would survive a deletion.
+// - After "make", the tested bare infinitives are respect, return, use, honor, follow, and preserve.
+//   They start the desired behavior, so the object is the noun phrase before them
+//   ("cache eviction honor TTL" → cacheEviction, not TTL).
+// - Pronouns and vague degree adjectives (better, simpler, robust, faster, clearer, and the
+//   other comparatives in AIM_GENERIC) are not objects. Each adjective is its own line.
+// - "after" ends the object the same way "when" and "if" do.
 // - A plain word, including a single capitalized word such as Docs, is kept only when one source
-//   file defines it. A code-shaped name may be defined in several files.
+//   file defines it. A code-shaped name may be defined in several files, and is not a target when
+//   no source file defines it: a name that does not exist is not an edit site.
+// - `oven.rack` and `.is()` are member references, including inside a cleaned sentence whose
+//   backticks were removed. A file extension (`index.ts`) is not a member. The member is followed
+//   to the function the property holds (`rack: heatRack`, or the same literal passed to
+//   Object.assign). A missing property is not a reason to edit the whole object.
+// - Job A's summary schema rejects more than five candidates, so a longer list fails the gate
+//   before any diff is read. textRepairBatches stops at five.
 // Thanks, questions, and renames are not body repairs.
 
 export const TEXT_REPAIR_REASONS = ["CANT_DO_YET_NO_EDIT", "CANT_DO_YET_EDIT_UNSPECIFIED", "CANT_DO_YET_ADD_UNSPECIFIED", "CANT_DO_YET_NOT_A_FAMILY"] as const;
 /** How many repair-v2 candidates Job A may emit from a sentence. The proposer's own order, capped. */
 export const TEXT_REPAIR_LIMIT = 8;
 
-const AIM_VERBS = "fix|fixes|fixed|fixing|handle|handles|handled|handling|correct|corrects|corrected|correcting|support|supports|supported|supporting|add|adds|added|adding|implement|implements|implemented|implementing|allow|allows|allowed|allowing|enable|enables|enabled|enabling|expose|exposes|exposed|exposing|improve|improves|improved|improving|update|updates|updated|updating|change|changes|changed|changing|include|includes|included|including|accept|accepts|accepted|accepting|reject|rejects|rejected|rejecting|drop|drops|dropped|dropping|remove|removes|removed|removing|wrap|wraps|wrapped|wrapping|default|defaults|defaulted|defaulting|guard|guards|guarded|guarding|check|checks|checked|checking|validate|validates|validated|validating|keep|keeps|kept|keeping|make|makes|made|making";
+// Each stem's inflections share its line. Deleting the line drops that stem, including the form a test uses.
+const AIM_VERB_FORMS = [
+  "fix|fixes|fixed|fixing", // text-guard:verb-fix
+  "handle|handles|handled|handling", // text-guard:verb-handle
+  "correct|corrects|corrected|correcting", // text-guard:verb-correct
+  "support|supports|supported|supporting", // text-guard:verb-support
+  "add|adds|added|adding", // text-guard:verb-add
+  "implement|implements|implemented|implementing", // text-guard:verb-implement
+  "allow|allows|allowed|allowing", // text-guard:verb-allow
+  "enable|enables|enabled|enabling", // text-guard:verb-enable
+  "expose|exposes|exposed|exposing", // text-guard:verb-expose
+  "improve|improves|improved|improving", // text-guard:verb-improve
+  "update|updates|updated|updating", // text-guard:verb-update
+  "change|changes|changed|changing", // text-guard:verb-change
+  "include|includes|included|including", // text-guard:verb-include
+  "accept|accepts|accepted|accepting", // text-guard:verb-accept
+  "reject|rejects|rejected|rejecting", // text-guard:verb-reject
+  "drop|drops|dropped|dropping", // text-guard:verb-drop
+  "remove|removes|removed|removing", // text-guard:verb-remove
+  "wrap|wraps|wrapped|wrapping", // text-guard:verb-wrap
+  "default|defaults|defaulted|defaulting", // text-guard:verb-default
+  "guard|guards|guarded|guarding", // text-guard:verb-guard
+  "check|checks|checked|checking", // text-guard:verb-check
+  "validate|validates|validated|validating", // text-guard:verb-validate
+  "keep|keeps|kept|keeping", // text-guard:verb-keep
+  "make|makes|made|making", // text-guard:verb-make
+];
+const AIM_VERBS = AIM_VERB_FORMS.join("|");
 const AIM_VERB = new RegExp(String.raw`\b(?:please |can you |could you |we need to )?(?<verb>${AIM_VERBS})\b`, "i");
 // Each word is one line so a deletion is a mutant. Longer forms are joined first so `return` does not eat `returns`.
 const AIM_SYMPTOM_WORDS = [
@@ -134,11 +170,18 @@ const AIM_SYMPTOM_WORDS = [
   "runs", // text-guard:symptom-runs
   "sends", // text-guard:symptom-sends
   "run", // text-guard:symptom-run
+  "emits", // text-guard:symptom-emits
+  "yields", // text-guard:symptom-yields
+  "crashes", // text-guard:symptom-crashes
+  "hangs", // text-guard:symptom-hangs
 ];
 const AIM_COMPLEMENT_WORDS = [
   "respect", // text-guard:complement-respect
   "return", // text-guard:complement-return
   "use", // text-guard:complement-use
+  "honor", // text-guard:complement-honor
+  "follow", // text-guard:complement-follow
+  "preserve", // text-guard:complement-preserve
 ];
 const aimAlt = (words: readonly string[]) => [...words].sort((a, b) => b.length - a.length).join("|");
 const AIM_SYMPTOM = new RegExp(String.raw`\b(?:${aimAlt(AIM_SYMPTOM_WORDS)})\b`, "i");
@@ -146,13 +189,56 @@ const AIM_COMPLEMENT = new RegExp(String.raw`\b(?:${aimAlt(AIM_COMPLEMENT_WORDS)
 const AIM_THANKS = /^(?:thanks|thank you|lgtm|nit|wip)\b/i;
 const AIM_QUESTION = /\?\s*$/;
 const AIM_FUNCTION = "a an the this that these those it its them they him her us me we you our their to of in for and or with from on by is are be was were been being not as into please can could should must would will than too very just more most only same other whole such per via without within about between over under after before so then also if when";
-const AIM_GENERIC = new Set(["faster", "clearer"]);
+// Vague degree adjectives. "Make it <word>" names no symbol. "more" is already a function word, so "more robust" is "robust".
+const AIM_GENERIC = new Set([
+  "faster", // text-guard:generic-faster
+  "clearer", // text-guard:generic-clearer
+  "better", // text-guard:generic-better
+  "worse", // text-guard:generic-worse
+  "slower", // text-guard:generic-slower
+  "simpler", // text-guard:generic-simpler
+  "easier", // text-guard:generic-easier
+  "harder", // text-guard:generic-harder
+  "safer", // text-guard:generic-safer
+  "cleaner", // text-guard:generic-cleaner
+  "smaller", // text-guard:generic-smaller
+  "larger", // text-guard:generic-larger
+  "stronger", // text-guard:generic-stronger
+  "weaker", // text-guard:generic-weaker
+  "quicker", // text-guard:generic-quicker
+  "nicer", // text-guard:generic-nicer
+  "robust", // text-guard:generic-robust
+]);
 const AIM_TS = "function functions method methods class classes type types interface const let var return export import async await null undefined true false string strings number boolean object objects array arrays promise void any unknown never new typeof instanceof case cases";
 const AIM_ROLE = "option options flag flags setting settings helper helpers property properties field fields value values parameter parameters argument arguments error errors bug bugs test tests module modules file files empty blank whitespace missing new existing default";
 const AIM_META = new Set(`${AIM_FUNCTION} ${AIM_TS} ${AIM_ROLE} ${AIM_VERBS.replaceAll("|", " ")} ${AIM_SYMPTOM_WORDS.join(" ")} ${AIM_COMPLEMENT_WORDS.join(" ")}`.split(/\s+/));
 const AIM_SOURCE = /\.(?:ts|tsx|mts|cts)$/;
+const MEMBER_EXT = new Set(["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts", "json", "md"]);
 
 export interface EditAim { symbols: string[]; via: "verb" | "lead" }
+
+/** Dotted names in a sentence: `oven.rack`, and a call with no receiver (`.is()`). A filename extension is not a member. */
+function memberRefs(region: string): string[] {
+  const out: string[] = [];
+  const add = (path: string) => { if (path.length <= 80 && !out.includes(path)) out.push(path); };
+  let width = "{1,}";
+  width = "{0,}"; // text-guard:member-short
+  const dotted = new RegExp(String.raw`(^|[^A-Za-z0-9_$])([A-Za-z_$][\w$]${width})\.([A-Za-z_$][\w$]${width})\b`, "g");
+  for (const m of region.matchAll(dotted)) {
+    if (MEMBER_EXT.has(m[3]!)) continue; // text-guard:member-ext
+    const after = region[m.index + m[0].length];
+    if (after === "(") continue; // text-guard:member-call
+    add(`${m[2]}.${m[3]}`);
+  }
+  for (const m of region.matchAll(/(^|[^A-Za-z0-9_$])\.([A-Za-z_$][\w$]{0,})\s*\(/g)) if (m[2]) add(`.${m[2]}`);
+  return out;
+}
+
+function aimMembers(region: string): string[] {
+  let found: string[] = [];
+  found = memberRefs(region); // text-guard:member-ref
+  return found;
+}
 
 /** The same conventional-commit and issue-number cleanup the phrase reader applies, plus a bang (`feat!:`). */
 export function aimSource(text: string): string {
@@ -209,9 +295,12 @@ function aimObject(region: string, symbols: string[]): void {
 function aimClause(source: string): string {
   let boundarySrc = "when";
   boundarySrc = "when|if"; // text-guard:if-boundary
+  boundarySrc += "|after"; // text-guard:after-boundary
   const boundary = new RegExp(String.raw`\b(?:${boundarySrc})\b`, "i");
+  let frontedSrc = "when|if";
+  frontedSrc += "|after"; // text-guard:fronted-after
   let clause = source;
-  clause = source.replace(/^(?:when|if)\b[^,]*,\s*/i, ""); // text-guard:fronted-clause
+  clause = source.replace(new RegExp(String.raw`^(?:${frontedSrc})\b[^,]*,\s*`, "i"), ""); // text-guard:fronted-clause
   const at = clause.search(boundary);
   if (at >= 0) clause = clause.slice(0, at); // text-guard:verb-clause
   return clause;
@@ -228,15 +317,19 @@ export function editAim(text: string): EditAim | null {
   verb = AIM_VERB.exec(clause); // text-guard:verb
   if (verb) {
     let region = clause;
-    if (/^mak(?:e|es|ed|ing)$/i.test(verb.groups?.verb ?? "")) {
+    if (/^(?:made|mak(?:e|es|ed|ing))$/i.test(verb.groups?.verb ?? "")) {
       const after = region.slice(verb.index + verb[0].length);
       const complement = AIM_COMPLEMENT.exec(after);
       if (complement) region = region.slice(0, verb.index + verb[0].length + complement.index); // text-guard:make-object
     }
+    const members = aimMembers(region);
+    if (members.length > 0) return { symbols: members, via: "verb" };
     const symbols: string[] = [];
     aimObject(region, symbols);
     return symbols.length ? { symbols, via: "verb" } : null;
   }
+  const leadMembers = aimMembers(clause);
+  if (leadMembers.length > 0) return { symbols: leadMembers, via: "lead" };
   let symptom: RegExpExecArray | null = null;
   symptom = AIM_SYMPTOM.exec(clause); // text-guard:symptom
   if (!symptom) return null;
@@ -248,15 +341,80 @@ export function editAim(text: string): EditAim | null {
   return { symbols: [subject], via: "lead" };
 }
 
-/** A code-shaped name is kept even when several files define it. A plain name, including one capitalized
- * word (Docs, Server), is kept only when exactly one non-test source defines it. */
+function sourceDefs(search: CodeRepo, name: string): { path: string }[] {
+  const sym = search.symbol(name);
+  if (!sym.ok) return [];
+  return sym.definitions.filter((d) => AIM_SOURCE.test(d.path) && !d.path.endsWith(".d.ts") && !isTestPath(d.path) && !isGeneratedPath(d.path));
+}
+
+function objectLiteralsOf(init: ts.Expression | undefined): ts.ObjectLiteralExpression[] {
+  if (!init) return [];
+  if (ts.isObjectLiteralExpression(init)) return [init];
+  if (!ts.isCallExpression(init) || init.arguments.length < 2) return [];
+  const callee = init.expression;
+  if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== "assign" || !ts.isIdentifier(callee.expression) || callee.expression.text !== "Object") return [];
+  return init.arguments.filter((arg): arg is ts.ObjectLiteralExpression => ts.isObjectLiteralExpression(arg));
+}
+
+/** The function a property holds: an identifier (`rack: heatRack`), or the property's own method. */
+function memberFunction(search: CodeRepo, path: string): string | null {
+  const dot = path.indexOf(".");
+  if (dot <= 0 || path.includes(".", dot + 1)) return null;
+  const recv = path.slice(0, dot);
+  const prop = path.slice(dot + 1);
+  const found: string[] = [];
+  for (const def of sourceDefs(search, recv)) {
+    const read = search.read(def.path);
+    if (!read.ok || read.truncated) continue;
+    const sf = parseSource(def.path, read.text);
+    const visit = (n: ts.Node) => {
+      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === recv) {
+        for (const literal of objectLiteralsOf(n.initializer)) {
+          for (const el of literal.properties) {
+            const key = el.name && (ts.isIdentifier(el.name) || ts.isStringLiteral(el.name)) ? el.name.text : null;
+            if (key !== prop) continue;
+            if (ts.isPropertyAssignment(el) && ts.isIdentifier(el.initializer)) found.push(el.initializer.text);
+            else if (ts.isShorthandPropertyAssignment(el) || ts.isMethodDeclaration(el)) found.push(prop);
+            else if (ts.isPropertyAssignment(el) && (ts.isFunctionExpression(el.initializer) || ts.isArrowFunction(el.initializer))) found.push(prop);
+          }
+        }
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+  }
+  const unique = [...new Set(found)];
+  if (unique.length !== 1) return null;
+  return sourceDefs(search, unique[0]!).length > 0 ? unique[0]! : null;
+}
+
+/** A code-shaped name is kept when at least one source file defines it, even if several do.
+ * A plain name, including one capitalized word (Docs, Server), is kept only when exactly one
+ * non-test source defines it. A dotted member is the function that property holds. */
 export function resolvableSymbols(search: CodeRepo, symbols: readonly string[]): string[] {
   const out: string[] = [];
   for (const name of symbols) {
-    if (aimCodeName(name)) { out.push(name); continue; } // text-guard:shaped-keep
-    const sym = search.symbol(name);
-    if (!sym.ok) continue;
-    const defs = sym.definitions.filter((d) => AIM_SOURCE.test(d.path) && !d.path.endsWith(".d.ts") && !isTestPath(d.path) && !isGeneratedPath(d.path));
+    if (name.startsWith(".")) {
+      const bare = name.slice(1);
+      const defs = sourceDefs(search, bare);
+      if (defs.length !== 1) continue; // text-guard:dot-call
+      out.push(bare);
+      continue;
+    }
+    if (name.includes(".")) {
+      let target = "";
+      target = memberFunction(search, name) ?? ""; // text-guard:member-path
+      if (!target || out.includes(target)) continue;
+      out.push(target);
+      continue;
+    }
+    if (aimCodeName(name)) {
+      const defs = sourceDefs(search, name);
+      if (defs.length < 1) continue; // text-guard:shaped-exists
+      out.push(name);
+      continue; // text-guard:shaped-keep
+    }
+    const defs = sourceDefs(search, name);
     if (defs.length !== 1) continue; // text-guard:plain-unique
     out.push(name);
   }
@@ -309,7 +467,10 @@ export function textRepairBatches(search: CodeRepo, text: string, limit = TEXT_R
   if (!aim) return [];
   const symbols = resolvableSymbols(search, aim.symbols);
   if (symbols.length === 0) return [];
-  return proposeTextEdits(search, textRepairRequest(text, symbols), limit);
+  // The summary schema accepts at most five candidates. A longer list fails the gate before a diff is read.
+  let cap = limit;
+  if (cap > 5) cap = 5; // text-guard:summary-cap
+  return proposeTextEdits(search, textRepairRequest(text, symbols), cap);
 }
 
 // ---- sites
@@ -1054,11 +1215,14 @@ const srcOf = (sf: ts.SourceFile, n: ts.Node): string => sf.text.slice(n.getStar
 
 /** A call that already asks whether a property is the object's own. */
 function isOwnAliasInit(expr: ts.Expression): boolean {
-  if (!ts.isPropertyAccessExpression(expr) || expr.questionDotToken) return false;
+  if (!ts.isPropertyAccessExpression(expr)) return false;
+  if (expr.questionDotToken) return false; // cap-guard:own-alias-optional
   if (expr.name.text === "hasOwn" && ts.isIdentifier(expr.expression) && expr.expression.text === "Object") return true;
   if (expr.name.text !== "hasOwnProperty") return false;
   const mid = expr.expression;
-  if (!ts.isPropertyAccessExpression(mid) || mid.questionDotToken || mid.name.text !== "prototype" || !ts.isIdentifier(mid.expression) || mid.expression.text !== "Object") return false;
+  if (!ts.isPropertyAccessExpression(mid) || !ts.isIdentifier(mid.expression) || mid.expression.text !== "Object") return false;
+  if (mid.questionDotToken) return false; // cap-guard:own-alias-optional-proto
+  if (mid.name.text !== "prototype") return false;
   return true; // cap-guard:own-alias-init
 }
 
@@ -1069,9 +1233,9 @@ function aliasScope(node: ts.Node): ts.Node {
 }
 
 function aliasVisible(decl: ts.Node, at: ts.Node, sf: ts.SourceFile): boolean {
-  if (decl.getEnd() > at.getStart(sf)) return false;
+  if (decl.getEnd() > at.getStart(sf)) return false; // cap-guard:own-alias-order
   const scope = aliasScope(decl);
-  for (let parent: ts.Node | undefined = at; parent; parent = parent.parent) if (parent === scope) return true;
+  for (let parent: ts.Node | undefined = at; parent; parent = parent.parent) if (parent === scope) return true; // cap-guard:own-alias-scope
   return false;
 }
 

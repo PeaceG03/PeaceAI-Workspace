@@ -241,4 +241,40 @@ test("an aliased own-property check is already a guard, and a different alias is
   assert.deepEqual(hits(direct, "own-keys"), []);
   assert.equal(hits(other, "own-keys").length, 1);
   assert.equal(hits(elsewhere, "own-keys").length, 1);
+  const later = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  const has = Object.hasOwn;",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const optional = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  const has = Object?.hasOwn;",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const optionalProto = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  const has = Object?.prototype.hasOwnProperty;",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has.call(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  assert.equal(hits(later, "own-keys").length, 1);
+  assert.equal(hits(optional, "own-keys").length, 1);
+  assert.equal(hits(optionalProto, "own-keys").length, 1);
 });

@@ -32,6 +32,31 @@ const direct = [
   "}",
 ].join("\n");
 
+const later = [
+  "export function counted(bins: Record<string, number>): number {",
+  "  let total = 0;",
+  "  for (const label in bins) { if (!has(bins, label)) continue; total += bins[label] ?? 0; }",
+  "  const has = Object.hasOwn;",
+  "  return total;",
+  "}",
+].join("\n");
+const optional = [
+  "export function counted(bins: Record<string, number>): number {",
+  "  const has = Object?.hasOwn;",
+  "  let total = 0;",
+  "  for (const label in bins) { if (!has(bins, label)) continue; total += bins[label] ?? 0; }",
+  "  return total;",
+  "}",
+].join("\n");
+const optionalProto = [
+  "export function counted(bins: Record<string, number>): number {",
+  "  const has = Object?.prototype.hasOwnProperty;",
+  "  let total = 0;",
+  "  for (const label in bins) { if (!has.call(bins, label)) continue; total += bins[label] ?? 0; }",
+  "  return total;",
+  "}",
+].join("\n");
+
 function ownHits(text: string): string[] {
   const site = { path: "src/bin.ts", name: "counted", start: 0, end: text.length, tier: 0 };
   return mod.idiomMutationsIn(mod.parseSource("src/bin.ts", text), site, 0).filter((m: { template: string }) => m.template === "own-keys");
@@ -56,6 +81,10 @@ if (suite === "propose") {
     assert.equal(got.length, 1);
     assert.match(got[0], /\[\(statuses as Record<PropertyKey, unknown>\)\[member\] as PropertyKey\] !== member/);
   });
+  check("own-alias-order", () => { assert.equal(ownHits(later).length, 1); });
+  check("own-alias-scope", () => { assert.equal(ownHits(direct).length, 0); });
+  check("own-alias-optional", () => { assert.equal(ownHits(optional).length, 1); });
+  check("own-alias-optional-proto", () => { assert.equal(ownHits(optionalProto).length, 1); });
   check("bundle-max", () => {
     const five = loops(5);
     const queued = mod.repairCandidates([{ path: "src/tally.ts", name: "tally", start: 0, end: five.length, tier: 0 }], new Map([["src/tally.ts", five]]), new Set(), true);
@@ -64,10 +93,13 @@ if (suite === "propose") {
 }
 
 if (suite === "spec") {
-  const titles = ["  ✖ rejects an empty crate", "  ✖ ships a crate twice", "  ✖ 2 tests failed"].join("\n");
-  check("ava-cross", () => { assert.deepEqual(mod.failingTestNames(titles), ["rejects an empty crate", "ships a crate twice"]); });
-  check("ava-summary", () => { assert.equal(mod.failingTestNames("✖ 2 tests failed").includes("2 tests failed"), false); });
+  const titles = ["  ✖ rejects an empty crate", "  ✖ ships a crate twice", "  ✘ [fail]: pads a label"].join("\n");
+  check("ava-cross", () => { assert.deepEqual(mod.failingTestNames(titles), ["pads a label", "rejects an empty crate", "ships a crate twice"]); });
+  check("ava-fail", () => { assert.deepEqual(mod.failingTestNames("  ✘ [fail]: rejects an empty crate"), ["rejects an empty crate"]); });
+  check("ava-summary-count", () => { assert.equal(mod.failingTestNames("2 tests failed").includes("2 tests failed"), false); });
+  check("ava-summary-one", () => { assert.equal(mod.failingTestNames("1 test failed").includes("1 test failed"), false); });
   check("ava-banner", () => { assert.deepEqual(mod.failingTestNames("✖ test/crate.ts exited with a non-zero exit code: 1"), []); });
+  check("ava-banner-error", () => { assert.deepEqual(mod.failingTestNames("✖ test/crate.ts exited due to an error:"), []); });
 }
 
 process.stdout.write(JSON.stringify({ failed, crashed }) + "\n");

@@ -49,11 +49,21 @@ test("text-guard tags are unique and name every condition", () => {
   const ids = guards.map((g) => g.id);
   assert.equal(new Set(ids).size, ids.length);
   assert.deepEqual([...ids].sort(), [
-    "backtick", "code-shape", "complement-respect", "complement-return", "complement-use", "fronted-clause",
-    "generic-object", "hide-other", "if-boundary", "limit", "make-object", "meta", "noun-phrase",
-    "plain-fallback", "plain-unique", "proposer", "question", "rename", "shaped-keep", "symptom",
-    "symptom-fires", "symptom-returns", "symptom-run", "symptom-runs", "symptom-sends", "symptom-subject",
-    "symptom-throws", "thanks", "verb", "verb-clause",
+    "after-boundary", "backtick", "code-shape", "complement-follow", "complement-honor", "complement-preserve",
+    "complement-respect", "complement-return", "complement-use", "dot-call", "fronted-after", "fronted-clause",
+    "generic-better", "generic-cleaner", "generic-clearer", "generic-easier", "generic-faster", "generic-harder",
+    "generic-larger", "generic-nicer", "generic-object", "generic-quicker", "generic-robust", "generic-safer",
+    "generic-simpler", "generic-slower", "generic-smaller", "generic-stronger", "generic-weaker", "generic-worse",
+    "hide-other", "if-boundary", "limit", "make-object", "member-call", "member-ext",
+    "member-path", "member-ref", "member-short", "meta", "noun-phrase", "plain-fallback",
+    "plain-unique", "proposer", "question", "rename", "shaped-exists", "shaped-keep",
+    "summary-cap", "symptom", "symptom-crashes", "symptom-emits", "symptom-fires", "symptom-hangs",
+    "symptom-returns", "symptom-run", "symptom-runs", "symptom-sends", "symptom-subject", "symptom-throws",
+    "symptom-yields", "thanks", "verb", "verb-accept", "verb-add", "verb-allow",
+    "verb-change", "verb-check", "verb-clause", "verb-correct", "verb-default", "verb-drop",
+    "verb-enable", "verb-expose", "verb-fix", "verb-guard", "verb-handle", "verb-implement",
+    "verb-improve", "verb-include", "verb-keep", "verb-make", "verb-reject", "verb-remove",
+    "verb-support", "verb-update", "verb-validate", "verb-wrap",
   ]);
 });
 

@@ -165,7 +165,12 @@ test("ava's cross marks a failed test title, and a compiler stop is not a test r
   ].join("\n");
   assert.deepEqual(failingTestNames(output), ["rejects an empty crate", "ships a crate twice"]);
   assert.deepEqual(failingTestNames("not ok 3 - pad left\n✘ [fail]: is.blank\nFAIL src/pad.test.ts > keeps the sign\n"), ["pad left", "is.blank", "keeps the sign"]);
+  // Ava 5.3.1 and 6.1.3 default.js: write() indents 2; figures 5/6 cross is ✘; prefix is "✘ [fail]:".
+  assert.deepEqual(failingTestNames("  ✘ [fail]: rejects an empty crate\n"), ["rejects an empty crate"]);
+  // Ava 4.3.3, 5.3.1, and 6.1.3 endRun: plur('test') writes "1 test failed" or "2 tests failed" with no cross.
+  // Ava 4.3.3 worker-failed (figures 4 cross ✖): "exited due to an error:" and "exited with a non-zero exit code:".
   assert.deepEqual(failingTestNames("  ✖ 2 tests failed\n✖ test/crate.ts exited with a non-zero exit code: 1\n✔ accepts a labeled crate\n"), []);
+  assert.deepEqual(failingTestNames("2 tests failed\n1 test failed\n✖ test/crate.ts exited due to an error:\n"), []);
   const typeStop = [
     "Uncaught exception in test/crate.ts",
     "test/crate.ts(4,10): error TS2339: Property 'weight' does not exist on type 'Crate'.",

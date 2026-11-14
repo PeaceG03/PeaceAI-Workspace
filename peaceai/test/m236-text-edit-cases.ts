@@ -120,6 +120,167 @@ export const CASES: Case[] = [
     },
   },
   {
+    id: "summary-cap",
+    run(l, ctx) {
+      const search = repo(ctx, { "src/lane.ts": LANE });
+      const aim = l.prop.editAim("fix quoteLane when miles is empty");
+      assert.ok(aim);
+      const open = l.prop.proposeTextEdits(search, l.prop.textRepairRequest("fix quoteLane when miles is empty", aim!.symbols), 8);
+      assert.ok(open.length >= 6, `need six repairs to see the summary cap, got ${open.length}`);
+      assert.equal(l.prop.textRepairBatches(search, "fix quoteLane when miles is empty", 8).length, 5);
+    },
+  },
+  {
+    id: "member-ref",
+    run(l) {
+      assert.deepEqual(l.prop.editAim("Fix `oven.rack` for a warped pan")?.symbols, ["oven.rack"]);
+      assert.deepEqual(l.prop.editAim("Fix oven.class for a warped pan")?.symbols, ["oven.class"]);
+    },
+  },
+  {
+    id: "member-ext",
+    run(l) { assert.deepEqual(l.prop.editAim("fix quoteLane in src/index.ts")?.symbols, ["quoteLane"]); },
+  },
+  {
+    id: "member-path",
+    run(l, ctx) {
+      const search = repo(ctx, {
+        "src/oven.ts": "export function heatRack(label: string): string {\n  label.trim();\n  return label;\n}\nexport const oven = { rack: heatRack, class: heatRack };\nexport const kiln = Object.assign({}, { shelf: heatRack });\n",
+      });
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["oven.rack"]), ["heatRack"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["oven.class"]), ["heatRack"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["kiln.shelf"]), ["heatRack"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["oven.missing"]), []);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["pan.rack"]), []);
+      const batches = l.prop.textRepairBatches(search, "fix oven.rack for a warped pan");
+      assert.ok(batches.some((edits) => edits.some((e) => e.content.includes("label = label.trim()"))));
+    },
+  },
+  {
+    id: "dot-call",
+    run(l, ctx) {
+      const one = repo(ctx, { "src/check.ts": "export function is(value: string): string {\n  value.trim();\n  return value;\n}\n" });
+      assert.deepEqual(l.prop.editAim("Fix NaN detection in `.is()`")?.symbols, [".is"]);
+      assert.deepEqual(l.prop.resolvableSymbols(one, [".is"]), ["is"]);
+      const two = repo(ctx, {
+        "src/a.ts": "export function is(value: string): string { return value; }\n",
+        "src/b.ts": "export function is(value: string): string { return value; }\n",
+      });
+      assert.deepEqual(l.prop.resolvableSymbols(two, [".is"]), []);
+    },
+  },
+  {
+    id: "shaped-exists",
+    run(l, ctx) {
+      const search = repo(ctx, { "src/a.ts": "export function foldDough(n: number): number { return n; }\n" });
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["proofDough"]), []);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["foldDough"]), ["foldDough"]);
+    },
+  },
+  {
+    id: "member-short",
+    run(l, ctx) {
+      const search = repo(ctx, {
+        "src/tags.ts": [
+          "export function readTag(label: string): string { label.trim(); return label; }",
+          "export const z = { string: readTag };",
+          "export function readMark(label: string): string { return label; }",
+          "export const _ = { x: readMark };",
+          "export function readFlag(label: string): string { return label; }",
+          "export const t = { is: readFlag };",
+          "export function join(dir: string, name: string): string { return dir + name; }",
+        ].join("\n"),
+      });
+      assert.deepEqual(l.prop.editAim("fix z.string")?.symbols, ["z.string"]);
+      assert.deepEqual(l.prop.editAim("fix _.x")?.symbols, ["_.x"]);
+      assert.deepEqual(l.prop.editAim("fix t.is")?.symbols, ["t.is"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["z.string"]), ["readTag"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["_.x"]), ["readMark"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["t.is"]), ["readFlag"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["path.join"]), []);
+      const call = l.prop.editAim("fix path.join(dir, name) for an empty segment");
+      assert.ok(!call?.symbols.includes("path.join"));
+    },
+  },
+  {
+    id: "verb-inflection",
+    run(l) {
+      const sentences: [string, string][] = [
+        ["fixes the parser", "parser"],
+        ["handled foldDough", "foldDough"],
+        ["corrected the parser", "parser"],
+        ["supported whisk", "whisk"],
+        ["added insulated", "insulated"],
+        ["implemented the parser", "parser"],
+        ["allowed the parser", "parser"],
+        ["enabled the parser", "parser"],
+        ["exposed the parser", "parser"],
+        ["improved the parser", "parser"],
+        ["updated the parser", "parser"],
+        ["changed the parser", "parser"],
+        ["included the parser", "parser"],
+        ["accepted the parser", "parser"],
+        ["rejected the parser", "parser"],
+        ["dropped the parser", "parser"],
+        ["removed the parser", "parser"],
+        ["wrapped the parser", "parser"],
+        ["defaulted the parser", "parser"],
+        ["guarded the parser", "parser"],
+        ["checked the parser", "parser"],
+        ["validated the parser", "parser"],
+        ["kept the parser", "parser"],
+        ["made the parser return zero", "parser"],
+      ];
+      for (const [sentence, symbol] of sentences) assert.deepEqual(l.prop.editAim(sentence)?.symbols, [symbol], sentence);
+    },
+  },
+  {
+    id: "complement-honor",
+    run(l) { assert.deepEqual(l.prop.editAim("Make the cache eviction honor TTL")?.symbols, ["cacheEviction"]); },
+  },
+  {
+    id: "complement-follow",
+    run(l) { assert.deepEqual(l.prop.editAim("Make the retry budget follow jitter")?.symbols, ["retryBudget"]); },
+  },
+  {
+    id: "complement-preserve",
+    run(l) { assert.deepEqual(l.prop.editAim("Make the parser preserve the offset")?.symbols, ["parser"]); },
+  },
+  {
+    id: "symptom-emits",
+    run(l) { assert.deepEqual(l.prop.editAim("socket emits twice")?.symbols, ["socket"]); },
+  },
+  {
+    id: "symptom-yields",
+    run(l) { assert.deepEqual(l.prop.editAim("parser yields zero")?.symbols, ["parser"]); },
+  },
+  {
+    id: "symptom-crashes",
+    run(l) { assert.deepEqual(l.prop.editAim("decoder crashes on a short buffer")?.symbols, ["decoder"]); },
+  },
+  {
+    id: "symptom-hangs",
+    run(l) { assert.deepEqual(l.prop.editAim("loader hangs before the build")?.symbols, ["loader"]); },
+  },
+  {
+    id: "after-boundary",
+    run(l) { assert.deepEqual(l.prop.editAim("fix the parser after the buffer fills")?.symbols, ["parser"]); },
+  },
+  {
+    id: "fronted-after",
+    run(l) { assert.deepEqual(l.prop.editAim("After the buffer fills, fix the parser")?.symbols, ["parser"]); },
+  },
+  {
+    id: "generic-words",
+    run(l) {
+      for (const word of ["faster", "clearer", "better", "worse", "slower", "simpler", "easier", "harder", "safer", "cleaner", "smaller", "larger", "stronger", "weaker", "quicker", "nicer", "robust"]) {
+        assert.equal(l.prop.editAim(`Make it ${word}`), null, word);
+      }
+      assert.equal(l.prop.editAim("Make it more robust"), null);
+      assert.deepEqual(l.prop.editAim("Make the parser simpler")?.symbols, ["parser"]);
+    },
+  },
+  {
     id: "tune",
     run(l, ctx) {
       const search = repo(ctx, { "src/string.ts": STRING });
