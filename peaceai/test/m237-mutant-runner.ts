@@ -129,6 +129,14 @@ if (suite === "propose") {
   check("own-alias-pattern", () => { assert.equal(ownHits(unpacked).length, 1); });
   check("own-alias-for", () => { assert.equal(ownHits(walked).length, 1); });
   check("own-alias-reassign-array", () => { assert.equal(ownHits(listed).length, 1); });
+  const braced = "export function counted(bins: Record<string, number>, box: object): number {\n  let has = Object.hasOwn;\n  ({ has } = box);\n  for (const label in bins) { if (!has(bins, label)) continue; }\n  return 0;\n}";
+  const plus = "export function counted(bins: Record<string, number>): number {\n  let has = Object.hasOwn;\n  has += 1;\n  for (const label in bins) { if (!has(bins, label)) continue; }\n  return 0;\n}";
+  const laterWrite = "export function counted(bins: Record<string, number>): number {\n  let has = Object.hasOwn;\n  let total = 0;\n  for (const label in bins) { if (!has(bins, label)) continue; total += bins[label] ?? 0; }\n  has = Object.keys;\n  return total;\n}";
+  const restored = "export function counted(bins: Record<string, number>): number {\n  let has = Object.keys;\n  has = Object.hasOwn;\n  for (const label in bins) { if (!has(bins, label)) continue; }\n  return 0;\n}";
+  check("own-alias-reassign-object", () => { assert.equal(ownHits(braced).length, 1); });
+  check("own-alias-compound", () => { assert.equal(ownHits(plus).length, 1); });
+  check("own-alias-after", () => { assert.equal(ownHits(laterWrite).length, 0); });
+  check("own-alias-restore", () => { assert.equal(ownHits(restored).length, 0); });
   check("own-alias-case", () => { assert.equal(ownHits(across).length, 1); });
   check("bundle-max", () => {
     const five = loops(5);

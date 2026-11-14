@@ -16,11 +16,11 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
 import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, applyPracticeTestLaunch, cloneCheckProblems, ensurePracticeInstall, gradedLaunchMode, isTestFile, materializeSolverTree, mergeCloneRootCollisions, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, processStartId, readPairFingerprint, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
 import {
-  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, gradeTextFlip, replayDocument, targetIsScorable, writePracticeOutputs,
+  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, sourcePaths, targetIsScorable, textFlipBehavior, writePracticeOutputs,
   type GradedRow, type Understanding,
 } from "../lib/practicereplay.ts";
-import { droppedGuardConjunct, gradeBehavior, type BehaviorGrade } from "../lib/specgrade.ts";
-import { runTestSpec, type SpecResult } from "../lib/testspec.ts";
+import { gradeBehavior, type BehaviorGrade } from "../lib/specgrade.ts";
+import { behaviorTargets, runTestSpec, type SpecResult } from "../lib/testspec.ts";
 import { loadTargets } from "../lib/target.ts";
 import { pinnedKernel, readCorePin } from "./capability-job.ts";
 
@@ -330,33 +330,59 @@ function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: st
       if (afterExit === null) afterExit = graded.afterExit;
     }
     if (!fixed && afterExit === null) afterExit = null;
-    const dropsGuard = fixed && diffDropsGuard(repoDir, pair.baseSha, pair.fixSha, winningDiff);
-    return { ...blank(pair, "text"), ...gradeTextFlip({ scorable: true, core: "ok", job, gatePass: true, beforeExit, afterExit: fixed ? 0 : afterExit, dropsGuard }) };
+    const key = Object.keys(loadTargets().targets).find((name) => name.toLowerCase() === pair.repo.toLowerCase());
+    const config = key ? loadTargets().targets[key] : undefined;
+    const probed = fixed && config ? gradeTextCandidate({
+      repoDir, baseSha: pair.baseSha, fixSha: pair.fixSha, diff: winningDiff, testFile: pair.testFile,
+      sourcePattern: config.sourcePattern, denyPatterns: config.denyPatterns, nodePath: pair.toolchain.nodePath, nodeModules: modules,
+    }) : null;
+    const behavior = textFlipBehavior(fixed, probed);
+    return { ...blank(pair, "text"), ...gradePracticeRow({ scorable: true, core: "ok", job, gatePass: true, beforeExit, afterExit: fixed ? 0 : afterExit, behavior }) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(outDir, { recursive: true, force: true });
   }
 }
 
-/** Changed source files in a candidate diff, compared with the fix's copy of each file. */
-export function diffDropsGuard(repoDir: string, baseSha: string, fixSha: string, diff: string): boolean {
-  const paths = [...diff.matchAll(/^\+\+\+ b\/(.+)$/gm)].map((m) => m[1]!).filter((p) => p !== "/dev/null" && !p.endsWith(".test.ts") && !p.endsWith(".spec.ts"));
-  if (!paths.length) return false;
-  const dir = mkdtempSync(join(tmpdir(), "peaceai-practice-guard-"));
+/** Probe the fix's copy of each changed source symbol the recorded test calls. */
+export function gradeTextCandidate(input: {
+  repoDir: string;
+  baseSha: string;
+  fixSha: string;
+  diff: string;
+  testFile: string;
+  sourcePattern: string;
+  denyPatterns?: readonly string[];
+  nodePath: string;
+  nodeModules?: string | null;
+}): BehaviorGrade {
+  const unavailable = (): BehaviorGrade => ({ behavior: "diff_unavailable", compared: 0 });
+  const paths = sourcePaths(input.diff);
+  if (paths.length === 0) return { behavior: "verified_test_only", compared: 0 };
+  const fixDir = mkdtempSync(join(tmpdir(), "peaceai-practice-text-fix-"));
+  const candDir = mkdtempSync(join(tmpdir(), "peaceai-practice-text-cand-"));
   try {
-    if (!materializeSolverTree(repoDir, baseSha, dir)) return false;
-    const applied = spawnSync("git", ["-C", dir, ...GIT_LOCK_ARGS, "apply", "--whitespace=nowarn", "-"], { input: diff, encoding: "utf8", env: practiceGitEnv(), stdio: ["pipe", "ignore", "ignore"] });
-    if (applied.status !== 0) return false;
-    for (const path of paths) {
-      const candidatePath = join(dir, path);
-      if (!existsSync(candidatePath)) continue;
-      const fix = practiceGit(repoDir, ["show", `${fixSha}:${path}`]);
-      if (!fix.ok) continue;
-      if (droppedGuardConjunct(fix.out, readFileSync(candidatePath, "utf8"))) return true;
+    if (!materializeSolverTree(input.repoDir, input.fixSha, fixDir)) return unavailable();
+    if (!materializeSolverTree(input.repoDir, input.baseSha, candDir)) return unavailable();
+    if (!writeCommitFile(input.repoDir, input.fixSha, input.testFile, candDir)) return unavailable();
+    const applied = spawnSync("git", ["-C", candDir, ...GIT_LOCK_ARGS, "apply", "--whitespace=nowarn", "-"], { input: input.diff, encoding: "utf8", env: practiceGitEnv(), stdio: ["pipe", "ignore", "ignore"] });
+    if (applied.status !== 0) return unavailable();
+    const shown = practiceGit(input.repoDir, ["show", `${input.fixSha}:${input.testFile}`]);
+    if (!shown.ok) return unavailable();
+    const targets = behaviorTargets(input.testFile, shown.out, input.sourcePattern, input.denyPatterns ?? [], (path) => existsSync(join(candDir, path)))
+      .filter((target) => paths.includes(target.file) && target.args.length > 0);
+    if (targets.length === 0) return { behavior: "verified_test_only", compared: 0 };
+    if (input.nodeModules) { linkModules(input.nodeModules, fixDir); linkModules(input.nodeModules, candDir); }
+    let grade: BehaviorGrade = { behavior: "verified_strict", compared: 0 };
+    for (const target of targets) {
+      const one = gradeBehavior({ candidateRoot: candDir, fixRoot: fixDir, target, nodePath: input.nodePath, nodeModules: input.nodeModules });
+      grade = { behavior: one.behavior, compared: grade.compared + one.compared, ...(one.counterexample ? { counterexample: one.counterexample } : {}) };
+      if (one.behavior !== "verified_strict") break;
     }
-    return false;
+    return grade;
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(fixDir, { recursive: true, force: true });
+    rmSync(candDir, { recursive: true, force: true });
   }
 }
 

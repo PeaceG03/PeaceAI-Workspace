@@ -289,7 +289,7 @@ const MEMBER_EXT = new Set(["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts"
 
 export interface EditAim { symbols: string[]; via: "verb" | "lead" }
 
-/** Dotted names in a sentence: `kiln.door`, and a call with no receiver (`.ready()`). A filename extension, a call (`path.join()`), the abbreviations `e.g.`, `i.e.`, and `a.k.a.`, the host `docs.rs`, a three-label API host, and a version token (`v18.x`, `v1.2`) are not members. `etc.` is a word and a period, so it is not a dotted name. */
+/** Dotted names in a sentence: `kiln.door`, and a call with no receiver (`.ready()`). A filename extension, a call (`path.join()`), a dotted lowercase abbreviation (`n.b.`), a hostname whose last label is two or three letters (`crates.io`), and a version token (`v18.x`, `v1.2`) are not members. `etc.` is a word and a period, so it is not a dotted name. */
 function memberRefs(region: string): string[] {
   const out: string[] = [];
   const add = (path: string) => { if (path.length <= 80 && !out.includes(path)) out.push(path); };
@@ -302,14 +302,37 @@ function memberRefs(region: string): string[] {
     if (after === "(") continue; // text-guard:member-call
     const pair = `${m[2]}.${m[3]}`;
     const tail = region.slice(m.index + m[0].length);
-    if (/^(?:e\.g|i\.e)$/i.test(pair)) continue; // text-guard:member-abbrev
-    if (/^a\.k$/i.test(pair) && /^\.a\b/i.test(tail)) continue; // text-guard:member-aka
-    if (/^docs\.rs$/i.test(pair)) continue; // text-guard:member-host
-    if (/^api\.github$/i.test(pair) && /^\.com\b/i.test(tail)) continue; // text-guard:member-github
+    if (dottedAbbrev(pair, tail)) continue; // text-guard:member-abbrev
+    if (dottedHost(pair, tail)) continue; // text-guard:member-host
     if (/^v\d+\.(?:x|\d+)$/i.test(pair)) continue; // text-guard:member-version
     add(pair);
   }
   for (const m of region.matchAll(/(^|[^A-Za-z0-9_$])\.([A-Za-z_$][\w$]{0,})\s*\(/g)) if (m[2]) add(`.${m[2]}`);
+  return out;
+}
+
+/** `n.b.` and `q.v.` are single letters, dots, and a final period. `z.x` with no final period stays a member. */
+function dottedAbbrev(pair: string, tail: string): boolean {
+  if (!/^[a-z](?:\.[a-z])+$/.test(pair)) return false;
+  return /^(?:\.[a-z])*\.(?![A-Za-z0-9_$])/.test(tail);
+}
+
+/** A lowercase dotted name whose last label is two or three letters. A one-letter receiver (`t.is`) stays a member. */
+function dottedHost(pair: string, tail: string): boolean {
+  const more = /^\.[a-z]{2,3}(?![A-Za-z0-9_$])/.exec(tail);
+  const shown = more ? `${pair}${more[0]}` : pair;
+  if (shown !== shown.toLowerCase()) return false;
+  if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,3}$/.test(shown)) return false;
+  const labels = shown.split(".");
+  if (labels.length >= 3) return true;
+  return labels[0]!.length >= 2;
+}
+
+function hostLabels(prose: string): Set<string> {
+  const out = new Set<string>();
+  for (const match of prose.toLowerCase().matchAll(/\b((?:[a-z0-9-]+\.)+[a-z]{2,3})\b/g)) {
+    for (const part of match[1]!.split(".")) out.add(part);
+  }
   return out;
 }
 
@@ -356,9 +379,7 @@ function aimObject(region: string, symbols: string[]): void {
     if (aimCodeName(w[0]) || w[0].length < 3 || AIM_META.has(w[0].toLowerCase())) continue; // text-guard:meta
     if (AIM_GENERIC.has(w[0].toLowerCase())) continue; // text-guard:generic-object
     if (/^v\d+$/i.test(w[0])) continue; // text-guard:version-word
-    if (/\bdocs\.rs\b/i.test(prose) && w[0].toLowerCase() === "docs") continue; // text-guard:host-word
-    const apiHost = ["api", "github", "com"];
-    if (prose.toLowerCase().includes(apiHost.join(".")) && apiHost.includes(w[0].toLowerCase())) continue; // text-guard:github-word
+    if (hostLabels(prose).has(w[0].toLowerCase())) continue; // text-guard:host-word
     parts.push(w[0]);
   }
   if (parts.length >= 2) {
@@ -1349,24 +1370,53 @@ function scopeDistance(scope: ts.Node, at: ts.Node): number | null {
   return null;
 }
 
-/** A later `name = …` before the use means the binding is no longer the own-property function. */
-function rebound(decl: ts.VariableDeclaration, at: ts.Node, sf: ts.SourceFile): boolean {
+function unwrapAssign(expr: ts.Expression): ts.Expression {
+  let cur = expr;
+  while (ts.isParenthesizedExpression(cur)) cur = cur.expression;
+  return cur;
+}
+
+function writesName(left: ts.Expression, name: string): boolean {
+  const cur = unwrapAssign(left);
+  if (ts.isIdentifier(cur) && cur.text === name) return true;
+  if (ts.isArrayLiteralExpression(cur) && cur.elements.some((el) => ts.isIdentifier(el) && el.text === name)) return true; // cap-guard:own-alias-reassign-array
+  let objectHit = false;
+  if (ts.isObjectLiteralExpression(cur)) objectHit = cur.properties.some((p) => (ts.isShorthandPropertyAssignment(p) && p.name.text === name) || (ts.isPropertyAssignment(p) && ts.isIdentifier(p.initializer) && p.initializer.text === name)); // cap-guard:own-alias-reassign-object
+  return objectHit;
+}
+
+function compoundAssign(kind: ts.SyntaxKind): boolean {
+  const text = ts.tokenToString(kind) ?? "";
+  return text.endsWith("=") && text !== "=" && text !== "==" && text !== "===" && text !== "!=" && text !== "!==" && text !== "<=" && text !== ">=";
+}
+
+/** Whether `name` still holds an own-property function at the use. Writes after the use do not count. */
+function ownAtUse(decl: ts.VariableDeclaration, at: ts.Node, sf: ts.SourceFile): boolean {
   if (!ts.isIdentifier(decl.name)) return false;
   const name = decl.name.text;
-  let hit = false;
+  let live = !!(decl.initializer && isOwnAliasInit(decl.initializer));
   const visit = (n: ts.Node) => {
-    if (hit || n === decl) return;
+    if (n === decl) return;
     const start = n.getStart(sf);
-    if (start < decl.getEnd() || start >= at.getStart(sf)) { ts.forEachChild(n, visit); return; }
-    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
-      let named = ts.isIdentifier(n.left) && n.left.text === name;
-      if (ts.isArrayLiteralExpression(n.left) && n.left.elements.some((el) => ts.isIdentifier(el) && el.text === name)) named = true; // cap-guard:own-alias-reassign-array
-      if (named && !isOwnAliasInit(n.right)) hit = true;
+    if (start < decl.getEnd()) { ts.forEachChild(n, visit); return; }
+    let after = false;
+    after = start >= at.getStart(sf); // cap-guard:own-alias-after
+    if (after) { ts.forEachChild(n, visit); return; }
+    if (ts.isBinaryExpression(n) && writesName(n.left, name)) {
+      if (compoundAssign(n.operatorToken.kind)) {
+        live = false; // cap-guard:own-alias-compound
+        return;
+      }
+      if (n.operatorToken.kind === ts.SyntaxKind.EqualsToken && isOwnAliasInit(n.right)) {
+        live = true; // cap-guard:own-alias-restore
+        return;
+      }
+      if (n.operatorToken.kind === ts.SyntaxKind.EqualsToken) live = false;
     }
-    else ts.forEachChild(n, visit);
+    ts.forEachChild(n, visit);
   };
   visit(aliasScope(decl));
-  return hit;
+  return live;
 }
 
 function aliasVisible(decl: ts.Node, at: ts.Node, sf: ts.SourceFile): boolean {
@@ -1392,7 +1442,8 @@ function ownAliasNames(sf: ts.SourceFile, at: ts.Node): Set<string> {
   const found: { name: string; decl: ts.Node; dist: number; own: boolean }[] = [];
   const visit = (node: ts.Node) => {
     if (ts.isVariableDeclaration(node) && node.name && aliasVisible(node, at, sf)) {
-      const own = !!(node.initializer && ts.isIdentifier(node.name) && isOwnAliasInit(node.initializer));
+      let own = !!(node.initializer && ts.isIdentifier(node.name) && isOwnAliasInit(node.initializer));
+      if (ts.isIdentifier(node.name)) own = ownAtUse(node, at, sf); // cap-guard:own-alias-reassign
       addAliasNames(node.name, own, node, at, found);
     }
     if (ts.isParameter(node) && node.name && aliasVisible(node, at, sf)) addAliasNames(node.name, false, node, at, found); // cap-guard:own-alias-param
@@ -1410,12 +1461,7 @@ function ownAliasNames(sf: ts.SourceFile, at: ts.Node): Set<string> {
     if (take) best.set(item.name, item);
   }
   const names = new Set<string>();
-  for (const [name, info] of best) {
-    if (!info.own) continue;
-    let live = true;
-    if (ts.isVariableDeclaration(info.decl) && rebound(info.decl, at, sf)) live = false; // cap-guard:own-alias-reassign
-    if (live) names.add(name);
-  }
+  for (const [name, info] of best) if (info.own) names.add(name);
   return names;
 }
 

@@ -10,8 +10,8 @@ import { pathToFileURL } from "node:url";
 
 const libDir = resolve(import.meta.dirname, "../lib");
 const sources = {
-  grade: { file: "specgrade.ts", tag: /\/\/ grade-guard:(and-only|and-width|fn-name|nested|candidate-operands|operand-kept|spec-demote)\s*$/, suite: "grade" },
-  report: { file: "practicereplay.ts", tag: /\/\/ (?:grade-guard:(text-demote)|report-guard:(dev-only|seed-sha))\s*$/, suite: "report" },
+  grade: { file: "specgrade.ts", tag: /\/\/ grade-guard:(and-only|and-width|fn-name|nested|candidate-operands|operand-kept)\s*$/, suite: "grade", ids: ["and-only", "and-width", "candidate-operands", "fn-name", "nested", "operand-kept"] },
+  report: { file: "practicereplay.ts", tag: /\/\/ (?:report-guard:(dev-only|seed-sha)|grade-guard:(path-filter|text-probe|probe-cap|text-wire))\s*$/, suite: "report", ids: ["dev-only", "path-filter", "probe-cap", "seed-sha", "text-probe", "text-wire"] },
 } as const;
 
 let dir: string;
@@ -50,9 +50,7 @@ for (const spec of Object.values(sources)) {
   const lines = text.split("\n");
   const guards = lines.flatMap((line, i) => { const m = spec.tag.exec(line); return m ? [{ id: (m[1] ?? m[2])!, line: i }] : []; });
   test(`${spec.file} weakening tags are present`, () => {
-    assert.deepEqual(guards.map((g) => g.id).sort(), spec.suite === "grade"
-      ? ["and-only", "and-width", "candidate-operands", "fn-name", "nested", "operand-kept", "spec-demote"]
-      : ["dev-only", "seed-sha", "text-demote"]);
+    assert.deepEqual(guards.map((g) => g.id).sort(), [...spec.ids]);
   });
   test(`${spec.file} unmutated weakening cases pass`, async () => {
     const r = await runMutant(`${spec.suite}-control`, text, spec.suite);

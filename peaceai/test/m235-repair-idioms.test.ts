@@ -429,4 +429,56 @@ test("an aliased own-property check is already a guard, and a different alias is
   assert.equal(hits(walked, "own-keys").length, 1);
   assert.equal(hits(listed, "own-keys").length, 1);
   assert.equal(hits(across, "own-keys").length, 1);
+  const braced = [
+    "export function counted(bins: Record<string, number>, box: object): number {",
+    "  let has = Object.hasOwn;",
+    "  ({ has } = box);",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const plus = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  let has = Object.hasOwn;",
+    "  has += 1;",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const laterWrite = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  let has = Object.hasOwn;",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  has = Object.keys;",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const restored = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  let has = Object.keys;",
+    "  has = Object.hasOwn;",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  assert.equal(hits(braced, "own-keys").length, 1);
+  assert.equal(hits(plus, "own-keys").length, 1);
+  assert.equal(hits(laterWrite, "own-keys").length, 0);
+  assert.equal(hits(restored, "own-keys").length, 0);
 });

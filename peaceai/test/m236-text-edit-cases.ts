@@ -242,9 +242,11 @@ export const CASES: Case[] = [
       assert.deepEqual(l.prop.editAim("Fix parseArgs, etc. for a blank flag")?.symbols, ["parseArgs"]);
       assert.deepEqual(l.prop.editAim("fix kiln.door for a cracked brick")?.symbols, ["kiln.door"]);
       assert.deepEqual(l.prop.editAim("fix eg.parser for a blank flag")?.symbols, ["eg.parser"]);
-      assert.deepEqual(l.prop.editAim("Fix parseArgs, a.k.a. the flag reader")?.symbols, ["parseArgs"]);
-      assert.deepEqual(l.prop.editAim("Fix the loader for docs.rs")?.symbols, ["loader"]);
-      assert.deepEqual(l.prop.editAim("Fix the client for api.github.com")?.symbols, ["client"]);
+      assert.deepEqual(l.prop.editAim("Fix parseArgs, n.b. the blank flag")?.symbols, ["parseArgs"]);
+      assert.deepEqual(l.prop.editAim("Fix parseArgs, q.v. the note")?.symbols, ["parseArgs"]);
+      assert.deepEqual(l.prop.editAim("Fix the loader for crates.io")?.symbols, ["loader"]);
+      assert.deepEqual(l.prop.editAim("Fix the client for pkg.proxy.dev")?.symbols, ["client"]);
+      assert.deepEqual(l.prop.editAim("fix z.x for a cold rack")?.symbols, ["z.x"]);
       assert.deepEqual(l.prop.editAim("fix docs.ready for a cold oven")?.symbols, ["docs.ready"]);
       assert.deepEqual(l.prop.editAim("fix api.timeout for a slow rack")?.symbols, ["api.timeout"]);
     },

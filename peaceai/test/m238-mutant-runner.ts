@@ -32,35 +32,18 @@ if (suite === "grade") {
   check("candidate-operands", () => { assert.equal(mod.droppedGuardConjunct(fix, weak), true); });
   check("operand-kept", () => { assert.equal(mod.droppedGuardConjunct(fix, fix), false); });
   check("or-kept", () => { assert.equal(mod.droppedGuardConjunct("export function serve(fresh: boolean, cached: boolean): boolean { return fresh || cached; }\n", "export function serve(fresh: boolean, cached: boolean): boolean { return fresh; }\n"), false); });
-  check("spec-demote", () => {
-    const write = (text: string) => {
-      const root = mkdtempSync(join(tmpdir(), "peaceai-m238-"));
-      mkdirSync(join(root, "src"), { recursive: true });
-      writeFileSync(join(root, "src/oven.ts"), text);
-      return root;
-    };
-    const left = write(weak);
-    const right = write(fix);
-    try {
-      assert.equal(mod.gradeBehavior({
-        candidateRoot: left, fixRoot: right, nodePath: process.execPath,
-        target: { symbol: "bake", file: "src/oven.ts", form: "named", exportName: "bake", args: [[{ ok: true, hot: true }]] },
-      }).behavior, "verified_test_only");
-    } finally {
-      rmSync(left, { recursive: true, force: true });
-      rmSync(right, { recursive: true, force: true });
-    }
-  });
 }
 
 if (suite === "report") {
-  const pass = { scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: 1, afterExit: 0 };
-  check("text-demote", () => { assert.equal(mod.gradeTextFlip({ ...pass, dropsGuard: true }).reason, "VERIFIED_TEST_ONLY"); });
-  check("text-keep", () => { assert.equal(mod.gradeTextFlip({ ...pass, dropsGuard: false }).status, "pass"); });
   const dev = { repo: "sindresorhus/is", split: "dev", fixSha: "cb4ee0e92cd3bff8353bb6738bd1f54db87dc293" };
   const held = { ...dev, split: "held-out" };
   check("dev-only", () => { assert.equal(mod.seededIdiom(held), null); });
   check("seed-sha", () => { assert.equal(mod.seededIdiom(dev), "enum-values"); assert.equal(mod.seededIdiom({ ...dev, fixSha: "a".repeat(40) }), null); });
+  const diff = ["+++ b/src/oven.ts", "+++ b/test/oven.ts", "+++ b/__tests__/oven.ts", "+++ b/src/oven.test.ts", ""].join("\n");
+  check("path-filter", () => { assert.deepEqual(mod.sourcePaths(diff), ["src/oven.ts"]); });
+  check("text-probe", () => { assert.equal(mod.textProbeVerdict({ behavior: "verified_test_only", compared: 2 }), "verified_test_only"); });
+  check("probe-cap", () => { assert.equal(mod.textProbeVerdict({ behavior: "diff_unavailable", compared: 0 }), "verified_test_only"); });
+  check("text-wire", () => { assert.equal(mod.textFlipBehavior(true, { behavior: "verified_test_only", compared: 2 }), "verified_test_only"); });
 }
 
 process.stdout.write(JSON.stringify({ failed, crashed }) + "\n");

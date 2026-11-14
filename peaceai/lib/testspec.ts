@@ -310,6 +310,24 @@ export function expectationsIn(testFile: string, text: string, sourcePattern: st
   return out;
 }
 
+/** Concrete calls in a recorded test, grouped the way the behavioral grader loads a symbol. */
+export function behaviorTargets(testFile: string, text: string, sourcePattern: string, denyPatterns: readonly string[] = [], exists: (path: string) => boolean = () => true): SpecTarget[] {
+  const by = new Map<string, SpecTarget>();
+  for (const row of expectationsIn(testFile, text, sourcePattern, denyPatterns, exists)) {
+    if (row.kind === "throws") continue;
+    const args = argsFromSnippet(row.input);
+    if (!args) continue;
+    const id = `${row.file}\0${row.symbol}`;
+    let target = by.get(id);
+    if (!target) {
+      target = { symbol: row.symbol, file: row.file, form: "named", exportName: row.symbol, args: [] };
+      by.set(id, target);
+    }
+    if (!target.args.some((have) => JSON.stringify(have) === JSON.stringify(args))) target.args.push(args);
+  }
+  return [...by.values()];
+}
+
 /**
  * Names of the tests the runner reported as failed. Only the runner's own labels, capped.
  *

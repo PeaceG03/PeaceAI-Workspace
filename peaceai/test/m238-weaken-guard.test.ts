@@ -1,115 +1,141 @@
-// A dropped && guard is test-only. Fixtures are bakery code written for these tests.
+// Text flips are strict only when probes match the fix. Fixtures are bakery code written for these tests.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { diffDropsGuard } from "../bin/practice-replay.ts";
-import { gradeTextFlip, replayDocument, seededIdiom } from "../lib/practicereplay.ts";
-import { droppedGuardConjunct, gradeBehavior } from "../lib/specgrade.ts";
+import { gradeTextCandidate } from "../bin/practice-replay.ts";
+import { gradePracticeRow, replayDocument, seededIdiom, sourcePaths, textFlipBehavior } from "../lib/practicereplay.ts";
+import { visibleNodeBin } from "../lib/practicemine.ts";
+import { gradeBehavior, type Behavior } from "../lib/specgrade.ts";
 
-const bake = (body: string) => `export function bake(batch: { ok: boolean; hot: boolean }): boolean {\n  ${body}\n}\n`;
-const FIX = bake("return batch.ok && batch.hot;");
-const WEAK = bake("return batch.ok;");
-const STRONGER = bake("return batch.ok && batch.hot && batch.ok !== batch.hot;");
-const COUNT = (expr: string) => `export function tally(count: number): number {\n  return ${expr};\n}\n`;
-const EITHER = (expr: string) => `export function serve(fresh: boolean, cached: boolean): boolean {\n  return ${expr};\n}\n`;
+const nodePath = visibleNodeBin() ?? process.execPath;
 
-test("dropping an && conjunct is a broader predicate, and a strengthening is not", () => {
-  assert.equal(droppedGuardConjunct(FIX, WEAK), true);
-  assert.equal(droppedGuardConjunct(FIX, bake("return ready(batch);")), true);
-  assert.equal(droppedGuardConjunct(FIX, STRONGER), false);
-  assert.equal(droppedGuardConjunct(FIX, FIX), false);
-  assert.equal(droppedGuardConjunct(COUNT("count + 1"), COUNT("count + 2")), false);
-  assert.equal(droppedGuardConjunct(EITHER("fresh || cached"), EITHER("fresh")), false);
-  const nestedFix = [
-    "export function bake(batch: { ok: boolean; hot: boolean }): boolean {",
-    "  function note(x: { left: boolean; right: boolean }): boolean { return x.left && x.right; }",
-    "  return batch.ok && batch.hot;",
-    "}",
-  ].join("\n");
-  const nestedWeak = [
-    "export function bake(batch: { ok: boolean; hot: boolean }): boolean {",
-    "  function note(x: { left: boolean; right: boolean }): boolean { return x.left; }",
-    "  return batch.ok && batch.hot && x.left && x.right;",
-    "}",
-  ].join("\n");
-  assert.equal(droppedGuardConjunct(nestedFix, nestedWeak), true);
-});
-
-test("a text flip that dropped a guard is not a pass, and one that kept it is", () => {
-  const base = { scorable: true as const, core: "ok" as const, job: { status: "pass" as const, reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: 1, afterExit: 0 };
-  assert.equal(gradeTextFlip({ ...base, dropsGuard: true }).reason, "VERIFIED_TEST_ONLY");
-  assert.equal(gradeTextFlip({ ...base, dropsGuard: false }).status, "pass");
-  assert.equal(gradeTextFlip({ ...base, dropsGuard: true, afterExit: 1 }).reason, "TEST_STILL_FAILS");
-});
-
-test("the spec grader refuses a broader predicate before it probes", () => {
+function grade(candidate: string, fix: string, args: unknown[][], target: { symbol: string; exportName: string; form?: "named" | "named-prop"; prop?: string } = { symbol: "warm", exportName: "warm" }): Behavior {
   const write = (text: string) => {
     const root = mkdtempSync(join(tmpdir(), "peaceai-guard-"));
     mkdirSync(join(root, "src"), { recursive: true });
     writeFileSync(join(root, "src/oven.ts"), text);
     return root;
   };
-  const candidate = write(WEAK);
-  const fix = write(FIX);
+  const left = write(candidate);
+  const right = write(fix);
   try {
-    const grade = gradeBehavior({
-      candidateRoot: candidate, fixRoot: fix, nodePath: process.execPath,
-      target: { symbol: "bake", file: "src/oven.ts", form: "named", exportName: "bake", args: [[{ ok: true, hot: true }]] },
-    });
-    assert.equal(grade.behavior, "verified_test_only");
+    return gradeBehavior({
+      candidateRoot: left, fixRoot: right, nodePath,
+      target: { symbol: target.symbol, file: "src/oven.ts", form: target.form ?? "named", exportName: target.exportName, prop: target.prop, args },
+    }).behavior;
   } finally {
-    rmSync(candidate, { recursive: true, force: true });
-    rmSync(fix, { recursive: true, force: true });
+    rmSync(left, { recursive: true, force: true });
+    rmSync(right, { recursive: true, force: true });
   }
+}
+
+const range = "export function warm(n: number): boolean {\n  return n > 0 && n < 10;\n}\n";
+
+test("thirteen weakenings are not strict, and an equivalent rewrite still can be", () => {
+  const weak: [string, string, unknown[][]][] = [
+    ["export function warm(n: number): boolean {\n  return n > 0;\n}\n", range, [[3], [12]]],
+    ["export function warm(n: number): boolean {\n  if (n > 0) return true;\n  return n < 10;\n}\n", range, [[12]]],
+    ["export function warm(n: number): boolean {\n  if (n > 0) return true;\n  return true;\n}\n", range, [[-1]]],
+    ["function ready(n: number): boolean { return n > 0; }\nexport { ready as warm };\n", range, [[12]]],
+    ["export function warm(n: number): boolean {\n  return n;\n}\n", "export function warm(n: number): number {\n  if (n < 0) throw new RangeError(\"cold\");\n  return n;\n}\n", [[-1]]],
+    ["export function warm(n: number): boolean {\n  return n >= 0 || n < 0;\n}\n", range, [[12]]],
+    ["export function warm(n: number): boolean {\n  return n < 10;\n}\n", range, [[-1]]],
+    ["export function warm(n: number): boolean {\n  return n >= 0;\n}\n", "export function warm(n: number): boolean {\n  return n > 0;\n}\n", [[0]]],
+    ["export function warm(batch: { hot: boolean } | null): boolean {\n  return Boolean(batch && batch.hot);\n}\n", "export function warm(batch: { hot: boolean } | null): boolean {\n  if (!batch) return false;\n  return batch.hot;\n}\n", [[null]]],
+    ["export function warm(n: number): boolean {\n  if (n > 0) return true;\n  return false;\n}\n", "export function warm(n: number): boolean {\n  if (n > 0 && n < 10) return true;\n  return false;\n}\n", [[12]]],
+    ["export function warm(n: number): boolean {\n  return true;\n}\n", range, [[-1]]],
+    ["export function warm(n: number): boolean {\n  return n === n || n > 100;\n}\n", range, [[12]]],
+  ];
+  assert.equal(weak.length, 12);
+  const method = grade(
+    "export const oven = { warm(n: number): boolean { return n > 0; } };\n",
+    "export const oven = { warm(n: number): boolean { return n > 0 && n < 10; } };\n",
+    [[12]],
+    { symbol: "warm", exportName: "oven", form: "named-prop", prop: "warm" },
+  );
+  assert.notEqual(method, "verified_strict");
+  for (const [candidate, fix, args] of weak) assert.notEqual(grade(candidate, fix, args), "verified_strict");
+  assert.equal(grade(
+    "export function warm(a: boolean, b: boolean): boolean {\n  return !a || !b;\n}\n",
+    "export function warm(a: boolean, b: boolean): boolean {\n  return !(a && b);\n}\n",
+    [[true, true]],
+  ), "verified_strict");
+  assert.equal(grade(
+    "export function warm(label: string): boolean {\n  return new RegExp(\"^loaf \").test(label);\n}\n",
+    "export function warm(label: string): boolean {\n  return /^loaf /.test(label);\n}\n",
+    [["loaf rye"]],
+  ), "verified_strict");
 });
 
-test("seeded idiom rows are excluded from credit, and a held-out row with the same sha is not", () => {
-  const idiom = "enum-values" as const;
-  const dev = { repo: "sindresorhus/is", split: "dev" as const, fixSha: "cb4ee0e92cd3bff8353bb6738bd1f54db87dc293", status: "pass" as const, reason: "GATE_PASS_AND_TEST", gap: false, understanding: "text" as const };
-  const held = { ...dev, split: "held-out" as const, status: "fail" as const, reason: "VERIFIED_TEST_ONLY", gap: true };
-  const other = { ...dev, fixSha: "a".repeat(40) };
-  const defu = { repo: "unjs/defu", split: "dev" as const, fixSha: "11ba02213d4b1c6b02dd686041f75edc479c98e9", status: "pass" as const, reason: "GATE_PASS_AND_TEST", gap: false, understanding: "text" as const };
-  assert.equal(seededIdiom(dev), idiom);
-  assert.equal(seededIdiom(held), null);
-  assert.equal(seededIdiom(other), null);
-  assert.equal(seededIdiom(defu), "own-keys");
-  const doc = replayDocument([dev, held, defu]);
-  assert.deepEqual(doc.excludedFromCredit.map((row) => row.idiom).sort(), ["enum-values", "own-keys"]);
-  assert.equal(doc.excludedFromCredit.every((row) => row.split === "dev"), true);
-  assert.equal(doc.rows.find((row) => row.fixSha === dev.fixSha)?.excludedFromCredit, idiom);
-  assert.equal("excludedFromCredit" in (doc.rows.find((row) => row.split === "held-out") ?? {}), false);
-  assert.equal(doc.counts.text.dev.pass, 2);
-  assert.equal(doc.creditCounts.text.dev.pass, 0);
-});
-
-test("a candidate diff that drops the fix's conjunct is reported from the two trees", () => {
-  const repo = mkdtempSync(join(tmpdir(), "peaceai-guard-repo-"));
+test("a recorded text flip is strict only when the probes match the fix", () => {
+  const repo = mkdtempSync(join(tmpdir(), "peaceai-text-probe-"));
   const git = (...args: string[]) => spawnSync("git", ["-C", repo, ...args], { encoding: "utf8" });
+  const file = join(repo, "src/oven.ts");
+  const testFile = join(repo, "test/oven.test.ts");
+  const testText = "import assert from \"node:assert/strict\";\nimport { warm } from \"../src/oven.ts\";\nassert.equal(warm(3), true);\n";
   try {
     git("init", "-q");
     git("config", "user.email", "guard@example.com");
     git("config", "user.name", "guard");
     mkdirSync(join(repo, "src"));
-    const file = join(repo, "src/oven.ts");
-    writeFileSync(file, WEAK);
-    git("add", "src/oven.ts");
+    mkdirSync(join(repo, "test"));
+    writeFileSync(file, "export function warm(n: number): boolean {\n  return n > 0;\n}\n");
+    writeFileSync(testFile, testText);
+    git("add", ".");
     git("commit", "-q", "-m", "base");
     const base = git("rev-parse", "HEAD").stdout.trim();
-    writeFileSync(file, FIX);
+    writeFileSync(file, range);
     git("add", "src/oven.ts");
     git("commit", "-q", "-m", "fix");
     const fix = git("rev-parse", "HEAD").stdout.trim();
     git("checkout", "-q", base);
-    writeFileSync(file, WEAK.replace("return batch.ok;", "return batch.ok; // still one check"));
+    writeFileSync(file, "export function warm(n: number): boolean {\n  return n > 0; // still wide\n}\n");
     const weakDiff = git("diff", "--", "src/oven.ts").stdout;
-    assert.equal(diffDropsGuard(repo, base, fix, weakDiff), true);
-    writeFileSync(file, FIX);
-    const keepDiff = git("diff", "--", "src/oven.ts").stdout;
-    assert.equal(diffDropsGuard(repo, base, fix, keepDiff), false);
+    const weak = gradeTextCandidate({
+      repoDir: repo, baseSha: base, fixSha: fix, diff: weakDiff, testFile: "test/oven.test.ts",
+      sourcePattern: "^src/.*\\.ts$", nodePath,
+    });
+    const row = gradePracticeRow({
+      scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true,
+      beforeExit: 1, afterExit: 0, behavior: textFlipBehavior(true, weak),
+    });
+    assert.equal(row.reason, "VERIFIED_TEST_ONLY");
+    writeFileSync(file, range);
+    const sameDiff = git("diff", "--", "src/oven.ts").stdout;
+    const same = gradeTextCandidate({
+      repoDir: repo, baseSha: base, fixSha: fix, diff: sameDiff, testFile: "test/oven.test.ts",
+      sourcePattern: "^src/.*\\.ts$", nodePath,
+    });
+    assert.equal(textFlipBehavior(true, same), "verified_strict");
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
+});
+
+test("source paths skip test files and test directories", () => {
+  const diff = [
+    "--- a/src/oven.ts", "+++ b/src/oven.ts",
+    "--- a/test/oven.ts", "+++ b/test/oven.ts",
+    "--- a/__tests__/oven.ts", "+++ b/__tests__/oven.ts",
+    "--- a/src/oven.test.ts", "+++ b/src/oven.test.ts",
+    "",
+  ].join("\n");
+  assert.deepEqual(sourcePaths(diff), ["src/oven.ts"]);
+});
+
+test("seeded idiom rows are excluded from credit, and a held-out row with the same sha is not", () => {
+  const dev = { repo: "sindresorhus/is", split: "dev" as const, fixSha: "cb4ee0e92cd3bff8353bb6738bd1f54db87dc293", status: "pass" as const, reason: "GATE_PASS_AND_TEST", gap: false, understanding: "text" as const };
+  const held = { ...dev, split: "held-out" as const, status: "fail" as const, reason: "VERIFIED_TEST_ONLY", gap: true };
+  const defu = { repo: "unjs/defu", split: "dev" as const, fixSha: "11ba02213d4b1c6b02dd686041f75edc479c98e9", status: "pass" as const, reason: "GATE_PASS_AND_TEST", gap: false, understanding: "text" as const };
+  assert.equal(seededIdiom(dev), "enum-values");
+  assert.equal(seededIdiom(held), null);
+  assert.equal(seededIdiom(defu), "own-keys");
+  const doc = replayDocument([dev, held, defu]);
+  assert.deepEqual(doc.excludedFromCredit.map((row) => row.idiom).sort(), ["enum-values", "own-keys"]);
+  assert.equal(doc.excludedFromCredit.every((row) => row.split === "dev"), true);
+  assert.equal(doc.counts.text.dev.pass, 2);
+  assert.equal(doc.creditCounts.text.dev.pass, 0);
 });

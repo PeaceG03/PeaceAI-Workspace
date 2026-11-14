@@ -1076,10 +1076,9 @@ function guardOperands(source: string): Map<string, Set<string>> {
 }
 
 /**
- * True when a same-named function in the fix still has an `&&` guard conjunct that the candidate
- * dropped. That is a broader predicate: `return isReady(batch) && labeled(batch)` weakened to
- * `return isReady(batch)`. Adding a conjunct, or editing a comparison that is not an `&&` chain,
- * is not this.
+ * Diagnostic only. It is not a strictness gate: a dropped `&&` conjunct is one weakening shape,
+ * and a rewritten equivalent (De Morgan, another spelling of the same check) is not a pass or a fail.
+ * Text flips are graded by probing the fix.
  */
 export function droppedGuardConjunct(fixSource: string, candidateSource: string): boolean {
   const needed = guardOperands(fixSource);
@@ -1101,8 +1100,8 @@ export function droppedGuardConjunct(fixSource: string, candidateSource: string)
  * Compare the candidate symbol with the fix's symbol. Neither tree is modified except for a probe
  * file that is removed before this returns. A load failure is diff_unavailable.
  * verified_strict requires at least one mutated input, not only the test's own arguments.
- * A candidate that dropped an `&&` guard the fix still has is verified_test_only even when the
- * probed inputs agree: the recorded examples can all sit on the side the broader predicate still accepts.
+ * A disagreement on any probed input, including one the recorded test did not name, is verified_test_only
+ * and keeps that counterexample.
  */
 export function gradeBehavior(input: {
   candidateRoot: string;
@@ -1115,7 +1114,6 @@ export function gradeBehavior(input: {
   let fixSource = "";
   try { source = readFileSync(join(input.candidateRoot, input.target.file), "utf8"); } catch { source = ""; }
   try { fixSource = readFileSync(join(input.fixRoot, input.target.file), "utf8"); } catch { fixSource = ""; }
-  if (droppedGuardConjunct(fixSource, source)) return { behavior: "verified_test_only", compared: 0 }; // grade-guard:spec-demote
   if (input.target.args.some((args) => args.some(containsOpaque))) return { behavior: "diff_unavailable", compared: 0 };
   const candidateBounds = comparisonBounds(source);
   const fixBounds = comparisonBounds(fixSource);
