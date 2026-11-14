@@ -330,8 +330,9 @@ test("the is class fix and its weakenings are graded on the dev repo", { timeout
       const source = fixSource.replace(fixReturn, body);
       const grade = gradeAt(source);
       assert.ok(grade.compared > 0, `${name} compared ${grade.compared} ${grade.behavior}`);
-      assert.notEqual(grade.behavior, "diff_unavailable", name);
-      console.log(`is-equivalent ${name} ${grade.behavior} compared=${grade.compared} ${reason(source, grade)}`);
+      assert.equal(grade.behavior, "verified_test_only", name);
+      assert.equal(grade.counterexample, undefined, name);
+      console.log(`is-equivalent ${name} verdict=${grade.behavior} compared=${grade.compared} disagreed=false ${reason(source, grade)}`);
     }
     assert.equal(weaken.length, 17);
     for (const [name, body] of weaken) {
@@ -339,7 +340,73 @@ test("the is class fix and its weakenings are graded on the dev repo", { timeout
       const grade = gradeAt(source);
       const why = reason(source, grade);
       assert.notEqual(grade.behavior, "verified_strict", name);
-      console.log(`is-weakening ${name} ${grade.behavior} compared=${grade.compared} ${why}`);
+      console.log(`is-weakening ${name} verdict=${grade.behavior} compared=${grade.compared} disagreed=${Boolean(grade.counterexample)} ${why}`);
+    }
+    const positiveReturn = "return isNumber(value) && value > 0;";
+    assert.equal(fixSource.includes(positiveReturn), true);
+    const checker = [
+      "import { registerHooks } from 'node:module';",
+      "import { fileURLToPath, pathToFileURL } from 'node:url';",
+      "import { existsSync } from 'node:fs';",
+      "registerHooks({ resolve(specifier, context, nextResolve) {",
+      "  const relative = specifier.startsWith('./') || specifier.startsWith('../');",
+      "  const swap = specifier.endsWith('.mjs') ? [4, '.mts'] : specifier.endsWith('.js') ? [3, '.ts'] : null;",
+      "  if (!relative || !swap) return nextResolve(specifier, context);",
+      "  try { return nextResolve(specifier, context); }",
+      "  catch {",
+      "    const mapped = specifier.slice(0, -swap[0]) + swap[1];",
+      "    const resolved = nextResolve(mapped, context);",
+      "    if (!existsSync(fileURLToPath(resolved.url))) return nextResolve(specifier, context);",
+      "    return resolved;",
+      "  }",
+      "}});",
+      "const mod = await import(pathToFileURL(process.argv[2]).href);",
+      "const is = mod.default;",
+      "const yes = (value) => is.positiveNumber(value) === true;",
+      "const no = (value) => is.positiveNumber(value) === false;",
+      "let pass = [6, 1.4, Infinity].every(yes) && [0, -0, -6, -1.4, -Infinity].every(no);",
+      "class Foo {}",
+      "class Bar extends Foo {}",
+      "const minified = new Function('return class{};')();",
+      "pass = pass && is.class(Foo) && is.class(Bar) && is.class(minified);",
+      "process.exit(pass ? 0 : 1);",
+      "",
+    ].join("\n");
+    const checkFile = join(repo, "check-recorded.mjs");
+    writeFileSync(checkFile, checker);
+    const recorded = (source: string) => {
+      writeFileSync(join(repo, "source/index.ts"), source);
+      return spawnSync(nodePath, ["--experimental-strip-types", checkFile, join(repo, "source/index.ts")], { encoding: "utf8" }).status;
+    };
+    const baseSource = git("show", `${baseSha}:source/index.ts`).stdout;
+    assert.equal(recorded(baseSource), 1, "base recorded checks");
+    assert.equal(recorded(fixSource), 0, "fix recorded checks");
+    const positive: [string, string][] = [
+      ["greater", "return (value as number) > 0;"],
+      ["number-cast", "return Number(value) > 0;"],
+      ["boolean-and", "return Boolean(value) && (value as number) > 0;"],
+      ["not-string", "return typeof value !== \"string\" && (value as number) > 0;"],
+      ["not-null", "return value != null && (value as number) > 0;"],
+      ["open-below", "return isNumber(value) && value > -0.5 && value !== 0;"],
+      ["sign", "return Math.sign(value as number) === 1;"],
+      ["unary-plus", "return +value > 0;"],
+      ["else-branch", "return isNumber(value) ? value > 0 : (value as number) > 0 && typeof value !== \"object\";"],
+      ["not-le", "return !((value as number) <= 0);"],
+      ["not-array", "return (value as number) > 0 && !Array.isArray(value);"],
+      ["not-string-tag", "return Object.prototype.toString.call(value) !== \"[object String]\" && (value as number) > 0;"],
+      ["bigint-or", "return (isNumber(value) && value > 0) || typeof value === \"bigint\";"],
+      ["gte-epsilon", "return (value as number) >= 1e-12 && ((value as number) > 0 || value === Number.POSITIVE_INFINITY);"],
+      ["skip-boolean", "return (value as number) > 0 && typeof value !== \"boolean\";"],
+    ];
+    assert.ok(positive.length >= 12 && positive.length <= 17);
+    for (const [name, body] of positive) {
+      const source = fixSource.replace(positiveReturn, body);
+      const exit = recorded(source);
+      assert.equal(exit, 0, `${name} recorded exit ${exit}`);
+      const grade = gradeAt(source);
+      assert.notEqual(grade.behavior, "verified_strict", name);
+      if (name === "open-below" || name === "not-le" || name === "gte-epsilon") assert.ok(grade.counterexample, name);
+      console.log(`is-positive ${name} verdict=${grade.behavior} compared=${grade.compared} disagreed=${Boolean(grade.counterexample)}`);
     }
   } finally {
     rmSync(repo, { recursive: true, force: true });
