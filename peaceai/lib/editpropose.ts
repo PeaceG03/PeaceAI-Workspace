@@ -289,7 +289,7 @@ const MEMBER_EXT = new Set(["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts"
 
 export interface EditAim { symbols: string[]; via: "verb" | "lead" }
 
-/** Dotted names in a sentence: `kiln.door`, and a call with no receiver (`.ready()`). A filename extension, a call (`path.join()`), a dotted lowercase abbreviation (`n.b.`), a hostname whose last label is two or three letters (`crates.io`), and a version token (`v18.x`, `v1.2`) are not members. `etc.` is a word and a period, so it is not a dotted name. */
+/** Dotted names in a sentence: `kiln.door`, and a call with no receiver (`.ready()`). A filename extension, a call (`path.join()`), a dotted lowercase abbreviation (`n.b.`), a hostname whose last label is a common public suffix (`example.com`), and a version token (`v18.x`, `v1.2`) are not members. `etc.` is a word and a period, so it is not a dotted name. A property that merely has two or three letters (`arr.map`, `fs.rm`) stays a member. */
 function memberRefs(region: string): string[] {
   const out: string[] = [];
   const add = (path: string) => { if (path.length <= 80 && !out.includes(path)) out.push(path); };
@@ -317,21 +317,29 @@ function dottedAbbrev(pair: string, tail: string): boolean {
   return /^(?:\.[a-z])*\.(?![A-Za-z0-9_$])/.test(tail);
 }
 
-/** A lowercase dotted name whose last label is two or three letters. A one-letter receiver (`t.is`) stays a member. */
-function dottedHost(pair: string, tail: string): boolean {
-  const more = /^\.[a-z]{2,3}(?![A-Za-z0-9_$])/.exec(tail);
-  const shown = more ? `${pair}${more[0]}` : pair;
-  if (shown !== shown.toLowerCase()) return false;
-  if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,3}$/.test(shown)) return false;
+/** Common public suffixes. A last label of two or three letters is not enough: `map`, `set`, `rm`, `key`, `end`, `get`, `sep`, `req`, and `any` are members. */
+const HOST_TLDS = new Set("com org net io dev rs app co gov edu info biz xyz ai sh so to gl ly me tv cc uk us ca de fr jp au nl se no fi es it pl cz ch be at dk nz br in kr tw hk sg ie eu".split(" "));
+
+function hostName(shown: string): string | null {
+  if (shown !== shown.toLowerCase()) return null;
   const labels = shown.split(".");
-  if (labels.length >= 3) return true;
-  return labels[0]!.length >= 2;
+  if (labels.length < 2 || labels.some((label) => !/^[a-z0-9-]+$/.test(label))) return null;
+  let known = false;
+  known = HOST_TLDS.has(labels[labels.length - 1]!); // text-guard:member-tld
+  return known ? shown : null;
+}
+
+function dottedHost(pair: string, tail: string): boolean {
+  const more = /^\.[a-z]{2,24}(?![A-Za-z0-9_$])/i.exec(tail);
+  return hostName(more ? `${pair}${more[0]}` : pair) !== null;
 }
 
 function hostLabels(prose: string): Set<string> {
   const out = new Set<string>();
-  for (const match of prose.toLowerCase().matchAll(/\b((?:[a-z0-9-]+\.)+[a-z]{2,3})\b/g)) {
-    for (const part of match[1]!.split(".")) out.add(part);
+  for (const match of prose.matchAll(/\b([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\b/g)) {
+    const host = hostName(match[1]!);
+    if (!host) continue;
+    for (const part of host.split(".")) out.add(part);
   }
   return out;
 }
@@ -565,11 +573,39 @@ export function proposeTextEdits(search: CodeRepo, request: string, limit = TEXT
   return out;
 }
 
+function hostMentions(text: string): string[] {
+  const region = aimSource(text);
+  const out: string[] = [];
+  const dotted = new RegExp(String.raw`(^|[^A-Za-z0-9_$])([A-Za-z_$][\w$]{0,})\.([A-Za-z_$][\w$]{0,})\b`, "g");
+  for (const match of region.matchAll(dotted)) {
+    const tail = region.slice(match.index + match[0].length);
+    const more = /^\.[a-z]{2,24}(?![A-Za-z0-9_$])/i.exec(tail);
+    const host = hostName(more ? `${match[2]}.${match[3]}${more[0]}` : `${match[2]}.${match[3]}`);
+    if (host && !out.includes(host)) out.push(host);
+  }
+  return out;
+}
+
+function receiverDefined(search: CodeRepo, host: string): boolean {
+  const recv = host.split(".")[0] ?? "";
+  let defined = false;
+  defined = recv.length > 0 && sourceDefs(search, recv).length > 0; // text-guard:host-defined
+  return defined;
+}
+
+/**
+ * Names the sentence asks to change, after a public-suffix host whose receiver is not defined here
+ * is set aside. A defined receiver keeps the member (`cache.io` when `cache` exists).
+ */
+export function aimSymbols(search: CodeRepo, text: string): string[] {
+  const aim = editAim(text);
+  const extra = hostMentions(text).filter((host) => receiverDefined(search, host));
+  return resolvableSymbols(search, [...(aim?.symbols ?? []), ...extra]);
+}
+
 /** The sentence's aim, resolved against this repo, handed to repair-v2. */
 export function textRepairBatches(search: CodeRepo, text: string, limit = TEXT_REPAIR_LIMIT): RepairEdit[][] {
-  const aim = editAim(text);
-  if (!aim) return [];
-  const symbols = resolvableSymbols(search, aim.symbols);
+  const symbols = aimSymbols(search, text);
   if (symbols.length === 0) return [];
   // The summary schema accepts at most five candidates. A longer list fails the gate before a diff is read.
   let cap = limit;
