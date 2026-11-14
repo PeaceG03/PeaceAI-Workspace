@@ -72,6 +72,30 @@ export interface GradedRow {
   afterExit?: number;
 }
 
+/**
+ * Dev fixes that seeded a kept repair idiom. They stay in the measured counts, and the report
+ * lists them as excluded from credit. Held-out rows are never excluded by these shas.
+ */
+export const SEEDED_IDIOM_ROWS: readonly { repo: string; fixSha: string; idiom: "enum-values" | "own-keys" }[] = [
+  { repo: "sindresorhus/is", fixSha: "cb4ee0e92cd3bff8353bb6738bd1f54db87dc293", idiom: "enum-values" },
+  { repo: "unjs/defu", fixSha: "11ba02213d4b1c6b02dd686041f75edc479c98e9", idiom: "own-keys" },
+];
+
+export function seededIdiom(row: { repo: string; split: string; fixSha: string }): "enum-values" | "own-keys" | null {
+  let dev = false;
+  dev = row.split === "dev"; // report-guard:dev-only
+  if (!dev) return null;
+  const hit = SEEDED_IDIOM_ROWS.find((item) => item.repo === row.repo && item.fixSha === row.fixSha);
+  return hit ? hit.idiom : null; // report-guard:seed-sha
+}
+
+/** A text-mode flip that dropped an `&&` guard is not a pass. The recorded test can still go green. */
+export function gradeTextFlip(input: GradeInput & { dropsGuard?: boolean }): { status: RowStatus; reason: string; gap: boolean; beforeExit?: number; afterExit?: number } {
+  let behavior = input.behavior;
+  if (input.dropsGuard && input.afterExit === 0) behavior = "verified_test_only"; // grade-guard:text-demote
+  return gradePracticeRow({ ...input, behavior });
+}
+
 /** One row. Unmeasured never comes back as pass. A pass requires GATE PASS and fail-before/pass-after. */
 export function gradePracticeRow(input: GradeInput): { status: RowStatus; reason: string; gap: boolean; beforeExit?: number; afterExit?: number } {
   const exits: { beforeExit?: number; afterExit?: number } = {};
@@ -130,6 +154,7 @@ export function gapRecord(row: GradedRow): Record<string, unknown> {
     ...(dev && row.lines && row.lines.length ? { lines: row.lines } : {}),
     ...(diagnostic ? { diagnostic } : {}),
     ...(fit ? { shape: fit.shape, examples: fit.examples, behavior: fit.behavior, ...(fit.diff ? { diff: fit.diff } : {}), ...(fit.counterexample ? { counterexample: fit.counterexample } : {}) } : {}),
+    ...(seededIdiom(row) ? { excludedFromCredit: seededIdiom(row) } : {}),
   };
 }
 
@@ -205,9 +230,16 @@ export function replayDocument(rows: readonly GradedRow[]): {
   protectedFile: string;
   protectedWhy: string;
   counts: ReturnType<typeof countsByUnderstanding>;
+  /** Measured counts with seeded-idiom dev rows removed. Those rows are not credit. */
+  creditCounts: ReturnType<typeof countsByUnderstanding>;
+  excludedFromCredit: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; idiom: "enum-values" | "own-keys" }[];
   behavior: ReturnType<typeof behaviorBySplit>;
-  rows: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string; diagnostic?: GradedRow["diagnostic"]; shape?: string; examples?: number; behavior?: Behavior; diff?: string; counterexample?: BehaviorCounterexample; lines?: string[] }[];
+  rows: { repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string; diagnostic?: GradedRow["diagnostic"]; shape?: string; examples?: number; behavior?: Behavior; diff?: string; counterexample?: BehaviorCounterexample; lines?: string[]; excludedFromCredit?: "enum-values" | "own-keys" }[];
 } {
+  const excludedFromCredit = rows.flatMap((row) => {
+    const idiom = seededIdiom(row);
+    return idiom ? [{ repo: row.repo, split: row.split, fixSha: row.fixSha, understanding: row.understanding ?? "text" as const, idiom }] : [];
+  });
   return {
     schema: REPLAY_SCHEMA,
     experimental: true,
@@ -216,10 +248,13 @@ export function replayDocument(rows: readonly GradedRow[]): {
     protectedFile: PROTECTED_GATE_FILE,
     protectedWhy: PROTECTED_GATE_WHY,
     counts: countsByUnderstanding(rows),
+    creditCounts: countsByUnderstanding(rows.filter((row) => !seededIdiom(row))),
+    excludedFromCredit,
     behavior: behaviorBySplit(rows),
     rows: rows.map((row) => gapRecord(row) as {
       repo: string; split: GradedRow["split"]; fixSha: string; understanding: Understanding; status: RowStatus; reason: string;
       diagnostic?: GradedRow["diagnostic"]; shape?: string; examples?: number; behavior?: Behavior; diff?: string; counterexample?: BehaviorCounterexample; lines?: string[];
+      excludedFromCredit?: "enum-values" | "own-keys";
     }),
   };
 }

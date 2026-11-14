@@ -289,7 +289,7 @@ const MEMBER_EXT = new Set(["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts"
 
 export interface EditAim { symbols: string[]; via: "verb" | "lead" }
 
-/** Dotted names in a sentence: `kiln.door`, and a call with no receiver (`.ready()`). A filename extension, a call (`path.join()`), the abbreviations `e.g.` and `i.e.`, and a version token (`v18.x`, `v1.2`) are not members. `etc.` is a word and a period, so it is not a dotted name. */
+/** Dotted names in a sentence: `kiln.door`, and a call with no receiver (`.ready()`). A filename extension, a call (`path.join()`), the abbreviations `e.g.`, `i.e.`, and `a.k.a.`, the host `docs.rs`, a three-label API host, and a version token (`v18.x`, `v1.2`) are not members. `etc.` is a word and a period, so it is not a dotted name. */
 function memberRefs(region: string): string[] {
   const out: string[] = [];
   const add = (path: string) => { if (path.length <= 80 && !out.includes(path)) out.push(path); };
@@ -301,7 +301,11 @@ function memberRefs(region: string): string[] {
     const after = region[m.index + m[0].length];
     if (after === "(") continue; // text-guard:member-call
     const pair = `${m[2]}.${m[3]}`;
+    const tail = region.slice(m.index + m[0].length);
     if (/^(?:e\.g|i\.e)$/i.test(pair)) continue; // text-guard:member-abbrev
+    if (/^a\.k$/i.test(pair) && /^\.a\b/i.test(tail)) continue; // text-guard:member-aka
+    if (/^docs\.rs$/i.test(pair)) continue; // text-guard:member-host
+    if (/^api\.github$/i.test(pair) && /^\.com\b/i.test(tail)) continue; // text-guard:member-github
     if (/^v\d+\.(?:x|\d+)$/i.test(pair)) continue; // text-guard:member-version
     add(pair);
   }
@@ -352,6 +356,9 @@ function aimObject(region: string, symbols: string[]): void {
     if (aimCodeName(w[0]) || w[0].length < 3 || AIM_META.has(w[0].toLowerCase())) continue; // text-guard:meta
     if (AIM_GENERIC.has(w[0].toLowerCase())) continue; // text-guard:generic-object
     if (/^v\d+$/i.test(w[0])) continue; // text-guard:version-word
+    if (/\bdocs\.rs\b/i.test(prose) && w[0].toLowerCase() === "docs") continue; // text-guard:host-word
+    const apiHost = ["api", "github", "com"];
+    if (prose.toLowerCase().includes(apiHost.join(".")) && apiHost.includes(w[0].toLowerCase())) continue; // text-guard:github-word
     parts.push(w[0]);
   }
   if (parts.length >= 2) {
@@ -1302,13 +1309,35 @@ function isOwnAliasInit(expr: ts.Expression): boolean {
   return true; // cap-guard:own-alias-init
 }
 
+function varDecl(node: ts.Node): boolean {
+  if (!ts.isVariableDeclaration(node) || !ts.isVariableDeclarationList(node.parent)) return false;
+  const flags = node.parent.flags;
+  return (flags & ts.NodeFlags.Let) === 0 && (flags & ts.NodeFlags.Const) === 0;
+}
+
+function scopeEdge(block: ts.Node): boolean {
+  if (ts.isBlock(block) || ts.isSourceFile(block) || ts.isModuleBlock(block)) return true;
+  let caseEdge = false;
+  caseEdge = ts.isCaseClause(block); // cap-guard:own-alias-case
+  return caseEdge;
+}
+
 function aliasScope(node: ts.Node): ts.Node {
-  let parent = node.parent;
+  let cur: ts.Node = node;
+  while (ts.isBindingElement(cur)) cur = cur.parent;
+  if ((ts.isObjectBindingPattern(cur) || ts.isArrayBindingPattern(cur)) && cur.parent) cur = cur.parent;
+  if (ts.isParameter(cur)) return cur.parent;
+  if (ts.isVariableDeclaration(cur) && ts.isCatchClause(cur.parent)) return cur.parent.block; // cap-guard:own-alias-catch
+  const forOwner = ts.isVariableDeclaration(cur) && ts.isVariableDeclarationList(cur.parent) ? cur.parent.parent : undefined;
+  if (forOwner && (ts.isForOfStatement(forOwner) || ts.isForInStatement(forOwner) || ts.isForStatement(forOwner))) return forOwner; // cap-guard:own-alias-for
+  let parent = cur.parent;
   while (parent && !ts.isFunctionLike(parent) && !ts.isSourceFile(parent)) parent = parent.parent;
-  let block: ts.Node | undefined = node;
-  while (block && !ts.isBlock(block) && !ts.isSourceFile(block) && !ts.isCaseClause(block) && !ts.isModuleBlock(block)) block = block.parent;
-  if (block) parent = block; // cap-guard:own-alias-block
-  return parent ?? node;
+  let block: ts.Node | undefined = cur;
+  while (block && !scopeEdge(block)) block = block.parent;
+  let useBlock = true;
+  if (varDecl(cur)) useBlock = false; // cap-guard:own-alias-var
+  if (block && useBlock) parent = block; // cap-guard:own-alias-block
+  return parent ?? cur;
 }
 
 function scopeDistance(scope: ts.Node, at: ts.Node): number | null {
@@ -1329,7 +1358,11 @@ function rebound(decl: ts.VariableDeclaration, at: ts.Node, sf: ts.SourceFile): 
     if (hit || n === decl) return;
     const start = n.getStart(sf);
     if (start < decl.getEnd() || start >= at.getStart(sf)) { ts.forEachChild(n, visit); return; }
-    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(n.left) && n.left.text === name && !isOwnAliasInit(n.right)) hit = true;
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      let named = ts.isIdentifier(n.left) && n.left.text === name;
+      if (ts.isArrayLiteralExpression(n.left) && n.left.elements.some((el) => ts.isIdentifier(el) && el.text === name)) named = true; // cap-guard:own-alias-reassign-array
+      if (named && !isOwnAliasInit(n.right)) hit = true;
+    }
     else ts.forEachChild(n, visit);
   };
   visit(aliasScope(decl));
@@ -1343,28 +1376,44 @@ function aliasVisible(decl: ts.Node, at: ts.Node, sf: ts.SourceFile): boolean {
   return false;
 }
 
+function addAliasNames(name: ts.BindingName, own: boolean, decl: ts.Node, at: ts.Node, found: { name: string; decl: ts.Node; dist: number; own: boolean }[]): void {
+  if (ts.isIdentifier(name)) {
+    const dist = scopeDistance(aliasScope(decl), at);
+    if (dist !== null) found.push({ name: name.text, decl, dist, own });
+    return;
+  }
+  let patterns = false;
+  patterns = true; // cap-guard:own-alias-pattern
+  if (!patterns) return;
+  for (const el of name.elements) if (ts.isBindingElement(el)) addAliasNames(el.name, false, decl, at, found);
+}
+
 function ownAliasNames(sf: ts.SourceFile, at: ts.Node): Set<string> {
-  const found: { name: string; decl: ts.VariableDeclaration; dist: number; own: boolean }[] = [];
+  const found: { name: string; decl: ts.Node; dist: number; own: boolean }[] = [];
   const visit = (node: ts.Node) => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && aliasVisible(node, at, sf)) {
-      const dist = scopeDistance(aliasScope(node), at);
-      if (dist !== null) found.push({ name: node.name.text, decl: node, dist, own: isOwnAliasInit(node.initializer) });
+    if (ts.isVariableDeclaration(node) && node.name && aliasVisible(node, at, sf)) {
+      const own = !!(node.initializer && ts.isIdentifier(node.name) && isOwnAliasInit(node.initializer));
+      addAliasNames(node.name, own, node, at, found);
     }
+    if (ts.isParameter(node) && node.name && aliasVisible(node, at, sf)) addAliasNames(node.name, false, node, at, found); // cap-guard:own-alias-param
     ts.forEachChild(node, visit);
   };
   visit(sf);
-  const best = new Map<string, { decl: ts.VariableDeclaration; dist: number; own: boolean }>();
+  const best = new Map<string, { decl: ts.Node; dist: number; own: boolean }>();
   for (const item of found) {
     const prev = best.get(item.name);
-    let take = !prev;
-    if (prev && item.dist < prev.dist) take = true; // cap-guard:own-alias-shadow
+    let take = true;
+    take = !prev; // cap-guard:own-alias-take-last
+    let cmp = prev !== undefined && item.dist <= prev.dist;
+    cmp = prev !== undefined && item.dist < prev.dist; // cap-guard:own-alias-shadow
+    if (cmp) take = true;
     if (take) best.set(item.name, item);
   }
   const names = new Set<string>();
   for (const [name, info] of best) {
     if (!info.own) continue;
     let live = true;
-    if (rebound(info.decl, at, sf)) live = false; // cap-guard:own-alias-reassign
+    if (ts.isVariableDeclaration(info.decl) && rebound(info.decl, at, sf)) live = false; // cap-guard:own-alias-reassign
     if (live) names.add(name);
   }
   return names;

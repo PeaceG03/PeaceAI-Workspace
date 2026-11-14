@@ -10,7 +10,7 @@ import { pathToFileURL } from "node:url";
 
 const libDir = resolve(import.meta.dirname, "../lib");
 const sources = {
-  propose: { file: "editpropose.ts", tag: /\/\/ cap-guard:(own-alias-init|own-alias-use|own-alias-order|own-alias-scope|own-alias-optional|own-alias-optional-proto|own-alias-block|own-alias-shadow|own-alias-reassign|enum-roundtrip|bundle-max)\s*$/, suite: "propose" },
+  propose: { file: "editpropose.ts", tag: /\/\/ cap-guard:(own-alias-init|own-alias-use|own-alias-order|own-alias-scope|own-alias-optional|own-alias-optional-proto|own-alias-block|own-alias-shadow|own-alias-reassign|own-alias-reassign-array|own-alias-take-last|own-alias-case|own-alias-var|own-alias-pattern|own-alias-param|own-alias-catch|own-alias-for|enum-roundtrip|bundle-max)\s*$/, suite: "propose" },
   spec: { file: "testspec.ts", tag: /\/\/ spec-guard:(ava-cross|ava-fail|ava-summary-count|ava-summary-one|ava-banner|ava-banner-error)\s*$/, suite: "spec" },
 } as const;
 
@@ -52,7 +52,7 @@ for (const spec of Object.values(sources)) {
   test(`${spec.file} follow-up guard tags are present`, () => {
     assert.deepEqual(guards.map((g) => g.id).sort(), spec.tag.source.includes("ava")
       ? ["ava-banner", "ava-banner-error", "ava-cross", "ava-fail", "ava-summary-count", "ava-summary-one"]
-      : ["bundle-max", "enum-roundtrip", "own-alias-block", "own-alias-init", "own-alias-optional", "own-alias-optional-proto", "own-alias-order", "own-alias-reassign", "own-alias-scope", "own-alias-shadow", "own-alias-use"]);
+      : ["bundle-max", "enum-roundtrip", "own-alias-block", "own-alias-case", "own-alias-catch", "own-alias-for", "own-alias-init", "own-alias-optional", "own-alias-optional-proto", "own-alias-order", "own-alias-param", "own-alias-pattern", "own-alias-reassign", "own-alias-reassign-array", "own-alias-scope", "own-alias-shadow", "own-alias-take-last", "own-alias-use", "own-alias-var"]);
   });
   test(`${spec.file} unmutated follow-up cases pass`, async () => {
     const r = await runMutant(`${spec.suite}-control`, text, spec.suite);

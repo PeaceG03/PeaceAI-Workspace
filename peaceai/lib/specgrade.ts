@@ -1016,10 +1016,93 @@ function sameResult(left: NonNullable<ProbeBody["results"]>[number], right: NonN
   return JSON.stringify(left.value) === JSON.stringify(right.value);
 }
 
+/** Operands of an `&&` chain of at least two. A single comparison is not a guard chain. `||` is not one: dropping an alternative narrows the predicate. */
+function andOperands(expr: ts.Expression): string[] {
+  const root = unwrapExpr(expr);
+  let kind: ts.SyntaxKind = ts.SyntaxKind.BarBarToken;
+  kind = ts.SyntaxKind.AmpersandAmpersandToken; // grade-guard:and-only
+  const out: string[] = [];
+  const walk = (node: ts.Node) => {
+    const bare = unwrapExpr(node);
+    if (ts.isBinaryExpression(bare) && bare.operatorToken.kind === kind) { walk(bare.left); walk(bare.right); return; }
+    if (ts.isExpression(bare)) out.push(bare.getText().replace(/\s+/g, " "));
+  };
+  if (ts.isExpression(root)) walk(root);
+  let kept = out;
+  if (!(ts.isBinaryExpression(root) && root.operatorToken.kind === kind && out.length >= 2)) kept = []; // grade-guard:and-width
+  return kept;
+}
+
+function fnLabel(node: ts.Node): string | null {
+  if ((ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node)) && node.name && ts.isIdentifier(node.name)) return node.name.text;
+  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) return node.name.text;
+  if (ts.isFunctionExpression(node) && node.name) return node.name.text;
+  return null;
+}
+
+function fnBody(node: ts.Node): ts.Node | undefined {
+  if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node)) return node.body;
+  if (ts.isVariableDeclaration(node) && node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) return node.initializer.body;
+  return undefined;
+}
+
+/** Guard conjuncts in a function body. Nested functions keep their own names. */
+function guardOperands(source: string): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+  const sf = ts.createSourceFile("guard.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const add = (name: string, expr: ts.Expression) => {
+    const bag = map.get(name) ?? new Set<string>();
+    for (const operand of andOperands(expr)) bag.add(operand);
+    if (bag.size) map.set(name, bag);
+  };
+  const visit = (node: ts.Node, name: string | null) => {
+    const label = fnLabel(node);
+    let next = name;
+    if (!name && label) next = label; // grade-guard:fn-name
+    if (name && label) next = label; // grade-guard:nested
+    if (next && label && !map.has(next)) map.set(next, new Set());
+    const body = label ? fnBody(node) : undefined;
+    if (label && body) {
+      if (!ts.isBlock(body) && next && ts.isExpression(body)) add(next, body);
+      else visit(body, next);
+      return;
+    }
+    if (name && ts.isReturnStatement(node) && node.expression) add(name, node.expression);
+    if (name && ts.isIfStatement(node)) add(name, node.expression);
+    ts.forEachChild(node, (child) => visit(child, next));
+  };
+  visit(sf, null);
+  return map;
+}
+
+/**
+ * True when a same-named function in the fix still has an `&&` guard conjunct that the candidate
+ * dropped. That is a broader predicate: `return isReady(batch) && labeled(batch)` weakened to
+ * `return isReady(batch)`. Adding a conjunct, or editing a comparison that is not an `&&` chain,
+ * is not this.
+ */
+export function droppedGuardConjunct(fixSource: string, candidateSource: string): boolean {
+  const needed = guardOperands(fixSource);
+  let present = new Map<string, Set<string>>();
+  present = guardOperands(candidateSource); // grade-guard:candidate-operands
+  for (const [name, operands] of needed) {
+    const got = present.get(name);
+    if (!got) continue;
+    for (const operand of operands) {
+      let keep = false;
+      if (got.has(operand)) keep = true; // grade-guard:operand-kept
+      if (!keep) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Compare the candidate symbol with the fix's symbol. Neither tree is modified except for a probe
  * file that is removed before this returns. A load failure is diff_unavailable.
  * verified_strict requires at least one mutated input, not only the test's own arguments.
+ * A candidate that dropped an `&&` guard the fix still has is verified_test_only even when the
+ * probed inputs agree: the recorded examples can all sit on the side the broader predicate still accepts.
  */
 export function gradeBehavior(input: {
   candidateRoot: string;
@@ -1032,6 +1115,7 @@ export function gradeBehavior(input: {
   let fixSource = "";
   try { source = readFileSync(join(input.candidateRoot, input.target.file), "utf8"); } catch { source = ""; }
   try { fixSource = readFileSync(join(input.fixRoot, input.target.file), "utf8"); } catch { fixSource = ""; }
+  if (droppedGuardConjunct(fixSource, source)) return { behavior: "verified_test_only", compared: 0 }; // grade-guard:spec-demote
   if (input.target.args.some((args) => args.some(containsOpaque))) return { behavior: "diff_unavailable", compared: 0 };
   const candidateBounds = comparisonBounds(source);
   const fixBounds = comparisonBounds(fixSource);

@@ -16,10 +16,10 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
 import { GIT_LOCK_ARGS, INSTALL_MAX_ENTRIES, applyPracticeTestLaunch, cloneCheckProblems, ensurePracticeInstall, gradedLaunchMode, isTestFile, materializeSolverTree, mergeCloneRootCollisions, pairProblems, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxReady, processStartId, readPairFingerprint, releaseWorktree, replayCloneRecord, runInPracticeSandbox, writeCommitFile, yarnIsModern, type LockFiles, type PracticePair } from "../lib/practicemine.ts";
 import {
-  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, replayDocument, targetIsScorable, writePracticeOutputs,
+  PROTECTED_GATE_FILE, PROTECTED_GATE_FUNCTION, PROTECTED_GATE_WHY, gradePracticeRow, gradeTextFlip, replayDocument, targetIsScorable, writePracticeOutputs,
   type GradedRow, type Understanding,
 } from "../lib/practicereplay.ts";
-import { gradeBehavior, type BehaviorGrade } from "../lib/specgrade.ts";
+import { droppedGuardConjunct, gradeBehavior, type BehaviorGrade } from "../lib/specgrade.ts";
 import { runTestSpec, type SpecResult } from "../lib/testspec.ts";
 import { loadTargets } from "../lib/target.ts";
 import { pinnedKernel, readCorePin } from "./capability-job.ts";
@@ -320,19 +320,43 @@ function replayOne(tooling: string, bundle: string, coreDir: string, repoDir: st
     let beforeExit: number | null = null;
     let afterExit: number | null = null;
     let fixed = false;
+    let winningDiff = "";
     const summary = JSON.parse(readFileSync(summaryPath, "utf8")) as { candidates?: { file: string }[] };
     for (const candidate of summary.candidates ?? []) {
       const diff = readFileSync(join(outDir, candidate.file), "utf8");
       const graded = gradeCandidate(repoDir, pair, diff, modules);
       if (beforeExit === null) beforeExit = graded.beforeExit;
-      if (graded.beforeExit !== null && graded.beforeExit !== 0 && graded.afterExit === 0) { afterExit = 0; fixed = true; break; }
+      if (graded.beforeExit !== null && graded.beforeExit !== 0 && graded.afterExit === 0) { afterExit = 0; fixed = true; winningDiff = diff; break; }
       if (afterExit === null) afterExit = graded.afterExit;
     }
     if (!fixed && afterExit === null) afterExit = null;
-    return { ...blank(pair, "text"), ...gradePracticeRow({ scorable: true, core: "ok", job, gatePass: true, beforeExit, afterExit: fixed ? 0 : afterExit }) };
+    const dropsGuard = fixed && diffDropsGuard(repoDir, pair.baseSha, pair.fixSha, winningDiff);
+    return { ...blank(pair, "text"), ...gradeTextFlip({ scorable: true, core: "ok", job, gatePass: true, beforeExit, afterExit: fixed ? 0 : afterExit, dropsGuard }) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(outDir, { recursive: true, force: true });
+  }
+}
+
+/** Changed source files in a candidate diff, compared with the fix's copy of each file. */
+export function diffDropsGuard(repoDir: string, baseSha: string, fixSha: string, diff: string): boolean {
+  const paths = [...diff.matchAll(/^\+\+\+ b\/(.+)$/gm)].map((m) => m[1]!).filter((p) => p !== "/dev/null" && !p.endsWith(".test.ts") && !p.endsWith(".spec.ts"));
+  if (!paths.length) return false;
+  const dir = mkdtempSync(join(tmpdir(), "peaceai-practice-guard-"));
+  try {
+    if (!materializeSolverTree(repoDir, baseSha, dir)) return false;
+    const applied = spawnSync("git", ["-C", dir, ...GIT_LOCK_ARGS, "apply", "--whitespace=nowarn", "-"], { input: diff, encoding: "utf8", env: practiceGitEnv(), stdio: ["pipe", "ignore", "ignore"] });
+    if (applied.status !== 0) return false;
+    for (const path of paths) {
+      const candidatePath = join(dir, path);
+      if (!existsSync(candidatePath)) continue;
+      const fix = practiceGit(repoDir, ["show", `${fixSha}:${path}`]);
+      if (!fix.ok) continue;
+      if (droppedGuardConjunct(fix.out, readFileSync(candidatePath, "utf8"))) return true;
+    }
+    return false;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 }
 
@@ -629,6 +653,7 @@ function main(): void {
   const doc = replayDocument(graded);
   writePracticeOutputs(out, graded);
   console.log("experimental credit=false");
+  for (const row of doc.excludedFromCredit) console.log(`excluded-from-credit idiom=${row.idiom} repo=${row.repo} fix=${row.fixSha} understanding=${row.understanding}`);
   if (graded.some((row) => row.reason === "GATE_NO_TARGET")) {
     console.log(`protectedFunction=${PROTECTED_GATE_FUNCTION} protectedFile=${PROTECTED_GATE_FILE}`);
     console.log(PROTECTED_GATE_WHY);
