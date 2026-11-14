@@ -178,6 +178,109 @@ export const CASES: Case[] = [
     },
   },
   {
+    id: "member-short",
+    run(l, ctx) {
+      const search = repo(ctx, {
+        "src/tags.ts": [
+          "export function readTag(label: string): string { label.trim(); return label; }",
+          "export const z = { string: readTag };",
+          "export function readMark(label: string): string { return label; }",
+          "export const _ = { x: readMark };",
+          "export function readFlag(label: string): string { return label; }",
+          "export const t = { is: readFlag };",
+          "export function join(dir: string, name: string): string { return dir + name; }",
+        ].join("\n"),
+      });
+      assert.deepEqual(l.prop.editAim("fix z.string")?.symbols, ["z.string"]);
+      assert.deepEqual(l.prop.editAim("fix _.x")?.symbols, ["_.x"]);
+      assert.deepEqual(l.prop.editAim("fix t.is")?.symbols, ["t.is"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["z.string"]), ["readTag"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["_.x"]), ["readMark"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["t.is"]), ["readFlag"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["path.join"]), []);
+      const call = l.prop.editAim("fix path.join(dir, name) for an empty segment");
+      assert.ok(!call?.symbols.includes("path.join"));
+    },
+  },
+  {
+    id: "verb-inflection",
+    run(l) {
+      const sentences: [string, string][] = [
+        ["fixes the parser", "parser"],
+        ["handled foldDough", "foldDough"],
+        ["corrected the parser", "parser"],
+        ["supported whisk", "whisk"],
+        ["added insulated", "insulated"],
+        ["implemented the parser", "parser"],
+        ["allowed the parser", "parser"],
+        ["enabled the parser", "parser"],
+        ["exposed the parser", "parser"],
+        ["improved the parser", "parser"],
+        ["updated the parser", "parser"],
+        ["changed the parser", "parser"],
+        ["included the parser", "parser"],
+        ["accepted the parser", "parser"],
+        ["rejected the parser", "parser"],
+        ["dropped the parser", "parser"],
+        ["removed the parser", "parser"],
+        ["wrapped the parser", "parser"],
+        ["defaulted the parser", "parser"],
+        ["guarded the parser", "parser"],
+        ["checked the parser", "parser"],
+        ["validated the parser", "parser"],
+        ["kept the parser", "parser"],
+        ["made the parser return zero", "parser"],
+      ];
+      for (const [sentence, symbol] of sentences) assert.deepEqual(l.prop.editAim(sentence)?.symbols, [symbol], sentence);
+    },
+  },
+  {
+    id: "complement-honor",
+    run(l) { assert.deepEqual(l.prop.editAim("Make the cache eviction honor TTL")?.symbols, ["cacheEviction"]); },
+  },
+  {
+    id: "complement-follow",
+    run(l) { assert.deepEqual(l.prop.editAim("Make the retry budget follow jitter")?.symbols, ["retryBudget"]); },
+  },
+  {
+    id: "complement-preserve",
+    run(l) { assert.deepEqual(l.prop.editAim("Make the parser preserve the offset")?.symbols, ["parser"]); },
+  },
+  {
+    id: "symptom-emits",
+    run(l) { assert.deepEqual(l.prop.editAim("socket emits twice")?.symbols, ["socket"]); },
+  },
+  {
+    id: "symptom-yields",
+    run(l) { assert.deepEqual(l.prop.editAim("parser yields zero")?.symbols, ["parser"]); },
+  },
+  {
+    id: "symptom-crashes",
+    run(l) { assert.deepEqual(l.prop.editAim("decoder crashes on a short buffer")?.symbols, ["decoder"]); },
+  },
+  {
+    id: "symptom-hangs",
+    run(l) { assert.deepEqual(l.prop.editAim("loader hangs before the build")?.symbols, ["loader"]); },
+  },
+  {
+    id: "after-boundary",
+    run(l) { assert.deepEqual(l.prop.editAim("fix the parser after the buffer fills")?.symbols, ["parser"]); },
+  },
+  {
+    id: "fronted-after",
+    run(l) { assert.deepEqual(l.prop.editAim("After the buffer fills, fix the parser")?.symbols, ["parser"]); },
+  },
+  {
+    id: "generic-words",
+    run(l) {
+      for (const word of ["faster", "clearer", "better", "worse", "slower", "simpler", "easier", "harder", "safer", "cleaner", "smaller", "larger", "stronger", "weaker", "quicker", "nicer", "robust"]) {
+        assert.equal(l.prop.editAim(`Make it ${word}`), null, word);
+      }
+      assert.equal(l.prop.editAim("Make it more robust"), null);
+      assert.deepEqual(l.prop.editAim("Make the parser simpler")?.symbols, ["parser"]);
+    },
+  },
+  {
     id: "tune",
     run(l, ctx) {
       const search = repo(ctx, { "src/string.ts": STRING });

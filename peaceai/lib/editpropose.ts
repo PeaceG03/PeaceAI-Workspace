@@ -53,7 +53,7 @@ const MAX_CALLEES = 6;
 /** The fixed template order (rank = index). */
 export const TEMPLATES = ["missing-export", "nullish-check", "comparison", "arithmetic", "off-by-one", "logical", "default-value", "null-guard", "negate-condition", "boolean-return"] as const;
 /** M168: repair-v2's idiom templates, tried before TEMPLATES in this fixed order (decided before any dev-split run). */
-export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "enum-values", "enum-keys", "numeric-trim", "plain-object"] as const; // M172: + undefined-keeps-key
+export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "enum-values"] as const; // M172: + undefined-keeps-key
 export type Idiom = (typeof IDIOM_TEMPLATES)[number];
 /** M173 (spec: peaceai/spec/repair-v2-m173.md): repair-v2's module-scope constant template, tried after all others. */
 export const CONST_TEMPLATES = ["const-value"] as const;
@@ -112,10 +112,12 @@ export function namedSymbols(text: string): string[] {
 //   verb. A verb inside a when/if clause is not the edit verb, so the condition is not joined into
 //   a camelCase name.
 // - "when" and "if" both start a condition. A fronted "when/if …," clause is dropped first.
-// - After "make", the tested bare infinitives are respect, return, and use. They start the desired
-//   behavior, so the object is the noun phrase before them ("cache eviction" → cacheEviction).
-// - Pronouns and the tested degree adjectives faster and clearer are not objects. Other
-//   adjectives are not listed, because an untested word would survive a deletion.
+// - After "make", the tested bare infinitives are respect, return, use, honor, follow, and preserve.
+//   They start the desired behavior, so the object is the noun phrase before them
+//   ("cache eviction honor TTL" → cacheEviction, not TTL).
+// - Pronouns and vague degree adjectives (better, simpler, robust, faster, clearer, and the
+//   other comparatives in AIM_GENERIC) are not objects. Each adjective is its own line.
+// - "after" ends the object the same way "when" and "if" do.
 // - A plain word, including a single capitalized word such as Docs, is kept only when one source
 //   file defines it. A code-shaped name may be defined in several files, and is not a target when
 //   no source file defines it: a name that does not exist is not an edit site.
@@ -131,7 +133,34 @@ export const TEXT_REPAIR_REASONS = ["CANT_DO_YET_NO_EDIT", "CANT_DO_YET_EDIT_UNS
 /** How many repair-v2 candidates Job A may emit from a sentence. The proposer's own order, capped. */
 export const TEXT_REPAIR_LIMIT = 8;
 
-const AIM_VERBS = "fix|fixes|fixed|fixing|handle|handles|handled|handling|correct|corrects|corrected|correcting|support|supports|supported|supporting|add|adds|added|adding|implement|implements|implemented|implementing|allow|allows|allowed|allowing|enable|enables|enabled|enabling|expose|exposes|exposed|exposing|improve|improves|improved|improving|update|updates|updated|updating|change|changes|changed|changing|include|includes|included|including|accept|accepts|accepted|accepting|reject|rejects|rejected|rejecting|drop|drops|dropped|dropping|remove|removes|removed|removing|wrap|wraps|wrapped|wrapping|default|defaults|defaulted|defaulting|guard|guards|guarded|guarding|check|checks|checked|checking|validate|validates|validated|validating|keep|keeps|kept|keeping|make|makes|made|making";
+// Each stem's inflections share its line. Deleting the line drops that stem, including the form a test uses.
+const AIM_VERB_FORMS = [
+  "fix|fixes|fixed|fixing", // text-guard:verb-fix
+  "handle|handles|handled|handling", // text-guard:verb-handle
+  "correct|corrects|corrected|correcting", // text-guard:verb-correct
+  "support|supports|supported|supporting", // text-guard:verb-support
+  "add|adds|added|adding", // text-guard:verb-add
+  "implement|implements|implemented|implementing", // text-guard:verb-implement
+  "allow|allows|allowed|allowing", // text-guard:verb-allow
+  "enable|enables|enabled|enabling", // text-guard:verb-enable
+  "expose|exposes|exposed|exposing", // text-guard:verb-expose
+  "improve|improves|improved|improving", // text-guard:verb-improve
+  "update|updates|updated|updating", // text-guard:verb-update
+  "change|changes|changed|changing", // text-guard:verb-change
+  "include|includes|included|including", // text-guard:verb-include
+  "accept|accepts|accepted|accepting", // text-guard:verb-accept
+  "reject|rejects|rejected|rejecting", // text-guard:verb-reject
+  "drop|drops|dropped|dropping", // text-guard:verb-drop
+  "remove|removes|removed|removing", // text-guard:verb-remove
+  "wrap|wraps|wrapped|wrapping", // text-guard:verb-wrap
+  "default|defaults|defaulted|defaulting", // text-guard:verb-default
+  "guard|guards|guarded|guarding", // text-guard:verb-guard
+  "check|checks|checked|checking", // text-guard:verb-check
+  "validate|validates|validated|validating", // text-guard:verb-validate
+  "keep|keeps|kept|keeping", // text-guard:verb-keep
+  "make|makes|made|making", // text-guard:verb-make
+];
+const AIM_VERBS = AIM_VERB_FORMS.join("|");
 const AIM_VERB = new RegExp(String.raw`\b(?:please |can you |could you |we need to )?(?<verb>${AIM_VERBS})\b`, "i");
 // Each word is one line so a deletion is a mutant. Longer forms are joined first so `return` does not eat `returns`.
 const AIM_SYMPTOM_WORDS = [
@@ -141,11 +170,18 @@ const AIM_SYMPTOM_WORDS = [
   "runs", // text-guard:symptom-runs
   "sends", // text-guard:symptom-sends
   "run", // text-guard:symptom-run
+  "emits", // text-guard:symptom-emits
+  "yields", // text-guard:symptom-yields
+  "crashes", // text-guard:symptom-crashes
+  "hangs", // text-guard:symptom-hangs
 ];
 const AIM_COMPLEMENT_WORDS = [
   "respect", // text-guard:complement-respect
   "return", // text-guard:complement-return
   "use", // text-guard:complement-use
+  "honor", // text-guard:complement-honor
+  "follow", // text-guard:complement-follow
+  "preserve", // text-guard:complement-preserve
 ];
 const aimAlt = (words: readonly string[]) => [...words].sort((a, b) => b.length - a.length).join("|");
 const AIM_SYMPTOM = new RegExp(String.raw`\b(?:${aimAlt(AIM_SYMPTOM_WORDS)})\b`, "i");
@@ -153,7 +189,26 @@ const AIM_COMPLEMENT = new RegExp(String.raw`\b(?:${aimAlt(AIM_COMPLEMENT_WORDS)
 const AIM_THANKS = /^(?:thanks|thank you|lgtm|nit|wip)\b/i;
 const AIM_QUESTION = /\?\s*$/;
 const AIM_FUNCTION = "a an the this that these those it its them they him her us me we you our their to of in for and or with from on by is are be was were been being not as into please can could should must would will than too very just more most only same other whole such per via without within about between over under after before so then also if when";
-const AIM_GENERIC = new Set(["faster", "clearer"]);
+// Vague degree adjectives. "Make it <word>" names no symbol. "more" is already a function word, so "more robust" is "robust".
+const AIM_GENERIC = new Set([
+  "faster", // text-guard:generic-faster
+  "clearer", // text-guard:generic-clearer
+  "better", // text-guard:generic-better
+  "worse", // text-guard:generic-worse
+  "slower", // text-guard:generic-slower
+  "simpler", // text-guard:generic-simpler
+  "easier", // text-guard:generic-easier
+  "harder", // text-guard:generic-harder
+  "safer", // text-guard:generic-safer
+  "cleaner", // text-guard:generic-cleaner
+  "smaller", // text-guard:generic-smaller
+  "larger", // text-guard:generic-larger
+  "stronger", // text-guard:generic-stronger
+  "weaker", // text-guard:generic-weaker
+  "quicker", // text-guard:generic-quicker
+  "nicer", // text-guard:generic-nicer
+  "robust", // text-guard:generic-robust
+]);
 const AIM_TS = "function functions method methods class classes type types interface const let var return export import async await null undefined true false string strings number boolean object objects array arrays promise void any unknown never new typeof instanceof case cases";
 const AIM_ROLE = "option options flag flags setting settings helper helpers property properties field fields value values parameter parameters argument arguments error errors bug bugs test tests module modules file files empty blank whitespace missing new existing default";
 const AIM_META = new Set(`${AIM_FUNCTION} ${AIM_TS} ${AIM_ROLE} ${AIM_VERBS.replaceAll("|", " ")} ${AIM_SYMPTOM_WORDS.join(" ")} ${AIM_COMPLEMENT_WORDS.join(" ")}`.split(/\s+/));
@@ -166,11 +221,16 @@ export interface EditAim { symbols: string[]; via: "verb" | "lead" }
 function memberRefs(region: string): string[] {
   const out: string[] = [];
   const add = (path: string) => { if (path.length <= 80 && !out.includes(path)) out.push(path); };
-  for (const m of region.matchAll(/(^|[^A-Za-z0-9_$])([A-Za-z_$][\w$]{1,})\.([A-Za-z_$][\w$]{1,})\b/g)) {
+  let width = "{1,}";
+  width = "{0,}"; // text-guard:member-short
+  const dotted = new RegExp(String.raw`(^|[^A-Za-z0-9_$])([A-Za-z_$][\w$]${width})\.([A-Za-z_$][\w$]${width})\b`, "g");
+  for (const m of region.matchAll(dotted)) {
     if (MEMBER_EXT.has(m[3]!)) continue; // text-guard:member-ext
+    const after = region[m.index + m[0].length];
+    if (after === "(") continue; // text-guard:member-call
     add(`${m[2]}.${m[3]}`);
   }
-  for (const m of region.matchAll(/(^|[^A-Za-z0-9_$])\.([A-Za-z_$][\w$]{1,})\s*\(/g)) add(`.${m[2]}`);
+  for (const m of region.matchAll(/(^|[^A-Za-z0-9_$])\.([A-Za-z_$][\w$]{0,})\s*\(/g)) if (m[2]) add(`.${m[2]}`);
   return out;
 }
 
@@ -235,9 +295,12 @@ function aimObject(region: string, symbols: string[]): void {
 function aimClause(source: string): string {
   let boundarySrc = "when";
   boundarySrc = "when|if"; // text-guard:if-boundary
+  boundarySrc += "|after"; // text-guard:after-boundary
   const boundary = new RegExp(String.raw`\b(?:${boundarySrc})\b`, "i");
+  let frontedSrc = "when|if";
+  frontedSrc += "|after"; // text-guard:fronted-after
   let clause = source;
-  clause = source.replace(/^(?:when|if)\b[^,]*,\s*/i, ""); // text-guard:fronted-clause
+  clause = source.replace(new RegExp(String.raw`^(?:${frontedSrc})\b[^,]*,\s*`, "i"), ""); // text-guard:fronted-clause
   const at = clause.search(boundary);
   if (at >= 0) clause = clause.slice(0, at); // text-guard:verb-clause
   return clause;
@@ -254,7 +317,7 @@ export function editAim(text: string): EditAim | null {
   verb = AIM_VERB.exec(clause); // text-guard:verb
   if (verb) {
     let region = clause;
-    if (/^mak(?:e|es|ed|ing)$/i.test(verb.groups?.verb ?? "")) {
+    if (/^(?:made|mak(?:e|es|ed|ing))$/i.test(verb.groups?.verb ?? "")) {
       const after = region.slice(verb.index + verb[0].length);
       const complement = AIM_COMPLEMENT.exec(after);
       if (complement) region = region.slice(0, verb.index + verb[0].length + complement.index); // text-guard:make-object
@@ -1152,11 +1215,14 @@ const srcOf = (sf: ts.SourceFile, n: ts.Node): string => sf.text.slice(n.getStar
 
 /** A call that already asks whether a property is the object's own. */
 function isOwnAliasInit(expr: ts.Expression): boolean {
-  if (!ts.isPropertyAccessExpression(expr) || expr.questionDotToken) return false;
+  if (!ts.isPropertyAccessExpression(expr)) return false;
+  if (expr.questionDotToken) return false; // cap-guard:own-alias-optional
   if (expr.name.text === "hasOwn" && ts.isIdentifier(expr.expression) && expr.expression.text === "Object") return true;
   if (expr.name.text !== "hasOwnProperty") return false;
   const mid = expr.expression;
-  if (!ts.isPropertyAccessExpression(mid) || mid.questionDotToken || mid.name.text !== "prototype" || !ts.isIdentifier(mid.expression) || mid.expression.text !== "Object") return false;
+  if (!ts.isPropertyAccessExpression(mid) || !ts.isIdentifier(mid.expression) || mid.expression.text !== "Object") return false;
+  if (mid.questionDotToken) return false; // cap-guard:own-alias-optional-proto
+  if (mid.name.text !== "prototype") return false;
   return true; // cap-guard:own-alias-init
 }
 
@@ -1167,9 +1233,9 @@ function aliasScope(node: ts.Node): ts.Node {
 }
 
 function aliasVisible(decl: ts.Node, at: ts.Node, sf: ts.SourceFile): boolean {
-  if (decl.getEnd() > at.getStart(sf)) return false;
+  if (decl.getEnd() > at.getStart(sf)) return false; // cap-guard:own-alias-order
   const scope = aliasScope(decl);
-  for (let parent: ts.Node | undefined = at; parent; parent = parent.parent) if (parent === scope) return true;
+  for (let parent: ts.Node | undefined = at; parent; parent = parent.parent) if (parent === scope) return true; // cap-guard:own-alias-scope
   return false;
 }
 
@@ -1278,100 +1344,6 @@ function enumValues(n: ts.Node, sf: ts.SourceFile): string | null {
   return `Object.values(${e}).filter((member) => typeof member !== "string" || typeof ${box}[member] !== "number" || ${roundTrip}).includes(${v})`;
 }
 
-/**
- * enum-keys: the other half of a numeric enum's `Object.values`. The reverse map stores the number
- * under the name and the name under the number, so the number is a key as well as a value. Drop a
- * number only when that lookup is the same number. String names and string-enum values stay.
- * This is not a replacement for enum-values; a caller that wanted the name instead of the number
- * needs the other filter, and both are candidates.
- */
-function enumKeys(n: ts.Node, sf: ts.SourceFile): string | null {
-  if (!enumValues(n, sf)) return null;
-  const callee = (n as ts.CallExpression).expression as ts.PropertyAccessExpression;
-  const values = callee.expression as ts.CallExpression;
-  const bare = (e: ts.Node): ts.Node => {
-    let cur = e;
-    while (ts.isAsExpression(cur) || ts.isTypeAssertionExpression(cur) || ts.isParenthesizedExpression(cur) || ts.isSatisfiesExpression(cur)) cur = cur.expression;
-    return cur;
-  };
-  const e = srcOf(sf, bare(values.arguments[0]!));
-  const v = srcOf(sf, bare((n as ts.CallExpression).arguments[0]!));
-  const box = `(${e} as Record<PropertyKey, unknown>)`;
-  let dropNumber = "false";
-  dropNumber = `typeof member === "number" && typeof ${box}[member] === "string" && ${box}[${box}[member] as PropertyKey] === member`; // cap-guard:enum-keys
-  return `Object.values(${e}).filter((member) => !(${dropNumber})).includes(${v})`;
-}
-
-/** The identifier inside `Number.isNaN(Number(ident))` when the same && chain already treats that same identifier as a string. */
-function numericIdent(n: ts.Node): string | null {
-  if (!ts.isBinaryExpression(n) || n.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken) return null;
-  if (n.parent && ts.isBinaryExpression(n.parent) && n.parent.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) return null;
-  let converted: string | null = null;
-  let stringCheck: string | null = null;
-  const walk = (node: ts.Node) => {
-    if (ts.isCallExpression(node) && node.arguments.length === 1 && ts.isIdentifier(node.arguments[0]) && ts.isIdentifier(node.expression) && node.expression.text === "Number" && node.parent && ts.isCallExpression(node.parent) && node.parent.arguments[0] === node) {
-      const outer = node.parent.expression;
-      if (ts.isPropertyAccessExpression(outer) && outer.name.text === "isNaN" && ts.isIdentifier(outer.expression) && outer.expression.text === "Number") converted = node.arguments[0].text;
-    } else if (ts.isCallExpression(node) && node.arguments.length === 1 && ts.isIdentifier(node.arguments[0]) && ts.isIdentifier(node.expression) && node.expression.text !== "Number" && node.expression.text !== "isNaN") {
-      stringCheck = node.arguments[0].text;
-    }
-    if (ts.isTypeOfExpression(node) && ts.isIdentifier(node.expression) && node.parent && ts.isBinaryExpression(node.parent) && node.parent.left === node && node.parent.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken && ts.isStringLiteral(node.parent.right) && node.parent.right.text === "string") {
-      stringCheck = node.expression.text;
-    }
-    ts.forEachChild(node, walk);
-  };
-  walk(n);
-  if (!converted || stringCheck !== converted) return null;
-  return converted;
-}
-
-/**
- * numeric-trim: `Number(" 1 ")` is `1`, so a string check plus `!Number.isNaN(Number(s))` still
- * accepts surrounding whitespace. Require the string to equal its trim. A chain that does not
- * already treat the value as a string is left alone, because `trim` on a number throws.
- */
-function numericTrim(n: ts.Node, sf: ts.SourceFile): string | null {
-  const ident = numericIdent(n);
-  if (!ident) return null;
-  const text = srcOf(sf, n);
-  if (text.includes(`${ident}.trim(`)) return null;
-  let extra = "";
-  extra = ` && ${ident}.trim() === ${ident}`; // cap-guard:numeric-trim
-  return `${text}${extra}`;
-}
-
-function keysLengthIdent(expr: ts.Node): string | null {
-  if (!ts.isPropertyAccessExpression(expr) || expr.name.text !== "length") return null;
-  const keys = expr.expression;
-  if (!ts.isCallExpression(keys) || keys.arguments.length !== 1 || keys.questionDotToken) return null;
-  const head = keys.expression;
-  if (!ts.isPropertyAccessExpression(head) || !ts.isIdentifier(head.expression) || head.expression.text !== "Object" || head.name.text !== "keys") return null;
-  const arg = keys.arguments[0]!;
-  return ts.isIdentifier(arg) ? arg.text : null;
-}
-
-/**
- * plain-object: `Object.keys(obj).length` is `0` for an empty array and for a function, so an
- * emptiness test written for a plain object also matches those. Exclude both. A test that already
- * mentions `Array.isArray` or a `typeof` check on the same object is left alone.
- */
-function plainObject(n: ts.Node, sf: ts.SourceFile): string | null {
-  if (!ts.isBinaryExpression(n)) return null;
-  const op = n.operatorToken.kind;
-  const compared = op === ts.SyntaxKind.EqualsEqualsEqualsToken || op === ts.SyntaxKind.ExclamationEqualsEqualsToken || op === ts.SyntaxKind.GreaterThanToken || op === ts.SyntaxKind.LessThanToken || op === ts.SyntaxKind.GreaterThanEqualsToken || op === ts.SyntaxKind.LessThanEqualsToken;
-  if (!compared) return null;
-  const ident = keysLengthIdent(n.left) ?? keysLengthIdent(n.right);
-  if (!ident) return null;
-  let chain: ts.Node = n;
-  while (chain.parent && ts.isBinaryExpression(chain.parent) && chain.parent.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) chain = chain.parent;
-  const around = srcOf(sf, chain);
-  if (around.includes("Array.isArray") || around.includes(`typeof ${ident}`)) return null;
-  const text = srcOf(sf, n);
-  let guard = "";
-  guard = ` && !Array.isArray(${ident}) && typeof ${ident} !== "function"`; // cap-guard:plain-object
-  return `${text}${guard}`;
-}
-
 /** M168: every idiom candidate inside one site (no I/O); repair-v2 only. */
 export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: number): Mutation[] {
   const out: Mutation[] = [];
@@ -1387,9 +1359,6 @@ export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: numbe
     add(undefinedKeepsKey(n, sf), "undefined-keeps-key");
     add(ownKeys(n, sf), "own-keys");
     add(enumValues(n, sf), "enum-values");
-    add(enumKeys(n, sf), "enum-keys");
-    add(numericTrim(n, sf), "numeric-trim");
-    add(plainObject(n, sf), "plain-object");
     ts.forEachChild(n, visit);
   };
   visit(sf);

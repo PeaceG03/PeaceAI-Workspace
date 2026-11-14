@@ -310,21 +310,52 @@ export function expectationsIn(testFile: string, text: string, sourcePattern: st
   return out;
 }
 
-/** Names of the tests the runner reported as failed. Only the runner's own labels, capped.
- * Ava's default reporter marks a failed test with ✖ and the title. The summary ("2 tests failed")
- * and the worker-exit banner are not titles. */
+/**
+ * Names of the tests the runner reported as failed. Only the runner's own labels, capped.
+ *
+ * Ava 5.3.1 and 6.1.3 default reporter (`lib/reporters/default.js`): `write()` indents by 2, and
+ * a failure prefix is `figures.cross + " [fail]:"`. figures 5 and 6 set `cross` to `✘`, so the
+ * line is `  ✘ [fail]: <title>`. Ava 4.3.3 (figures 4, `cross` is `✖`) writes
+ * `  ✖ <title> <message>` and, on worker-failed, `✖ <file> exited due to an error:` or
+ * `✖ <file> exited with a non-zero exit code: <code>`. Ava 6.1.3 uses `✘` for those same
+ * worker-failed sentences. The end-of-run summary is `plur`: `1 test failed` or `2 tests failed`,
+ * with no cross. None of those summary or banner lines is a test title.
+ */
 export function failingTestNames(output: string): string[] {
   const names: string[] = [];
+  const banner = (title: string): boolean => {
+    if (/\bexited due to an error\b/.test(title)) return true; // spec-guard:ava-banner-error
+    if (/\bexited with a non-zero exit code\b/.test(title)) return true; // spec-guard:ava-banner
+    return false;
+  };
+  const summary = (title: string): boolean => {
+    if (/^\d+ tests failed\b/.test(title)) return true; // spec-guard:ava-summary-count
+    if (/^\d+ test failed\b/.test(title)) return true; // spec-guard:ava-summary-one
+    return false;
+  };
   for (const match of output.matchAll(/^not ok \d+ - (.+)$/gm)) names.push(match[1]!.trim());
-  for (const match of output.matchAll(/^✘ \[fail\]: (.+)$/gm)) names.push(match[1]!.trim());
+  let avaFail: RegExp | null = null;
+  avaFail = /^[ \t]*✘ \[fail\]:[ \t]*(.+)$/gm; // spec-guard:ava-fail
+  if (avaFail) for (const match of output.matchAll(avaFail)) {
+    const title = match[1]!.trim();
+    if (banner(title) || summary(title)) continue;
+    names.push(title);
+  }
   for (const match of output.matchAll(/^FAIL\s+\S+\s+>\s+(.+)$/gm)) names.push(match[1]!.trim());
   let avaCross: RegExp | null = null;
   avaCross = /^[ \t]*✖[ \t]+(.+)$/gm; // spec-guard:ava-cross
   if (avaCross) for (const match of output.matchAll(avaCross)) {
     const title = match[1]!.trim();
-    if (/^(?:\d+ )?tests? failed\b/.test(title)) continue; // spec-guard:ava-summary
-    if (/\bexited (?:due to an error|with a non-zero exit code)\b/.test(title)) continue; // spec-guard:ava-banner
+    if (banner(title) || summary(title)) continue;
     names.push(title);
+  }
+  for (const match of output.matchAll(/^[ \t]*(\d+ tests failed)\b/gm)) {
+    if (summary(match[1]!)) continue;
+    names.push(match[1]!);
+  }
+  for (const match of output.matchAll(/^[ \t]*(\d+ test failed)\b/gm)) {
+    if (summary(match[1]!)) continue;
+    names.push(match[1]!);
   }
   return [...new Set(names)].filter(Boolean).slice(0, 8);
 }
