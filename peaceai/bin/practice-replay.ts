@@ -242,7 +242,7 @@ function linkModules(modules: string, dir: string): void {
   spawnSync("ln", ["-s", modules, dest], { stdio: "ignore" });
 }
 
-/** Fail-before may use the relaxed launch. Pass-after uses the repo's type-checking launch. */
+/** Fail-before and pass-after both use the repo's type-checking launch. */
 export function runRecordedTest(dir: string, cmd: string[], nodePath: string, modules: string, phase: "before" | "after", testFile?: string): { code: number | null; blocked: boolean } {
   const file = testFile ?? [...cmd].reverse().find((part) => isTestFile(part)) ?? "";
   const launch = applyPracticeTestLaunch(dir, cmd, file, gradedLaunchMode(phase));

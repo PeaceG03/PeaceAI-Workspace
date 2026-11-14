@@ -8,7 +8,8 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   PRACTICE_AVA_CONFIG, applyPracticeTestLaunch, declaredLoaderMissing, declaredTypeScriptLoader, dependencyFingerprint,
-  ensurePracticeInstall, gradedLaunchMode, loaderFingerprintNote, loaderInstalled, practiceSandboxReady, practiceTestLaunch,
+  INSTALL_READER_MARK, RETIRED_INSTALL_MS, ensurePracticeInstall, gradedLaunchMode, loaderFingerprintNote, loaderInstalled,
+  practiceSandboxReady, practiceTestLaunch, publishInstallTree, reapRetiredInstalls,
   sandboxExtraEnv, tsconfigOmitsTest, visibleNodeBin,
 } from "../lib/practicemine.ts";
 import { runRecordedTest } from "../bin/practice-replay.ts";
@@ -75,7 +76,7 @@ test("an overlaid test outside the tsconfig include is transpiled, and one insid
   assert.equal(checked.configText, null);
   assert.deepEqual(checked.cmd, ["./node_modules/.bin/ava", "test/test.ts"]);
   assert.equal(gradedLaunchMode("after"), "typecheck");
-  assert.equal(gradedLaunchMode("before"), "relaxed");
+  assert.equal(gradedLaunchMode("before"), "typecheck");
   const already = practiceTestLaunch({ command: ["./node_modules/.bin/ava", "test/test.ts"], testFile: "test/test.ts", packageJson: LOADER, tsconfig: TRANSPILE, mode: "relaxed" });
   assert.equal(already.env.TS_NODE_TRANSPILE_ONLY, "true");
 });
@@ -234,6 +235,11 @@ test("a loader package.json with no resolvable entry is not installed", () => {
   const dir = mkdtempSync(join(tmpdir(), "practice-loader-entry-"));
   const pkg = join(dir, "node_modules", "ts-node");
   mkdirSync(pkg, { recursive: true });
+  writeFileSync(join(pkg, "package.json"), "{\"name\":\"ts-node\",\"bin\":\"dist/bin.js\"}\n");
+  assert.equal(loaderInstalled(join(dir, "node_modules"), "ts-node"), false);
+  mkdirSync(join(pkg, "dist"), { recursive: true });
+  writeFileSync(join(pkg, "dist", "bin.js"), "#!/usr/bin/env node\n");
+  assert.equal(loaderInstalled(join(dir, "node_modules"), "ts-node"), true);
   writeFileSync(join(pkg, "package.json"), "{\"name\":\"ts-node\",\"main\":\"dist/index.js\"}\n");
   assert.equal(loaderInstalled(join(dir, "node_modules"), "ts-node"), false);
   mkdirSync(join(pkg, "dist"), { recursive: true });
@@ -342,14 +348,129 @@ test("a candidate with a type error does not pass-after", { timeout: 120_000 }, 
   try {
     restore();
     const before = runRecordedTest(root, cmd, node, modules, "before", "test/t.ts");
-    assert.equal(before.blocked, false, "relaxed run was blocked");
-    assert.equal(before.code, 0, "relaxed launch hides TS2322 and the runtime assertion passes");
+    assert.equal(before.blocked, false, "fail-before was blocked");
+    assert.notEqual(before.code, 0, "fail-before type-checks and fails on const bad: string = 1");
     restore();
     const after = runRecordedTest(root, cmd, node, modules, "after", "test/t.ts");
-    assert.equal(after.blocked, false, "type-checking run was blocked");
-    assert.notEqual(after.code, 0, "pass-after must type-check and fail on const bad: string = 1");
+    assert.equal(after.blocked, false, "pass-after was blocked");
+    assert.notEqual(after.code, 0, "pass-after type-checks and fails on const bad: string = 1");
+    assert.equal(before.code !== 0 && after.code === 0, false);
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(store, { recursive: true, force: true });
+  }
+});
+
+test("a no-op candidate does not pass when only the relaxed launch fails", { timeout: 120_000 }, (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const root = mkdtempSync(join(tmpdir(), "practice-enum-"));
+  writeFileSync(join(root, "package.json"), JSON.stringify({
+    scripts: { test: "node -r ts-node/register test/t.ts" },
+    devDependencies: { "ts-node": "10.9.2", typescript: "5.4.5" },
+  }) + "\n");
+  writeFileSync(join(root, "tsconfig.json"), JSON.stringify({
+    compilerOptions: { strict: true, esModuleInterop: true, module: "commonjs", moduleResolution: "node", target: "es2020", skipLibCheck: true },
+    include: ["src"],
+  }) + "\n");
+  mkdirSync(join(root, "src"), { recursive: true });
+  mkdirSync(join(root, "test"), { recursive: true });
+  writeFileSync(join(root, "src", "levels.d.ts"), "export const enum Level { Low = 1, High = 2 }\n");
+  writeFileSync(join(root, "src", "f.ts"), "import { Level } from \"./levels\";\nexport function f(level: Level): string {\n  return level === Level.High ? \"high\" : \"low\";\n}\n");
+  writeFileSync(join(root, "test", "t.ts"), "import assert from \"node:assert/strict\";\nimport { Level } from \"../src/levels\";\nimport { f } from \"../src/f\";\nassert.equal(f(Level.High), \"high\");\n");
+  const installed = spawnSync("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: root, encoding: "utf8", timeout: 90_000 });
+  if (installed.status !== 0) { rmSync(root, { recursive: true, force: true }); assert.fail(installed.stderr || installed.stdout); }
+  const store = mkdtempSync(join(tmpdir(), "practice-enum-modules-"));
+  rmSync(store, { recursive: true, force: true });
+  spawnSync("cp", ["-a", join(root, "node_modules"), store], { stdio: "ignore" });
+  rmSync(join(root, "package-lock.json"), { force: true });
+  spawnSync("git", ["init", "-q", root], { stdio: "ignore" });
+  spawnSync("git", ["-C", root, "add", "package.json", "tsconfig.json", "src/levels.d.ts", "src/f.ts", "test/t.ts"], { stdio: "ignore" });
+  spawnSync("git", ["-C", root, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "base"], { stdio: "ignore" });
+  const restore = () => {
+    rmSync(join(root, "node_modules"), { recursive: true, force: true });
+    spawnSync("cp", ["-a", store, join(root, "node_modules")], { stdio: "ignore" });
+  };
+  const cmd = [join(root, "node_modules/.bin/ts-node"), "test/t.ts"];
+  const modules = join(root, "node_modules");
+  try {
+    restore();
+    const before = runRecordedTest(root, cmd, node, modules, "before", "test/t.ts");
+    restore();
+    const after = runRecordedTest(root, cmd, node, modules, "after", "test/t.ts");
+    assert.equal(before.blocked, false);
+    assert.equal(after.blocked, false);
+    assert.equal(before.code, 0);
+    assert.equal(after.code, 0);
+    assert.equal(before.code !== 0 && after.code === 0, false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(store, { recursive: true, force: true });
+  }
+});
+
+test("publishing an install does not delete the tree a process still has as its cwd", async () => {
+  const node = visibleNodeBin();
+  assert.ok(node);
+  const root = mkdtempSync(join(tmpdir(), "practice-publish-"));
+  const dest = join(root, "installs", "abc");
+  const staging = join(root, "installs", "abc.partial");
+  mkdirSync(join(dest, "node_modules"), { recursive: true });
+  writeFileSync(join(dest, "node_modules", "kept"), "old\n");
+  mkdirSync(join(staging, "node_modules"), { recursive: true });
+  writeFileSync(join(staging, "node_modules", "kept"), "new\n");
+  const out = join(root, "reader");
+  const go = join(root, "go");
+  const child = spawn(node, ["-e", `
+    const fs = require("fs");
+    fs.writeFileSync(process.argv[1], "ready");
+    const end = Date.now() + 5000;
+    while (!fs.existsSync(process.argv[2]) && Date.now() < end) {}
+    try { fs.readFileSync("node_modules/kept"); fs.writeFileSync(process.argv[1], "ok"); }
+    catch { fs.writeFileSync(process.argv[1], "missing"); }
+  `, out, go], { cwd: dest, stdio: "ignore" });
+  try {
+    const started = Date.now();
+    while (!existsSync(out) && Date.now() - started < 2000) spawnSync("sleep", ["0.01"]);
+    publishInstallTree(staging, dest);
+    writeFileSync(go, "1\n");
+    await new Promise((resolve) => child.on("exit", resolve));
+    assert.equal(readFileSync(out, "utf8"), "ok");
+    assert.equal(readFileSync(join(dest, "node_modules", "kept"), "utf8"), "new\n");
+    assert.equal(existsSync(join(root, "installs", "abc.retired-" + process.pid)), false);
+    const retired = readdirSync(join(root, "installs")).filter((name) => name.startsWith("abc.retired-"));
+    assert.equal(retired.length, 1);
+    assert.equal(readFileSync(join(root, "installs", retired[0]!, "node_modules", "kept"), "utf8"), "old\n");
+  } finally {
+    child.kill();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("retired installs are reaped only after a day, and a lock or reader mark keeps them", () => {
+  const cache = mkdtempSync(join(tmpdir(), "practice-reap-"));
+  const installs = join(cache, "installs");
+  const locks = join(cache, "locks");
+  mkdirSync(installs, { recursive: true });
+  mkdirSync(locks, { recursive: true });
+  const oldStamp = Date.now() - RETIRED_INSTALL_MS - 1000;
+  const young = join(installs, `aa.retired-1-${Date.now()}`);
+  const aged = join(installs, `bb.retired-1-${oldStamp}`);
+  const marked = join(installs, `cc.retired-1-${oldStamp}`);
+  const locked = join(installs, `dd.retired-1-${oldStamp}`);
+  for (const dir of [young, aged, marked, locked]) mkdirSync(dir, { recursive: true });
+  writeFileSync(join(marked, INSTALL_READER_MARK), "1\n");
+  writeFileSync(join(locks, "dd.lock"), "1\n");
+  try {
+    const removed = reapRetiredInstalls(cache);
+    assert.equal(existsSync(young), true);
+    assert.equal(existsSync(aged), false);
+    assert.equal(existsSync(marked), true);
+    assert.equal(existsSync(locked), true);
+    assert.equal(removed.length, 1);
+    assert.equal(removed[0], aged);
+  } finally {
+    rmSync(cache, { recursive: true, force: true });
   }
 });

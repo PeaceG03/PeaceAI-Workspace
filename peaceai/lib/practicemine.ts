@@ -283,18 +283,23 @@ function isAvaCommand(command: readonly string[]): boolean {
 
 export interface PracticeLaunch { cmd: string[]; env: Record<string, string>; configText: string | null }
 
-/** `relaxed` is the spec and the fail-before run. `typecheck` is the repo's own launch and is what pass-after uses. */
+/** `relaxed` is only for spec diagnostics. Graded fail-before and pass-after both type-check. */
 export type PracticeLaunchMode = "relaxed" | "typecheck";
 
-/** Pass-after is the type-checking launch. Fail-before may use the relaxed one. */
+/**
+ * Both graded runs use the repo's type-checking launch. A failure that exists only under the
+ * relaxed launch is not a fail-before, so it cannot pair with a type-checked pass-after.
+ */
 export function gradedLaunchMode(phase: "before" | "after"): PracticeLaunchMode {
-  return phase === "after" ? "typecheck" : "relaxed";
+  void phase;
+  return "typecheck";
 }
 
 /**
- * How to run one recorded test command. `relaxed` copies the ava key and, when the repo tsconfig
- * does not cover the overlaid test, compiles it transpile-only. `typecheck` is the recorded
- * command with no extra env, so ts-node type-checks the test and the source it imports.
+ * How to run one recorded test command. `relaxed` is for spec diagnostics only: it copies the ava
+ * key and, when the repo tsconfig does not cover the overlaid test, compiles it transpile-only.
+ * `typecheck` is the recorded command with no extra env, so ts-node type-checks the test and the
+ * source it imports. Graded fail-before and pass-after both use `typecheck`.
  * `ts-node.transpileOnly` in the repo's own tsconfig is part of that type-checking launch.
  * Package scripts are not rewritten.
  */
@@ -735,9 +740,15 @@ export function dependencyFingerprint(packageJson: string, lockfile: string, too
     .digest("hex");
 }
 
+/** Retired install trees are left on disk until they are older than this. */
+export const RETIRED_INSTALL_MS = 24 * 60 * 60 * 1000;
+/** A reader drops this file in a tree it is using. Reaping skips the tree while the file is there. */
+export const INSTALL_READER_MARK = ".practice-reader";
+const RETIRED_NAME = /^([0-9a-f]+)\.retired-(\d+)-(\d+)$/;
+
 /**
- * Put `staging` in place of `dest` without deleting `dest` first. A reader of the live directory
- * keeps it until the new tree is ready to rename in.
+ * Put `staging` in place of `dest` by renaming. The previous tree is renamed aside and not deleted
+ * here. A process whose cwd is that tree can still read it until a later reap.
  */
 export function publishInstallTree(staging: string, dest: string): void {
   mkdirSync(dirname(dest), { recursive: true });
@@ -753,7 +764,28 @@ export function publishInstallTree(staging: string, dest: string): void {
     try { if (!existsSync(dest)) renameSync(retired, dest); } catch { /* the retired tree stays if dest is already published */ }
     throw err;
   }
-  rmSync(retired, { recursive: true, force: true });
+}
+
+/**
+ * Delete retired install directories older than a day. A lock file for that fingerprint, or a
+ * reader mark inside the tree, keeps it. This does not prove a sandboxed bind stays valid.
+ */
+export function reapRetiredInstalls(cacheRoot: string, now = Date.now()): string[] {
+  const root = join(cacheRoot, "installs");
+  if (!existsSync(root)) return [];
+  const removed: string[] = [];
+  for (const name of readdirSync(root)) {
+    const match = RETIRED_NAME.exec(name);
+    if (!match) continue;
+    const stamped = Number(match[3]);
+    if (!Number.isFinite(stamped) || now - stamped < RETIRED_INSTALL_MS) continue;
+    const dir = join(root, name);
+    if (existsSync(join(dir, INSTALL_READER_MARK))) continue;
+    if (existsSync(installLock(cacheRoot, match[1]!))) continue;
+    rmSync(dir, { recursive: true, force: true });
+    removed.push(dir);
+  }
+  return removed;
 }
 
 export function cacheSpace(path: string): { freeBytes: number; freeInodes: number } {
@@ -815,7 +847,9 @@ function pruneInstalls(cacheRoot: string, max: number): void {
     const root = join(cacheRoot, "installs");
     if (!existsSync(root)) return;
     const rows: { name: string; used: number }[] = [];
+    reapRetiredInstalls(cacheRoot);
     for (const name of readdirSync(root)) {
+      if (name.includes(".retired-")) continue;
       const fingerprint = name.endsWith(".partial") ? name.slice(0, -".partial".length) : name;
       const lock = installLock(cacheRoot, fingerprint);
       if (existsSync(lock) && !lockIsStale(lock)) continue;
