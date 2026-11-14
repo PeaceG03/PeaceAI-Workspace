@@ -13,7 +13,7 @@ import {
   sandboxExtraEnv, treeHasConstEnum, tsconfigOmitsTest, visibleNodeBin,
 } from "../lib/practicemine.ts";
 import { runRecordedTest } from "../bin/practice-replay.ts";
-import { avaEarlyDetail, classifyRunnerOutput, loaderMissingDetail, runTestSpec, type SpecInput } from "../lib/testspec.ts";
+import { avaEarlyDetail, classifyRunnerOutput, failingTestNames, loaderMissingDetail, runTestSpec, type SpecInput } from "../lib/testspec.ts";
 
 const SOURCE_ONLY = JSON.stringify({ compilerOptions: { strict: true }, include: ["source"] });
 const TEST_INCLUDED = JSON.stringify({ include: ["source", "test"] });
@@ -148,6 +148,39 @@ test("a const enum keeps type-checking when the test file is outside include", (
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("ava's cross marks a failed test title, and a compiler stop is not a test result", () => {
+  const output = [
+    "  ✖ rejects an empty crate",
+    "",
+    "  Difference:",
+    "",
+    "  - 2",
+    "  + 0",
+    "",
+    "  ✖ ships a crate twice",
+    "",
+    "  2 tests failed",
+  ].join("\n");
+  assert.deepEqual(failingTestNames(output), ["rejects an empty crate", "ships a crate twice"]);
+  assert.deepEqual(failingTestNames("not ok 3 - pad left\n✘ [fail]: is.blank\nFAIL src/pad.test.ts > keeps the sign\n"), ["pad left", "is.blank", "keeps the sign"]);
+  assert.deepEqual(failingTestNames("  ✖ 2 tests failed\n✖ test/crate.ts exited with a non-zero exit code: 1\n✔ accepts a labeled crate\n"), []);
+  const typeStop = [
+    "Uncaught exception in test/crate.ts",
+    "test/crate.ts(4,10): error TS2339: Property 'weight' does not exist on type 'Crate'.",
+    "✖ test/crate.ts exited with a non-zero exit code: 1",
+  ].join("\n");
+  const overload = [
+    "Uncaught exception in test/crate.ts",
+    "test/crate.ts(8,3): error TS2769: No overload matches this call.",
+    "✖ test/crate.ts exited with a non-zero exit code: 1",
+  ].join("\n");
+  assert.equal(avaEarlyDetail(typeStop, 1), "test/crate.ts(4,10): error TS2339: Property 'weight' does not exist on type 'Crate'.");
+  assert.match(avaEarlyDetail(overload, 1) ?? "", /error TS2769/);
+  assert.equal(failingTestNames(typeStop).length, 0);
+  assert.equal(classifyRunnerOutput(output, 1), "assertion_seen");
+  assert.equal(avaEarlyDetail(output, 1), null);
 });
 
 test("an ava assertion is not an early exit, and a worker crash names its error", () => {

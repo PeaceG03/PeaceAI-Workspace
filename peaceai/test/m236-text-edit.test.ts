@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openRepo } from "../lib/codesearch.ts";
 import { classifyJobOutput } from "../lib/capabilityjob.ts";
-import { editAim, textRepairBatches } from "../lib/editpropose.ts";
+import { editAim, resolvableSymbols, textRepairBatches } from "../lib/editpropose.ts";
 import { understandIssue } from "../lib/issueunderstand.ts";
 import { CASES, setup, teardown } from "./m236-text-edit-cases.ts";
 import * as prop from "../lib/editpropose.ts";
@@ -35,6 +35,8 @@ test("near misses stay unnamed, and the phrase list still refuses them", () => {
     "Give users a clearer error",
     "lgtm",
     "The patch looks fine after a careful read",
+    "Make it faster",
+    "Make them clearer",
   ];
   for (const sentence of refusals) {
     assert.equal(editAim(sentence), null, sentence);
@@ -96,6 +98,20 @@ test("verbless bug titles and a causative name the symbol, including a public Re
   assert.deepEqual(editAim("Make the cache eviction respect TTL")?.symbols, ["cacheEviction"]);
   // React docs, "You Might Not Need an Effect" / Strict Mode: effects run twice in development.
   assert.deepEqual(editAim("useEffect runs twice in Strict Mode")?.symbols, ["useEffect"]);
+});
+
+test("a capitalized ordinary word is kept only when one source file defines it", () => {
+  assert.deepEqual(editAim("Docs run on Node 18")?.symbols, ["Docs"]);
+  const root = mkdtempSync(join(tmpdir(), "peaceai-m236-docs-"));
+  try {
+    mkdirSync(join(root, "src/a"), { recursive: true });
+    mkdirSync(join(root, "src/b"), { recursive: true });
+    assert.deepEqual(resolvableSymbols(openRepo(root), ["Docs"]), []);
+    writeFileSync(join(root, "src/a/guide.ts"), "export function Docs(topic: string): string { return topic; }\n");
+    assert.deepEqual(resolvableSymbols(openRepo(root), ["Docs"]), ["Docs"]);
+    writeFileSync(join(root, "src/b/other.ts"), "export function Docs(topic: string): string { return topic; }\n");
+    assert.deepEqual(resolvableSymbols(openRepo(root), ["Docs"]), []);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test("a plain word defined in two source files is not a target", () => {

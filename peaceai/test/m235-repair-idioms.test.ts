@@ -155,3 +155,90 @@ test("an own-key bundle does not push the candidate list past the cap", () => {
   assert.equal(queued[0]!.muts.length, 2);
   assert.ok(queued[0]!.muts.every((m) => m.template === "own-keys"));
 });
+
+test("an enum string is dropped only when the numeric value maps back to it", () => {
+  const text = [
+    "export function listed(code: unknown, statuses: object): boolean {",
+    "  return Object.values(statuses).includes(code);",
+    "}",
+  ].join("\n");
+  const got = hits(text, "enum-values");
+  assert.equal(got.length, 1);
+  assert.match(got[0]!, /\[\(statuses as Record<PropertyKey, unknown>\)\[member\] as PropertyKey\] !== member/);
+  const reversed: Record<PropertyKey, unknown> = { Draft: 0, Sent: 1, 0: "Draft", 1: "Sent" };
+  const labeled: Record<PropertyKey, unknown> = { label: 2, 2: "other" };
+  assert.equal(keepsMember(reversed, "Draft"), false);
+  assert.equal(keepsMember(reversed, 0), true);
+  assert.equal(keepsMember(labeled, "label"), true);
+  assert.equal(keepsMember(labeled, 2), true);
+});
+
+function loops(count: number): string {
+  const names = ["open", "closed", "hold", "spare", "extra"];
+  const params = names.slice(0, count).map((name) => `${name}: Record<string, number>`).join(", ");
+  const lines = [`export function tally(${params}): number {`, "  let total = 0;"];
+  for (const name of names.slice(0, count)) lines.push(`  for (const label in ${name}) total += ${name}[label] ?? 0;`);
+  lines.push("  return total;", "}");
+  return lines.join("\n");
+}
+
+test("own-key bundles stop at four disjoint loops", () => {
+  const four = loops(4);
+  const fourQueue = repairCandidates([{ path: "src/tally.ts", name: "tally", start: 0, end: four.length, tier: 0 }], new Map([["src/tally.ts", four]]), new Set(), true);
+  assert.equal(fourQueue.filter((c) => c.muts.length === 4 && c.muts.every((m) => m.template === "own-keys")).length, 1);
+  const five = loops(5);
+  const fiveQueue = repairCandidates([{ path: "src/tally.ts", name: "tally", start: 0, end: five.length, tier: 0 }], new Map([["src/tally.ts", five]]), new Set(), true);
+  assert.equal(fiveQueue.filter((c) => c.muts.length >= 5 && c.muts.every((m) => m.template === "own-keys")).length, 0);
+  assert.ok(fiveQueue.some((c) => c.muts.length === 1 && c.muts[0]!.template === "own-keys"));
+});
+
+test("an aliased own-property check is already a guard, and a different alias is not", () => {
+  const call = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  const has = Object.prototype.hasOwnProperty;",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has.call(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const direct = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  const has = Object.hasOwn;",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const other = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  const has = Object.keys;",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (has(bins).includes(label)) total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const elsewhere = [
+    "function borrowed(): typeof Object.prototype.hasOwnProperty { return Object.prototype.hasOwnProperty; }",
+    "export function counted(bins: Record<string, number>): number {",
+    "  const has = borrowed();",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has.call(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  assert.deepEqual(hits(call, "own-keys"), []);
+  assert.deepEqual(hits(direct, "own-keys"), []);
+  assert.equal(hits(other, "own-keys").length, 1);
+  assert.equal(hits(elsewhere, "own-keys").length, 1);
+});
