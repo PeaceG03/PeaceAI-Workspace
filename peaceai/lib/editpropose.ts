@@ -53,7 +53,7 @@ const MAX_CALLEES = 6;
 /** The fixed template order (rank = index). */
 export const TEMPLATES = ["missing-export", "nullish-check", "comparison", "arithmetic", "off-by-one", "logical", "default-value", "null-guard", "negate-condition", "boolean-return"] as const;
 /** M168: repair-v2's idiom templates, tried before TEMPLATES in this fixed order (decided before any dev-split run). */
-export const IDIOM_TEMPLATES = ["trim-equal", "discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "enum-values"] as const; // M172: + undefined-keeps-key
+export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "enum-values"] as const; // M172: + undefined-keeps-key
 export type Idiom = (typeof IDIOM_TEMPLATES)[number];
 /** M173 (spec: peaceai/spec/repair-v2-m173.md): repair-v2's module-scope constant template, tried after all others. */
 export const CONST_TEMPLATES = ["const-value"] as const;
@@ -1596,54 +1596,6 @@ function enumValues(n: ts.Node, sf: ts.SourceFile): string | null {
   return `Object.values(${e}).filter((member) => typeof member !== "string" || typeof ${box}[member] !== "number" || ${roundTrip}).includes(${v})`;
 }
 
-/** True when this conjunction proves `ident` is a string with `typeof`. */
-function provesString(n: ts.Node, ident: string): boolean {
-  let hit = false;
-  const walk = (cur: ts.Node) => {
-    if (ts.isBinaryExpression(cur) && (cur.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken || cur.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken)) {
-      const leftType = ts.isTypeOfExpression(cur.left);
-      const typeOf = leftType ? cur.left : ts.isTypeOfExpression(cur.right) ? cur.right : null;
-      const lit = leftType ? cur.right : cur.left;
-      if (typeOf && ts.isTypeOfExpression(typeOf) && ts.isIdentifier(typeOf.expression) && typeOf.expression.text === ident && ts.isStringLiteral(lit) && lit.text === "string") hit = true;
-    }
-    ts.forEachChild(cur, walk);
-  };
-  walk(n);
-  return hit;
-}
-
-/**
- * trim-equal: `Number` ignores surrounding whitespace, so a conjunction that has proved an
- * identifier is a string and then passes it to `Number` still accepts `" 1"`. Require that
- * identifier to equal its trimmed form. `||`, a value not shown to be a string, and a function
- * that already trims that identifier are left alone.
- */
-function trimEqual(n: ts.Node, sf: ts.SourceFile): string | null {
-  if (!ts.isBinaryExpression(n)) return null;
-  let andOnly = n.operatorToken.kind === ts.SyntaxKind.BarBarToken || n.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken;
-  andOnly = n.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken; // trim-guard:or
-  if (!andOnly) return null;
-  let ident = "";
-  const walk = (cur: ts.Node) => {
-    if (ts.isCallExpression(cur) && ts.isIdentifier(cur.expression) && cur.expression.text === "Number" && cur.arguments.length === 1) {
-      const arg = cur.arguments[0]!;
-      let name = "";
-      name = ts.isIdentifier(arg) ? arg.text : ""; // trim-guard:ident
-      if (name) ident = name;
-    }
-    ts.forEachChild(cur, walk);
-  };
-  walk(n);
-  if (!ident || !provesString(n, ident)) return null;
-  const src = sf.text.slice(n.getStart(sf), n.getEnd());
-  let region = src;
-  let host: ts.Node | undefined = n.parent;
-  while (host && !ts.isFunctionDeclaration(host) && !ts.isFunctionExpression(host) && !ts.isArrowFunction(host) && !ts.isMethodDeclaration(host)) host = host.parent;
-  if (host) region = sf.text.slice(host.getStart(sf), host.getEnd()); // trim-guard:already
-  if (region.includes(`${ident}.trim(`)) return null;
-  return `(${src}) && ${ident} === ${ident}.trim()`;
-}
-
 /** M168: every idiom candidate inside one site (no I/O); repair-v2 only. */
 export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: number): Mutation[] {
   const out: Mutation[] = [];
@@ -1652,7 +1604,6 @@ export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: numbe
     const s = n.getStart(sf);
     if (s < site.start || n.getEnd() > site.end) { ts.forEachChild(n, visit); return; }
     const add = (rep: string | null, template: Idiom) => { if (rep !== null) out.push({ path: site.path, start: s, end: n.getEnd(), text: rep, template, site: siteIndex }); };
-    add(trimEqual(n, sf), "trim-equal");
     add(discardedResult(n, sf, fixed), "discarded-result");
     add(casePredicate(n, sf), "case-predicate");
     add(typeofNull(n, sf), "typeof-null");

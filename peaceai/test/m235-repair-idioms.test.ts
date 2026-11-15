@@ -482,18 +482,3 @@ test("an aliased own-property check is already a guard, and a different alias is
   assert.equal(hits(laterWrite, "own-keys").length, 0);
   assert.equal(hits(restored, "own-keys").length, 0);
 });
-
-test("a string proved by typeof and passed to Number gains a trim check", () => {
-  const open = "export function ticketCode(code: unknown): boolean {\n  return typeof code === \"string\" && !Number.isNaN(Number(code));\n}\n";
-  const got = hits(open, "trim-equal");
-  assert.equal(got.length, 1);
-  assert.match(got[0] ?? "", /code === code\.trim\(\)/);
-  const dated = "export function isValidDate(value: unknown): boolean {\n  return isDate(value) && !Number.isNaN(Number(value));\n}\n";
-  assert.deepEqual(hits(dated, "trim-equal"), []);
-  const either = "export function ticketCode(code: unknown): boolean {\n  return typeof code === \"string\" || !Number.isNaN(Number(code));\n}\n";
-  assert.deepEqual(hits(either, "trim-equal"), []);
-  const elsewhere = "export function ticketCode(code: unknown): boolean {\n  const folded = typeof code === \"string\" ? code.trim() : \"\";\n  return folded.length > 0 && typeof code === \"string\" && !Number.isNaN(Number(code));\n}\n";
-  assert.deepEqual(hits(elsewhere, "trim-equal"), []);
-  const field = "export function ticketCode(row: { raw: string }): boolean {\n  return typeof row.raw === \"string\" && !Number.isNaN(Number(row.raw));\n}\n";
-  assert.deepEqual(hits(field, "trim-equal"), []);
-});
