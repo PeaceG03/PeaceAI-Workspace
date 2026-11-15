@@ -236,12 +236,34 @@ export const CASES: Case[] = [
   },
   {
     id: "member-abbrev",
-    run(l) {
+    run(l, ctx) {
       assert.deepEqual(l.prop.editAim("Fix parseArgs, e.g. for an empty list")?.symbols, ["parseArgs"]);
       assert.deepEqual(l.prop.editAim("Fix parseArgs, i.e. the flag reader")?.symbols, ["parseArgs"]);
       assert.deepEqual(l.prop.editAim("Fix parseArgs, etc. for a blank flag")?.symbols, ["parseArgs"]);
       assert.deepEqual(l.prop.editAim("fix kiln.door for a cracked brick")?.symbols, ["kiln.door"]);
       assert.deepEqual(l.prop.editAim("fix eg.parser for a blank flag")?.symbols, ["eg.parser"]);
+      assert.deepEqual(l.prop.editAim("Fix parseArgs, n.b. the blank flag")?.symbols, ["parseArgs"]);
+      assert.deepEqual(l.prop.editAim("Fix parseArgs, q.v. the note")?.symbols, ["parseArgs"]);
+      assert.deepEqual(l.prop.editAim("fix z.x for a cold rack")?.symbols, ["z.x"]);
+      assert.deepEqual(l.prop.editAim("fix docs.ready for a cold oven")?.symbols, ["docs.ready"]);
+      assert.deepEqual(l.prop.editAim("fix api.timeout for a slow rack")?.symbols, ["api.timeout"]);
+      for (const name of ["arr.map", "obj.set", "fs.rm", "e.key", "res.end", "map.get", "path.sep", "ctx.req", "z.any"]) {
+        assert.deepEqual(l.prop.editAim(`fix ${name}`)?.symbols, [name], name);
+      }
+      for (const host of ["example.com", "nodejs.org", "crates.io", "npmjs.com"]) {
+        assert.deepEqual(l.prop.editAim(`Fix the loader for ${host}`)?.symbols, ["loader"], host);
+      }
+      const search = repo(ctx, {
+        "src/rack.ts": [
+          "export function readTag(label: string): string { label.trim(); return label; }",
+          "export const arr = { map: readTag };",
+          "export const cache = { io: readTag };",
+        ].join("\n"),
+      });
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["arr.map"]), ["readTag"]);
+      assert.deepEqual(l.prop.resolvableSymbols(search, ["example.com"]), []);
+      assert.deepEqual(l.prop.aimSymbols(search, "fix cache.io"), ["readTag"]);
+      assert.deepEqual(l.prop.aimSymbols(search, "Fix the loader for example.com"), []);
     },
   },
   {

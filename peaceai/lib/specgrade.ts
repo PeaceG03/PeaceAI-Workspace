@@ -1020,6 +1020,8 @@ function sameResult(left: NonNullable<ProbeBody["results"]>[number], right: NonN
  * Compare the candidate symbol with the fix's symbol. Neither tree is modified except for a probe
  * file that is removed before this returns. A load failure is diff_unavailable.
  * verified_strict requires at least one mutated input, not only the test's own arguments.
+ * A disagreement on any probed input, including one the recorded test did not name, is verified_test_only
+ * and keeps that counterexample.
  */
 export function gradeBehavior(input: {
   candidateRoot: string;

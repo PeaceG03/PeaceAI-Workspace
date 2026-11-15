@@ -317,4 +317,168 @@ test("an aliased own-property check is already a guard, and a different alias is
   assert.equal(hits(sibling, "own-keys").length, 1);
   assert.equal(hits(shadow, "own-keys").length, 1);
   assert.equal(hits(rebound, "own-keys").length, 1);
+  const tie = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  const has = Object.hasOwn;",
+    "  const has = Object.keys;",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const hoisted = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  if (bins) { var has = Object.hasOwn; }",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const param = [
+    "const has = Object.hasOwn;",
+    "export function counted(bins: Record<string, number>, has: (o: object, k: string) => boolean): number {",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const caught = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  const has = Object.hasOwn;",
+    "  try { bins; } catch (has) {",
+    "    let total = 0;",
+    "    for (const label in bins) {",
+    "      if (!has(bins, label)) continue;",
+    "      total += bins[label] ?? 0;",
+    "    }",
+    "    return total;",
+    "  }",
+    "  return 0;",
+    "}",
+  ].join("\n");
+  const unpacked = [
+    "export function counted(bins: Record<string, number>, box: { has: object }): number {",
+    "  const has = Object.hasOwn;",
+    "  {",
+    "    const { has } = box;",
+    "    let total = 0;",
+    "    for (const label in bins) {",
+    "      if (!has(bins, label)) continue;",
+    "      total += bins[label] ?? 0;",
+    "    }",
+    "    return total;",
+    "  }",
+    "}",
+  ].join("\n");
+  const walked = [
+    "export function counted(bins: Record<string, number>, rows: object[]): number {",
+    "  const has = Object.hasOwn;",
+    "  for (const has of rows) {",
+    "    let total = 0;",
+    "    for (const label in bins) {",
+    "      if (!has(bins, label)) continue;",
+    "      total += bins[label] ?? 0;",
+    "    }",
+    "    return total;",
+    "  }",
+    "  return 0;",
+    "}",
+  ].join("\n");
+  const listed = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  let has = Object.hasOwn;",
+    "  [has] = [Object.keys];",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const across = [
+    "export function counted(bins: Record<string, number> & { kind?: number }): number {",
+    "  let total = 0;",
+    "  switch (bins.kind) {",
+    "    case 1:",
+    "      const has = Object.hasOwn;",
+    "      break;",
+    "    default:",
+    "      for (const label in bins) {",
+    "        if (!has(bins, label)) continue;",
+    "        total += bins[label] ?? 0;",
+    "      }",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  assert.equal(hits(tie, "own-keys").length, 0);
+  assert.equal(hits(hoisted, "own-keys").length, 0);
+  assert.equal(hits(param, "own-keys").length, 1);
+  assert.equal(hits(caught, "own-keys").length, 1);
+  assert.equal(hits(unpacked, "own-keys").length, 1);
+  assert.equal(hits(walked, "own-keys").length, 1);
+  assert.equal(hits(listed, "own-keys").length, 1);
+  assert.equal(hits(across, "own-keys").length, 1);
+  const braced = [
+    "export function counted(bins: Record<string, number>, box: object): number {",
+    "  let has = Object.hasOwn;",
+    "  ({ has } = box);",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const plus = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  let has = Object.hasOwn;",
+    "  has += 1;",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const laterWrite = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  let has = Object.hasOwn;",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  has = Object.keys;",
+    "  return total;",
+    "}",
+  ].join("\n");
+  const restored = [
+    "export function counted(bins: Record<string, number>): number {",
+    "  let has = Object.keys;",
+    "  has = Object.hasOwn;",
+    "  let total = 0;",
+    "  for (const label in bins) {",
+    "    if (!has(bins, label)) continue;",
+    "    total += bins[label] ?? 0;",
+    "  }",
+    "  return total;",
+    "}",
+  ].join("\n");
+  assert.equal(hits(braced, "own-keys").length, 1);
+  assert.equal(hits(plus, "own-keys").length, 1);
+  assert.equal(hits(laterWrite, "own-keys").length, 0);
+  assert.equal(hits(restored, "own-keys").length, 0);
 });

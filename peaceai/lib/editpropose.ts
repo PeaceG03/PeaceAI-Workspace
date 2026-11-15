@@ -289,7 +289,7 @@ const MEMBER_EXT = new Set(["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts"
 
 export interface EditAim { symbols: string[]; via: "verb" | "lead" }
 
-/** Dotted names in a sentence: `kiln.door`, and a call with no receiver (`.ready()`). A filename extension, a call (`path.join()`), the abbreviations `e.g.` and `i.e.`, and a version token (`v18.x`, `v1.2`) are not members. `etc.` is a word and a period, so it is not a dotted name. */
+/** Dotted names in a sentence: `kiln.door`, and a call with no receiver (`.ready()`). A filename extension, a call (`path.join()`), a dotted lowercase abbreviation (`n.b.`), a hostname whose last label is a common public suffix (`example.com`), and a version token (`v18.x`, `v1.2`) are not members. `etc.` is a word and a period, so it is not a dotted name. A property that merely has two or three letters (`arr.map`, `fs.rm`) stays a member. */
 function memberRefs(region: string): string[] {
   const out: string[] = [];
   const add = (path: string) => { if (path.length <= 80 && !out.includes(path)) out.push(path); };
@@ -301,11 +301,46 @@ function memberRefs(region: string): string[] {
     const after = region[m.index + m[0].length];
     if (after === "(") continue; // text-guard:member-call
     const pair = `${m[2]}.${m[3]}`;
-    if (/^(?:e\.g|i\.e)$/i.test(pair)) continue; // text-guard:member-abbrev
+    const tail = region.slice(m.index + m[0].length);
+    if (dottedAbbrev(pair, tail)) continue; // text-guard:member-abbrev
+    if (dottedHost(pair, tail)) continue; // text-guard:member-host
     if (/^v\d+\.(?:x|\d+)$/i.test(pair)) continue; // text-guard:member-version
     add(pair);
   }
   for (const m of region.matchAll(/(^|[^A-Za-z0-9_$])\.([A-Za-z_$][\w$]{0,})\s*\(/g)) if (m[2]) add(`.${m[2]}`);
+  return out;
+}
+
+/** `n.b.` and `q.v.` are single letters, dots, and a final period. `z.x` with no final period stays a member. */
+function dottedAbbrev(pair: string, tail: string): boolean {
+  if (!/^[a-z](?:\.[a-z])+$/.test(pair)) return false;
+  return /^(?:\.[a-z])*\.(?![A-Za-z0-9_$])/.test(tail);
+}
+
+/** Common public suffixes. A last label of two or three letters is not enough: `map`, `set`, `rm`, `key`, `end`, `get`, `sep`, `req`, and `any` are members. */
+const HOST_TLDS = new Set("com org net io dev rs app co gov edu info biz xyz ai sh so to gl ly me tv cc uk us ca de fr jp au nl se no fi es it pl cz ch be at dk nz br in kr tw hk sg ie eu".split(" "));
+
+function hostName(shown: string): string | null {
+  if (shown !== shown.toLowerCase()) return null;
+  const labels = shown.split(".");
+  if (labels.length < 2 || labels.some((label) => !/^[a-z0-9-]+$/.test(label))) return null;
+  let known = false;
+  known = HOST_TLDS.has(labels[labels.length - 1]!); // text-guard:member-tld
+  return known ? shown : null;
+}
+
+function dottedHost(pair: string, tail: string): boolean {
+  const more = /^\.[a-z]{2,24}(?![A-Za-z0-9_$])/i.exec(tail);
+  return hostName(more ? `${pair}${more[0]}` : pair) !== null;
+}
+
+function hostLabels(prose: string): Set<string> {
+  const out = new Set<string>();
+  for (const match of prose.matchAll(/\b([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\b/g)) {
+    const host = hostName(match[1]!);
+    if (!host) continue;
+    for (const part of host.split(".")) out.add(part);
+  }
   return out;
 }
 
@@ -352,6 +387,7 @@ function aimObject(region: string, symbols: string[]): void {
     if (aimCodeName(w[0]) || w[0].length < 3 || AIM_META.has(w[0].toLowerCase())) continue; // text-guard:meta
     if (AIM_GENERIC.has(w[0].toLowerCase())) continue; // text-guard:generic-object
     if (/^v\d+$/i.test(w[0])) continue; // text-guard:version-word
+    if (hostLabels(prose).has(w[0].toLowerCase())) continue; // text-guard:host-word
     parts.push(w[0]);
   }
   if (parts.length >= 2) {
@@ -537,11 +573,39 @@ export function proposeTextEdits(search: CodeRepo, request: string, limit = TEXT
   return out;
 }
 
+function hostMentions(text: string): string[] {
+  const region = aimSource(text);
+  const out: string[] = [];
+  const dotted = new RegExp(String.raw`(^|[^A-Za-z0-9_$])([A-Za-z_$][\w$]{0,})\.([A-Za-z_$][\w$]{0,})\b`, "g");
+  for (const match of region.matchAll(dotted)) {
+    const tail = region.slice(match.index + match[0].length);
+    const more = /^\.[a-z]{2,24}(?![A-Za-z0-9_$])/i.exec(tail);
+    const host = hostName(more ? `${match[2]}.${match[3]}${more[0]}` : `${match[2]}.${match[3]}`);
+    if (host && !out.includes(host)) out.push(host);
+  }
+  return out;
+}
+
+function receiverDefined(search: CodeRepo, host: string): boolean {
+  const recv = host.split(".")[0] ?? "";
+  let defined = false;
+  defined = recv.length > 0 && sourceDefs(search, recv).length > 0; // text-guard:host-defined
+  return defined;
+}
+
+/**
+ * Names the sentence asks to change, after a public-suffix host whose receiver is not defined here
+ * is set aside. A defined receiver keeps the member (`cache.io` when `cache` exists).
+ */
+export function aimSymbols(search: CodeRepo, text: string): string[] {
+  const aim = editAim(text);
+  const extra = hostMentions(text).filter((host) => receiverDefined(search, host));
+  return resolvableSymbols(search, [...(aim?.symbols ?? []), ...extra]);
+}
+
 /** The sentence's aim, resolved against this repo, handed to repair-v2. */
 export function textRepairBatches(search: CodeRepo, text: string, limit = TEXT_REPAIR_LIMIT): RepairEdit[][] {
-  const aim = editAim(text);
-  if (!aim) return [];
-  const symbols = resolvableSymbols(search, aim.symbols);
+  const symbols = aimSymbols(search, text);
   if (symbols.length === 0) return [];
   // The summary schema accepts at most five candidates. A longer list fails the gate before a diff is read.
   let cap = limit;
@@ -1302,13 +1366,35 @@ function isOwnAliasInit(expr: ts.Expression): boolean {
   return true; // cap-guard:own-alias-init
 }
 
+function varDecl(node: ts.Node): boolean {
+  if (!ts.isVariableDeclaration(node) || !ts.isVariableDeclarationList(node.parent)) return false;
+  const flags = node.parent.flags;
+  return (flags & ts.NodeFlags.Let) === 0 && (flags & ts.NodeFlags.Const) === 0;
+}
+
+function scopeEdge(block: ts.Node): boolean {
+  if (ts.isBlock(block) || ts.isSourceFile(block) || ts.isModuleBlock(block)) return true;
+  let caseEdge = false;
+  caseEdge = ts.isCaseClause(block); // cap-guard:own-alias-case
+  return caseEdge;
+}
+
 function aliasScope(node: ts.Node): ts.Node {
-  let parent = node.parent;
+  let cur: ts.Node = node;
+  while (ts.isBindingElement(cur)) cur = cur.parent;
+  if ((ts.isObjectBindingPattern(cur) || ts.isArrayBindingPattern(cur)) && cur.parent) cur = cur.parent;
+  if (ts.isParameter(cur)) return cur.parent;
+  if (ts.isVariableDeclaration(cur) && ts.isCatchClause(cur.parent)) return cur.parent.block; // cap-guard:own-alias-catch
+  const forOwner = ts.isVariableDeclaration(cur) && ts.isVariableDeclarationList(cur.parent) ? cur.parent.parent : undefined;
+  if (forOwner && (ts.isForOfStatement(forOwner) || ts.isForInStatement(forOwner) || ts.isForStatement(forOwner))) return forOwner; // cap-guard:own-alias-for
+  let parent = cur.parent;
   while (parent && !ts.isFunctionLike(parent) && !ts.isSourceFile(parent)) parent = parent.parent;
-  let block: ts.Node | undefined = node;
-  while (block && !ts.isBlock(block) && !ts.isSourceFile(block) && !ts.isCaseClause(block) && !ts.isModuleBlock(block)) block = block.parent;
-  if (block) parent = block; // cap-guard:own-alias-block
-  return parent ?? node;
+  let block: ts.Node | undefined = cur;
+  while (block && !scopeEdge(block)) block = block.parent;
+  let useBlock = true;
+  if (varDecl(cur)) useBlock = false; // cap-guard:own-alias-var
+  if (block && useBlock) parent = block; // cap-guard:own-alias-block
+  return parent ?? cur;
 }
 
 function scopeDistance(scope: ts.Node, at: ts.Node): number | null {
@@ -1320,20 +1406,53 @@ function scopeDistance(scope: ts.Node, at: ts.Node): number | null {
   return null;
 }
 
-/** A later `name = …` before the use means the binding is no longer the own-property function. */
-function rebound(decl: ts.VariableDeclaration, at: ts.Node, sf: ts.SourceFile): boolean {
+function unwrapAssign(expr: ts.Expression): ts.Expression {
+  let cur = expr;
+  while (ts.isParenthesizedExpression(cur)) cur = cur.expression;
+  return cur;
+}
+
+function writesName(left: ts.Expression, name: string): boolean {
+  const cur = unwrapAssign(left);
+  if (ts.isIdentifier(cur) && cur.text === name) return true;
+  if (ts.isArrayLiteralExpression(cur) && cur.elements.some((el) => ts.isIdentifier(el) && el.text === name)) return true; // cap-guard:own-alias-reassign-array
+  let objectHit = false;
+  if (ts.isObjectLiteralExpression(cur)) objectHit = cur.properties.some((p) => (ts.isShorthandPropertyAssignment(p) && p.name.text === name) || (ts.isPropertyAssignment(p) && ts.isIdentifier(p.initializer) && p.initializer.text === name)); // cap-guard:own-alias-reassign-object
+  return objectHit;
+}
+
+function compoundAssign(kind: ts.SyntaxKind): boolean {
+  const text = ts.tokenToString(kind) ?? "";
+  return text.endsWith("=") && text !== "=" && text !== "==" && text !== "===" && text !== "!=" && text !== "!==" && text !== "<=" && text !== ">=";
+}
+
+/** Whether `name` still holds an own-property function at the use. Writes after the use do not count. */
+function ownAtUse(decl: ts.VariableDeclaration, at: ts.Node, sf: ts.SourceFile): boolean {
   if (!ts.isIdentifier(decl.name)) return false;
   const name = decl.name.text;
-  let hit = false;
+  let live = !!(decl.initializer && isOwnAliasInit(decl.initializer));
   const visit = (n: ts.Node) => {
-    if (hit || n === decl) return;
+    if (n === decl) return;
     const start = n.getStart(sf);
-    if (start < decl.getEnd() || start >= at.getStart(sf)) { ts.forEachChild(n, visit); return; }
-    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(n.left) && n.left.text === name && !isOwnAliasInit(n.right)) hit = true;
-    else ts.forEachChild(n, visit);
+    if (start < decl.getEnd()) { ts.forEachChild(n, visit); return; }
+    let after = false;
+    after = start >= at.getStart(sf); // cap-guard:own-alias-after
+    if (after) { ts.forEachChild(n, visit); return; }
+    if (ts.isBinaryExpression(n) && writesName(n.left, name)) {
+      if (compoundAssign(n.operatorToken.kind)) {
+        live = false; // cap-guard:own-alias-compound
+        return;
+      }
+      if (n.operatorToken.kind === ts.SyntaxKind.EqualsToken && isOwnAliasInit(n.right)) {
+        live = true; // cap-guard:own-alias-restore
+        return;
+      }
+      if (n.operatorToken.kind === ts.SyntaxKind.EqualsToken) live = false;
+    }
+    ts.forEachChild(n, visit);
   };
   visit(aliasScope(decl));
-  return hit;
+  return live;
 }
 
 function aliasVisible(decl: ts.Node, at: ts.Node, sf: ts.SourceFile): boolean {
@@ -1343,30 +1462,42 @@ function aliasVisible(decl: ts.Node, at: ts.Node, sf: ts.SourceFile): boolean {
   return false;
 }
 
+function addAliasNames(name: ts.BindingName, own: boolean, decl: ts.Node, at: ts.Node, found: { name: string; decl: ts.Node; dist: number; own: boolean }[]): void {
+  if (ts.isIdentifier(name)) {
+    const dist = scopeDistance(aliasScope(decl), at);
+    if (dist !== null) found.push({ name: name.text, decl, dist, own });
+    return;
+  }
+  let patterns = false;
+  patterns = true; // cap-guard:own-alias-pattern
+  if (!patterns) return;
+  for (const el of name.elements) if (ts.isBindingElement(el)) addAliasNames(el.name, false, decl, at, found);
+}
+
 function ownAliasNames(sf: ts.SourceFile, at: ts.Node): Set<string> {
-  const found: { name: string; decl: ts.VariableDeclaration; dist: number; own: boolean }[] = [];
+  const found: { name: string; decl: ts.Node; dist: number; own: boolean }[] = [];
   const visit = (node: ts.Node) => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && aliasVisible(node, at, sf)) {
-      const dist = scopeDistance(aliasScope(node), at);
-      if (dist !== null) found.push({ name: node.name.text, decl: node, dist, own: isOwnAliasInit(node.initializer) });
+    if (ts.isVariableDeclaration(node) && node.name && aliasVisible(node, at, sf)) {
+      let own = !!(node.initializer && ts.isIdentifier(node.name) && isOwnAliasInit(node.initializer));
+      if (ts.isIdentifier(node.name)) own = ownAtUse(node, at, sf); // cap-guard:own-alias-reassign
+      addAliasNames(node.name, own, node, at, found);
     }
+    if (ts.isParameter(node) && node.name && aliasVisible(node, at, sf)) addAliasNames(node.name, false, node, at, found); // cap-guard:own-alias-param
     ts.forEachChild(node, visit);
   };
   visit(sf);
-  const best = new Map<string, { decl: ts.VariableDeclaration; dist: number; own: boolean }>();
+  const best = new Map<string, { decl: ts.Node; dist: number; own: boolean }>();
   for (const item of found) {
     const prev = best.get(item.name);
-    let take = !prev;
-    if (prev && item.dist < prev.dist) take = true; // cap-guard:own-alias-shadow
+    let take = true;
+    take = !prev; // cap-guard:own-alias-take-last
+    let cmp = prev !== undefined && item.dist <= prev.dist;
+    cmp = prev !== undefined && item.dist < prev.dist; // cap-guard:own-alias-shadow
+    if (cmp) take = true;
     if (take) best.set(item.name, item);
   }
   const names = new Set<string>();
-  for (const [name, info] of best) {
-    if (!info.own) continue;
-    let live = true;
-    if (rebound(info.decl, at, sf)) live = false; // cap-guard:own-alias-reassign
-    if (live) names.add(name);
-  }
+  for (const [name, info] of best) if (info.own) names.add(name);
   return names;
 }
 
