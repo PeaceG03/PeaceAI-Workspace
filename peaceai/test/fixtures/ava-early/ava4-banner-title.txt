@@ -1,0 +1,19 @@
+
+  ✖ exited with a non-zero exit code Test failed via `t.fail()`
+  ─
+
+  exited with a non-zero exit code
+
+  test/banner-title.cjs:2
+
+   1: const test = require('ava');                                 
+   2: test('exited with a non-zero exit code', t => { t.fail(); });
+   3:                                                              
+
+  Test failed via `t.fail()`
+
+  › test/banner-title.cjs:2:51
+
+  ─
+
+  1 test failed

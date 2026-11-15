@@ -1,0 +1,16 @@
+
+  Uncaught exception in test/crash.cjs
+
+  test/crash.cjs:1
+
+   1: throw new TypeError("Cannot read properties of undefined (reading 'emptyS…
+   2:                                                                           
+
+  TypeError: Cannot read properties of undefined (reading 'emptyString')
+
+  › Object.<anonymous> (test/crash.cjs:1:7)
+
+  ✖ test/crash.cjs exited with a non-zero exit code: 1
+  ─
+
+  1 uncaught exception

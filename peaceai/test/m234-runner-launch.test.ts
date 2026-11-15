@@ -197,8 +197,9 @@ test("an ava assertion is not an early exit, and a worker crash names its error"
   ].join("\n");
   assert.equal(avaEarlyDetail(crash, 1), "TypeError: Cannot read properties of undefined (reading 'emptyString')");
   assert.equal(avaEarlyDetail("✘ test/test.ts exited due to an error:\nError [ERR_MODULE_NOT_FOUND]: Cannot find package 'ts-node' imported from /work", 1), "Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'ts-node' imported from /work");
-  assert.equal(avaEarlyDetail("✘ [fail]: is.htmlElement\nTypeError: testIs is not a function\n1 test failed", 1), null);
-  assert.equal(avaEarlyDetail("✘ [fail]: pad\nUncaught exception in test/test.ts\nTypeError: testIs is not a function\n✖ test/test.ts exited with a non-zero exit code: 1", 1), null);
+  assert.equal(avaEarlyDetail("✘ [fail]: is.htmlElement\nTypeError: testIs is not a function\n1 test failed", 1, "is.htmlElement"), null);
+  assert.equal(avaEarlyDetail("✘ [fail]: pad\nUncaught exception in test/test.ts\nTypeError: testIs is not a function\n✖ test/test.ts exited with a non-zero exit code: 1", 1, "pad"), null);
+  assert.match(avaEarlyDetail("✘ [fail]: pad\nUncaught exception in test/test.ts\nTypeError: testIs is not a function\n✖ test/test.ts exited with a non-zero exit code: 1", 1, "other") ?? "", /testIs is not a function/);
   assert.equal(classifyRunnerOutput("✖ is.weakRef Error thrown in test\n1 test failed", 1), "assertion_seen");
   assert.equal(avaEarlyDetail("not ok 1 - pad\nAssertionError: expected 2 to be 3", 1), null);
   assert.equal(avaEarlyDetail(crash, 0), null);
@@ -207,7 +208,7 @@ test("an ava assertion is not an early exit, and a worker crash names its error"
     "  TypeError: warm(1) was false",
     "✖ test/oven.test.ts exited with a non-zero exit code: 1",
   ].join("\n");
-  assert.equal(avaEarlyDetail(threw, 1), null);
+  assert.equal(avaEarlyDetail(threw, 1, "warm of one"), null);
   assert.deepEqual(failingTestNames(threw), ["warm of one"]);
   assert.match(avaEarlyDetail(crash, 1) ?? "", /Cannot read properties/);
   assert.equal(loaderMissingDetail("Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'ts-node' imported from /work", "ts-node")?.includes("Cannot find package 'ts-node'"), true);
@@ -267,11 +268,32 @@ test("a finished install without the declared ts-node is rebuilt, and the repair
   }
 });
 
+const avaFixture = (name: string) => readFileSync(join(import.meta.dirname, "fixtures/ava-early", name), "utf8");
+
+test("real ava output counts only the target title, and a banner phrase can be a title", () => {
+  const target = "target warm";
+  const phrase = "exited with a non-zero exit code";
+  for (const file of ["ava4-serial.txt", "ava6-serial.txt", "ava4-failfast.txt", "ava6-failfast.txt", "ava4-multi.txt", "ava6-multi.txt", "ava4-crash.txt", "ava6-crash.txt"]) {
+    const output = avaFixture(file);
+    assert.notEqual(avaEarlyDetail(output, 1, target), null, file);
+  }
+  for (const file of ["ava4-own-exit.txt", "ava6-own-exit.txt"]) {
+    assert.equal(avaEarlyDetail(avaFixture(file), 1, "warm of one"), null, file);
+  }
+  for (const file of ["ava4-banner-title.txt", "ava6-banner-title.txt"]) {
+    const output = avaFixture(file);
+    assert.equal(avaEarlyDetail(output, 1, phrase), null, file);
+    assert.ok(failingTestNames(output).some((name) => name === phrase || name.startsWith(`${phrase} `)), file);
+  }
+});
+
 test("an ava test that threw is reduced, and a crash before any test is not", (t) => {
   if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
   const node = visibleNodeBin();
   assert.ok(node);
   const root = mkdtempSync(join(tmpdir(), "practice-ava-ran-"));
+  const captured = avaFixture("ava4-own-exit.txt");
+  const crashText = avaFixture("ava4-crash.txt");
   mkdirSync(join(root, "src"), { recursive: true });
   mkdirSync(join(root, "test"), { recursive: true });
   writeFileSync(join(root, "src/oven.ts"), "export function warm(n: number): boolean {\n  return n > 1;\n}\n");
@@ -281,12 +303,14 @@ test("an ava test that threw is reduced, and a crash before any test is not", (t
     "test(\"warm of one\", (t) => { t.true(warm(1)); });",
     "",
   ].join("\n"));
+  writeFileSync(join(root, "test/own-exit.txt"), captured);
+  writeFileSync(join(root, "test/crash.txt"), crashText);
   writeFileSync(join(root, "test/check.ts"), [
+    "import { readFileSync } from \"node:fs\";",
     "import { warm } from \"../src/oven.ts\";",
-    "if (warm(1) !== true) {",
-    "  console.log(\"  ✖ warm of one\");",
-    "  console.log(\"  TypeError: warm(1) was false\");",
-    "  console.log(\"✖ test/oven.test.ts exited with a non-zero exit code: 1\");",
+    "const which = process.argv[2];",
+    "if (which === \"crash\" || warm(1) !== true) {",
+    "  process.stdout.write(readFileSync(new URL(which === \"crash\" ? \"./crash.txt\" : \"./own-exit.txt\", import.meta.url), \"utf8\"));",
     "  process.exit(1);",
     "}",
     "",
@@ -306,10 +330,13 @@ test("an ava test that threw is reduced, and a crash before any test is not", (t
     if (got.status === "diff") assert.match(got.diff, /n >= 1/);
     const crash = runTestSpec({
       ...input,
-      testCommand: [node, "-e", "console.log('Uncaught exception in test/oven.test.ts'); console.log(\"TypeError: Cannot read properties of undefined (reading 'emptyString')\"); console.log('✖ test/oven.test.ts exited with a non-zero exit code: 1'); process.exit(1)"],
+      testCommand: [node, "--experimental-strip-types", "test/check.ts", "crash"],
     });
     assert.equal(crash.status, "cant");
-    if (crash.status === "cant") assert.equal(crash.reason, "CANT_DO_YET_AVA_EARLY_EXIT");
+    if (crash.status === "cant") {
+      assert.equal(crash.reason, "CANT_DO_YET_AVA_EARLY_EXIT");
+      assert.notEqual(crash.status, "pass");
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

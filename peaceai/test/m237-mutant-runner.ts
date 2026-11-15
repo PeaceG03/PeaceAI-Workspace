@@ -155,9 +155,15 @@ if (suite === "spec") {
   check("ava-banner-error", () => { assert.deepEqual(mod.failingTestNames("  ✘ [fail]: test/pad.ts exited due to an error:"), []); });
   const ran = "  ✖ warm of one\n  TypeError: warm(1) was false\n✖ test/oven.test.ts exited with a non-zero exit code: 1";
   const crash = "Uncaught exception in test/oven.test.ts\nTypeError: Cannot read properties of undefined (reading 'emptyString')\n✖ test/oven.test.ts exited with a non-zero exit code: 1";
-  check("ava-ran", () => {
-    assert.equal(mod.avaEarlyDetail(ran, 1), null);
-    assert.match(mod.avaEarlyDetail(crash, 1) ?? "", /Cannot read properties/);
+  const unrelated = "  ✖ other test Test failed via `t.fail()`\n✖ test/oven.test.ts exited with a non-zero exit code: 7";
+  check("ava-unrelated", () => {
+    assert.equal(mod.avaEarlyDetail(ran, 1, "warm of one"), null);
+    assert.match(mod.avaEarlyDetail(unrelated, 1, "warm of one") ?? "", /exited before a test result|non-zero/);
+    assert.match(mod.avaEarlyDetail(crash, 1, "warm of one") ?? "", /Cannot read properties/);
+  });
+  check("ava-banner-file", () => {
+    assert.deepEqual(mod.failingTestNames("  ✖ exited with a non-zero exit code Test failed via `t.fail()`"), ["exited with a non-zero exit code Test failed via `t.fail()`"]);
+    assert.deepEqual(mod.failingTestNames("✖ test/oven.test.ts exited with a non-zero exit code: 1"), []);
   });
 }
 
