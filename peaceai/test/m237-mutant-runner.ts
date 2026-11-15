@@ -153,6 +153,12 @@ if (suite === "spec") {
   check("ava-summary-one", () => { assert.deepEqual(mod.failingTestNames("  ✘ [fail]: 1 test failed"), []); });
   check("ava-banner", () => { assert.deepEqual(mod.failingTestNames("  ✘ [fail]: test/pad.ts exited with a non-zero exit code: 1"), []); });
   check("ava-banner-error", () => { assert.deepEqual(mod.failingTestNames("  ✘ [fail]: test/pad.ts exited due to an error:"), []); });
+  const ran = "  ✖ warm of one\n  TypeError: warm(1) was false\n✖ test/oven.test.ts exited with a non-zero exit code: 1";
+  const crash = "Uncaught exception in test/oven.test.ts\nTypeError: Cannot read properties of undefined (reading 'emptyString')\n✖ test/oven.test.ts exited with a non-zero exit code: 1";
+  check("ava-ran", () => {
+    assert.equal(mod.avaEarlyDetail(ran, 1), null);
+    assert.match(mod.avaEarlyDetail(crash, 1) ?? "", /Cannot read properties/);
+  });
 }
 
 process.stdout.write(JSON.stringify({ failed, crashed }) + "\n");

@@ -377,6 +377,7 @@ const AVA_EARLY_BANNER = /exited due to an error|exited with a non-zero exit cod
 /**
  * Ava's worker-exit banner, when no test result was reported. The return value is the worker's own
  * error line, or a short fallback when the banner is the only line. An assertion failure is not one.
+ * A `✖ <title>` line is a test result too, even when the worker also prints the exit banner.
  *
  * A TS2339 or TS2769 line here means the TypeScript compiler stopped the worker before any test body
  * ran. The line names a type mismatch. It does not say whether the test, the declaration, or a caller
@@ -387,6 +388,7 @@ export function avaEarlyDetail(output: string, code: number | null): string | nu
   if (code === null || code === 0) return null;
   if (!AVA_EARLY_BANNER.test(output)) return null;
   if (/✘ \[fail\]|✖ \[fail\]|^not ok \d+/m.test(output) || /AssertionError|ERR_ASSERTION/.test(output)) return null;
+  if (failingTestNames(output).length > 0) return null; // spec-guard:ava-ran
   const lines = output.split("\n").map((line) => line.trim()).filter(Boolean);
   const detail = lines.find((line) => /^(?:TypeError|SyntaxError|ReferenceError|RangeError|Error)\b/.test(line)
     || /error TS\d+/.test(line)

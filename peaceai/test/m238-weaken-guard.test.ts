@@ -1,6 +1,5 @@
 // Text mode is test-only. Test-as-spec probes can still be strict. Bakery fixtures only.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +7,7 @@ import { test } from "node:test";
 import { finishTextReplay, gradeTextRuns, replayOne } from "../bin/practice-replay.ts";
 import type { PracticePair } from "../lib/practicemine.ts";
 import { replayDocument, seededIdiom } from "../lib/practicereplay.ts";
-import { visibleNodeBin } from "../lib/practicemine.ts";
+import { practiceSandboxReady, visibleNodeBin } from "../lib/practicemine.ts";
 import { gradeBehavior, type BehaviorGrade } from "../lib/specgrade.ts";
 
 const nodePath = visibleNodeBin() ?? process.execPath;
@@ -36,7 +35,7 @@ function grade(candidate: string, fix: string, args: unknown[][], target: { symb
 const range = "export function warm(n: number): boolean {\n  return n > 0 && n < 10;\n}\n";
 
 test("thirteen weakenings are not strict, and an equivalent rewrite still can be", (t) => {
-  if (spawnSync("bwrap", ["--version"], { stdio: "ignore" }).error) { t.skip("bwrap is not installed on this host"); return; }
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
   const weak: [string, string, unknown[][]][] = [
     ["export function warm(n: number): boolean {\n  return n > 0;\n}\n", range, [[3], [12]]],
     ["export function warm(n: number): boolean {\n  if (n > 0) return true;\n  return n < 10;\n}\n", range, [[12]]],

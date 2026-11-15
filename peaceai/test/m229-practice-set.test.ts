@@ -10,7 +10,7 @@ import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os";
 import {
   GIT_LOCK_ARGS, LOCK_EMPTY_GRACE_MS, cloneCheckProblems, cloneRootProblems, dependencyFingerprint, diffChangesDeps, ensurePracticeInstall, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutPairHash, heldOutWatchProblems, identitiesForRoots, installArgv, INSTALL_TIMEOUT_MS, installEnv, isSourceFile, isTestFile, manifestProblems, mergeCloneRootCollisions, processStartId, readCloneIdentity, readPairFingerprint, replayCloneRecord, SANDBOX_RAN, sanitizeInstallLines,
-  pairFiles, pairProblems, parseRepoToken, poisonChanges, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxArgv, practiceWatchFiles, releaseWorktree, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
+  pairFiles, pairProblems, parseRepoToken, poisonChanges, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxArgv, practiceSandboxReady, practiceWatchFiles, releaseWorktree, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
 import { countBySplit, gapRecord, gradePracticeRow, replayDocument, targetIsScorable, writePracticeOutputs } from "../lib/practicereplay.ts";
@@ -77,7 +77,7 @@ test("third-party env is an allowlist, and the sandbox is bubblewrap with no uns
 });
 
 test("the practice sandbox hides a fake home, refuses outside writes, and has no network", (t) => {
-  if (spawnSync("bwrap", ["--version"], { stdio: "ignore" }).error) {
+  if (!practiceSandboxReady()) {
     t.skip("bwrap is not installed on this host");
     return;
   }
@@ -118,7 +118,7 @@ test("the practice sandbox hides a fake home, refuses outside writes, and has no
 });
 
 function bwrapHere(): boolean {
-  return !spawnSync("bwrap", ["--version"], { stdio: "ignore" }).error;
+  return practiceSandboxReady();
 }
 
 function tinyRepo(): string {
