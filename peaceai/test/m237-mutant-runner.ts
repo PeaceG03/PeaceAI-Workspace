@@ -138,22 +138,36 @@ if (suite === "propose") {
   check("own-alias-after", () => { assert.equal(ownHits(laterWrite).length, 0); });
   check("own-alias-restore", () => { assert.equal(ownHits(restored).length, 0); });
   check("own-alias-case", () => { assert.equal(ownHits(across).length, 1); });
-  const vueObject = "export const isObject = (val: unknown): val is Record<any, any> =>\n  val !== null && typeof val === 'object'\n";
+  const arrowObject = "export const isPlainData = (val: unknown): boolean =>\n  val !== null && typeof val === 'object'\n";
   const returnedObject = "export function isRecord(val: unknown): boolean {\n  return val !== null && typeof val === \"object\";\n}\n";
   const honoObject = "function isObject(item: unknown): boolean {\n  return typeof item === 'object' && item !== null && !Array.isArray(item)\n}\n";
   const typeOnly = "export function html(value: unknown): boolean {\n  return typeof value === 'object'\n}\n";
-  const plainHits = (text: string) => {
-    const site = { path: "src/obj.ts", name: "isObject", start: 0, end: text.length, tier: 0 };
-    return mod.idiomMutationsIn(mod.parseSource("src/obj.ts", text), site, 0).filter((m: { template: string }) => m.template === "plain-object").length;
+  const admitting = {
+    failing: ["an array is not an object"],
+    text: [
+      'import { isPlainData, isObject, isRecord, loose } from "./obj.ts";',
+      'import { expect, test } from "vitest";',
+      'test("an array is not an object", () => {',
+      "  expect(isPlainData([])).toBe(false);",
+      "  expect(isObject([])).toBe(false);",
+      "  expect(isRecord([])).toBe(false);",
+      "  expect(loose([])).toBe(false);",
+      "});",
+    ].join("\n"),
   };
-  check("plain-arrow", () => { assert.equal(plainHits(vueObject), 1); });
+  const plainHits = (text: string, spec: { text: string; failing: string[] } | null = admitting) => {
+    const site = { path: "src/obj.ts", name: "isPlainData", start: 0, end: text.length, tier: 0 };
+    return mod.idiomMutationsIn(mod.parseSource("src/obj.ts", text), site, 0, spec).filter((m: { template: string }) => m.template === "plain-object").length;
+  };
+  check("plain-arrow", () => { assert.equal(plainHits(arrowObject), 1); });
   check("plain-return", () => { assert.equal(plainHits(returnedObject), 1); });
   check("plain-pair", () => {
     assert.equal(plainHits(honoObject), 0);
     assert.equal(plainHits(typeOnly), 0);
-    assert.equal(plainHits(vueObject), 1);
+    assert.equal(plainHits(arrowObject), 1);
   });
   check("plain-strict", () => { assert.equal(plainHits("export const loose = (val: unknown) => val != null && typeof val === \"object\"\n"), 0); });
+  check("plain-spec", () => { assert.equal(plainHits(arrowObject, null), 0); });
   check("bundle-max", () => {
     const five = loops(5);
     const queued = mod.repairCandidates([{ path: "src/tally.ts", name: "tally", start: 0, end: five.length, tier: 0 }], new Map([["src/tally.ts", five]]), new Set(), true);
@@ -257,6 +271,33 @@ if (suite === "spec") {
   check("sentinel-value", () => {
     const plan = mod.scaffoldPlan("src/display.test.ts", sentinelText, "TypeError: toDisplayString is not a function", "^src/.+\\.ts$", [], () => null);
     assert.equal(plan?.ok, true);
+  });
+  const shapeText = (body: string) => [
+    'import { take } from "./mod.ts";',
+    'import { expect, test } from "vitest";',
+    'test("values", () => {',
+    body,
+    "  expect(take({ b: 1 })).toBe(5);",
+    "});",
+  ].join("\n");
+  const recorded = (body: string) => mod.expectationsIn("src/mod.test.ts", shapeText(body), "^src/.+\\.ts$", [], () => true);
+  check("shorthand-prop", () => {
+    const rows = recorded("  expect(take({ undefined })).toBe(false);\n  expect(take({ a })).toBe(false);");
+    assert.equal(rows.some((row: { input: string }) => row.input.includes("undefined") || row.input.includes("{ a }")), false);
+    assert.ok(rows.some((row: { input: string }) => row.input === "{ b: 1 }"));
+  });
+  check("proto-key", () => {
+    const rows = recorded('  expect(take({ __proto__: 1 })).toBe(2);\n  expect(take({ "__proto__": 1 })).toBe(3);');
+    assert.equal(rows.some((row: { input: string }) => row.input.includes("__proto__")), false);
+    assert.ok(rows.some((row: { input: string }) => row.input === "{ b: 1 }"));
+    const only = [
+      'import { take } from "./mod.ts";',
+      'import { expect, test } from "vitest";',
+      'test("values", () => { expect(take({ __proto__: 1 })).toBe(2); });',
+    ].join("\n");
+    const plan = mod.scaffoldPlan("src/mod.test.ts", only, "TypeError: take is not a function", "^src/.+\\.ts$", [], () => null);
+    const inputs = plan?.ok ? plan.expectations.map((row: { input: string }) => row.input) : [];
+    assert.equal(inputs.some((input: string) => input === "{}" || input.includes("__proto__")), false);
   });
   check("ava-reporter", () => {
     assert.notEqual(mod.avaEarlyDetail(printed, 1, "target warm"), null);

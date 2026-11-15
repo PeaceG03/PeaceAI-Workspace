@@ -193,12 +193,31 @@ function literal(node: ts.Expression): boolean {
   return ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(node.operand);
 }
 
+/**
+ * One own data property. A shorthand name is not a value written in the object, and `__proto__`
+ * is the prototype setter: assigning it does not store the property, so the object becomes `{}`.
+ */
+function concreteMember(prop: ts.ObjectLiteralElementLike): { ok: true; key: string; init: ts.Expression } | { ok: false } {
+  const shorthand = ts.isShorthandPropertyAssignment(prop);
+  if (!shorthand && !ts.isPropertyAssignment(prop)) return { ok: false };
+  const name = prop.name;
+  if (!name || (!ts.isIdentifier(name) && !ts.isStringLiteral(name) && !ts.isNumericLiteral(name))) return { ok: false };
+  if (shorthand) return { ok: false }; // spec-guard:shorthand-prop
+  if (name.text === "__proto__") return { ok: false }; // spec-guard:proto-key
+  const init = ts.isPropertyAssignment(prop) ? prop.initializer : name;
+  if (!concreteArg(init)) return { ok: false };
+  return { ok: true, key: name.text, init };
+}
+
 function concrete(node: ts.Expression): boolean {
   const expr = unwrap(node);
   if (literal(expr)) return true;
   if (ts.isArrayLiteralExpression(expr)) return expr.elements.every((el) => el && !ts.isSpreadElement(el) && ts.isExpression(el) && concrete(el));
   if (ts.isObjectLiteralExpression(expr)) {
-    return expr.properties.every((p) => ts.isPropertyAssignment(p) && concrete(p.initializer) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) || ts.isNumericLiteral(p.name)));
+    return expr.properties.every((p) => {
+      const member = concreteMember(p);
+      return member.ok && concrete(member.init);
+    });
   }
   return false;
 }
@@ -237,9 +256,7 @@ function concreteArg(expr: ts.Expression): boolean {
   if (literal(expr)) return true;
   if (sentinelValue(expr).ok) return true;
   if (ts.isArrayLiteralExpression(expr)) return expr.elements.every((el) => ts.isExpression(el) && concreteArg(el));
-  if (ts.isObjectLiteralExpression(expr)) {
-    return expr.properties.every((p) => ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) || ts.isNumericLiteral(p.name)) && concreteArg(p.initializer));
-  }
+  if (ts.isObjectLiteralExpression(expr)) return expr.properties.every((p) => concreteMember(p).ok);
   return false;
 }
 
@@ -688,12 +705,11 @@ function evalConcrete(node: ts.Expression): { ok: true; value: unknown } | { ok:
   if (ts.isObjectLiteralExpression(expr)) {
     const obj: Record<string, unknown> = {};
     for (const prop of expr.properties) {
-      if (!ts.isPropertyAssignment(prop)) return { ok: false };
-      const key = ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name) || ts.isNumericLiteral(prop.name) ? prop.name.text : null;
-      if (key === null) return { ok: false };
-      const v = evalConcrete(prop.initializer);
+      const member = concreteMember(prop);
+      if (!member.ok) return { ok: false };
+      const v = evalConcrete(member.init);
       if (!v.ok) return v;
-      obj[key] = v.value;
+      Object.defineProperty(obj, member.key, { value: v.value, enumerable: true, writable: true, configurable: true });
     }
     return { ok: true, value: obj };
   }
@@ -1443,7 +1459,7 @@ export function runTestSpec(input: SpecInput): SpecResult {
     }
   }
   const proposer = repairProposer({ v2: true });
-  proposer.prepare(repo, { request, failing, baseFailing: failing });
+  proposer.prepare(repo, { request, failing, baseFailing: failing, specText: testText });
   const files = [...original.entries()].map(([path, content]) => ({ path, content }));
   const feedback: RepairFeedback[] = [];
   let attempts = 0;

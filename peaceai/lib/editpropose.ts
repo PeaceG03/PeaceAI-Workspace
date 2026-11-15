@@ -40,7 +40,9 @@ export interface RepairFeedback { attempt: number; codes: readonly string[]; fai
 export interface RepairInput { files: readonly { path: string; content: string }[]; attempt: number; feedback: readonly RepairFeedback[]; baseline?: { total: number; passing: number; failing: number } | null; loadDiagnostics?: readonly LoadDiag[] }
 /** M190: `failing` feeds localisation (node:test names only); `baseFailing` (when given) is the baseline's failing test
  *  names for the outcome evidence (M178 / M179 / M191), vitest / jest names included. */
-export interface PrepareInput { request: string; failing: readonly string[]; baseFailing?: readonly string[] }
+export interface PrepareInput { request: string; failing: readonly string[]; baseFailing?: readonly string[]; specText?: string }
+/** A failing test file the caller already holds. plain-object reads it and does not open the repo. */
+export interface PlainSpec { text: string; failing: readonly string[] }
 export type RepairProposal = { edits: RepairEdit[]; kind?: string } | { refuse: "NO_EDIT" | "NO_MORE_EDITS" };
 
 export const REPAIR_PROPOSER = "repair-v1";
@@ -1645,12 +1647,73 @@ function plainReturned(expr: ts.Expression): boolean {
   return arrow || returned;
 }
 
+function ownerName(expr: ts.Node): string | null {
+  let cur: ts.Node | undefined = expr;
+  while (cur) {
+    if (ts.isFunctionDeclaration(cur) && cur.name) return cur.name.text;
+    if (ts.isMethodDeclaration(cur) && ts.isIdentifier(cur.name)) return cur.name.text;
+    if ((ts.isArrowFunction(cur) || ts.isFunctionExpression(cur)) && cur.parent && ts.isVariableDeclaration(cur.parent) && cur.parent.initializer === cur && ts.isIdentifier(cur.parent.name)) return cur.parent.name.text;
+    if (ts.isFunctionExpression(cur) && cur.name && ts.isIdentifier(cur.name)) return cur.name.text;
+    cur = cur.parent;
+  }
+  return null;
+}
+
+function arrayArgument(expr: ts.Expression | undefined, name: string): boolean {
+  if (!expr) return false;
+  let cur = expr;
+  while (ts.isParenthesizedExpression(cur) || ts.isAsExpression(cur) || ts.isSatisfiesExpression(cur) || ts.isTypeAssertionExpression(cur) || ts.isNonNullExpression(cur) || ts.isAwaitExpression(cur)) cur = cur.expression;
+  return ts.isCallExpression(cur) && ts.isIdentifier(cur.expression) && cur.expression.text === name && cur.arguments.some((arg) => ts.isArrayLiteralExpression(arg));
+}
+
+/** A failing test says `name` is false for an array literal. A spec that wants arrays included does not. */
+function arraysExcluded(spec: PlainSpec | null, name: string | null): boolean {
+  if (!spec || !name) return false;
+  const titles = new Set(spec.failing.map((title) => title.trim()).filter(Boolean));
+  if (titles.size === 0) return false;
+  const sf = parseSource("spec.test.ts", spec.text);
+  const expectsFalse = (node: ts.Node): boolean => {
+    if (!ts.isCallExpression(node)) return false;
+    const callee = node.expression;
+    if (ts.isPropertyAccessExpression(callee) && ts.isCallExpression(callee.expression) && ts.isIdentifier(callee.expression.expression) && callee.expression.expression.text === "expect") {
+      const method = callee.name.text;
+      const expected = node.arguments[0];
+      return (method === "toBe" || method === "toEqual" || method === "toStrictEqual") && !!expected && expected.kind === ts.SyntaxKind.FalseKeyword && arrayArgument(callee.expression.arguments[0], name);
+    }
+    if (!ts.isPropertyAccessExpression(callee) || !ts.isIdentifier(callee.expression) || !ts.isIdentifier(callee.name)) return false;
+    const obj = callee.expression.text;
+    const method = callee.name.text;
+    const left = node.arguments[0];
+    const right = node.arguments[1];
+    if ((obj === "assert" || obj === "assertStrict") && (method === "equal" || method === "strictEqual" || method === "deepEqual" || method === "deepStrictEqual")) return !!right && right.kind === ts.SyntaxKind.FalseKeyword && arrayArgument(left, name);
+    if ((obj === "t" || obj === "tt") && method === "false") return arrayArgument(left, name);
+    if ((obj === "t" || obj === "tt") && (method === "is" || method === "deepEqual")) return !!right && right.kind === ts.SyntaxKind.FalseKeyword && arrayArgument(left, name);
+    return false;
+  };
+  let found = false;
+  const walk = (node: ts.Node, armed: boolean): void => {
+    let next = armed;
+    if (ts.isCallExpression(node) && node.arguments.length >= 2) {
+      const titleNode = node.arguments[0];
+      const title = titleNode && (ts.isStringLiteral(titleNode) || ts.isNoSubstitutionTemplateLiteral(titleNode)) ? titleNode.text : "";
+      const callee = node.expression;
+      const called = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name) ? callee.name.text : "";
+      if (title && titles.has(title) && (called === "test" || called === "it" || called === "serial" || called === "only")) next = true;
+    }
+    if (next && expectsFalse(node)) found = true;
+    ts.forEachChild(node, (child) => walk(child, next));
+  };
+  walk(sf, false);
+  return found;
+}
+
 /**
  * plain-object: a returned `ref !== null && typeof ref === "object"` still treats arrays as
- * objects. Offer `&& !Array.isArray(ref)`. A chain with any other term is left alone, so a
- * check that already excludes arrays, or that uses the prototype, is not edited.
+ * objects. Offer `&& !Array.isArray(ref)` only when a failing test says this function is false
+ * for an array. A chain with any other term is left alone, so a check that already excludes
+ * arrays, or that uses the prototype, is not edited. No failing spec, no edit.
  */
-function plainObject(n: ts.Node, sf: ts.SourceFile): string | null {
+function plainObject(n: ts.Node, sf: ts.SourceFile, spec: PlainSpec | null): string | null {
   if (!ts.isBinaryExpression(n) || n.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken || !plainReturned(n)) return null;
   const parts = andParts(n).map(unwrapParen);
   let typeRef: string | null = null;
@@ -1664,11 +1727,12 @@ function plainObject(n: ts.Node, sf: ts.SourceFile): string | null {
   let paired = true;
   paired = parts.length === 2 && !!typeRef && typeRef === nullRef; // cap-guard:plain-pair
   if (!paired || !typeRef) return null;
+  if (!arraysExcluded(spec, ownerName(n))) return null; // cap-guard:plain-spec
   return `${srcOf(sf, unwrapParen(n))} && !Array.isArray(${typeRef})`;
 }
 
 /** M168: every idiom candidate inside one site (no I/O); repair-v2 only. */
-export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: number): Mutation[] {
+export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: number, spec: PlainSpec | null = null): Mutation[] {
   const out: Mutation[] = [];
   const fixed = fixedNames(sf);
   const visit = (n: ts.Node) => {
@@ -1682,7 +1746,7 @@ export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: numbe
     add(undefinedKeepsKey(n, sf), "undefined-keeps-key");
     add(ownKeys(n, sf), "own-keys");
     add(enumValues(n, sf), "enum-values");
-    add(plainObject(n, sf), "plain-object");
+    add(plainObject(n, sf, spec), "plain-object");
     ts.forEachChild(n, visit);
   };
   visit(sf);
@@ -1980,7 +2044,7 @@ export function candidateFor(files: ReadonlyMap<string, string>, muts: Mutation[
  * (template, then located site, then position), kept when it is a changed, parsing, new edit, at most MAX_CANDIDATES.
  * `seen` collects the keys (shared with the combination step). M167: model-v1's scoring job builds the same list.
  */
-export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<string, string>, seen: Set<string> = new Set(), v2 = false, skip: ReadonlySet<number> = new Set()): Candidate[] {
+export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<string, string>, seen: Set<string> = new Set(), v2 = false, skip: ReadonlySet<number> = new Set(), spec: PlainSpec | null = null): Candidate[] {
   const all: Mutation[] = [];
   const exported = new Map<string, Set<string>>();
   sites.forEach((site, i) => {
@@ -1998,7 +2062,7 @@ export function repairCandidates(sites: readonly Site[], files: ReadonlyMap<stri
       exported.set(site.path, ex);
     }
     all.push(...mutationsIn(sf, site, i, exported.get(site.path)!));
-    if (v2) all.push(...idiomMutationsIn(sf, site, i)); // m168-guard:idioms-v2-only
+    if (v2) all.push(...idiomMutationsIn(sf, site, i, spec)); // m168-guard:idioms-v2-only
     if (v2) all.push(...constMutationsIn(sf, site, i)); // m173-guard:cv-v2-only
     if (v2) all.push(...sstubMutationsIn(sf, site, i)); // m176-guard:sstub-v2-only
     if (v2) all.push(...stmtMutationsIn(sf, site, i)); // m177-guard:stmt-v2-only
@@ -2282,12 +2346,18 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
   let redo: Candidate[] = []; // M179: tried candidates to try again on the current anchor
   let anchorKey: string | null = null;
   let baseFailing: readonly string[] = [];
+  let plainSpec: PlainSpec | null = null;
   return {
     name: opts.name ?? (opts.v2 ? REPAIR_PROPOSER_V2 : REPAIR_PROPOSER),
     // M174: repair-v2 only (never repair-v1 or a reranked list such as model-v1's): the loop may then ask it for a
     // suite that does not load, giving only its load diagnostics
     loadRepair: opts.v2 === true && !opts.order, // m174-guard:lr-v2-only
-    prepare(search, input) { sites = locate(search, { request: input.request, failing: input.failing }, opts.v2 ? CALLEE_DEPTH.v2 : CALLEE_DEPTH.v1); baseFailing = [...(input.baseFailing ?? input.failing)]; },
+    prepare(search, input) {
+      sites = locate(search, { request: input.request, failing: input.failing }, opts.v2 ? CALLEE_DEPTH.v2 : CALLEE_DEPTH.v1);
+      baseFailing = [...(input.baseFailing ?? input.failing)];
+      const names = input.baseFailing ?? input.failing;
+      plainSpec = input.specText && names.length > 0 ? { text: input.specText, failing: [...names] } : null;
+    },
     next(input) {
       if (input.loadDiagnostics && opts.v2 === true) {
         // a suite that did not load: only load-repair candidates, one per attempt (the other templates have no signal)
@@ -2299,7 +2369,7 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
       if (!sites || sites.length === 0) return { refuse: "NO_EDIT" }; // nothing the request names was located: no edit anywhere
       const files = new Map(input.files.map((f) => [f.path, f.content] as const));
       if (!queue) {
-        queue = repairCandidates(sites, files, seen, opts.v2 === true);
+        queue = repairCandidates(sites, files, seen, opts.v2 === true, new Set(), plainSpec);
         if (opts.order) queue = opts.order(queue);
         if (queue.length === 0) return { refuse: "NO_EDIT" };
       }
@@ -2333,7 +2403,7 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
         const skipKeys = new Set<string>();
         for (const c of tried) skipKeys.add(c.key); // m178-guard:rb-tried
         for (const c of deferred) skipKeys.add(c.key); // m179-guard:rb-deferred
-        const live = repairCandidates(sites, files, skipKeys, true, demoted);
+        const live = repairCandidates(sites, files, skipKeys, true, demoted, plainSpec);
         const rest = queue.filter((c) => !live.some((x) => x.key === c.key));
         const next = [...live, ...rest];
         if (next.length > MAX_CANDIDATES) next.length = MAX_CANDIDATES; // m178-guard:rb-cap
@@ -2350,7 +2420,7 @@ export function repairProposer(opts: RepairOptions = {}): { name: string; readon
         for (const c of tried) skipKeys.add(c.key); // m191-guard:pr-tried
         for (const c of deferred) skipKeys.add(c.key);
         const others = new Set<number>(sites.map((_, i) => i).filter((i) => !fixAt.includes(i)));
-        const front = repairCandidates(sites, files, skipKeys, true, others);
+        const front = repairCandidates(sites, files, skipKeys, true, others, plainSpec);
         const rest = queue.filter((c) => !front.some((x) => x.key === c.key));
         const next = [...front, ...rest];
         if (next.length > MAX_CANDIDATES) next.length = MAX_CANDIDATES; // m191-guard:pr-cap
