@@ -1,0 +1,21 @@
+
+  ✖ unrelated Test failed via `t.fail()`
+  ─
+
+  unrelated
+
+  test/serial-ff.cjs:2
+
+   1: const test = require('ava');                   
+   2: test.serial('unrelated', t => { t.fail(); });  
+   3: test.serial('target warm', t => { t.pass(); });
+
+  Test failed via `t.fail()`
+
+  › test/serial-ff.cjs:2:35
+
+  ─
+
+  `--fail-fast` is on. At least 1 test was skipped.
+
+  1 test failed

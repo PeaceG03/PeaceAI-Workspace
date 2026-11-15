@@ -1,0 +1,33 @@
+
+  ✘ [fail]: other › other file Test failed via `t.fail()`
+
+  Uncaught exception in test/crash.js
+
+  test/crash.js:1
+
+   1: throw new TypeError("Cannot read properties of undefined (reading 'emptyS…
+   2:                                                                           
+
+  TypeError: Cannot read properties of undefined (reading 'emptyString')
+
+  › file://test/crash.js:1:7
+
+  ✘ test/crash.js exited with a non-zero exit code: 1
+  ─
+
+  other › other file
+
+  test/other.js:2
+
+   1: import test from 'ava';                
+   2: test('other file', t => { t.fail(); });
+   3:                                        
+
+  Test failed via `t.fail()`
+
+  › file://test/other.js:2:29
+
+  ─
+
+  1 test failed
+  1 uncaught exception

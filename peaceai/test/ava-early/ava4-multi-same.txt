@@ -1,0 +1,32 @@
+
+  Uncaught exception in test/crash.cjs
+
+  test/crash.cjs:1
+
+   1: throw new TypeError("Cannot read properties of undefined (reading 'emptyS…
+   2:                                                                           
+
+  TypeError: Cannot read properties of undefined (reading 'emptyString')
+
+  › Object.<anonymous> (test/crash.cjs:1:7)
+
+  ✖ other › target warm Test failed via `t.fail()`
+  ✖ test/crash.cjs exited with a non-zero exit code: 1
+  ─
+
+  other › target warm
+
+  test/other.cjs:2
+
+   1: const test = require('ava');            
+   2: test('target warm', t => { t.fail(); });
+   3:                                         
+
+  Test failed via `t.fail()`
+
+  › test/other.cjs:2:30
+
+  ─
+
+  1 test failed
+  1 uncaught exception

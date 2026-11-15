@@ -1,0 +1,20 @@
+
+  ✖ unrelated Test failed via `t.fail()`
+  ✖ test/serial.cjs exited with a non-zero exit code: 7
+  ─
+
+  unrelated
+
+  test/serial.cjs:2
+
+   1: const test = require('ava');                    
+   2: test.serial('unrelated', t => { t.fail(); });   
+   3: test.serial('stop', () => { process.exit(7); });
+
+  Test failed via `t.fail()`
+
+  › test/serial.cjs:2:35
+
+  ─
+
+  1 test failed

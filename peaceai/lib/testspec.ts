@@ -101,6 +101,8 @@ export interface SpecInput {
   restoreTree?: () => boolean;
   /** Defaults to SPEC_ATTEMPT_CAP. Larger values are clamped down. */
   maxAttempts?: number;
+  /** The test title this run is grading. A failing title that is not this one does not cancel an early exit. */
+  testTitle?: string;
 }
 
 export type SpecBlock = "UNSAFE_ENV" | "SANDBOX_POISON";
@@ -331,6 +333,9 @@ export function expectationsIn(testFile: string, text: string, sourcePattern: st
 export function failingTestNames(output: string): string[] {
   const names: string[] = [];
   const banner = (title: string): boolean => {
+    let fileForm = true;
+    fileForm = /^(?:\S+\.\w+)\s+exited (?:due to an error|with a non-zero exit code)\b/.test(title); // spec-guard:ava-banner-file
+    if (!fileForm) return false;
     if (/\bexited due to an error\b/.test(title)) return true; // spec-guard:ava-banner-error
     if (/\bexited with a non-zero exit code\b/.test(title)) return true; // spec-guard:ava-banner
     return false;
@@ -372,21 +377,54 @@ export function classifyRunnerOutput(output: string, code: number | null): "runn
   return "assertion_unparsed";
 }
 
-const AVA_EARLY_BANNER = /exited due to an error|exited with a non-zero exit code|Uncaught exception in /;
-
 /**
  * Ava's worker-exit banner, when no test result was reported. The return value is the worker's own
  * error line, or a short fallback when the banner is the only line. An assertion failure is not one.
+ * Only a `✖` or `✘` line whose title is exactly the target is that test's own result. Ava's
+ * ` Test failed via \`t.fail()\`` suffix is removed first. A longer title, a title that only contains
+ * the target in the middle, and a `<file> › <title>` line from another file are not the target's line.
+ * A worker banner is `✖ <file> exited with a non-zero exit code`, not a test whose title is that phrase.
  *
  * A TS2339 or TS2769 line here means the TypeScript compiler stopped the worker before any test body
  * ran. The line names a type mismatch. It does not say whether the test, the declaration, or a caller
  * is what should change, and there is no assertion value to repair toward. That is not turned into an
  * edit. The caller reports CANT_DO_YET_AVA_EARLY_EXIT and keeps the compiler line as the diagnostic.
  */
-export function avaEarlyDetail(output: string, code: number | null): string | null {
+function workerStopped(output: string): boolean {
+  if (/^[ \t]*[✘✖][ \t]+\S+\.\w+ exited due to an error\b/m.test(output)) return true;
+  if (/^[ \t]*[✘✖][ \t]+\S+\.\w+ exited with a non-zero exit code\b/m.test(output)) return true;
+  if (/^Uncaught exception in \S/m.test(output)) return true;
+  if (/Exiting due to process\.exit\(\)/.test(output)) return true;
+  if (/`--fail-fast` is on/.test(output)) return true;
+  return false;
+}
+
+/** Ava prints `✖ <title> <message>` on one line when the message is `Test failed via \`t.fail()\``. */
+function avaReportedTitle(name: string): string {
+  const suffix = " Test failed via `t.fail()`";
+  const trimmed = name.trim();
+  return trimmed.endsWith(suffix) ? trimmed.slice(0, -suffix.length) : trimmed;
+}
+
+function ownResult(names: readonly string[], targetTitle: string | undefined): boolean {
+  if (targetTitle === undefined) return false;
+  return names.some((name) => {
+    const title = avaReportedTitle(name);
+    let contained = title.includes(targetTitle);
+    contained = title === targetTitle; // spec-guard:ava-title-mid
+    let extended = title === targetTitle || title.startsWith(`${targetTitle} `);
+    extended = title === targetTitle; // spec-guard:ava-title-prefix
+    return contained || extended;
+  });
+}
+
+export function avaEarlyDetail(output: string, code: number | null, targetTitle?: string): string | null {
   if (code === null || code === 0) return null;
-  if (!AVA_EARLY_BANNER.test(output)) return null;
-  if (/✘ \[fail\]|✖ \[fail\]|^not ok \d+/m.test(output) || /AssertionError|ERR_ASSERTION/.test(output)) return null;
+  const names = failingTestNames(output);
+  let own = names.length > 0;
+  own = ownResult(names, targetTitle); // spec-guard:ava-unrelated
+  if (own) return null;
+  if (!workerStopped(output)) return null;
   const lines = output.split("\n").map((line) => line.trim()).filter(Boolean);
   const detail = lines.find((line) => /^(?:TypeError|SyntaxError|ReferenceError|RangeError|Error)\b/.test(line)
     || /error TS\d+/.test(line)
@@ -1217,6 +1255,23 @@ export function commandNeedsInstall(command: readonly string[]): boolean {
   return command.some((part) => part.includes("node_modules"));
 }
 
+function soleTestTitle(text: string | null): string | undefined {
+  if (!text) return undefined;
+  const sf = ts.createSourceFile("recorded.ts", text, ts.ScriptTarget.Latest, true);
+  const titles: string[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node) && node.arguments.length >= 1) {
+      const callee = node.expression;
+      const name = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name) ? callee.name.text : "";
+      const title = node.arguments[0];
+      if ((name === "test" || name === "serial" || name === "only" || name === "it") && title && (ts.isStringLiteral(title) || ts.isNoSubstitutionTemplateLiteral(title))) titles.push(title.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return titles.length === 1 ? titles[0] : undefined;
+}
+
 export function runTestSpec(input: SpecInput): SpecResult {
   const cap = clampSpecAttempts(input.maxAttempts);
   const deny = input.denyPatterns ?? [];
@@ -1242,7 +1297,7 @@ export function runTestSpec(input: SpecInput): SpecResult {
     if (note.lines[0] !== missingLoader) note.lines = [missingLoader, ...note.lines].slice(0, 5);
     return { status: "cant", reason: "CANT_DO_YET_LOADER_MISSING", attempts: 0, diagnostic: note };
   }
-  const early = avaEarlyDetail(output, first.code);
+  const early = avaEarlyDetail(output, first.code, input.testTitle ?? soleTestTitle(read(input.root, input.testFile)));
   if (early) {
     const note = diag("ava_early_exit", first.code, `${early}\n${output}`);
     if (note.lines[0] !== early) note.lines = [early, ...note.lines].slice(0, 5);

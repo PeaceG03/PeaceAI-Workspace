@@ -1,0 +1,19 @@
+
+  ✘ [fail]: exited with a non-zero exit code Test failed via `t.fail()`
+  ─
+
+  exited with a non-zero exit code
+
+  test/banner-title.js:2
+
+   1: import test from 'ava';                                      
+   2: test('exited with a non-zero exit code', t => { t.fail(); });
+   3:                                                              
+
+  Test failed via `t.fail()`
+
+  › file://test/banner-title.js:2:51
+
+  ─
+
+  1 test failed
