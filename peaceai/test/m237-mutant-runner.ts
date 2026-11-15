@@ -205,6 +205,24 @@ if (suite === "spec") {
     assert.notEqual(mod.avaEarlyDetail(anywhere, 1, "target warm"), null);
     assert.equal(mod.avaEarlyDetail(own, 1, "target warm"), null);
   });
+  const afterSpan = "  ✖ target warm Test failed via `t.fail()`\n✖ test/case.cjs exited with a non-zero exit code: 7\n  ─\n\n  other title\n\n  test/other.cjs:2\n  ─\n\n  target warm\n\n  test/case.cjs:2\n";
+  const insideWithoutMarker = "✖ test/case.cjs exited with a non-zero exit code: 7\n  ─\n\n  target warm\n\n  test/case.cjs:2\n  ─\n";
+  const printed = "  ✖ test/case.cjs exited with a non-zero exit code: 7\n  ─\n\n  1 test passed\n✖ target warm\n";
+  check("ava-span", () => {
+    assert.notEqual(mod.avaEarlyDetail(afterSpan, 1, "target warm"), null);
+    assert.notEqual(mod.avaEarlyDetail(insideWithoutMarker, 1, "target warm"), null);
+    assert.equal(mod.avaEarlyDetail(own, 1, "target warm"), null);
+  });
+  check("ava-prior", () => {
+    assert.notEqual(mod.avaEarlyDetail(insideWithoutMarker, 1, "target warm"), null);
+    assert.notEqual(mod.avaEarlyDetail(afterSpan, 1, "target warm"), null);
+    assert.equal(mod.avaEarlyDetail(own, 1, "target warm"), null);
+  });
+  check("ava-reporter", () => {
+    assert.notEqual(mod.avaEarlyDetail(printed, 1, "target warm"), null);
+    assert.deepEqual(mod.failingTestNames(printed), []);
+    assert.equal(mod.avaEarlyDetail(own, 1, "target warm"), null);
+  });
 }
 
 process.stdout.write(JSON.stringify({ failed, crashed }) + "\n");

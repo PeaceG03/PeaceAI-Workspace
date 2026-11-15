@@ -280,7 +280,7 @@ test("real ava output counts only the target title, and a banner phrase can be a
   for (const file of ["ava4-own-exit.txt", "ava6-own-exit.txt"]) {
     assert.equal(avaEarlyDetail(avaFixture(file), 1, "warm of one"), null, file);
   }
-  for (const file of ["ava4-forge.txt", "ava6-forge.txt", "ava4-timeout-forge.txt", "ava6-timeout-forge.txt", "ava4-stdout-file.txt", "ava6-stdout-file.txt", "ava4-stdout-lead.txt", "ava6-stdout-lead.txt", "ava4-stdout-time.txt", "ava6-stdout-time.txt", "ava4-stdout-prefix.txt", "ava6-stdout-prefix.txt"]) {
+  for (const file of ["ava4-forge.txt", "ava6-forge.txt", "ava4-timeout-forge.txt", "ava6-timeout-forge.txt", "ava4-stdout-file.txt", "ava6-stdout-file.txt", "ava4-stdout-lead.txt", "ava6-stdout-lead.txt", "ava4-stdout-time.txt", "ava6-stdout-time.txt", "ava4-stdout-prefix.txt", "ava6-stdout-prefix.txt", "ava4-mark-log.txt", "ava6-mark-log.txt", "ava4-mark-err.txt", "ava6-mark-err.txt"]) {
     assert.notEqual(avaEarlyDetail(avaFixture(file), 1, target), null, file);
   }
   for (const file of ["ava4-timeout.txt", "ava6-timeout.txt", "ava4-throw.txt", "ava6-throw.txt"]) {
@@ -291,6 +291,34 @@ test("real ava output counts only the target title, and a banner phrase can be a
     assert.equal(avaEarlyDetail(output, 1, phrase), null, file);
     assert.ok(failingTestNames(output).some((name) => name === phrase || name.startsWith(`${phrase} `)), file);
   }
+});
+
+test("the summary span and the prior fail line each reject one forged detail", () => {
+  const afterSpan = [
+    "  ✖ target warm Test failed via `t.fail()`",
+    "✖ test/case.cjs exited with a non-zero exit code: 7",
+    "  ─",
+    "",
+    "  other title",
+    "",
+    "  test/other.cjs:2",
+    "  ─",
+    "",
+    "  target warm",
+    "",
+    "  test/case.cjs:2",
+  ].join("\n");
+  const insideWithoutMarker = [
+    "✖ test/case.cjs exited with a non-zero exit code: 7",
+    "  ─",
+    "",
+    "  target warm",
+    "",
+    "  test/case.cjs:2",
+    "  ─",
+  ].join("\n");
+  assert.notEqual(avaEarlyDetail(afterSpan, 1, "target warm"), null);
+  assert.notEqual(avaEarlyDetail(insideWithoutMarker, 1, "target warm"), null);
 });
 
 test("an ava test that threw is reduced, and a crash before any test is not", (t) => {

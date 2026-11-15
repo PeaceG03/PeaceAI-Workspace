@@ -1,0 +1,7 @@
+
+  ✔ unrelated
+  ✖ test/mark-err-fail.cjs exited with a non-zero exit code: 7
+  ─
+
+  1 test passed
+  ✘ [fail]: target warm

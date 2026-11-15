@@ -331,6 +331,10 @@ export function expectationsIn(testFile: string, text: string, sourcePattern: st
  * with no cross. None of those summary or banner lines is a test title.
  */
 export function failingTestNames(output: string): string[] {
+  const lines = output.split("\n");
+  const open = lines.findIndex((line) => line.trim() === "─");
+  let source = output;
+  source = open < 0 ? output : lines.slice(0, open).join("\n"); // spec-guard:ava-reporter
   const names: string[] = [];
   const banner = (title: string): boolean => {
     let fileForm = true;
@@ -345,18 +349,18 @@ export function failingTestNames(output: string): string[] {
     if (/^\d+ test failed\b/.test(title)) return true; // spec-guard:ava-summary-one
     return false;
   };
-  for (const match of output.matchAll(/^not ok \d+ - (.+)$/gm)) names.push(match[1]!.trim());
+  for (const match of source.matchAll(/^not ok \d+ - (.+)$/gm)) names.push(match[1]!.trim());
   let avaFail: RegExp | null = null;
   avaFail = /^[ \t]*✘ \[fail\]:[ \t]*(.+)$/gm; // spec-guard:ava-fail
-  if (avaFail) for (const match of output.matchAll(avaFail)) {
+  if (avaFail) for (const match of source.matchAll(avaFail)) {
     const title = match[1]!.trim();
     if (banner(title) || summary(title)) continue;
     names.push(title);
   }
-  for (const match of output.matchAll(/^FAIL\s+\S+\s+>\s+(.+)$/gm)) names.push(match[1]!.trim());
+  for (const match of source.matchAll(/^FAIL\s+\S+\s+>\s+(.+)$/gm)) names.push(match[1]!.trim());
   let avaCross: RegExp | null = null;
   avaCross = /^[ \t]*✖[ \t]+(.+)$/gm; // spec-guard:ava-cross
-  if (avaCross) for (const match of output.matchAll(avaCross)) {
+  if (avaCross) for (const match of source.matchAll(avaCross)) {
     const title = match[1]!.trim();
     if (banner(title) || summary(title)) continue;
     names.push(title);
@@ -384,7 +388,9 @@ export function classifyRunnerOutput(output: string, code: number | null): "runn
  * a different assertion, and the `✖` line is then the same text as the target's own `t.fail()`. A detail
  * title counts only when a `✖` or `✘ [fail]` line before the summary marks that same title, and the
  * title line sits in the failure summary between Ava's rules, followed by `file:line`,
- * `Error: Test timeout exceeded`, or `Error thrown in test:`. Stdout cannot invent that pair. The line
+ * `Error: Test timeout exceeded`, or `Error thrown in test:`. A fail marker counts only before
+ * the first summary rule. The practice log is reporter stdout followed by test stderr, so a
+ * marker a test prints follows that rule and is not a result. The line
  * must equal the target. A longer title, a title that only contains the target, and a `<file> › <title>`
  * line from another file are not the target's line. The target's own timeout or thrown error counts when
  * that marked detail line is the target.
@@ -424,7 +430,8 @@ function failureSummary(lines: readonly string[]): { open: number; close: number
  */
 function avaDetailTitles(output: string): string[] {
   const lines = output.split("\n");
-  const span = failureSummary(lines);
+  let span: { open: number; close: number } | null = { open: -1, close: lines.length };
+  span = failureSummary(lines); // spec-guard:ava-span
   if (!span) return [];
   const titles: string[] = [];
   for (let i = span.open + 1; i < span.close; i++) {
@@ -471,7 +478,9 @@ function ownResult(output: string, names: readonly string[], targetTitle: string
   const lines = output.split("\n");
   const span = failureSummary(lines);
   const prior = failingTestNames(span ? lines.slice(0, span.open).join("\n") : output);
-  const marked = avaDetailTitles(output).filter((title) => prior.some((name) => failMarksTitle(name, title)));
+  const details = avaDetailTitles(output);
+  let marked = details;
+  marked = details.filter((title) => prior.some((name) => failMarksTitle(name, title))); // spec-guard:ava-prior
   let labels: readonly string[] = names;
   labels = [...names, ...marked]; // spec-guard:ava-own-detail
   return labels.some((label) => labelMatches(label, targetTitle));
