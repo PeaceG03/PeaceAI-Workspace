@@ -1,0 +1,12 @@
+
+  ✖ target warm Test timeout exceeded
+  ✖ test/time.cjs exited with a non-zero exit code: 7
+  ─
+
+  target warm
+
+  Error: Test timeout exceeded
+
+  ─
+
+  1 test failed

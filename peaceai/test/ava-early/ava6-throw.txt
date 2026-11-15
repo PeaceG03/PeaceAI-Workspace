@@ -1,0 +1,39 @@
+
+  ✘ [fail]: target warm Error thrown in test
+  ✘ Exiting due to process.exit() when running test/throw.js
+
+  Error: Unexpected process.exit()
+      at file:///tmp/ava-fix/6/test/throw.js:3:37
+      at Test.callFn (file:///tmp/ava-fix/6/node_modules/ava/lib/test.js:525:26)
+      at Test.run (file:///tmp/ava-fix/6/node_modules/ava/lib/test.js:534:33)
+      at Runner.runSingle (file:///tmp/ava-fix/6/node_modules/ava/lib/runner.js:281:33)
+      at Runner.runTest (file:///tmp/ava-fix/6/node_modules/ava/lib/runner.js:363:30)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async Promise.all (index 1)
+      at async Runner.start (file:///tmp/ava-fix/6/node_modules/ava/lib/runner.js:536:15)
+
+  ✘ test/throw.js exited with a non-zero exit code: 7
+  ─
+
+  target warm
+
+  Error thrown in test:
+
+  Error {
+    message: 'nope',
+  }
+
+  Error: nope
+      at file:///tmp/ava-fix/6/test/throw.js:2:42
+      at Test.callFn (file:///tmp/ava-fix/6/node_modules/ava/lib/test.js:525:26)
+      at Test.run (file:///tmp/ava-fix/6/node_modules/ava/lib/test.js:534:33)
+      at Runner.runSingle (file:///tmp/ava-fix/6/node_modules/ava/lib/runner.js:281:33)
+      at Runner.runTest (file:///tmp/ava-fix/6/node_modules/ava/lib/runner.js:363:30)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async file:///tmp/ava-fix/6/node_modules/ava/lib/runner.js:499:24
+      at async Promise.all (index 1)
+      at async Runner.start (file:///tmp/ava-fix/6/node_modules/ava/lib/runner.js:536:15)
+
+  ─
+
+  1 test failed

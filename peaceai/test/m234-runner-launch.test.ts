@@ -280,6 +280,12 @@ test("real ava output counts only the target title, and a banner phrase can be a
   for (const file of ["ava4-own-exit.txt", "ava6-own-exit.txt"]) {
     assert.equal(avaEarlyDetail(avaFixture(file), 1, "warm of one"), null, file);
   }
+  for (const file of ["ava4-forge.txt", "ava6-forge.txt", "ava4-timeout-forge.txt", "ava6-timeout-forge.txt"]) {
+    assert.notEqual(avaEarlyDetail(avaFixture(file), 1, target), null, file);
+  }
+  for (const file of ["ava4-timeout.txt", "ava6-timeout.txt", "ava4-throw.txt", "ava6-throw.txt"]) {
+    assert.equal(avaEarlyDetail(avaFixture(file), 1, target), null, file);
+  }
   for (const file of ["ava4-banner-title.txt", "ava6-banner-title.txt"]) {
     const output = avaFixture(file);
     assert.equal(avaEarlyDetail(output, 1, phrase), null, file);

@@ -380,9 +380,12 @@ export function classifyRunnerOutput(output: string, code: number | null): "runn
 /**
  * Ava's worker-exit banner, when no test result was reported. The return value is the worker's own
  * error line, or a short fallback when the banner is the only line. An assertion failure is not one.
- * Only a `✖` or `✘` line whose title is exactly the target is that test's own result. Ava's
- * ` Test failed via \`t.fail()\`` suffix is removed first. A longer title, a title that only contains
- * the target in the middle, and a `<file> › <title>` line from another file are not the target's line.
+ * The failing line's trailing message is not removed. A test may be titled with that message and fail
+ * a different assertion, and the `✖` line is then the same text as the target's own `t.fail()`. The
+ * title is the detail block's own line, followed by `file:line`, `Error: Test timeout exceeded`, or
+ * `Error thrown in test:`. That line must equal the target. A longer title, a title that only contains
+ * the target, and a `<file> › <title>` line from another file are not the target's line. The target's
+ * own timeout or thrown error counts when that detail line is the target.
  * A worker banner is `✖ <file> exited with a non-zero exit code`, not a test whose title is that phrase.
  *
  * A TS2339 or TS2769 line here means the TypeScript compiler stopped the worker before any test body
@@ -399,30 +402,58 @@ function workerStopped(output: string): boolean {
   return false;
 }
 
-/** Ava prints `✖ <title> <message>` on one line when the message is `Test failed via \`t.fail()\``. */
-function avaReportedTitle(name: string): string {
-  const suffix = " Test failed via `t.fail()`";
-  const trimmed = name.trim();
-  return trimmed.endsWith(suffix) ? trimmed.slice(0, -suffix.length) : trimmed;
+const AVA_TRAILING = [" Test failed via `t.fail()`", " Test timeout exceeded", " Error thrown in test"];
+
+/**
+ * Ava reprints the test title on its own indented line, then a source location or the timeout or
+ * thrown-error message. The `✖` line above it appends the message, so the title is this line.
+ */
+function avaDetailTitles(output: string): string[] {
+  const lines = output.split("\n");
+  const titles: string[] = [];
+  const diagnostic = new Set(["Error: Test timeout exceeded", "Error thrown in test:", "Error thrown in test"]);
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i] ?? "";
+    if (!raw.startsWith("  ") || raw.startsWith("   ") || /^  [✘✖✔›]/.test(raw)) continue;
+    const title = raw.slice(2);
+    if (title.length === 0 || title !== title.trim() || diagnostic.has(title)) continue;
+    let j = i + 1;
+    while (j < lines.length && (lines[j] ?? "").trim() === "") j++;
+    const next = lines[j] ?? "";
+    if (!next.startsWith("  ") || next.startsWith("   ")) continue;
+    const rest = next.slice(2);
+    if (/^\S+:\d+$/.test(rest) || diagnostic.has(rest)) titles.push(title);
+  }
+  return titles;
 }
 
-function ownResult(names: readonly string[], targetTitle: string | undefined): boolean {
+function labelMatches(label: string, targetTitle: string): boolean {
+  let title = label.trim();
+  for (const suffix of AVA_TRAILING) {
+    if (title.endsWith(suffix)) title = title.slice(0, -suffix.length);
+  }
+  title = label.trim(); // spec-guard:ava-suffix-forge
+  let file = title.replace(/^.+ › /, "");
+  file = title; // spec-guard:ava-file-prefix
+  let contained = file.includes(targetTitle);
+  contained = file === targetTitle; // spec-guard:ava-title-mid
+  let extended = file === targetTitle || file.startsWith(`${targetTitle} `);
+  extended = file === targetTitle; // spec-guard:ava-title-prefix
+  return contained || extended;
+}
+
+function ownResult(output: string, names: readonly string[], targetTitle: string | undefined): boolean {
   if (targetTitle === undefined) return false;
-  return names.some((name) => {
-    const title = avaReportedTitle(name);
-    let contained = title.includes(targetTitle);
-    contained = title === targetTitle; // spec-guard:ava-title-mid
-    let extended = title === targetTitle || title.startsWith(`${targetTitle} `);
-    extended = title === targetTitle; // spec-guard:ava-title-prefix
-    return contained || extended;
-  });
+  let labels: readonly string[] = names;
+  labels = [...names, ...avaDetailTitles(output)]; // spec-guard:ava-own-detail
+  return labels.some((label) => labelMatches(label, targetTitle));
 }
 
 export function avaEarlyDetail(output: string, code: number | null, targetTitle?: string): string | null {
   if (code === null || code === 0) return null;
   const names = failingTestNames(output);
   let own = names.length > 0;
-  own = ownResult(names, targetTitle); // spec-guard:ava-unrelated
+  own = ownResult(output, names, targetTitle); // spec-guard:ava-unrelated
   if (own) return null;
   if (!workerStopped(output)) return null;
   const lines = output.split("\n").map((line) => line.trim()).filter(Boolean);

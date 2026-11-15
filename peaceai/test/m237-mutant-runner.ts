@@ -165,9 +165,14 @@ if (suite === "spec") {
     assert.deepEqual(mod.failingTestNames("  ✖ exited with a non-zero exit code Test failed via `t.fail()`"), ["exited with a non-zero exit code Test failed via `t.fail()`"]);
     assert.deepEqual(mod.failingTestNames("✖ test/oven.test.ts exited with a non-zero exit code: 1"), []);
   });
-  const prefix = "  ✖ target warm extra Test failed via `t.fail()`\n✖ test/case.cjs exited with a non-zero exit code: 7";
-  const mid = "  ✖ see target warm inside Test failed via `t.fail()`\n✖ test/case.cjs exited with a non-zero exit code: 7";
-  const own = "  ✖ target warm Test failed via `t.fail()`\n✖ test/case.cjs exited with a non-zero exit code: 7";
+  const prefix = "  ✖ target warm extra Test failed via `t.fail()`\n✖ test/case.cjs exited with a non-zero exit code: 7\n\n  target warm extra\n\n  test/case.cjs:3\n";
+  const mid = "  ✖ see target warm inside Test failed via `t.fail()`\n✖ test/case.cjs exited with a non-zero exit code: 7\n\n  see target warm inside\n\n  test/case.cjs:2\n";
+  const own = "  ✖ target warm Test failed via `t.fail()`\n✖ test/case.cjs exited with a non-zero exit code: 7\n\n  target warm\n\n  test/case.cjs:2\n";
+  const forge = "  ✖ target warm Test failed via `t.fail()` \n✖ test/forge.cjs exited with a non-zero exit code: 7\n\n  target warm Test failed via `t.fail()`\n\n  test/forge.cjs:2\n\n  Value is not `true`:\n";
+  const timeforge = "  ✖ target warm Test timeout exceeded \n✖ test/timeforge.cjs exited with a non-zero exit code: 7\n\n  target warm Test timeout exceeded\n\n  test/timeforge.cjs:2\n\n  Value is not `true`:\n";
+  const timeout = "  ✖ target warm Test timeout exceeded\n✖ test/time.cjs exited with a non-zero exit code: 7\n\n  target warm\n\n  Error: Test timeout exceeded\n";
+  const thrown = "  ✖ target warm Error thrown in test\n✖ test/throw.cjs exited with a non-zero exit code: 7\n\n  target warm\n\n  Error thrown in test:\n";
+  const otherFile = "  ✖ other › target warm Test failed via `t.fail()`\n✖ test/crash.cjs exited with a non-zero exit code: 1\n\n  other › target warm\n\n  test/other.cjs:2\n";
   check("ava-title-prefix", () => {
     assert.notEqual(mod.avaEarlyDetail(prefix, 1, "target warm"), null);
     assert.equal(mod.avaEarlyDetail(own, 1, "target warm"), null);
@@ -175,6 +180,20 @@ if (suite === "spec") {
   check("ava-title-mid", () => {
     assert.notEqual(mod.avaEarlyDetail(mid, 1, "target warm"), null);
     assert.equal(mod.avaEarlyDetail(own, 1, "target warm"), null);
+  });
+  check("ava-suffix-forge", () => {
+    assert.notEqual(mod.avaEarlyDetail(forge, 1, "target warm"), null);
+    assert.notEqual(mod.avaEarlyDetail(timeforge, 1, "target warm"), null);
+    assert.equal(mod.avaEarlyDetail(own, 1, "target warm"), null);
+  });
+  check("ava-file-prefix", () => {
+    assert.notEqual(mod.avaEarlyDetail(otherFile, 1, "target warm"), null);
+    assert.equal(mod.avaEarlyDetail(own, 1, "target warm"), null);
+  });
+  check("ava-own-detail", () => {
+    assert.equal(mod.avaEarlyDetail(timeout, 1, "target warm"), null);
+    assert.equal(mod.avaEarlyDetail(thrown, 1, "target warm"), null);
+    assert.notEqual(mod.avaEarlyDetail(forge, 1, "target warm"), null);
   });
 }
 

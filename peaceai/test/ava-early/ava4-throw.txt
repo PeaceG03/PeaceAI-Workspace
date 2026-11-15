@@ -1,0 +1,24 @@
+
+  ✖ target warm Error thrown in test
+  ✖ test/throw.cjs exited with a non-zero exit code: 7
+  ─
+
+  target warm
+
+  test/throw.cjs:2
+
+   1: const test = require('ava');                                   
+   2: test.serial('target warm', () => { throw new Error('nope'); });
+   3: test.serial('stop', () => { process.exit(7); });               
+
+  Error thrown in test:
+
+  Error {
+    message: 'nope',
+  }
+
+  › test/throw.cjs:2:42
+
+  ─
+
+  1 test failed
