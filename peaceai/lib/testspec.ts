@@ -381,11 +381,13 @@ export function classifyRunnerOutput(output: string, code: number | null): "runn
  * Ava's worker-exit banner, when no test result was reported. The return value is the worker's own
  * error line, or a short fallback when the banner is the only line. An assertion failure is not one.
  * The failing line's trailing message is not removed. A test may be titled with that message and fail
- * a different assertion, and the `✖` line is then the same text as the target's own `t.fail()`. The
- * title is the detail block's own line, followed by `file:line`, `Error: Test timeout exceeded`, or
- * `Error thrown in test:`. That line must equal the target. A longer title, a title that only contains
- * the target, and a `<file> › <title>` line from another file are not the target's line. The target's
- * own timeout or thrown error counts when that detail line is the target.
+ * a different assertion, and the `✖` line is then the same text as the target's own `t.fail()`. A detail
+ * title counts only when a `✖` or `✘ [fail]` line before the summary marks that same title, and the
+ * title line sits in the failure summary between Ava's rules, followed by `file:line`,
+ * `Error: Test timeout exceeded`, or `Error thrown in test:`. Stdout cannot invent that pair. The line
+ * must equal the target. A longer title, a title that only contains the target, and a `<file> › <title>`
+ * line from another file are not the target's line. The target's own timeout or thrown error counts when
+ * that marked detail line is the target.
  * A worker banner is `✖ <file> exited with a non-zero exit code`, not a test whose title is that phrase.
  *
  * A TS2339 or TS2769 line here means the TypeScript compiler stopped the worker before any test body
@@ -404,27 +406,49 @@ function workerStopped(output: string): boolean {
 
 const AVA_TRAILING = [" Test failed via `t.fail()`", " Test timeout exceeded", " Error thrown in test"];
 
+const AVA_DIAGNOSTIC = new Set(["Error: Test timeout exceeded", "Error thrown in test:", "Error thrown in test"]);
+
+/** Ava's failure summary is the block between the two `─` rules. Stdout after a single rule is not one. */
+function failureSummary(lines: readonly string[]): { open: number; close: number } | null {
+  const open = lines.findIndex((line) => line.trim() === "─");
+  if (open < 0) return null;
+  const close = lines.findIndex((line, index) => index > open && line.trim() === "─");
+  if (close < 0) return null;
+  return { open, close };
+}
+
 /**
- * Ava reprints the test title on its own indented line, then a source location or the timeout or
- * thrown-error message. The `✖` line above it appends the message, so the title is this line.
+ * Titles Ava reprints inside the failure summary. The `✖` line before the summary appends the
+ * message, so the title is this line, and only when the next line is the source location or the
+ * timeout or thrown-error message.
  */
 function avaDetailTitles(output: string): string[] {
   const lines = output.split("\n");
+  const span = failureSummary(lines);
+  if (!span) return [];
   const titles: string[] = [];
-  const diagnostic = new Set(["Error: Test timeout exceeded", "Error thrown in test:", "Error thrown in test"]);
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = span.open + 1; i < span.close; i++) {
     const raw = lines[i] ?? "";
     if (!raw.startsWith("  ") || raw.startsWith("   ") || /^  [✘✖✔›]/.test(raw)) continue;
     const title = raw.slice(2);
-    if (title.length === 0 || title !== title.trim() || diagnostic.has(title)) continue;
+    if (title.length === 0 || title !== title.trim() || AVA_DIAGNOSTIC.has(title)) continue;
     let j = i + 1;
-    while (j < lines.length && (lines[j] ?? "").trim() === "") j++;
-    const next = lines[j] ?? "";
-    if (!next.startsWith("  ") || next.startsWith("   ")) continue;
-    const rest = next.slice(2);
-    if (/^\S+:\d+$/.test(rest) || diagnostic.has(rest)) titles.push(title);
+    while (j < span.close && (lines[j] ?? "").trim() === "") j++;
+    const next = j < span.close ? (lines[j] ?? "") : "";
+    const twoSpace = next.startsWith("  ") && !next.startsWith("   ");
+    const rest = twoSpace ? next.slice(2) : "";
+    let followed = twoSpace;
+    followed = twoSpace && (/^\S+:\d+$/.test(rest) || AVA_DIAGNOSTIC.has(rest)); // spec-guard:any-next
+    let take = true;
+    take = followed; // spec-guard:anywhere
+    if (take) titles.push(title);
   }
   return titles;
+}
+
+function failMarksTitle(name: string, title: string): boolean {
+  if (name === title) return true;
+  return AVA_TRAILING.some((suffix) => name === `${title}${suffix}`);
 }
 
 function labelMatches(label: string, targetTitle: string): boolean {
@@ -444,8 +468,12 @@ function labelMatches(label: string, targetTitle: string): boolean {
 
 function ownResult(output: string, names: readonly string[], targetTitle: string | undefined): boolean {
   if (targetTitle === undefined) return false;
+  const lines = output.split("\n");
+  const span = failureSummary(lines);
+  const prior = failingTestNames(span ? lines.slice(0, span.open).join("\n") : output);
+  const marked = avaDetailTitles(output).filter((title) => prior.some((name) => failMarksTitle(name, title)));
   let labels: readonly string[] = names;
-  labels = [...names, ...avaDetailTitles(output)]; // spec-guard:ava-own-detail
+  labels = [...names, ...marked]; // spec-guard:ava-own-detail
   return labels.some((label) => labelMatches(label, targetTitle));
 }
 

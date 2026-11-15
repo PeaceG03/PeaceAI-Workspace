@@ -1,0 +1,8 @@
+
+  ✔ unrelated
+  ✖ test/out-plain.cjs exited with a non-zero exit code: 7
+  ─
+
+  1 test passed
+  target warm
+  test.ts:3
