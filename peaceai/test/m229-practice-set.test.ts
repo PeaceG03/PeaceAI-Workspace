@@ -963,6 +963,14 @@ test("a live owner's old lock is not stolen, and an empty lock stays busy during
   }
 });
 
+test("replay rejects --dev-only together with --heldout-only", () => {
+  const ran = spawnSync(join(repo, "node_modules/.bin/tsx"), [
+    join(repo, "peaceai/bin/practice-replay.ts"), "--pairs", "/dev/null", "--out", "/tmp", "--dev-only", "--heldout-only",
+  ], { encoding: "utf8" });
+  assert.notEqual(ran.status, 0);
+  assert.match(`${ran.stdout}\n${ran.stderr}`, /--dev-only and --heldout-only cannot both be set/);
+});
+
 test("replay refuses to grade when a recorded root has no clone identity", () => {
   const out = mkdtempSync(join(tmpdir(), "practice-replay-gate-"));
   const scratch = mkdtempSync(join(tmpdir(), "m229-replay-gate-"));

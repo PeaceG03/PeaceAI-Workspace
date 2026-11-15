@@ -27,7 +27,7 @@ import { pinnedKernel, readCorePin } from "./capability-job.ts";
 
 const ROW_MS = 45_000;
 const TEST_MS = 60_000;
-const USAGE = "usage: practice-replay.ts --pairs <jsonl> --out <dir> [--core-archive <tar>] [--clones-dir <dir>] [--install-cache <dir>] [--install-max <n>] [--dev-only]";
+const USAGE = "usage: practice-replay.ts --pairs <jsonl> --out <dir> [--core-archive <tar>] [--clones-dir <dir>] [--install-cache <dir>] [--install-max <n>] [--dev-only | --heldout-only]";
 
 function flag(name: string, args: string[]): string | undefined {
   const i = args.indexOf(name);
@@ -634,6 +634,11 @@ function main(): void {
   if (args.includes("-h") || args.includes("--help")) { console.log(USAGE); return; }
   const pairsPath = flag("--pairs", args);
   const devOnly = args.includes("--dev-only");
+  const heldoutOnly = args.includes("--heldout-only");
+  if (devOnly && heldoutOnly) {
+    console.log("--dev-only and --heldout-only cannot both be set");
+    process.exit(2);
+  }
   const out = flag("--out", args);
   const coreArchive = flag("--core-archive", args);
   const clones = flag("--clones-dir", args) ?? flag("--clones", args) ?? "";
@@ -654,7 +659,11 @@ function main(): void {
     for (const problem of cloneProblems) console.log(problem);
     process.exit(1);
   }
-  const pairs = readPairs(resolve(pairsPath)).filter((pair) => !devOnly || pair.split === "dev");
+  const pairs = readPairs(resolve(pairsPath)).filter((pair) => {
+    if (devOnly) return pair.split === "dev";
+    if (heldoutOnly) return pair.split === "held-out";
+    return true;
+  });
   const sandbox = practiceSandboxReady();
   let core: "ok" | "missing" = "missing";
   let bundle = "";
@@ -722,12 +731,13 @@ function main(): void {
     console.log(`protectedFunction=${PROTECTED_GATE_FUNCTION} protectedFile=${PROTECTED_GATE_FILE}`);
     console.log(PROTECTED_GATE_WHY);
   }
-  for (const split of (devOnly ? ["dev"] : ["dev", "held-out"]) as readonly ("dev" | "held-out")[]) {
+  const reported: readonly ("dev" | "held-out")[] = devOnly ? ["dev"] : heldoutOnly ? ["held-out"] : ["dev", "held-out"];
+  for (const split of reported) {
     const behavior = doc.behavior[split];
     console.log(`${split} behavior strict=${behavior.verified_strict} test_only=${behavior.verified_test_only} unavailable=${behavior.diff_unavailable}`);
   }
   for (const understanding of ["text", "test-as-spec"] as const) {
-    for (const split of (devOnly ? ["dev"] : ["dev", "held-out"]) as readonly ("dev" | "held-out")[]) {
+    for (const split of reported) {
       const bag = doc.counts[understanding][split];
       console.log(`${split} understanding=${understanding} pass=${bag.pass} fail=${bag.fail} unmeasured=${bag.unmeasured}`);
       for (const [reason, n] of Object.entries(bag.reasons).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) console.log(`${split} understanding=${understanding} reason ${n} ${reason}`);
