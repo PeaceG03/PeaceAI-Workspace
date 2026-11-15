@@ -37,8 +37,9 @@ const padTest = `import assert from "node:assert/strict";\nimport test from "nod
 const keepTest = `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { keep } from "./keep.ts";\ntest("keep of 2", () => { assert.equal(keep(2), 2); });\n`;
 
 test("the attempt cap stays inside the loop and the proposer caps", () => {
-  assert.equal(SPEC_ATTEMPT_CAP, Math.min(MAX_ATTEMPTS, MAX_CANDIDATES));
-  assert.ok(SPEC_ATTEMPT_CAP <= MAX_ATTEMPTS);
+  assert.equal(MAX_ATTEMPTS, 20);
+  assert.equal(SPEC_ATTEMPT_CAP, MAX_CANDIDATES);
+  assert.equal(SPEC_ATTEMPT_CAP, 60);
   assert.equal(clampSpecAttempts(undefined), SPEC_ATTEMPT_CAP);
   assert.equal(clampSpecAttempts(1), 1);
   assert.equal(clampSpecAttempts(10_000), SPEC_ATTEMPT_CAP);

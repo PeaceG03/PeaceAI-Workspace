@@ -85,7 +85,7 @@ if (suite === "replay") {
 
 if (suite === "budget") {
   check("attempt-clamp", () => {
-    assert.equal(mod.SPEC_ATTEMPT_CAP, 20);
+    assert.equal(mod.SPEC_ATTEMPT_CAP, 60);
     assert.equal(mod.clampSpecAttempts(10_000), mod.SPEC_ATTEMPT_CAP);
     assert.equal(mod.clampSpecAttempts(1), 1);
     assert.equal(mod.clampSpecAttempts(undefined), mod.SPEC_ATTEMPT_CAP);

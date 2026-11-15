@@ -486,15 +486,15 @@ function specOne(tooling: string, coreDir: string, repoDir: string, pair: Practi
       nodeModules: modules,
       restoreTree: () => writeCommitFile(repoDir, pair.fixSha, pair.testFile, dir),
     });
-    if (spec.status === "blocked") return { ...unmeasured(spec.reason), diagnostic: spec.diagnostic };
-    if (spec.status === "cant") return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "fail", reason: spec.reason }, gatePass: false, beforeExit: null, afterExit: null }), diagnostic: spec.diagnostic };
+    if (spec.status === "blocked") return { ...unmeasured(spec.reason), diagnostic: spec.diagnostic, attempts: spec.attempts };
+    if (spec.status === "cant") return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "fail", reason: spec.reason }, gatePass: false, beforeExit: null, afterExit: null }), diagnostic: spec.diagnostic, attempts: spec.attempts };
     const checked = gradeCandidateBehavior(repoDir, dir, pair, spec, modules);
     const fit = {
       shape: spec.fit.shape, examples: spec.fit.examples, behavior: checked.behavior, diff: spec.diff,
       ...(checked.counterexample ? { counterexample: checked.counterexample } : {}),
     };
     if (checked.behavior !== "verified_strict") {
-      return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: 1, afterExit: 0, behavior: checked.behavior }), diagnostic: spec.diagnostic, fit };
+      return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: 1, afterExit: 0, behavior: checked.behavior }), diagnostic: spec.diagnostic, fit, attempts: spec.attempts, winningIndex: spec.attempts };
     }
     mkdirSync(join(outDir, "candidates"), { recursive: true });
     writeFileSync(join(outDir, "candidates", "candidate-1.diff"), spec.diff);
@@ -511,9 +511,9 @@ function specOne(tooling: string, coreDir: string, repoDir: string, pair: Practi
     });
     const gateOut = `${gated.stdout ?? ""}\n${gated.stderr ?? ""}`;
     const gatePass = gated.status === 0 && /GATE PASS/.test(gateOut);
-    if (!gatePass) return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: false, beforeExit: null, afterExit: null, behavior: "verified_strict" }), diagnostic: spec.diagnostic, fit };
+    if (!gatePass) return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: false, beforeExit: null, afterExit: null, behavior: "verified_strict" }), diagnostic: spec.diagnostic, fit, attempts: spec.attempts, winningIndex: spec.attempts };
     const graded = gradeCandidate(repoDir, pair, spec.diff, modules);
-    return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: graded.beforeExit, afterExit: graded.afterExit, behavior: "verified_strict" }), diagnostic: spec.diagnostic, fit };
+    return { ...form, ...gradePracticeRow({ scorable: true, core: "ok", job: { status: "pass", reason: "JOB_A_CANDIDATES:1" }, gatePass: true, beforeExit: graded.beforeExit, afterExit: graded.afterExit, behavior: "verified_strict" }), diagnostic: spec.diagnostic, fit, attempts: spec.attempts, winningIndex: spec.attempts };
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(outDir, { recursive: true, force: true });

@@ -9,14 +9,13 @@
 // the spec for a scaffold: one exported function, method, or default at that module, with parameters
 // taken from the call sites and a body taken from the reduced assertions when exactly one body fits.
 // Other edits come from the loop-v2 repair proposer (the catalog of templates). Attempts stay within
-// that loop's MAX_ATTEMPTS and the proposer's MAX_CANDIDATES. A diff is returned only when the given
+// the proposer's MAX_CANDIDATES. The loop's MAX_ATTEMPTS stays 20. A diff is returned only when the given
 // test passes and the original suite still passes. Nothing here pushes.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 import ts from "typescript";
 import { isTestPath, openRepo } from "./codesearch.ts";
 import { MAX_CANDIDATES, repairProposer, type RepairFeedback } from "./editpropose.ts";
-import { MAX_ATTEMPTS } from "./loop.ts";
 import { applyPracticeTestLaunch, declaredTypeScriptLoader, poisonChanges, poisonStamp, practiceGit, practiceTestLaunch, releaseWorktree, runInPracticeSandbox, type PracticeToolchain } from "./practicemine.ts";
 
 export const SPEC_SCHEMA = "peaceai-test-spec:v1";
@@ -41,8 +40,8 @@ export const SPEC_CANT = [
 ] as const;
 export type SpecCant = (typeof SPEC_CANT)[number];
 
-/** The attempt cap. It cannot rise above the loop's cap or the proposer's candidate cap. Dev and held-out use the same cap. */
-export const SPEC_ATTEMPT_CAP = Math.min(MAX_ATTEMPTS, MAX_CANDIDATES);
+/** The test-as-spec attempt cap. It is the proposer's candidate list. The loop's MAX_ATTEMPTS stays 20. Dev and held-out use the same cap. */
+export const SPEC_ATTEMPT_CAP = MAX_CANDIDATES;
 
 /** A caller's maxAttempts cannot rise above SPEC_ATTEMPT_CAP. Omitting it uses that cap. */
 export function clampSpecAttempts(asked: number | undefined): number {
