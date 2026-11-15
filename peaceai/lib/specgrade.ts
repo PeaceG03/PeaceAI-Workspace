@@ -628,12 +628,7 @@ export function comparisonBounds(source: string): { thresholds: number[]; length
         }
         if (lookup) collectLiteralNumbers(node.expression.expression, found, strings);
         if (found.length) for (const n of found) thresholds.push(n);
-        else if ((objectIs || called === "includes") && args.some((arg) => {
-          if (numericLiteral(arg) !== null || stringText(arg) !== null || isNonNumericLiteral(arg)) return false;
-          let bare = false;
-          bare = ts.isIdentifier(arg); // grade-guard:includes-param
-          return !bare;
-        })) unprobed = true;
+        else if ((objectIs || called === "includes") && args.some((arg) => numericLiteral(arg) === null && stringText(arg) === null && !isNonNumericLiteral(arg))) unprobed = true;
       }
     }
     if (ts.isElementAccessExpression(node) && node.argumentExpression) {

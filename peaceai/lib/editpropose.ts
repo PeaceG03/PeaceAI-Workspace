@@ -1596,19 +1596,33 @@ function enumValues(n: ts.Node, sf: ts.SourceFile): string | null {
   return `Object.values(${e}).filter((member) => typeof member !== "string" || typeof ${box}[member] !== "number" || ${roundTrip}).includes(${v})`;
 }
 
+/** True when this conjunction proves `ident` is a string with `typeof`. */
+function provesString(n: ts.Node, ident: string): boolean {
+  let hit = false;
+  const walk = (cur: ts.Node) => {
+    if (ts.isBinaryExpression(cur) && (cur.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken || cur.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken)) {
+      const leftType = ts.isTypeOfExpression(cur.left);
+      const typeOf = leftType ? cur.left : ts.isTypeOfExpression(cur.right) ? cur.right : null;
+      const lit = leftType ? cur.right : cur.left;
+      if (typeOf && ts.isTypeOfExpression(typeOf) && ts.isIdentifier(typeOf.expression) && typeOf.expression.text === ident && ts.isStringLiteral(lit) && lit.text === "string") hit = true;
+    }
+    ts.forEachChild(cur, walk);
+  };
+  walk(n);
+  return hit;
+}
+
 /**
- * trim-equal: a conjunction that accepts a string by passing it to `Number` also accepts surrounding
- * whitespace, because `Number` ignores it. Require the same identifier to equal its trimmed form.
- * A call that is not `Number(identifier)`, or a conjunction that already trims, is not edited.
+ * trim-equal: `Number` ignores surrounding whitespace, so a conjunction that has proved an
+ * identifier is a string and then passes it to `Number` still accepts `" 1"`. Require that
+ * identifier to equal its trimmed form. `||`, a value not shown to be a string, and a function
+ * that already trims that identifier are left alone.
  */
 function trimEqual(n: ts.Node, sf: ts.SourceFile): string | null {
-  let conj = true;
-  conj = ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken; // trim-guard:and
-  if (!conj) return null;
-  const src = sf.text.slice(n.getStart(sf), n.getEnd());
-  let skip = false;
-  skip = src.includes(".trim("); // trim-guard:already
-  if (skip) return null;
+  if (!ts.isBinaryExpression(n)) return null;
+  let andOnly = n.operatorToken.kind === ts.SyntaxKind.BarBarToken || n.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken;
+  andOnly = n.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken; // trim-guard:or
+  if (!andOnly) return null;
   let ident = "";
   const walk = (cur: ts.Node) => {
     if (ts.isCallExpression(cur) && ts.isIdentifier(cur.expression) && cur.expression.text === "Number" && cur.arguments.length === 1) {
@@ -1620,7 +1634,13 @@ function trimEqual(n: ts.Node, sf: ts.SourceFile): string | null {
     ts.forEachChild(cur, walk);
   };
   walk(n);
-  if (!ident) return null;
+  if (!ident || !provesString(n, ident)) return null;
+  const src = sf.text.slice(n.getStart(sf), n.getEnd());
+  let region = src;
+  let host: ts.Node | undefined = n.parent;
+  while (host && !ts.isFunctionDeclaration(host) && !ts.isFunctionExpression(host) && !ts.isArrowFunction(host) && !ts.isMethodDeclaration(host)) host = host.parent;
+  if (host) region = sf.text.slice(host.getStart(sf), host.getEnd()); // trim-guard:already
+  if (region.includes(`${ident}.trim(`)) return null;
   return `(${src}) && ${ident} === ${ident}.trim()`;
 }
 

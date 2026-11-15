@@ -70,6 +70,19 @@ test("near misses stay unnamed, and the phrase list still refuses them", () => {
   }
 });
 
+test("a sentence about a string code emits the trim candidate", () => {
+  const root = mkdtempSync(join(tmpdir(), "peaceai-m236-ticket-"));
+  try {
+    mkdirSync(join(root, "src"));
+    const before = "export function ticketCode(code: unknown): boolean {\n  return typeof code === \"string\" && !Number.isNaN(Number(code));\n}\n";
+    writeFileSync(join(root, "src/ticket.ts"), before);
+    const batches = textRepairBatches(openRepo(root), "fix ticketCode when a spaced code is accepted");
+    const hit = batches.map((edits) => edits.map((e) => e.content).join("\n")).find((text) => text.includes("code === code.trim()"));
+    assert.ok(hit, batches.map((edits) => edits.map((e) => e.content).join("\n")).join("\n---\n"));
+    assert.equal(before.includes("code === code.trim()"), false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test("handling a discarded trim in a bakery function rewrites that call", () => {
   const root = mkdtempSync(join(tmpdir(), "peaceai-m236-oven-"));
   try {

@@ -321,7 +321,7 @@ test("the summary span and the prior fail line each reject one forged detail", (
   assert.notEqual(avaEarlyDetail(insideWithoutMarker, 1, "target warm"), null);
 });
 
-test("a fail marker with no summary rule is still a result", () => {
+test("a synthetic log with no summary rule still counts a fail marker", () => {
   const residual = "✖ target warm\n  ✖ test/case.cjs exited with a non-zero exit code: 7\n";
   assert.deepEqual(failingTestNames(residual), ["target warm"]);
   assert.equal(avaEarlyDetail(residual, 1, "target warm"), null);
