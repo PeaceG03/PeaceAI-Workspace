@@ -21,7 +21,7 @@ import { buildVariants, cleanIssueText } from "../lib/taskmap.ts";
 // The practice grader is outside self-change. Naming these paths pulls them, and the modules they import, into the never-zone.
 const PRACTICE_GRADER_FILES = ["peaceai/lib/specgrade.ts", "peaceai/lib/practicereplay.ts", "peaceai/bin/practice-replay.ts", "peaceai/bin/practice-mine.ts", "peaceai/lib/issueunderstand.ts"] as const;
 void PRACTICE_GRADER_FILES;
-import { nlDecision, taskSource, understandIssue, UNDERSTAND_REASONS } from "../lib/nlparse.ts";
+import { characterizationReplay, nlDecision, taskSource, understandIssue, UNDERSTAND_REASONS } from "../lib/nlparse.ts";
 import { openRepo } from "../lib/codesearch.ts";
 import { TEXT_REPAIR_LIMIT, TEXT_REPAIR_REASONS, textRepairBatches, type RepairEdit } from "../lib/editpropose.ts";
 import { regradeOf, type RegradeRequest } from "../lib/regrade.ts";
@@ -182,15 +182,23 @@ const scanOnlyFiles = repoLists.scan;
 // M6: symbol and keyword index over the target's in-scope files. Built here, in memory, after the
 // visibility gate (select job + re-check) has passed; only counts are logged and nothing is saved.
 const objectiveText = cleanIssueText(task);
-const index = buildIndex(candidatesForContext);
-const resolved = resolveTargets(index, objectiveText, scope.isTest).map((t) => t.path);
-const related = relatedFiles(index, resolved);
-const keywordHits = search(index, objectiveText, 10).map((hit) => hit.path);
-const selected = selectSources(objectiveText, candidatesForContext, indexBoost(resolved, related, keywordHits));
-const sourcePaths = selected.map((f) => f.path);
-const sources = selected.map(({ path, content }) => ({ path, content, fingerprint: kernel.sourceFingerprint(path, content) }));
-const variants = buildVariants(task, sourcePaths, scope.isTest, resolved);
-console.log(`${indexStats(index)} resolved=${resolved.length} related=${related.length}`);
+// A characterization line is already the learned rule's input. Indexing the repo and
+// asking the native synthesizer first spends the row budget before that rule runs.
+const directRule = textBatches.length === 0 && process.env.PEACEAI_TEST_EXISTING === "true" && characterizationReplay(issueTask.title, issueTask.body);
+let sources: { path: string; content: string; fingerprint: string }[] = [];
+let variants: { objective: string; targetPath: string }[] = [];
+let resolved: string[] = [];
+if (!directRule) {
+  const index = buildIndex(candidatesForContext);
+  resolved = resolveTargets(index, objectiveText, scope.isTest).map((t) => t.path);
+  const related = relatedFiles(index, resolved);
+  const keywordHits = search(index, objectiveText, 10).map((hit) => hit.path);
+  const selected = selectSources(objectiveText, candidatesForContext, indexBoost(resolved, related, keywordHits));
+  const sourcePaths = selected.map((f) => f.path);
+  sources = selected.map(({ path, content }) => ({ path, content, fingerprint: kernel.sourceFingerprint(path, content) }));
+  variants = buildVariants(task, sourcePaths, scope.isTest, resolved);
+  console.log(`${indexStats(index)} resolved=${resolved.length} related=${related.length}`);
+} else console.log("index=skipped direct-rule=TEST_EXISTING");
 
 const worktree = mkdtempSync(join(tmpdir(), "peaceai-gen-"));
 rmSync(worktree, { recursive: true, force: true });
@@ -266,7 +274,7 @@ if (textBatches.length === 0) {
 // M6: a task written as numbered steps is a multi-step plan. It runs once through the bundled planner
 // (DevelopmentPlanGraph + CrossLayerPlanExecutor over the edit families) and yields at most one combined
 // candidate; single-step variants are not tried, so a partial chain is never offered.
-const planSteps = typeof kernel.parsePlanSteps === "function" ? kernel.parsePlanSteps(objectiveText) : null;
+const planSteps = directRule ? null : typeof kernel.parsePlanSteps === "function" ? kernel.parsePlanSteps(objectiveText) : null;
 if (planSteps) {
   calls += 1;
   let plan;
@@ -289,7 +297,7 @@ if (planSteps) {
   }
 }
 
-outer: for (const variant of planSteps ? [] : variants) {
+outer: for (const variant of planSteps || directRule ? [] : variants) {
   const rejected: string[] = [];
   for (let attempt = 0; attempt < 4; attempt += 1) {
     if (calls >= MAX_CALLS || candidates.length >= MAX_CANDIDATES) break outer;

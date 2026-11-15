@@ -136,6 +136,20 @@ function stepBodies(text: string): string[] {
   return out;
 }
 
+/**
+ * The learned kind when the cleaned title and body are already that rule's canonical
+ * line. A characterization replay can go straight to the rule. Other canonical kinds,
+ * and any sentence that only resembles one, stay on the ordinary path.
+ */
+export function characterizationReplay(title: string, body: string): boolean {
+  const full = `${title}\n\n${body}`.trim();
+  if (!full || !isCanonical(full)) return false;
+  const learned = LEARNED_TRIGGERS.find((t) => full.split("\n").some((line) => t.re.test(line.trim())));
+  let kind = "";
+  kind = learned?.kind ?? ""; // gen-guard:char-kind
+  return kind === "TEST_EXISTING";
+}
+
 /** True when the text already uses a supported phrasing (or a numbered plan whose steps all do). */
 export function isCanonical(text: string): boolean {
   const steps = stepBodies(text);

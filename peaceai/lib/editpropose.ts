@@ -53,7 +53,7 @@ const MAX_CALLEES = 6;
 /** The fixed template order (rank = index). */
 export const TEMPLATES = ["missing-export", "nullish-check", "comparison", "arithmetic", "off-by-one", "logical", "default-value", "null-guard", "negate-condition", "boolean-return"] as const;
 /** M168: repair-v2's idiom templates, tried before TEMPLATES in this fixed order (decided before any dev-split run). */
-export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "enum-values"] as const; // M172: + undefined-keeps-key
+export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "enum-values", "plain-object"] as const; // M172: + undefined-keeps-key
 export type Idiom = (typeof IDIOM_TEMPLATES)[number];
 /** M173 (spec: peaceai/spec/repair-v2-m173.md): repair-v2's module-scope constant template, tried after all others. */
 export const CONST_TEMPLATES = ["const-value"] as const;
@@ -1596,6 +1596,77 @@ function enumValues(n: ts.Node, sf: ts.SourceFile): string | null {
   return `Object.values(${e}).filter((member) => typeof member !== "string" || typeof ${box}[member] !== "number" || ${roundTrip}).includes(${v})`;
 }
 
+function unwrapParen(expr: ts.Expression): ts.Expression {
+  let cur = expr;
+  while (ts.isParenthesizedExpression(cur)) cur = cur.expression;
+  return cur;
+}
+
+function andParts(expr: ts.Expression): ts.Expression[] {
+  const flat = unwrapParen(expr);
+  if (ts.isBinaryExpression(flat) && flat.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) return [...andParts(flat.left), ...andParts(flat.right)];
+  return [flat];
+}
+
+function typeofObjectRef(expr: ts.Expression, sf: ts.SourceFile): string | null {
+  if (!ts.isBinaryExpression(expr)) return null;
+  const k = expr.operatorToken.kind;
+  if (k !== ts.SyntaxKind.EqualsEqualsEqualsToken && k !== ts.SyntaxKind.EqualsEqualsToken) return null;
+  const leftType = ts.isTypeOfExpression(expr.left);
+  const typeOf = leftType ? expr.left : expr.right;
+  const lit = leftType ? expr.right : expr.left;
+  if (!ts.isTypeOfExpression(typeOf) || !ts.isStringLiteral(lit) || lit.text !== "object") return null;
+  if (!plainRef(typeOf.expression)) return null;
+  return srcOf(sf, typeOf.expression);
+}
+
+function nullRefOf(expr: ts.Expression, sf: ts.SourceFile): string | null {
+  if (!ts.isBinaryExpression(expr)) return null;
+  const k = expr.operatorToken.kind;
+  if (k !== ts.SyntaxKind.ExclamationEqualsEqualsToken) return null; // cap-guard:plain-strict
+  const rightNull = expr.right.kind === ts.SyntaxKind.NullKeyword;
+  const ref = rightNull ? expr.left : expr.right;
+  const lit = rightNull ? expr.right : expr.left;
+  if (lit.kind !== ts.SyntaxKind.NullKeyword || !plainRef(ref)) return null;
+  return srcOf(sf, ref);
+}
+
+/**
+ * The expression is everything the function returns. An arrow body and a return
+ * statement count. A condition, a ternary arm, or a larger expression does not.
+ */
+function plainReturned(expr: ts.Expression): boolean {
+  const direct = expr.parent;
+  const outer = direct && ts.isParenthesizedExpression(direct) && direct.expression === expr ? direct.parent : direct;
+  let arrow = false;
+  arrow = !!outer && ts.isArrowFunction(outer) && (outer.body === expr || outer.body === direct); // cap-guard:plain-arrow
+  let returned = false;
+  returned = !!outer && ts.isReturnStatement(outer) && (outer.expression === expr || outer.expression === direct); // cap-guard:plain-return
+  return arrow || returned;
+}
+
+/**
+ * plain-object: a returned `ref !== null && typeof ref === "object"` still treats arrays as
+ * objects. Offer `&& !Array.isArray(ref)`. A chain with any other term is left alone, so a
+ * check that already excludes arrays, or that uses the prototype, is not edited.
+ */
+function plainObject(n: ts.Node, sf: ts.SourceFile): string | null {
+  if (!ts.isBinaryExpression(n) || n.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken || !plainReturned(n)) return null;
+  const parts = andParts(n).map(unwrapParen);
+  let typeRef: string | null = null;
+  let nullRef: string | null = null;
+  for (const part of parts) {
+    const typeName = typeofObjectRef(part, sf);
+    const nullName = nullRefOf(part, sf);
+    if (typeName) typeRef = typeRef === null ? typeName : typeRef === typeName ? typeRef : "";
+    if (nullName) nullRef = nullRef === null ? nullName : nullRef === nullName ? nullRef : "";
+  }
+  let paired = true;
+  paired = parts.length === 2 && !!typeRef && typeRef === nullRef; // cap-guard:plain-pair
+  if (!paired || !typeRef) return null;
+  return `${srcOf(sf, unwrapParen(n))} && !Array.isArray(${typeRef})`;
+}
+
 /** M168: every idiom candidate inside one site (no I/O); repair-v2 only. */
 export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: number): Mutation[] {
   const out: Mutation[] = [];
@@ -1611,6 +1682,7 @@ export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: numbe
     add(undefinedKeepsKey(n, sf), "undefined-keeps-key");
     add(ownKeys(n, sf), "own-keys");
     add(enumValues(n, sf), "enum-values");
+    add(plainObject(n, sf), "plain-object");
     ts.forEachChild(n, visit);
   };
   visit(sf);

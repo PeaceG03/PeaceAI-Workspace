@@ -213,11 +213,43 @@ function snippet(sf: ts.SourceFile, node: ts.Node): string {
   return sf.text.slice(node.getStart(sf), node.getEnd()).replace(/\s+/g, " ").slice(0, 80);
 }
 
+/** ECMAScript sentinels written as names, not calls. `globalThis.NaN` and `missing` are not these. */
+function sentinelValue(expr: ts.Expression): { ok: true; value: unknown } | { ok: false } {
+  if (ts.isIdentifier(expr)) {
+    if (expr.text === "NaN") return { ok: true, value: Number.NaN };
+    if (expr.text === "Infinity") return { ok: true, value: Number.POSITIVE_INFINITY };
+    if (expr.text === "undefined") return { ok: true, value: undefined };
+  }
+  if (ts.isPrefixUnaryExpression(expr) && ts.isIdentifier(expr.operand) && expr.operand.text === "Infinity") {
+    if (expr.operator === ts.SyntaxKind.MinusToken) return { ok: true, value: Number.NEGATIVE_INFINITY };
+    if (expr.operator === ts.SyntaxKind.PlusToken) return { ok: true, value: Number.POSITIVE_INFINITY };
+  }
+  if (ts.isPropertyAccessExpression(expr) && !expr.questionDotToken && ts.isIdentifier(expr.expression) && expr.expression.text === "Number") {
+    if (expr.name.text === "NaN") return { ok: true, value: Number.NaN };
+    if (expr.name.text === "POSITIVE_INFINITY") return { ok: true, value: Number.POSITIVE_INFINITY };
+    if (expr.name.text === "NEGATIVE_INFINITY") return { ok: true, value: Number.NEGATIVE_INFINITY };
+  }
+  return { ok: false };
+}
+
+/** A call argument the expectation can replay: a literal, a sentinel, or a collection of those. */
+function concreteArg(expr: ts.Expression): boolean {
+  if (literal(expr)) return true;
+  if (sentinelValue(expr).ok) return true;
+  if (ts.isArrayLiteralExpression(expr)) return expr.elements.every((el) => ts.isExpression(el) && concreteArg(el));
+  if (ts.isObjectLiteralExpression(expr)) {
+    return expr.properties.every((p) => ts.isPropertyAssignment(p) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) || ts.isNumericLiteral(p.name)) && concreteArg(p.initializer));
+  }
+  return false;
+}
+
 function called(expr: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: ts.SourceFile): { symbol: string; file: string; input: string } | null {
   const inner = unwrap(expr);
   if (!ts.isCallExpression(inner)) return null;
   const callee = inner.expression;
-  if (!inner.arguments.every((arg) => literal(unwrap(arg)))) return null;
+  let argOk = inner.arguments.every((arg) => literal(unwrap(arg)));
+  argOk = inner.arguments.every((arg) => concreteArg(unwrap(arg))); // spec-guard:concrete-arg
+  if (!argOk) return null;
   const input = inner.arguments.map((arg) => snippet(sf, arg)).join(", ");
   if (ts.isIdentifier(callee)) {
     const b = locals.get(callee.text);
@@ -246,7 +278,7 @@ function arrowCall(fn: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: 
   return null;
 }
 
-/** Concrete expectations already written in the test. A call with a non-literal argument is not one. */
+/** Concrete expectations already written in the test. A call argument counts when it is a literal, a sentinel, or a collection of those. */
 export function expectationsIn(testFile: string, text: string, sourcePattern: string, denyPatterns: readonly string[] = [], exists: (path: string) => boolean = () => true, failing: readonly string[] = []): Expectation[] {
   const found = bindings(testFile, text, sourcePattern, denyPatterns, exists);
   const locals = new Map(found.map((b) => [b.local, b]));
@@ -641,6 +673,8 @@ function evalConcrete(node: ts.Expression): { ok: true; value: unknown } | { ok:
   if (expr.kind === ts.SyntaxKind.FalseKeyword) return { ok: true, value: false };
   if (expr.kind === ts.SyntaxKind.NullKeyword) return { ok: true, value: null };
   if (ts.isPrefixUnaryExpression(expr) && expr.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(expr.operand)) return { ok: true, value: -Number(expr.operand.text) };
+  const sent = sentinelValue(expr);
+  if (sent.ok) return sent; // spec-guard:sentinel-value
   if (ts.isArrayLiteralExpression(expr)) {
     const items: unknown[] = [];
     for (const el of expr.elements) {

@@ -138,6 +138,22 @@ if (suite === "propose") {
   check("own-alias-after", () => { assert.equal(ownHits(laterWrite).length, 0); });
   check("own-alias-restore", () => { assert.equal(ownHits(restored).length, 0); });
   check("own-alias-case", () => { assert.equal(ownHits(across).length, 1); });
+  const vueObject = "export const isObject = (val: unknown): val is Record<any, any> =>\n  val !== null && typeof val === 'object'\n";
+  const returnedObject = "export function isRecord(val: unknown): boolean {\n  return val !== null && typeof val === \"object\";\n}\n";
+  const honoObject = "function isObject(item: unknown): boolean {\n  return typeof item === 'object' && item !== null && !Array.isArray(item)\n}\n";
+  const typeOnly = "export function html(value: unknown): boolean {\n  return typeof value === 'object'\n}\n";
+  const plainHits = (text: string) => {
+    const site = { path: "src/obj.ts", name: "isObject", start: 0, end: text.length, tier: 0 };
+    return mod.idiomMutationsIn(mod.parseSource("src/obj.ts", text), site, 0).filter((m: { template: string }) => m.template === "plain-object").length;
+  };
+  check("plain-arrow", () => { assert.equal(plainHits(vueObject), 1); });
+  check("plain-return", () => { assert.equal(plainHits(returnedObject), 1); });
+  check("plain-pair", () => {
+    assert.equal(plainHits(honoObject), 0);
+    assert.equal(plainHits(typeOnly), 0);
+    assert.equal(plainHits(vueObject), 1);
+  });
+  check("plain-strict", () => { assert.equal(plainHits("export const loose = (val: unknown) => val != null && typeof val === \"object\"\n"), 0); });
   check("bundle-max", () => {
     const five = loops(5);
     const queued = mod.repairCandidates([{ path: "src/tally.ts", name: "tally", start: 0, end: five.length, tier: 0 }], new Map([["src/tally.ts", five]]), new Set(), true);
@@ -217,6 +233,30 @@ if (suite === "spec") {
     assert.notEqual(mod.avaEarlyDetail(insideWithoutMarker, 1, "target warm"), null);
     assert.notEqual(mod.avaEarlyDetail(afterSpan, 1, "target warm"), null);
     assert.equal(mod.avaEarlyDetail(own, 1, "target warm"), null);
+  });
+  const concreteText = [
+    'import { toDisplayString, isPrimitive } from "./mod.ts";',
+    'import { expect, test } from "vitest";',
+    'test("values", () => {',
+    "  expect(toDisplayString(NaN)).toBe('NaN');",
+    "  expect(isPrimitive([])).toBe(false);",
+    "  expect(isPrimitive(Symbol('foo'))).toBe(true);",
+    "});",
+  ].join("\n");
+  check("concrete-arg", () => {
+    const rows = mod.expectationsIn("src/mod.test.ts", concreteText, "^src/.+\\.ts$", [], () => true);
+    assert.ok(rows.some((row: { symbol: string; input: string }) => row.symbol === "toDisplayString" && row.input === "NaN"));
+    assert.ok(rows.some((row: { symbol: string; input: string }) => row.symbol === "isPrimitive" && row.input === "[]"));
+    assert.equal(rows.some((row: { input: string }) => row.input.includes("Symbol")), false);
+  });
+  const sentinelText = [
+    'import { toDisplayString } from "./display.ts";',
+    'import { expect, test } from "vitest";',
+    "test(\"primitive values\", () => { expect(toDisplayString(NaN)).toBe('NaN'); });",
+  ].join("\n");
+  check("sentinel-value", () => {
+    const plan = mod.scaffoldPlan("src/display.test.ts", sentinelText, "TypeError: toDisplayString is not a function", "^src/.+\\.ts$", [], () => null);
+    assert.equal(plan?.ok, true);
   });
   check("ava-reporter", () => {
     assert.notEqual(mod.avaEarlyDetail(printed, 1, "target warm"), null);
