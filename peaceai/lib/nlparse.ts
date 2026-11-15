@@ -136,25 +136,6 @@ function stepBodies(text: string): string[] {
   return out;
 }
 
-/**
- * The learned kind when the title and body are already that rule's canonical line, or the
- * builder-log asked line whose prefix is `Peace's task PeaceAI-Workspace#N (source: peace):`.
- * A characterization replay can go straight to the rule. Other canonical kinds, and any
- * sentence that only resembles one, stay on the ordinary path.
- */
-const LOGGED_ASKED = /^Peace's task PeaceAI-Workspace#\d+ \(source: peace\): (.+)$/;
-
-export function characterizationReplay(title: string, body: string): boolean {
-  const full = `${title}\n\n${body}`.trim();
-  if (!full) return false;
-  const normalized = full.split("\n").map((line) => LOGGED_ASKED.exec(line.trim())?.[1] ?? line).join("\n");
-  if (!isCanonical(normalized)) return false;
-  const learned = LEARNED_TRIGGERS.find((t) => normalized.split("\n").some((line) => t.re.test(line.trim())));
-  let kind = "";
-  kind = learned?.kind ?? ""; // gen-guard:char-kind
-  return kind === "TEST_EXISTING";
-}
-
 /** True when the text already uses a supported phrasing (or a numbered plan whose steps all do). */
 export function isCanonical(text: string): boolean {
   const steps = stepBodies(text);

@@ -1,6 +1,8 @@
-# Batch: concrete arguments, plain-object, characterization direct rule
+# Batch: concrete arguments and plain-object
 
 No strict credit is claimed. `SPEC_ATTEMPT_CAP` is unchanged. `targets.json`, `gate.ts`, and `scope.ts` are unchanged. Held-out diffs were not read.
+
+The characterization direct rule is not in this change. Skipping the index and the synthesizer for builder-log row 235 left `applyRule` with a prefixed line and no check bullets, so the learned parser returned no edit. That path was removed.
 
 ## Concrete arguments
 
@@ -26,8 +28,4 @@ Evidence:
 - Refused: `vueuse/vueuse` `packages/shared/utils/is.ts` `isObject` at `bed1dce149ce6760fec13d4798c047f51a563180` (MIT), which uses `toString`.
 - Refused: `unjs/ohash` `src/serialize.ts` at `764b0a3203308956ef07597612af5ad59f36c791` (MIT), where the same two terms are one arm of a larger expression.
 
-## Characterization direct rule
-
-Builder-log row 235's logged asked line is `Peace's task PeaceAI-Workspace#423 (source: peace): add a characterization test for tenMinDailyIndexKey in src/tenmin-daily-liquid.ts`. Job A passes that line as the body and `builder-log seq 235` as the title. The direct rule matches that exact body: the prefix is removed only inside `characterizationReplay`, and the remainder is the canonical characterization line. When `PEACEAI_TEST_EXISTING` is set, Job A skips the source index and the synthesizer and still runs the learned rule. A normal Job A run leaves the flag unset, so the synthesizer still sees the sources. The budget is not raised. A `Please` prefix, and the same official prefix in front of a different canonical line, are not this path.
-
-This was not re-measured on row 235. It is not claimed as a restored pass.
+The same synthetic is also run through `runTestSpec`. The repair loop does not pass the failing test text into the proposer, so that is the path that can see the failing `isPlainData([])` assertion, propose the exclusion, and keep it only after the test passes.

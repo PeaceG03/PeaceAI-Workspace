@@ -1,17 +1,15 @@
-// Concrete assertion arguments, the plain-object idiom, and the characterization direct rule.
+// Concrete assertion arguments and the plain-object idiom.
 // The admitting and refusing snippets below are copied from permissively licensed TypeScript.
 // They are not practice-set rows and not held-out repos.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
-import { pathToFileURL } from "node:url";
 import { idiomMutationsIn, parseSource, type PlainSpec, type Site } from "../lib/editpropose.ts";
-import { characterizationReplay } from "../lib/nlparse.ts";
-import { expectationsIn, scaffoldPlan } from "../lib/testspec.ts";
+import { GIT_LOCK_ARGS, practiceGit, practiceGitEnv, practiceSandboxReady, visibleNodeBin } from "../lib/practicemine.ts";
+import { expectationsIn, runTestSpec, scaffoldPlan, type SpecInput } from "../lib/testspec.ts";
 
 const PATTERN = "^src/.+\\.ts$";
 
@@ -205,46 +203,69 @@ test("real assertions keep sentinels and collections, and drop calls and bigints
   if (plan?.ok) assert.match(plan.files[0]!.content, /return "NaN"/);
 });
 
-test("a characterization line skips the synthesizer, and a lookalike sentence does not", () => {
-  const header = "add a characterization test for tenMinDailyIndexKey in src/tenmin-daily-liquid.ts";
-  const asked = "Peace's task PeaceAI-Workspace#423 (source: peace): add a characterization test for tenMinDailyIndexKey in src/tenmin-daily-liquid.ts";
-  assert.equal(characterizationReplay("builder-log seq 235", asked), true);
-  assert.equal(characterizationReplay("builder-log seq 235", header), true);
-  assert.equal(characterizationReplay("builder-log seq 235", `Please ${header}`), false);
-  assert.equal(characterizationReplay("builder-log seq 235", "Peace's task PeaceAI-Workspace#423 (source: peace): make env FLAG strict in src/a.ts as a flag"), false);
-  assert.equal(characterizationReplay("fix", "make env FLAG strict in src/a.ts as a flag"), false);
-  assert.equal(characterizationReplay("add", "Add `is.blob`"), false);
-  const generate = readFileSync(resolve(import.meta.dirname, "../bin/generate.ts"), "utf8");
-  assert.match(generate, /directRule = textBatches\.length === 0 && process\.env\.PEACEAI_TEST_EXISTING === "true" && characterizationReplay/);
-  assert.match(generate, /planSteps \|\| directRule \? \[\] : variants/);
-});
+function git(root: string, args: string[]): void {
+  const ran = practiceGit(root, ["-c", "user.email=fixture@example.com", "-c", "user.name=Fixture", ...args]);
+  if (!ran.ok) throw new Error(ran.out || "git failed");
+}
 
-test("deleting the characterization kind guard makes the header look ordinary", async () => {
-  const lib = resolve(import.meta.dirname, "../lib/nlparse.ts");
-  const lines = readFileSync(lib, "utf8").split("\n");
-  const at = lines.findIndex((line) => line.includes("gen-guard:char-kind"));
-  assert.ok(at >= 0);
-  const dir = mkdtempSync(join(tmpdir(), "peaceai-m239-"));
-  const file = join(dir, "nlparse.ts");
-  const tsPath = createRequire(lib).resolve("typescript");
-  const body = lines.filter((_, i) => i !== at).join("\n")
-    .replace(/from "\.\/([a-z0-9-]+\.ts)"/g, (_, name: string) => `from ${JSON.stringify(pathToFileURL(join(resolve(import.meta.dirname, "../lib"), name)).href)}`)
-    .replace(/from "typescript"/, `from ${JSON.stringify(pathToFileURL(tsPath).href)}`);
-  writeFileSync(file, body);
-  const runner = join(dir, "run.ts");
-  const asked = "Peace's task PeaceAI-Workspace#423 (source: peace): add a characterization test for tenMinDailyIndexKey in src/tenmin-daily-liquid.ts";
-  writeFileSync(runner, `import { characterizationReplay } from ${JSON.stringify(pathToFileURL(file).href)};\nconsole.log(characterizationReplay("builder-log seq 235", ${JSON.stringify(asked)}) ? "true" : "false");\n`);
+function fixtureRepo(files: Record<string, string>): string {
+  const root = mkdtempSync(join(tmpdir(), "peaceai-m239-spec-"));
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(join(root, path, ".."), { recursive: true });
+    writeFileSync(join(root, path), text);
+  }
+  git(root, ["init", "-q"]);
+  git(root, ["add", "-A"]);
+  git(root, ["commit", "-q", "-m", "base"]);
+  return root;
+}
+
+test("runTestSpec excludes arrays when the failing assertion says so", (t) => {
+  const loop = readFileSync(join(import.meta.dirname, "../lib/loop.ts"), "utf8");
+  assert.equal(loop.includes("specText"), false);
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const nodePath = visibleNodeBin();
+  if (!nodePath) throw new Error("no visible node");
+  const source = [
+    "// synthetic buggy pre-image: the spec says an array is not plain data, and this check treats it as one",
+    "export function isPlainData(value: unknown): boolean {",
+    "  return value !== null && typeof value === \"object\";",
+    "}",
+    "",
+  ].join("\n");
+  const spec = [
+    'import { isPlainData } from "./plain.ts";',
+    'import assert from "node:assert/strict";',
+    'import test from "node:test";',
+    'test("an array is not plain data", () => {',
+    "  assert.equal(isPlainData([]), false);",
+    "  assert.equal(isPlainData({ a: 1 }), true);",
+    "  assert.equal(isPlainData(null), false);",
+    "});",
+    "",
+  ].join("\n");
+  const root = fixtureRepo({ "src/plain.ts": source, "src/plain.test.ts": spec });
+  const input: SpecInput = {
+    root,
+    subject: "an array is not plain data",
+    testFile: "src/plain.test.ts",
+    testCommand: [nodePath, "--experimental-strip-types", "--test", "src/plain.test.ts"],
+    sourcePattern: PATTERN,
+    toolchain: { nodePath },
+  };
   try {
-    const child = spawn(resolve(import.meta.dirname, "../../node_modules/.bin/tsx"), [runner], { stdio: ["ignore", "pipe", "pipe"] });
-    const out = await new Promise<string>((done, fail) => {
-      let text = "";
-      let err = "";
-      child.stdout.on("data", (chunk) => { text += chunk; });
-      child.stderr.on("data", (chunk) => { err += chunk; });
-      child.on("close", (code) => code === 0 ? done(text.trim()) : fail(new Error(err.slice(-500))));
-    });
-    assert.equal(out, "false");
+    const got = runTestSpec(input);
+    assert.equal(got.status, "diff", got.status === "diff" ? "" : `${got.reason}\n${got.diagnostic.lines.join("\n")}`);
+    if (got.status !== "diff") return;
+    assert.match(got.diff, /!Array\.isArray\(value\)/);
+    assert.equal(readFileSync(join(root, "src/plain.ts"), "utf8").includes("Array.isArray"), false);
+    const applied = spawnSync("git", ["-C", root, ...GIT_LOCK_ARGS, "apply", "--whitespace=nowarn", "-"], { input: got.diff, encoding: "utf8", env: practiceGitEnv() });
+    assert.equal(applied.status, 0, applied.stderr);
+    const env = { ...process.env };
+    for (const key of Object.keys(env)) if (key.startsWith("NODE_TEST") || key.startsWith("NODE_CHANNEL")) delete env[key];
+    const after = spawnSync(nodePath, ["--experimental-strip-types", "--test", "src/plain.test.ts"], { cwd: root, encoding: "utf8", env });
+    assert.equal(after.status, 0, `${after.stdout ?? ""}\n${after.stderr ?? ""}`);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   }
 });
