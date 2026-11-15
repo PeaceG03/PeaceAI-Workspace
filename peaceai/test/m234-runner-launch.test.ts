@@ -268,7 +268,7 @@ test("a finished install without the declared ts-node is rebuilt, and the repair
   }
 });
 
-const avaFixture = (name: string) => readFileSync(join(import.meta.dirname, "fixtures/ava-early", name), "utf8");
+const avaFixture = (name: string) => readFileSync(join(import.meta.dirname, "ava-early", name), "utf8");
 
 test("real ava output counts only the target title, and a banner phrase can be a title", () => {
   const target = "target warm";
