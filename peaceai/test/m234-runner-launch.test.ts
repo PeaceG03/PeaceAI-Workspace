@@ -273,7 +273,7 @@ const avaFixture = (name: string) => readFileSync(join(import.meta.dirname, "ava
 test("real ava output counts only the target title, and a banner phrase can be a title", () => {
   const target = "target warm";
   const phrase = "exited with a non-zero exit code";
-  for (const file of ["ava4-serial.txt", "ava6-serial.txt", "ava4-failfast.txt", "ava6-failfast.txt", "ava4-multi.txt", "ava6-multi.txt", "ava4-crash.txt", "ava6-crash.txt"]) {
+  for (const file of ["ava4-serial.txt", "ava6-serial.txt", "ava4-failfast.txt", "ava6-failfast.txt", "ava4-multi.txt", "ava6-multi.txt", "ava4-crash.txt", "ava6-crash.txt", "ava4-prefix.txt", "ava6-prefix.txt", "ava4-mid.txt", "ava6-mid.txt", "ava4-multi-same.txt", "ava6-multi-same.txt"]) {
     const output = avaFixture(file);
     assert.notEqual(avaEarlyDetail(output, 1, target), null, file);
   }

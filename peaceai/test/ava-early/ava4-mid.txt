@@ -1,0 +1,20 @@
+
+  ✖ see target warm inside Test failed via `t.fail()`
+  ✖ test/case.cjs exited with a non-zero exit code: 7
+  ─
+
+  see target warm inside
+
+  test/case.cjs:2
+
+   1: const test = require("ava");                              
+   2: test.serial('see target warm inside', t => { t.fail(); });
+   3: test.serial('stop', () => { process.exit(7); });          
+
+  Test failed via `t.fail()`
+
+  › test/case.cjs:2:48
+
+  ─
+
+  1 test failed

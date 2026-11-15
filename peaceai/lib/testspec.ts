@@ -380,7 +380,9 @@ export function classifyRunnerOutput(output: string, code: number | null): "runn
 /**
  * Ava's worker-exit banner, when no test result was reported. The return value is the worker's own
  * error line, or a short fallback when the banner is the only line. An assertion failure is not one.
- * Only a `✖` or `✘` line for the target title is that test's own result. Another test's title is not.
+ * Only a `✖` or `✘` line whose title is exactly the target is that test's own result. Ava's
+ * ` Test failed via \`t.fail()\`` suffix is removed first. A longer title, a title that only contains
+ * the target in the middle, and a `<file> › <title>` line from another file are not the target's line.
  * A worker banner is `✖ <file> exited with a non-zero exit code`, not a test whose title is that phrase.
  *
  * A TS2339 or TS2769 line here means the TypeScript compiler stopped the worker before any test body
@@ -397,9 +399,23 @@ function workerStopped(output: string): boolean {
   return false;
 }
 
+/** Ava prints `✖ <title> <message>` on one line when the message is `Test failed via \`t.fail()\``. */
+function avaReportedTitle(name: string): string {
+  const suffix = " Test failed via `t.fail()`";
+  const trimmed = name.trim();
+  return trimmed.endsWith(suffix) ? trimmed.slice(0, -suffix.length) : trimmed;
+}
+
 function ownResult(names: readonly string[], targetTitle: string | undefined): boolean {
   if (targetTitle === undefined) return false;
-  return names.some((name) => name === targetTitle || name.startsWith(`${targetTitle} `));
+  return names.some((name) => {
+    const title = avaReportedTitle(name);
+    let contained = title.includes(targetTitle);
+    contained = title === targetTitle; // spec-guard:ava-title-mid
+    let extended = title === targetTitle || title.startsWith(`${targetTitle} `);
+    extended = title === targetTitle; // spec-guard:ava-title-prefix
+    return contained || extended;
+  });
 }
 
 export function avaEarlyDetail(output: string, code: number | null, targetTitle?: string): string | null {
