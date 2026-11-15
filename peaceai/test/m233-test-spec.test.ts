@@ -10,7 +10,7 @@ import { CALLEE_DEPTH, locate, MAX_CANDIDATES } from "../lib/editpropose.ts";
 import { MAX_ATTEMPTS } from "../lib/loop.ts";
 import { GIT_LOCK_ARGS, materializeSolverTree, practiceGit, practiceGitEnv, practiceSandboxReady, visibleNodeBin, writeCommitFile } from "../lib/practicemine.ts";
 import { adjacentFloat, behaviorInputSet, behaviorInputs, comparisonBounds, gradeBehavior, INPUT_CAP, parseProbe, PROBE_SENTINEL, readFieldProbes } from "../lib/specgrade.ts";
-import { classifyRunnerOutput, expectationsIn, failingTestNames, integerCmpClass, originalSuiteArgv, runTestSpec, sanitizeRunnerLines, scaffoldPlan, SPEC_ATTEMPT_CAP, specTask, type SpecInput } from "../lib/testspec.ts";
+import { clampSpecAttempts, classifyRunnerOutput, expectationsIn, failingTestNames, integerCmpClass, originalSuiteArgv, runTestSpec, sanitizeRunnerLines, scaffoldPlan, SPEC_ATTEMPT_CAP, specTask, type SpecInput } from "../lib/testspec.ts";
 
 const PATTERN = "^src/.+\\.ts$";
 
@@ -39,6 +39,9 @@ const keepTest = `import assert from "node:assert/strict";\nimport test from "no
 test("the attempt cap stays inside the loop and the proposer caps", () => {
   assert.equal(SPEC_ATTEMPT_CAP, Math.min(MAX_ATTEMPTS, MAX_CANDIDATES));
   assert.ok(SPEC_ATTEMPT_CAP <= MAX_ATTEMPTS);
+  assert.equal(clampSpecAttempts(undefined), SPEC_ATTEMPT_CAP);
+  assert.equal(clampSpecAttempts(1), 1);
+  assert.equal(clampSpecAttempts(10_000), SPEC_ATTEMPT_CAP);
   assert.equal(specTask("Fix the total"), "make this failing test pass, context: Fix the total");
   assert.deepEqual(originalSuiteArgv(["node", "--test", "src/pad.test.ts"], "src/pad.test.ts", "full"), ["node", "--test"]);
   assert.deepEqual(
