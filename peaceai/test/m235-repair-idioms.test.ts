@@ -482,3 +482,16 @@ test("an aliased own-property check is already a guard, and a different alias is
   assert.equal(hits(laterWrite, "own-keys").length, 0);
   assert.equal(hits(restored, "own-keys").length, 0);
 });
+
+test("a number parse of an identifier gains a trim check, and a trimmed or non-identifier call does not", () => {
+  const open = "export function numeric(value: unknown): boolean {\n  return typeof value === \"string\" && !Number.isNaN(Number(value));\n}\n";
+  const got = hits(open, "trim-equal");
+  assert.equal(got.length, 1);
+  assert.match(got[0] ?? "", /value === value\.trim\(\)/);
+  const trimmed = "export function numeric(value: unknown): boolean {\n  return typeof value === \"string\" && value === value.trim() && !Number.isNaN(Number(value));\n}\n";
+  assert.deepEqual(hits(trimmed, "trim-equal"), []);
+  const field = "export function numeric(row: { raw: string }): boolean {\n  return !Number.isNaN(Number(row.raw));\n}\n";
+  assert.deepEqual(hits(field, "trim-equal"), []);
+  const plain = "export function numeric(value: unknown): boolean {\n  return typeof value === \"string\";\n}\n";
+  assert.deepEqual(hits(plain, "trim-equal"), []);
+});

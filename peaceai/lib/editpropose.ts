@@ -53,7 +53,7 @@ const MAX_CALLEES = 6;
 /** The fixed template order (rank = index). */
 export const TEMPLATES = ["missing-export", "nullish-check", "comparison", "arithmetic", "off-by-one", "logical", "default-value", "null-guard", "negate-condition", "boolean-return"] as const;
 /** M168: repair-v2's idiom templates, tried before TEMPLATES in this fixed order (decided before any dev-split run). */
-export const IDIOM_TEMPLATES = ["discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "enum-values"] as const; // M172: + undefined-keeps-key
+export const IDIOM_TEMPLATES = ["trim-equal", "discarded-result", "case-predicate", "typeof-null", "proto-safe-copy", "undefined-keeps-key", "own-keys", "enum-values"] as const; // M172: + undefined-keeps-key
 export type Idiom = (typeof IDIOM_TEMPLATES)[number];
 /** M173 (spec: peaceai/spec/repair-v2-m173.md): repair-v2's module-scope constant template, tried after all others. */
 export const CONST_TEMPLATES = ["const-value"] as const;
@@ -1596,6 +1596,34 @@ function enumValues(n: ts.Node, sf: ts.SourceFile): string | null {
   return `Object.values(${e}).filter((member) => typeof member !== "string" || typeof ${box}[member] !== "number" || ${roundTrip}).includes(${v})`;
 }
 
+/**
+ * trim-equal: a conjunction that accepts a string by passing it to `Number` also accepts surrounding
+ * whitespace, because `Number` ignores it. Require the same identifier to equal its trimmed form.
+ * A call that is not `Number(identifier)`, or a conjunction that already trims, is not edited.
+ */
+function trimEqual(n: ts.Node, sf: ts.SourceFile): string | null {
+  let conj = true;
+  conj = ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken; // trim-guard:and
+  if (!conj) return null;
+  const src = sf.text.slice(n.getStart(sf), n.getEnd());
+  let skip = false;
+  skip = src.includes(".trim("); // trim-guard:already
+  if (skip) return null;
+  let ident = "";
+  const walk = (cur: ts.Node) => {
+    if (ts.isCallExpression(cur) && ts.isIdentifier(cur.expression) && cur.expression.text === "Number" && cur.arguments.length === 1) {
+      const arg = cur.arguments[0]!;
+      let name = "";
+      name = ts.isIdentifier(arg) ? arg.text : ""; // trim-guard:ident
+      if (name) ident = name;
+    }
+    ts.forEachChild(cur, walk);
+  };
+  walk(n);
+  if (!ident) return null;
+  return `(${src}) && ${ident} === ${ident}.trim()`;
+}
+
 /** M168: every idiom candidate inside one site (no I/O); repair-v2 only. */
 export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: number): Mutation[] {
   const out: Mutation[] = [];
@@ -1604,6 +1632,7 @@ export function idiomMutationsIn(sf: ts.SourceFile, site: Site, siteIndex: numbe
     const s = n.getStart(sf);
     if (s < site.start || n.getEnd() > site.end) { ts.forEachChild(n, visit); return; }
     const add = (rep: string | null, template: Idiom) => { if (rep !== null) out.push({ path: site.path, start: s, end: n.getEnd(), text: rep, template, site: siteIndex }); };
+    add(trimEqual(n, sf), "trim-equal");
     add(discardedResult(n, sf, fixed), "discarded-result");
     add(casePredicate(n, sf), "case-predicate");
     add(typeofNull(n, sf), "typeof-null");

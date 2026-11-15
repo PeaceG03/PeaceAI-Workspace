@@ -36,6 +36,13 @@ const keep = `export function keep(n: number): number {\n  return n;\n}\n`;
 const padTest = `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { pad } from "./pad.ts";\ntest("pad of 2", () => { assert.equal(pad(2), 3); });\n`;
 const keepTest = `import assert from "node:assert/strict";\nimport test from "node:test";\nimport { keep } from "./keep.ts";\ntest("keep of 2", () => { assert.equal(keep(2), 2); });\n`;
 
+test("includes of a parameter can be probed, and includes of a property cannot", () => {
+  const param = "export function member(list: readonly string[], value: string): boolean {\n  return list.includes(value);\n}\n";
+  const field = "export function member(list: readonly string[], row: { name: string }): boolean {\n  return list.includes(row.name);\n}\n";
+  assert.equal(comparisonBounds(param).unprobed, false);
+  assert.equal(comparisonBounds(field).unprobed, true);
+});
+
 test("the attempt cap stays inside the loop and the proposer caps", () => {
   assert.equal(SPEC_ATTEMPT_CAP, Math.min(MAX_ATTEMPTS, MAX_CANDIDATES));
   assert.ok(SPEC_ATTEMPT_CAP <= MAX_ATTEMPTS);
