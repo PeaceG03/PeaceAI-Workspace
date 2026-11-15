@@ -1,0 +1,20 @@
+
+  ✔ unrelated
+  ✘ Exiting due to process.exit() when running test/out-plain.js
+
+  Error: Unexpected process.exit()
+      at file:///tmp/ava-fix/6/test/out-plain.js:3:37
+      at Test.callFn (file:///tmp/ava-fix/6/node_modules/ava/lib/test.js:525:26)
+      at Test.run (file:///tmp/ava-fix/6/node_modules/ava/lib/test.js:534:33)
+      at Runner.runSingle (file:///tmp/ava-fix/6/node_modules/ava/lib/runner.js:281:33)
+      at Runner.runTest (file:///tmp/ava-fix/6/node_modules/ava/lib/runner.js:363:30)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async Promise.all (index 1)
+      at async Runner.start (file:///tmp/ava-fix/6/node_modules/ava/lib/runner.js:536:15)
+
+  ✘ test/out-plain.js exited with a non-zero exit code: 7
+  ─
+
+  1 test passed
+  target warm
+  test.ts:3

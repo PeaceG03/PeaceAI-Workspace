@@ -1,0 +1,28 @@
+
+  ✘ [fail]: target warm Test timeout exceeded
+  ✘ Exiting due to process.exit() when running test/time.js
+
+  Error: Unexpected process.exit()
+      at file:///tmp/ava-fix/6/test/time.js:3:37
+      at Test.callFn (file:///tmp/ava-fix/6/node_modules/ava/lib/test.js:525:26)
+      at Test.run (file:///tmp/ava-fix/6/node_modules/ava/lib/test.js:534:33)
+      at Runner.runSingle (file:///tmp/ava-fix/6/node_modules/ava/lib/runner.js:281:33)
+      at Runner.runTest (file:///tmp/ava-fix/6/node_modules/ava/lib/runner.js:363:30)
+      at async Promise.all (index 1)
+      at async Runner.start (file:///tmp/ava-fix/6/node_modules/ava/lib/runner.js:536:15)
+
+  ✘ test/time.js exited with a non-zero exit code: 7
+  ─
+
+  target warm
+
+  Error: Test timeout exceeded
+
+  Error: Test timeout exceeded
+      at Timeout.<anonymous> (file:///tmp/ava-fix/6/node_modules/ava/lib/test.js:439:24)
+      at listOnTimeout (node:internal/timers:585:17)
+      at process.processTimers (node:internal/timers:521:7)
+
+  ─
+
+  1 test failed

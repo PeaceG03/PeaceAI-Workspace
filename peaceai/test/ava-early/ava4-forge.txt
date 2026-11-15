@@ -1,0 +1,22 @@
+
+  ✖ target warm Test failed via `t.fail()` 
+  ✖ test/forge.cjs exited with a non-zero exit code: 7
+  ─
+
+  target warm Test failed via `t.fail()`
+
+  test/forge.cjs:2
+
+   1: const test = require('ava');                                              
+   2: test.serial('target warm Test failed via `t.fail()`', t => { t.true(false…
+   3: test.serial('stop', () => { process.exit(7); });                          
+
+  Value is not `true`:
+
+  false
+
+  › test/forge.cjs:2:68
+
+  ─
+
+  1 test failed
