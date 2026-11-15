@@ -75,6 +75,10 @@ export interface GradedRow {
    * Published on dev rows only. Held-out rows do not publish the flag or a count.
    */
   flakyBase?: boolean;
+  /** Test-as-spec proposals tried. Published on dev rows only. */
+  attempts?: number;
+  /** The attempt that returned the candidate. Dev rows only. Absent when the row refused. */
+  winningIndex?: number;
 }
 
 /**
@@ -165,6 +169,8 @@ export function gapRecord(row: GradedRow): Record<string, unknown> {
     ...(fit ? { shape: fit.shape, examples: fit.examples, behavior: fit.behavior, ...(fit.diff ? { diff: fit.diff } : {}), ...(fit.counterexample ? { counterexample: fit.counterexample } : {}) } : {}),
     ...(seededIdiom(row) ? { excludedFromCredit: seededIdiom(row) } : {}),
     ...(row.split === "dev" && row.flakyBase ? { flakyBase: true } : {}),
+    ...(dev && row.understanding === "test-as-spec" && typeof row.attempts === "number" ? { attempts: row.attempts } : {}),
+    ...(dev && row.understanding === "test-as-spec" && typeof row.winningIndex === "number" ? { winningIndex: row.winningIndex } : {}),
   };
 }
 
