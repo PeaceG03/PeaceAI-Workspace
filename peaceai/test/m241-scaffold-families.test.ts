@@ -1,5 +1,5 @@
-// Closed integer bounds and integer predicates.
-// The admitting case is nkzw-tech/core isPositiveInteger at e2f272e057cd87c4a0fcc650dd508ea40d4a62dc.
+// Integer conjunction. The admitting case is nkzw-tech/core isPositiveInteger
+// at e2f272e057cd87c4a0fcc650dd508ea40d4a62dc. A bare comparison keeps the first form.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -38,7 +38,7 @@ function named(name: string, body: string) {
   return scaffoldPlan(`src/${name}.test.ts`, text, `Cannot find module '/work/src/${name}.ts'`, PATTERN, [], () => null);
 }
 
-test("an integer class emits the closed example bound", () => {
+test("a bare integer class keeps the first form", () => {
   const above = named("above", [
     "assert.equal(above(-3), false);",
     "assert.equal(above(3), false);",
@@ -47,8 +47,8 @@ test("an integer class emits the closed example bound", () => {
   ].join("\n"));
   assert.equal(above?.ok, true);
   if (above?.ok) {
-    assert.match(above.files[0]!.content, /return a >= 4;/);
-    assert.equal(above.files[0]!.content.includes("> 3"), false);
+    assert.match(above.files[0]!.content, /return a > 3;/);
+    assert.equal(above.files[0]!.content.includes(">="), false);
     assert.equal(above.files[0]!.content.includes("Number.isInteger"), false);
   }
   const wide = named("wide", "assert.equal(wide(3), false);\nassert.equal(wide(7), true);");
@@ -151,14 +151,14 @@ async function mutant(guard: string) {
 
 test("deleting a scaffold guard admits the case it refused", async () => {
   const opened = await mutant("cmp-guard:closed-bound") as typeof import("../lib/testspec.ts");
-  const above = opened.scaffoldPlan(
-    "src/above.test.ts",
-    'import { above } from "./above.ts";\nassert.equal(above(-3), false);\nassert.equal(above(3), false);\nassert.equal(above(4), true);\nassert.equal(above(7), true);\n',
-    "Cannot find module '/work/src/above.ts'",
+  const whole = opened.scaffoldPlan(
+    "src/whole.test.ts",
+    'import { whole } from "./whole.ts";\nassert.equal(whole(-4), false);\nassert.equal(whole(8), false);\nassert.equal(whole(9), true);\nassert.equal(whole(12), true);\nassert.equal(whole(9.5), false);\n',
+    "Cannot find module '/work/src/whole.ts'",
     PATTERN, [], () => null,
   );
-  assert.equal(above?.ok, true);
-  if (above?.ok) assert.match(above.files[0]!.content, /return a > 3;/);
+  assert.equal(whole?.ok, true);
+  if (whole?.ok) assert.match(whole.files[0]!.content, /return Number\.isInteger\(a\) && a > 8;/);
 
   const fraction = await mutant("int-guard:needs-fraction") as typeof import("../lib/testspec.ts");
   const bare = fraction.scaffoldPlan(

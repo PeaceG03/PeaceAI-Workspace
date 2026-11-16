@@ -8,8 +8,9 @@
 // A runner error that names a missing module, a missing export, or a value that is not a function is
 // the spec for a scaffold: one exported function, method, or default at that module, with parameters
 // taken from the call sites and a body taken from the reduced assertions when exactly one body fits.
-// An integer class emits its closed example bound. A non-integer or non-number the examples
-// reject, when the integers have one class, conjoins Number.isInteger.
+// A non-integer or non-number the examples reject, when the integers have one class,
+// conjoins Number.isInteger. That conjunction uses the closed example bound. A bare
+// comparison keeps the first form in the integer class.
 // Other edits come from the loop-v2 repair proposer (the catalog of templates). Attempts stay within
 // that loop's MAX_ATTEMPTS and the proposer's MAX_CANDIDATES. A diff is returned only when the given
 // test passes and the original suite still passes. Nothing here pushes.
@@ -995,10 +996,9 @@ function closedCmp(text: string): boolean {
 }
 
 /**
- * One text per integer class. The first form is stored, then a closed bound
- * (`>=` / `<=`) whose literal is an example replaces an open bound in that same
- * class. `a > 5` and `a >= 6` agree on integers and disagree on (5, 6); the
- * closed literal is an argument the examples accept.
+ * One text per integer class, for the integer conjunction only. The first form
+ * is stored, then a closed bound (`>=` / `<=`) whose literal is an example
+ * replaces an open bound in that same class. A bare comparison does not use this.
  */
 function chooseCmp(fits: { text: string; key: string }[]): Map<string, string> {
   const chosen = new Map<string, string>();
@@ -1027,7 +1027,8 @@ function comparisonBody(examples: Example[]): string | null {
     keep(`a ${pred.op} ${shown}`, (args) => pred.fn(args[0]!, n), cls ?? `raw:a ${pred.op} ${shown}`);
     if (arity === 2) keep(`b ${pred.op} ${shown}`, (args) => pred.fn(args[1]!, n), cls ? `b:${cls}` : `raw:b ${pred.op} ${shown}`);
   }
-  const chosen = chooseCmp(fits);
+  const chosen = new Map<string, string>();
+  for (const fit of fits) if (!chosen.has(fit.key)) chosen.set(fit.key, fit.text);
   if (chosen.size !== 1) return null;
   return `  return ${[...chosen.values()][0]};`;
 }
