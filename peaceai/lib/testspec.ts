@@ -193,12 +193,31 @@ function literal(node: ts.Expression): boolean {
   return ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(node.operand);
 }
 
+/**
+ * One own data property. A shorthand name is not a value written in the object, and `__proto__`
+ * is the prototype setter: assigning it does not store the property, so the object becomes `{}`.
+ */
+function concreteMember(prop: ts.ObjectLiteralElementLike): { ok: true; key: string; init: ts.Expression } | { ok: false } {
+  const shorthand = ts.isShorthandPropertyAssignment(prop);
+  if (!shorthand && !ts.isPropertyAssignment(prop)) return { ok: false };
+  const name = prop.name;
+  if (!name || (!ts.isIdentifier(name) && !ts.isStringLiteral(name) && !ts.isNumericLiteral(name))) return { ok: false };
+  if (shorthand) return { ok: false }; // spec-guard:shorthand-prop
+  if (name.text === "__proto__") return { ok: false }; // spec-guard:proto-key
+  const init = ts.isPropertyAssignment(prop) ? prop.initializer : name;
+  if (!concreteArg(init)) return { ok: false };
+  return { ok: true, key: name.text, init };
+}
+
 function concrete(node: ts.Expression): boolean {
   const expr = unwrap(node);
   if (literal(expr)) return true;
   if (ts.isArrayLiteralExpression(expr)) return expr.elements.every((el) => el && !ts.isSpreadElement(el) && ts.isExpression(el) && concrete(el));
   if (ts.isObjectLiteralExpression(expr)) {
-    return expr.properties.every((p) => ts.isPropertyAssignment(p) && concrete(p.initializer) && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) || ts.isNumericLiteral(p.name)));
+    return expr.properties.every((p) => {
+      const member = concreteMember(p);
+      return member.ok && concrete(member.init);
+    });
   }
   return false;
 }
@@ -213,11 +232,41 @@ function snippet(sf: ts.SourceFile, node: ts.Node): string {
   return sf.text.slice(node.getStart(sf), node.getEnd()).replace(/\s+/g, " ").slice(0, 80);
 }
 
+/** ECMAScript sentinels written as names, not calls. `globalThis.NaN` and `missing` are not these. */
+function sentinelValue(expr: ts.Expression): { ok: true; value: unknown } | { ok: false } {
+  if (ts.isIdentifier(expr)) {
+    if (expr.text === "NaN") return { ok: true, value: Number.NaN };
+    if (expr.text === "Infinity") return { ok: true, value: Number.POSITIVE_INFINITY };
+    if (expr.text === "undefined") return { ok: true, value: undefined };
+  }
+  if (ts.isPrefixUnaryExpression(expr) && ts.isIdentifier(expr.operand) && expr.operand.text === "Infinity") {
+    if (expr.operator === ts.SyntaxKind.MinusToken) return { ok: true, value: Number.NEGATIVE_INFINITY };
+    if (expr.operator === ts.SyntaxKind.PlusToken) return { ok: true, value: Number.POSITIVE_INFINITY };
+  }
+  if (ts.isPropertyAccessExpression(expr) && !expr.questionDotToken && ts.isIdentifier(expr.expression) && expr.expression.text === "Number") {
+    if (expr.name.text === "NaN") return { ok: true, value: Number.NaN };
+    if (expr.name.text === "POSITIVE_INFINITY") return { ok: true, value: Number.POSITIVE_INFINITY };
+    if (expr.name.text === "NEGATIVE_INFINITY") return { ok: true, value: Number.NEGATIVE_INFINITY };
+  }
+  return { ok: false };
+}
+
+/** A call argument the expectation can replay: a literal, a sentinel, or a collection of those. */
+function concreteArg(expr: ts.Expression): boolean {
+  if (literal(expr)) return true;
+  if (sentinelValue(expr).ok) return true;
+  if (ts.isArrayLiteralExpression(expr)) return expr.elements.every((el) => ts.isExpression(el) && concreteArg(el));
+  if (ts.isObjectLiteralExpression(expr)) return expr.properties.every((p) => concreteMember(p).ok);
+  return false;
+}
+
 function called(expr: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: ts.SourceFile): { symbol: string; file: string; input: string } | null {
   const inner = unwrap(expr);
   if (!ts.isCallExpression(inner)) return null;
   const callee = inner.expression;
-  if (!inner.arguments.every((arg) => literal(unwrap(arg)))) return null;
+  let argOk = inner.arguments.every((arg) => literal(unwrap(arg)));
+  argOk = inner.arguments.every((arg) => concreteArg(unwrap(arg))); // spec-guard:concrete-arg
+  if (!argOk) return null;
   const input = inner.arguments.map((arg) => snippet(sf, arg)).join(", ");
   if (ts.isIdentifier(callee)) {
     const b = locals.get(callee.text);
@@ -246,7 +295,7 @@ function arrowCall(fn: ts.Expression, locals: ReadonlyMap<string, Binding>, sf: 
   return null;
 }
 
-/** Concrete expectations already written in the test. A call with a non-literal argument is not one. */
+/** Concrete expectations already written in the test. A call argument counts when it is a literal, a sentinel, or a collection of those. */
 export function expectationsIn(testFile: string, text: string, sourcePattern: string, denyPatterns: readonly string[] = [], exists: (path: string) => boolean = () => true, failing: readonly string[] = []): Expectation[] {
   const found = bindings(testFile, text, sourcePattern, denyPatterns, exists);
   const locals = new Map(found.map((b) => [b.local, b]));
@@ -641,6 +690,8 @@ function evalConcrete(node: ts.Expression): { ok: true; value: unknown } | { ok:
   if (expr.kind === ts.SyntaxKind.FalseKeyword) return { ok: true, value: false };
   if (expr.kind === ts.SyntaxKind.NullKeyword) return { ok: true, value: null };
   if (ts.isPrefixUnaryExpression(expr) && expr.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(expr.operand)) return { ok: true, value: -Number(expr.operand.text) };
+  const sent = sentinelValue(expr);
+  if (sent.ok) return sent; // spec-guard:sentinel-value
   if (ts.isArrayLiteralExpression(expr)) {
     const items: unknown[] = [];
     for (const el of expr.elements) {
@@ -654,12 +705,11 @@ function evalConcrete(node: ts.Expression): { ok: true; value: unknown } | { ok:
   if (ts.isObjectLiteralExpression(expr)) {
     const obj: Record<string, unknown> = {};
     for (const prop of expr.properties) {
-      if (!ts.isPropertyAssignment(prop)) return { ok: false };
-      const key = ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name) || ts.isNumericLiteral(prop.name) ? prop.name.text : null;
-      if (key === null) return { ok: false };
-      const v = evalConcrete(prop.initializer);
+      const member = concreteMember(prop);
+      if (!member.ok) return { ok: false };
+      const v = evalConcrete(member.init);
       if (!v.ok) return v;
-      obj[key] = v.value;
+      Object.defineProperty(obj, member.key, { value: v.value, enumerable: true, writable: true, configurable: true });
     }
     return { ok: true, value: obj };
   }
@@ -1409,7 +1459,7 @@ export function runTestSpec(input: SpecInput): SpecResult {
     }
   }
   const proposer = repairProposer({ v2: true });
-  proposer.prepare(repo, { request, failing, baseFailing: failing });
+  proposer.prepare(repo, { request, failing, baseFailing: failing, specText: testText });
   const files = [...original.entries()].map(([path, content]) => ({ path, content }));
   const feedback: RepairFeedback[] = [];
   let attempts = 0;
