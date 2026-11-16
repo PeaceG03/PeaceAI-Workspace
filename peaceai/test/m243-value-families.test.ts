@@ -177,7 +177,7 @@ test("strict null needs undefined false, and both nullish values true stay nil",
   const unseen = admit("src/unseen.spec.ts", "import { unseen } from './unseen';\nexpect(unseen(null)).toBe(true);\nexpect(unseen(0)).toBe(false);\n", "src/unseen.ts");
   assert.equal(unseen?.ok, false);
   const flipped = admit("src/flipped.spec.ts", "import { flipped } from './flipped';\nexpect(flipped(null)).toBe(false);\nexpect(flipped(undefined)).toBe(false);\nexpect(flipped(1)).toBe(true);\n", "src/flipped.ts");
-  assert.equal(flipped?.ok, false);
+  assert.match(bodyOf(flipped), /return a != null;/);
 });
 
 const base = resolve(root, "peaceai/test/.m243-mutants");
