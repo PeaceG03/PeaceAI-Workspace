@@ -14,7 +14,7 @@ import { LOG_PATH, type Entry } from "../../builder-log/check.ts";
 import { makeGitOnMainChecker, denverYmd } from "../../builder-log/coverage.ts";
 import { parseLogEntries } from "../../builder-log/coverage.ts";
 import { buildCapabilityReport, inputDigest, type ReplayBind } from "../lib/capabilityreport.ts";
-import { CORE_ENTRY, boundReplay, citedIssue, classifyJobOutput, commitRef, landingParent, replayIssueTitle, routeReplay, type CommitRef } from "../lib/capabilityjob.ts";
+import { CORE_ENTRY, boundReplay, citedIssue, classifyJobOutput, commitRef, landingParent, replayIssueTitle, routeFetchedIssue, type CommitRef, type IssueBodyResult } from "../lib/capabilityjob.ts";
 import { needsRepoSlots, readSlotRepo } from "../lib/slotfill.ts";
 export { publicGateReason } from "../lib/practicereplay.ts";
 import { publicGateReason } from "../lib/practicereplay.ts";
@@ -266,13 +266,65 @@ export function jobaWorkDir(seq: number): string {
   return mkdtempSync(join(tmpdir(), `peaceai-joba-${seq}-`));
 }
 
-function issueBody(n: number): string | null {
+/** One retry, long enough to ride out a hiccup and short next to the 30s gh timeout. */
+export const ISSUE_FETCH_BACKOFF_MS = 1_000;
+
+export interface IssueSpawnResult {
+  status: number | null;
+  error?: { code?: string } | null;
+  stdout?: string;
+}
+
+/** One `gh issue view` attempt. Tests pass their own. */
+export type IssueSpawn = (n: number) => IssueSpawnResult;
+
+function ghIssueSpawn(n: number): IssueSpawnResult {
   const r = spawnSync("gh", ["issue", "view", String(n), "--repo", "PeaceG03/PeaceAI-Workspace", "--json", "body"], { encoding: "utf8", timeout: 30_000 });
-  if (r.status !== 0) return null;
-  try {
-    const body = (JSON.parse(r.stdout) as { body?: unknown }).body;
-    return typeof body === "string" ? body : null;
-  } catch { return null; }
+  const error = r.error as NodeJS.ErrnoException | undefined;
+  return { status: r.status, error, stdout: r.stdout };
+}
+
+function waitMs(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** gh's body field. Empty and null are an absent body. Unreadable output is an error. */
+function bodyFromStdout(stdout: string | undefined): IssueBodyResult {
+  let parsed: unknown;
+  try { parsed = JSON.parse(stdout ?? ""); } catch { return { kind: "error", reason: "ISSUE_FETCH_FAILED: bad json" }; }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { kind: "error", reason: "ISSUE_FETCH_FAILED: bad json" };
+  const body = (parsed as { body?: unknown }).body;
+  if (body == null) return { kind: "empty" };
+  if (typeof body !== "string") return { kind: "error", reason: "ISSUE_FETCH_FAILED: bad json" };
+  if (!body.trim()) return { kind: "empty" };
+  return { kind: "body", body };
+}
+
+function oneFetch(n: number, spawn: IssueSpawn): IssueBodyResult {
+  const ran = spawn(n);
+  if (ran.error?.code === "ETIMEDOUT") return { kind: "error", reason: "ETIMEDOUT" };
+  if (ran.status !== 0) return { kind: "error", reason: `ISSUE_FETCH_FAILED: exit ${ran.status ?? "null"}` };
+  return bodyFromStdout(ran.stdout);
+}
+
+/**
+ * The issue body, a genuinely empty or absent body, or a fetch error.
+ * An error is retried once after a short backoff. `cache` keeps that result for the rest of the run.
+ * Tests pass `spawn` and `sleep`. The defaults call gh and do not run in tests.
+ */
+export function issueBody(n: number, deps?: { spawn?: IssueSpawn; sleep?: (ms: number) => void; cache?: Map<number, IssueBodyResult> }): IssueBodyResult {
+  const cache = deps?.cache;
+  const hit = cache?.get(n);
+  if (hit) return hit;
+  const spawn = deps?.spawn ?? ghIssueSpawn;
+  const sleep = deps?.sleep ?? waitMs;
+  let got = oneFetch(n, spawn);
+  if (got.kind === "error") {
+    sleep(ISSUE_FETCH_BACKOFF_MS);
+    got = oneFetch(n, spawn);
+  }
+  cache?.set(n, got);
+  return got;
 }
 
 /** The parent tree, checked out. The caller removes the worktree. */
@@ -354,6 +406,7 @@ function main(): void {
   console.log(`family dev rows=${devScore.rows} correct=${devScore.correct} wrong=${devScore.wrong} refused=${devScore.refused} kept=${model.families.join(",")}`);
   console.log(`family heldout rows=${heldScore.rows} correct=${heldScore.correct} wrong=${heldScore.wrong} refused=${heldScore.refused}`);
   const preview = buildCapabilityReport(logText, asOf, onMain, [], null, bind, cloneHead);
+  const issueCache = new Map<number, IssueBodyResult>();
   const replay = [];
   for (const r of preview.rows.filter((row) => row.inSet)) {
     const entry = entries.get(r.seq);
@@ -364,20 +417,24 @@ function main(): void {
     if ("reason" in target) rec = boundReplay(r.seq, "unmeasured", target.reason, bind);
     else {
       const cited = citedIssue(asked);
-      const raw = cited ? issueBody(cited) : null;
+      const fetched = cited === null ? null : issueBody(cited, { cache: issueCache });
       const paths = target.repo === "PeaceAI-Workspace" ? commitPaths(repo, target.sha) ?? undefined : undefined;
-      let route = routeReplay({ model, asked, changed, issueBody: raw, seq: r.seq, paths });
+      let route = routeFetchedIssue({ model, asked, changed, fetched, seq: r.seq, paths });
       let prepared: string | undefined;
-      if ("fail" in route && needsRepoSlots(asked) && !buildError && bundle) {
+      if ("status" in route) {
+        if (fetched?.kind === "error") console.log(`issue ${cited} ${fetched.reason}`);
+        rec = boundReplay(r.seq, "unmeasured", route.reason, bind);
+      } else if ("fail" in route && needsRepoSlots(asked) && !buildError && bundle) {
         const src = target.repo === "PeaceSTOCKS" ? stocks : repo;
         const opened = checkoutParent(src, target.sha, r.seq);
         if ("error" in opened) rec = boundReplay(r.seq, "unmeasured", opened.error.includes("NO_CLONE") || opened.error.includes("unset") ? `NO_CLONE: ${target.repo}` : opened.error, bind);
         else {
           prepared = opened.dir;
-          route = routeReplay({ model, asked, changed, issueBody: raw, seq: r.seq, paths, repo: readSlotRepo(opened.dir, asked) });
+          route = routeFetchedIssue({ model, asked, changed, fetched, seq: r.seq, paths, repo: readSlotRepo(opened.dir, asked) });
         }
       }
-      if (rec) { /* slot checkout could not be opened */ }
+      if (rec) { /* slot checkout could not be opened, or the cited issue could not be fetched */ }
+      else if ("status" in route) rec = boundReplay(r.seq, "unmeasured", route.reason, bind);
       else if ("fail" in route) rec = boundReplay(r.seq, "fail", route.fail, bind);
       else if (buildError || !bundle) rec = boundReplay(r.seq, "unmeasured", buildError ?? "KERNEL_MISSING", bind);
       else {
