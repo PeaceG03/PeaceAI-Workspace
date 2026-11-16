@@ -136,6 +136,17 @@ test("a finite number needs a false non-finite example, and a string is not last
   assert.equal(bodyOf(witnessed).includes("Number.isFinite"), false);
   const word = admit("src/word.spec.ts", "import { word } from './word';\nexpect(word('ab')).toBe('b');\nexpect(word('cd')).toBe('d');\n", "src/word.ts");
   assert.equal(word?.ok, false);
+  const lie = admit("src/foo.spec.ts", [
+    "import { foo } from './foo';",
+    "expect(foo(1)).toBe(true);",
+    "expect(foo(1.5)).toBe(true);",
+    "expect(foo(-1)).toBe(true);",
+    "expect(foo(Infinity)).toBe(false);",
+    "expect(foo(NaN)).toBe(false);",
+    "expect(foo('x')).toBe(false);",
+    "expect(foo(Object(1))).toBe(true);",
+  ].join("\n"), "src/foo.ts");
+  assert.equal(lie?.ok, false);
   const repeated = admit("src/same.spec.ts", "import { same } from './same';\nexpect(same([1, 2])).toBe(2);\nexpect(same([9, 2])).toBe(2);\n", "src/same.ts");
   assert.match(bodyOf(repeated), /return 2;/);
   assert.equal(bodyOf(repeated).includes("a.length"), false);
@@ -219,7 +230,17 @@ test("deleting a value-family guard admits the case it refused", async () => {
   const notNull = await open("null-guard:null-true", "src/notnull.spec.ts", "import { notnull } from './notnull';\nexpect(notnull(null)).toBe(false);\nexpect(notnull(undefined)).toBe(false);\nexpect(notnull(0)).toBe(false);\n");
   assert.equal(notNull?.ok, false);
 
-  const blocked = await open("spec-guard:opaque-call", "src/compat/predicate/isFinite.spec.ts", pinned("es-toolkit-isFinite.spec.ts.txt"));
-  assert.equal(blocked?.ok, false);
+  const lie = await open("spec-guard:opaque-call", "src/foo.spec.ts", [
+    "import { foo } from './foo';",
+    "expect(foo(1)).toBe(true);",
+    "expect(foo(1.5)).toBe(true);",
+    "expect(foo(-1)).toBe(true);",
+    "expect(foo(Infinity)).toBe(false);",
+    "expect(foo(NaN)).toBe(false);",
+    "expect(foo('x')).toBe(false);",
+    "expect(foo(Object(1))).toBe(true);",
+  ].join("\n"));
+  assert.equal(lie?.ok, true);
+  if (lie?.ok) assert.match(lie.files[0]!.content, /return Number\.isFinite\(a\);/);
   rmSync(base, { recursive: true, force: true });
 });

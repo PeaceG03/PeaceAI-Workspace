@@ -22,14 +22,16 @@ These shapes read only the recorded calls. They do not copy a fix. A shape is ke
 
 ## Opaque calls
 
-`spec-guard:opaque-call` drops a recorded call whose argument is not concrete. Deleting it restores the refusal of any such call. The published test still runs that call, so a body that is wrong on it is not kept.
+A call whose argument is not a literal still has its expectation. After one body is chosen from the concrete calls, that body is run on the argument. An identifier is the const it names, one step, when that const is earlier in the same block. `Object(1)`, `Array(1000).fill(0).map((_, i) => i)`, and an array written in a const are run. A mismatch refuses the body. An argument that cannot be run refuses it too. `expect(foo(Object(1))).toBe(true)` does not emit `Number.isFinite(a)`, which is false for `Object(1)`.
+
+`spec-guard:opaque-call` is that check. Deleting it keeps the body without running the opaque call.
 
 ## Admitted
 
 `toss/es-toolkit` at `24e7a7b8cb8035fae1ea2e7b507aab96698a38b9` (MIT). The bytes are pinned in `peaceai/test/m243-value-families.test.ts`.
 
-- compat `isFinite` is `Number.isFinite(value)`. The published test fails when the function throws and passes on `Number.isFinite(a)`. `Object(1)` is not a concrete argument, so it is not an example. The test still checks it.
-- `last` is `arr[arr.length - 1]`. The scaffold emits `a[a.length - 1]`, and `last([])` is `undefined`.
+- compat `isFinite` is `Number.isFinite(value)`. The published test fails when the function throws and passes on `Number.isFinite(a)`. `Object(1)` is expected false, and `Number.isFinite` is false there, so the call is kept.
+- `last` is `arr[arr.length - 1]`. The scaffold emits `a[a.length - 1]`, and `last([])` is `undefined`. `largeArray` and `nestedArray` are consts. The body is run on both, and both agree.
 - `isNull` is `x === null`. `undefined` is false in the published test, so nil does not fit.
 
 ## Not in this batch

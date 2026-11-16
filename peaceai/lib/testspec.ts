@@ -16,6 +16,7 @@
 // test passes and the original suite still passes. Nothing here pushes.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
+import vm from "node:vm";
 import ts from "typescript";
 import { isTestPath, openRepo } from "./codesearch.ts";
 import { MAX_CANDIDATES, repairProposer, type RepairFeedback } from "./editpropose.ts";
@@ -657,7 +658,14 @@ export type ScaffoldPlan =
 const PARAMS = ["a", "b", "c", "d", "e", "f"];
 
 interface BindingRef { spec: string; file: string | null; local: string; imported: string; kind: "named" | "default" | "namespace" }
-interface CallFact { arity: number; args: unknown[] | null; reduced: { kind: "equal" | "boolean" | "type"; expected: unknown } | { kind: "throws" } | null }
+interface CallReplay { source: string; init: string | null }
+interface CallFact {
+  arity: number;
+  args: unknown[] | null;
+  /** Argument text for a call whose value was not concrete. `init` is the const it names, one step. */
+  replay?: CallReplay[];
+  reduced: { kind: "equal"; expected: unknown; deep?: boolean } | { kind: "boolean" | "type"; expected: unknown } | { kind: "throws" } | null;
+}
 interface Want { symbol: string; module: string; file: string | null; shape: MissingSymbol["shape"]; calls: CallFact[] }
 
 function stripQuotes(text: string): string {
@@ -724,6 +732,31 @@ function evalConcrete(node: ts.Expression): { ok: true; value: unknown } | { ok:
   return { ok: false };
 }
 
+/** The const initializer an identifier names, when that const is earlier in the same block. One step. */
+function constInit(name: string, at: ts.Node, sf: ts.SourceFile): string | null {
+  let node: ts.Node | undefined = at.parent;
+  while (node) {
+    if ((ts.isBlock(node) || ts.isSourceFile(node) || ts.isModuleBlock(node) || ts.isCaseClause(node) || ts.isDefaultClause(node)) && "statements" in node) {
+      for (const st of node.statements) {
+        if (!ts.isVariableStatement(st) || !(st.declarationList.flags & ts.NodeFlags.Const)) continue;
+        for (const decl of st.declarationList.declarations) {
+          if (!ts.isIdentifier(decl.name) || decl.name.text !== name || !decl.initializer) continue;
+          if (decl.initializer.end > at.getStart(sf)) continue;
+          return decl.initializer.getText(sf);
+        }
+      }
+    }
+    node = node.parent;
+  }
+  return null;
+}
+
+function replayArg(expr: ts.Expression, at: ts.Node, sf: ts.SourceFile): CallReplay {
+  const source = expr.getText(sf);
+  if (!ts.isIdentifier(expr)) return { source, init: null };
+  return { source, init: constInit(expr.text, at, sf) };
+}
+
 function reducedOf(call: ts.CallExpression): CallFact["reduced"] {
   const parent = call.parent;
   if (ts.isCallExpression(parent) && ts.isIdentifier(parent.expression) && parent.expression.text === "typeof" && parent.arguments[0] === call) {
@@ -751,10 +784,10 @@ function reducedOf(call: ts.CallExpression): CallFact["reduced"] {
     if (ts.isPropertyAccessExpression(outer) && ts.isCallExpression(outer.parent) && outer.parent.expression === outer) {
       const name = outer.name.text;
       if (name === "toBeUndefined") return { kind: "equal", expected: undefined }; // spec-guard:be-undefined
-      if ((name === "toBe" || name === "toEqual" || name === "toStrictEqual") && outer.parent.arguments[0]) {
-        const v = evalConcrete(outer.parent.arguments[0]);
-        return v.ok ? { kind: "equal", expected: v.value } : null;
-      }
+        if ((name === "toBe" || name === "toEqual" || name === "toStrictEqual") && outer.parent.arguments[0]) {
+          const v = evalConcrete(outer.parent.arguments[0]);
+          return v.ok ? { kind: "equal", expected: v.value, ...(name === "toBe" ? {} : { deep: true }) } : null;
+        }
       if (name === "toThrow" || name === "toThrowError") return { kind: "throws" };
     }
   }
@@ -766,7 +799,8 @@ function reducedOf(call: ts.CallExpression): CallFact["reduced"] {
   if ((obj === "assert" || obj === "assertStrict") && at === 0) {
     if ((method === "equal" || method === "strictEqual" || method === "deepEqual" || method === "deepStrictEqual") && other) {
       const v = evalConcrete(other);
-      return v.ok ? { kind: "equal", expected: v.value } : null;
+      const deep = method === "deepEqual" || method === "deepStrictEqual";
+      return v.ok ? { kind: "equal", expected: v.value, ...(deep ? { deep: true } : {}) } : null;
     }
     if (method === "ok") return { kind: "boolean", expected: true };
   }
@@ -775,7 +809,7 @@ function reducedOf(call: ts.CallExpression): CallFact["reduced"] {
     if (at === 0 && method === "false") return { kind: "boolean", expected: false };
     if ((method === "is" || method === "deepEqual") && other) {
       const v = evalConcrete(other);
-      return v.ok ? { kind: "equal", expected: v.value } : null;
+      return v.ok ? { kind: "equal", expected: v.value, ...(method === "deepEqual" ? { deep: true } : {}) } : null;
     }
   }
   return throwsOf(call);
@@ -1291,6 +1325,58 @@ function nullBody(examples: Example[]): string | null {
   return "  return a === null;";
 }
 
+const REPLAY_DENY = /\b(?:require|import|process|eval|Function|globalThis|constructor|__proto__|arguments)\b/;
+
+function replayContext(): vm.Context {
+  return vm.createContext({ Object, Array, Number, String, Boolean, Math, JSON, NaN, Infinity, undefined });
+}
+
+function safeReplay(expr: string): boolean {
+  return expr.length > 0 && expr.length <= 2000 && !REPLAY_DENY.test(expr) && !expr.includes("`");
+}
+
+function deepSame(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) && Array.isArray(right)) return left.length === right.length && left.every((item, i) => deepSame(item, right[i]));
+  if (left && right && typeof left === "object" && typeof right === "object") {
+    const a = left as Record<string, unknown>;
+    const b = right as Record<string, unknown>;
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every((key) => deepSame(a[key], b[key]));
+  }
+  return false;
+}
+
+/** Run the chosen body on one opaque call. False when the argument cannot be run or the result disagrees. */
+function replayHolds(body: string, call: CallFact): boolean {
+  const reduced = call.reduced;
+  const replay = call.replay;
+  if (!reduced || reduced.kind === "throws" || !replay || replay.length !== call.arity) return false;
+  const params = PARAMS.slice(0, replay.length);
+  const lines: string[] = [];
+  for (let i = 0; i < replay.length; i++) {
+    const item = replay[i]!;
+    const expr = item.init ?? item.source;
+    if (item.init === null && /^[A-Za-z_$][\w$]*$/.test(item.source)) return false;
+    if (!safeReplay(expr)) return false;
+    lines.push(`const ${params[i]} = (${expr});`);
+  }
+  const src = `${lines.join("\n")}\nfunction f(${params.join(", ")}) {\n${body}\n}\nf(${params.join(", ")})`;
+  let value: unknown;
+  try { value = vm.runInNewContext(src, replayContext(), { timeout: 50 }); } catch { return false; }
+  if (reduced.kind === "type") return (value === null ? "object" : typeof value) === reduced.expected;
+  if (reduced.kind === "boolean") return Object.is(value, reduced.expected);
+  return reduced.kind === "equal" && reduced.deep ? deepSame(value, reduced.expected) : Object.is(value, reduced.expected);
+}
+
+function opaqueAgrees(body: string, calls: readonly CallFact[]): boolean {
+  for (const call of calls) {
+    if (call.args !== null || !call.reduced || call.reduced.kind === "throws") continue;
+    if (!replayHolds(body, call)) return false;
+  }
+  return true;
+}
+
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
 export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "finite", "last", "null", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
@@ -1303,9 +1389,7 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   if (arity > PARAMS.length) return "signature";
   const reduced = calls.filter((call) => call.reduced);
   const threw = reduced.some((call) => call.reduced?.kind === "throws");
-  let hidden = reduced.some((call) => call.args === null);
-  hidden = false; // spec-guard:opaque-call
-  if (!reduced.length || threw || hidden) return "no-body";
+  if (!reduced.length || threw) return "no-body";
   const usable = reduced.filter((call) => call.args !== null);
   if (!usable.length) return "no-body";
   const examples: Example[] = usable.map((call) => ({ args: call.args as unknown[], expected: call.reduced && "expected" in call.reduced ? call.reduced.expected : null }));
@@ -1341,6 +1425,9 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   if (peersFit.length === 1) keep(`  return ${peersFit[0]!.name}(${PARAMS.slice(0, arity).join(", ")});`, "unknown", "peer");
   const unique = [...new Map(options.map((option) => [option.body, option])).values()];
   if (unique.length !== 1) return "no-body";
+  let checked = true;
+  checked = opaqueAgrees(unique[0]!.body, reduced); // spec-guard:opaque-call
+  if (!checked) return "no-body";
   return { body: unique[0]!.body, types, ret: unique[0]!.ret, shape: unique[0]!.shape };
 }
 
@@ -1410,9 +1497,11 @@ export function scaffoldPlan(testFile: string, text: string, output: string, sou
       }
       if (hit && selected(hit.binding, hit.symbol, hit.binding.local)) {
         const args = node.arguments.map((arg) => evalConcrete(unwrap(arg)));
+        const concrete = args.every((arg) => arg.ok);
         add({ symbol: hit.symbol, module: hit.binding.spec, file: hit.binding.file, shape: hit.shape }, {
           arity: node.arguments.length,
-          args: args.every((arg) => arg.ok) ? args.map((arg) => arg.ok ? arg.value : null) : null,
+          args: concrete ? args.map((arg) => arg.ok ? arg.value : null) : null,
+          ...(concrete ? {} : { replay: node.arguments.map((arg) => replayArg(unwrap(arg), node, sf)) }),
           reduced: reducedOf(node),
         });
       }
