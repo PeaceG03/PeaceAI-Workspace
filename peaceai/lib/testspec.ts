@@ -750,6 +750,8 @@ function reducedOf(call: ts.CallExpression): CallFact["reduced"] {
     const outer = parent.parent;
     if (ts.isPropertyAccessExpression(outer) && ts.isCallExpression(outer.parent) && outer.parent.expression === outer) {
       const name = outer.name.text;
+      if (name === "toBeUndefined") return { kind: "equal", expected: undefined }; // spec-guard:be-undefined
+      if (name === "toBeNull") return { kind: "equal", expected: null }; // spec-guard:be-null
       if ((name === "toBe" || name === "toEqual" || name === "toStrictEqual") && outer.parent.arguments[0]) {
         const v = evalConcrete(outer.parent.arguments[0]);
         return v.ok ? { kind: "equal", expected: v.value } : null;
@@ -1143,8 +1145,105 @@ function renderReturn(parts: string[]): string {
   return `  return ${parts.join(" + ")};`;
 }
 
+const TAG_ORDER = ["boolean", "number", "string", "array", "object"] as const;
+type ValueTag = (typeof TAG_ORDER)[number];
+
+/** An array is not an object. null and undefined are not tags: nil owns them, and only together. A function, a symbol, or a bigint is not a tag. */
+function valueTag(value: unknown): ValueTag | "nullish" | null {
+  if (value === null || value === undefined) return "nullish";
+  if (Array.isArray(value)) return "array";
+  const kind = typeof value;
+  if (kind === "boolean" || kind === "number" || kind === "string") return kind;
+  if (kind === "object") return "object";
+  return null;
+}
+
+const TAG_TEXT: Record<ValueTag, string> = {
+  boolean: 'typeof a === "boolean"',
+  number: 'typeof a === "number"',
+  string: 'typeof a === "string"',
+  array: "Array.isArray(a)",
+  object: 'typeof a === "object"',
+};
+
+/**
+ * One tag test. Exactly one tag is true on every example of that tag, every
+ * other tag that appears is false, and the object tag is refused: `typeof`
+ * object is also true for arrays and for null.
+ */
+function tagBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1 || typeof ex.expected !== "boolean")) return null;
+  const rows: { tag: ValueTag; expected: boolean }[] = [];
+  for (const ex of examples) {
+    const tag = valueTag(ex.args[0]);
+    if (tag === "nullish") {
+      if (ex.expected === true) return null;
+      continue;
+    }
+    if (!tag) return null;
+    rows.push({ tag, expected: ex.expected as boolean });
+  }
+  if (!rows.length) return null;
+  const present = TAG_ORDER.filter((tag) => rows.some((row) => row.tag === tag));
+  const of = (tag: ValueTag) => rows.filter((row) => row.tag === tag);
+  const same = (tag: ValueTag) => of(tag).every((row) => row.expected === of(tag)[0]!.expected);
+  if (present.some((tag) => !same(tag))) return null; // tag-guard:uniform
+  const trues = present.filter((tag) => of(tag)[0]!.expected === true);
+  const falses = present.filter((tag) => of(tag)[0]!.expected === false);
+  if (trues.length !== 1) return null; // tag-guard:one-tag
+  if (trues[0] === "object") return null; // tag-guard:not-object
+  if (!falses.length) return null; // tag-guard:others-false
+  return `  return ${TAG_TEXT[trues[0]!]};`;
+}
+
+/** `a == null` when null and undefined are both true and every other example is false. */
+function nilBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1 || typeof ex.expected !== "boolean")) return null;
+  const isNull = (ex: Example) => ex.args[0] === null;
+  const isUndef = (ex: Example) => ex.args[0] === undefined;
+  const nulls = examples.filter(isNull);
+  const undefs = examples.filter(isUndef);
+  const rest = examples.filter((ex) => !isNull(ex) && !isUndef(ex));
+  if (!nulls.length || !undefs.length) return null; // nil-guard:both
+  if (nulls.some((ex) => ex.expected !== true) || undefs.some((ex) => ex.expected !== true)) return null; // nil-guard:nullish-true
+  if (!rest.length || rest.some((ex) => ex.expected !== false)) return null; // nil-guard:others-false
+  return "  return a == null;";
+}
+
+/** Index 0 of an array or, for the array guard's mutant, of a string. */
+function atZero(value: unknown): { ok: true; value: unknown } | { ok: false } {
+  if (typeof value === "string" || Array.isArray(value)) return { ok: true, value: value.length === 0 ? undefined : value[0] };
+  return { ok: false };
+}
+
+/** `a[0]`, including undefined for an empty array. A constant first element stays the literal. */
+function headBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // head-guard:arrays
+  if (!examples.every((ex) => { const got = atZero(ex.args[0]); return got.ok && Object.is(got.value, ex.expected); })) return null; // head-guard:index0
+  const shown = examples.map((ex) => Object.is(ex.expected, undefined) ? "undefined" : JSON.stringify(ex.expected));
+  if (new Set(shown).size < 2) return null; // head-guard:varies
+  return "  return a[0];";
+}
+
+/** Code-point reverse of a string, or of an array of strings for the string guard's mutant. */
+function reversedText(value: unknown): string | null {
+  if (typeof value === "string") return Array.from(value).reverse().join("");
+  if (Array.isArray(value) && value.every((item) => typeof item === "string")) return value.slice().reverse().join("");
+  return null;
+}
+
+/** `Array.from(a).reverse().join("")` when a non-palindrome shows it is not the identity. */
+function reverseBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1 || typeof ex.expected !== "string")) return null;
+  if (!examples.every((ex) => typeof ex.args[0] === "string")) return null; // rev-guard:strings
+  if (!examples.every((ex) => reversedText(ex.args[0]) === ex.expected)) return null; // rev-guard:reversed
+  if (examples.every((ex) => ex.args[0] === ex.expected)) return null; // rev-guard:not-identity
+  return '  return Array.from(a).reverse().join("");';
+}
+
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "peer"] as const;
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
 function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
@@ -1174,6 +1273,10 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   }
   keep(comparisonBody(concrete), "boolean", "comparison");
   keep(integerBody(concrete), "boolean", "integer");
+  keep(tagBody(concrete), "boolean", "tag");
+  keep(nilBody(concrete), "boolean", "nil");
+  keep(headBody(concrete), resultType(concrete.map((ex) => ex.expected)), "head");
+  keep(reverseBody(concrete), "string", "reverse");
   keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");
   keep(sumBody(concrete), "number", "sum");
   keep(splitBody(concrete), "string", "split");
@@ -1307,10 +1410,11 @@ export function scaffoldPlan(testFile: string, text: string, output: string, sou
       targets.push(fitted.target);
       for (const call of want.calls) {
         if (!call.reduced || call.args === null || call.reduced.kind === "throws" || expectations.length >= 32) continue;
+        const shown = (value: unknown) => JSON.stringify(value) ?? "undefined";
         expectations.push({
           kind: call.reduced.kind, symbol: want.symbol, file: path,
-          input: call.args.map((arg) => JSON.stringify(arg)).join(", ").slice(0, 80),
-          expected: JSON.stringify(call.reduced.expected).slice(0, 80),
+          input: call.args.map(shown).join(", ").slice(0, 80),
+          expected: shown(call.reduced.expected).slice(0, 80),
         });
       }
     }
