@@ -1,25 +1,27 @@
-# Scaffold families: closed bounds, array quantifiers, integer predicates
+# Scaffold families: closed bounds and integer predicates
 
-These three shapes read only the recorded calls. They do not copy a fix. A shape is kept only when every reduced call agrees with that one form. Two forms are `CANT_DO_YET_NO_BODY`.
+These shapes read only the recorded calls. They do not copy a fix. A shape is kept only when every reduced call agrees with that one form. Two forms are `CANT_DO_YET_NO_BODY`.
 
 ## Closed integer bound
 
-`a > n` and `a >= n+1` agree on every safe integer and disagree on the open interval between them. The scaffold already treats them as one class when every example argument is an integer and both bounds are safe integers. The emitted text is the closed form when that literal is one of the examples (`a >= 6`, not `a > 5`). The closed literal is an argument the examples accept. The open literal is an argument they reject. The behavior grade still distinguishes the two forms on the floats between them, so a fix written with the open bound stays `verified_test_only`.
+`a > n` and `a >= n+1` agree on every safe integer and disagree on the open interval between them. The scaffold treats them as one class when every example argument in that class is an integer and both bounds are safe integers. The emitted text is the closed form when that literal is one of the examples (`a >= 4`, not `a > 3`). The closed literal is an argument the examples accept. The open literal is an argument they reject. The behavior grade still distinguishes the two forms on the floats between them, so a fix written with the open bound stays `verified_test_only`.
 
 `cmp-guard:closed-bound` is that replacement. Deleting it leaves the first form, which is the open bound.
 
-## Number-array quantifier
+## Integer conjunction
 
-A single argument that is an array of numbers, and a boolean result, can be `some` or `every` of one comparison. An empty array is false for `some` and true for `every`, so the examples pick one. Integer classes use the same closed representative as a scalar comparison. Two classes, including `item > 0` and `item >= 2` when `1` is not an element the examples decide, are `CANT_DO_YET_NO_BODY`.
+`Number.isInteger(a) && <comparison>` is emitted when every example that is not an integer is false and the integer examples have one class. The comparison is that same closed representative. A string, a boolean, `NaN`, `Infinity`, or a fraction is false under `Number.isInteger`. A non-integer the examples accept is not this shape. A gap such as `8` false and `12` true, with no `9`, is two classes and is refused. No non-integer example, no conjunction: the bare comparison already says the same thing on those integers. A numeric literal may contain `_` separators. `1_832_923` is the integer 1832923.
 
-`quant-guard:one-class` is that refusal. Deleting it emits one of the two classes.
-
-## Integer conjunction, and one default property
-
-`Number.isInteger(a) && <comparison>` is emitted only when a non-integer example is present, every non-integer example is false, the bare comparison does not already fit those non-integers, and the integer examples have one class. On the integers the conjunction matches the closed comparison. On a non-integer it is false, which is what those examples say. A non-integer the examples accept is not this shape. A gap such as `0` false and `2` true, with no `1`, is two classes and is refused.
+On the integers the conjunction matches the closed comparison. On anything that is not an integer it is false, which is what those examples say. `Number.isInteger(a) && a > 0` and `Number.isInteger(a) && a >= 1` are the same function: a non-integer never reaches the comparison, and the next integer after 0 is 1.
 
 `int-guard:needs-fraction` refuses the conjunction when every example is already an integer, so it does not compete with the bare comparison. `int-guard:others-false` refuses it when a non-integer example is true. `int-guard:one-class` refuses two integer classes.
 
-A missing property of a default export is attached only when the group is that one property and the default value is one object literal, or `Object.assign` with one object-literal argument. The property is `name: name` and the function is appended. Two properties, two object bags, or a property that is already there are `CANT_DO_YET_NO_BODY`. A new module, with no file yet, still builds its own default object as before.
+## Admitted
 
-`TypeError: obj.method is not a function` names `method`. Naming `obj` would treat every call on that binding as missing. `prop-guard:member` is that choice. `prop-guard:one-prop`, `prop-guard:one-object`, and `prop-guard:present` are the other refusals.
+`nkzw-tech/core` `isPositiveInteger` at `e2f272e057cd87c4a0fcc650dd508ea40d4a62dc` (MIT). The function is `Number.isInteger(number) && (number as number) > 0`. The published test is `src/__tests__/isPositiveInteger.test.ts`. The bytes of that file, the function, and `LICENSE` are pinned by sha256 in `peaceai/test/m241-scaffold-families.test.ts`. The published test fails when the function throws, and it passes on the published function and on the scaffold `Number.isInteger(a) && a >= 1`. `kevva/is-positive` is still `CANT_DO_YET_SIGNATURE` on its own test, and its `1` / `0` / `-1` assertions are still `CANT_DO_YET_NO_BODY`.
+
+## Dropped
+
+The number-array `some` / `every` family is not in this batch. The searches of permissive TypeScript libraries did not find an exported function whose real tests pin one `some` or `every` comparison. Shipping it from the PeaceSTOCKS `needsAttention` points would be a dev idiom. It is not emitted.
+
+Adding one property onto an existing default object is not in this batch. No pinned permissive module was a single object bag missing one property whose real tests pin one body. A missing module still builds its own default object, as before.

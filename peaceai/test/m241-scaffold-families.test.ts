@@ -1,17 +1,36 @@
-// Closed bounds, array quantifiers, and integer predicates. Synthetic calls only.
+// Closed integer bounds and integer predicates.
+// The admitting case is nkzw-tech/core isPositiveInteger at e2f272e057cd87c4a0fcc650dd508ea40d4a62dc.
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
+import ts from "typescript";
 import { scaffoldPlan } from "../lib/testspec.ts";
 
 const PATTERN = "^src/.+\\.ts$";
 const root = resolve(import.meta.dirname, "../..");
+const fixture = resolve(import.meta.dirname, "fixtures/m241");
 
-function plan(name: string, body: string, output: string, read: (path: string) => string | null = () => null) {
-  const text = `import ${name} from "./${name}.ts";\n${body}\n`;
-  return scaffoldPlan(`src/${name}.test.ts`, text, output, PATTERN, [], read);
+const NKZW = {
+  repo: "nkzw-tech/core",
+  commit: "e2f272e057cd87c4a0fcc650dd508ea40d4a62dc",
+  source: "src/isPositiveInteger.ts",
+  test: "src/__tests__/isPositiveInteger.test.ts",
+  license: "LICENSE",
+  sourceSha256: "10c6b32ac665b43e6eede19f80e8ed5a3a77cc08ec93c4be172b3979a9167af4",
+  testSha256: "eb29a4526fd86e08d08449f6ac2a40b7c0c356bc3e452f4abbdb36ca14fb5301",
+  licenseSha256: "089bb3c5097231756c1ca66bda8b2ad0d934dc9b6402c2eead08710e8702ed34",
+};
+
+function pinned(name: string): string {
+  return readFileSync(join(fixture, name), "utf8");
+}
+
+function sha256(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
 }
 
 function named(name: string, body: string) {
@@ -21,95 +40,99 @@ function named(name: string, body: string) {
 
 test("an integer class emits the closed example bound", () => {
   const above = named("above", [
-    "assert.equal(above(-1), false);",
-    "assert.equal(above(0), false);",
-    "assert.equal(above(1), true);",
-    "assert.equal(above(2), true);",
+    "assert.equal(above(-3), false);",
+    "assert.equal(above(3), false);",
+    "assert.equal(above(4), true);",
+    "assert.equal(above(7), true);",
   ].join("\n"));
   assert.equal(above?.ok, true);
   if (above?.ok) {
-    assert.match(above.files[0]!.content, /return a >= 1;/);
+    assert.match(above.files[0]!.content, /return a >= 4;/);
+    assert.equal(above.files[0]!.content.includes("> 3"), false);
     assert.equal(above.files[0]!.content.includes("Number.isInteger"), false);
   }
-  const wide = named("wide", "assert.equal(wide(0), false);\nassert.equal(wide(2), true);");
+  const wide = named("wide", "assert.equal(wide(3), false);\nassert.equal(wide(7), true);");
   assert.equal(wide?.ok, false);
 });
 
-test("a number array uses some or every, and a gap stays a refusal", () => {
-  const attention = named("attention", [
-    "assert.equal(attention([]), false);",
-    "assert.equal(attention([0, 0]), false);",
-    "assert.equal(attention([1, 0]), true);",
-    "assert.equal(attention([0, 40]), true);",
-    "assert.equal(attention([-5, 0]), false);",
-  ].join("\n"));
-  assert.equal(attention?.ok, true);
-  if (attention?.ok) assert.match(attention.files[0]!.content, /return a\.some\(\(item\) => item >= 1\);/);
-  const gap = named("gap", "assert.equal(gap([0]), false);\nassert.equal(gap([2]), true);");
-  assert.equal(gap?.ok, false);
-  if (gap && !gap.ok) assert.equal(gap.reason, "CANT_DO_YET_NO_BODY");
-});
-
-test("a non-integer rejection conjoins Number.isInteger, and a true fraction does not", () => {
+test("a rejected non-integer conjoins Number.isInteger, and a true fraction does not", () => {
   const whole = named("whole", [
-    "assert.equal(whole(1), true);",
-    "assert.equal(whole(6), true);",
-    "assert.equal(whole(0), false);",
-    "assert.equal(whole(-1), false);",
-    "assert.equal(whole(1.5), false);",
-    "assert.equal(whole(Infinity), false);",
+    "assert.equal(whole(-4), false);",
+    "assert.equal(whole(8), false);",
+    "assert.equal(whole(9), true);",
+    "assert.equal(whole(12), true);",
+    "assert.equal(whole(9.5), false);",
   ].join("\n"));
   assert.equal(whole?.ok, true);
-  if (whole?.ok) assert.match(whole.files[0]!.content, /return Number\.isInteger\(a\) && a >= 1;/);
+  if (whole?.ok) assert.match(whole.files[0]!.content, /return Number\.isInteger\(a\) && a >= 9;/);
   const fraction = named("fraction", [
-    "assert.equal(fraction(-1), false);",
-    "assert.equal(fraction(0), false);",
-    "assert.equal(fraction(0.5), true);",
-    "assert.equal(fraction(1), true);",
-    "assert.equal(fraction(2), true);",
+    "assert.equal(fraction(-4), false);",
+    "assert.equal(fraction(8), false);",
+    "assert.equal(fraction(9.5), true);",
+    "assert.equal(fraction(9), true);",
+    "assert.equal(fraction(12), true);",
   ].join("\n"));
   assert.equal(fraction?.ok, false);
-  const hole = named("hole", "assert.equal(hole(0), false);\nassert.equal(hole(2), true);\nassert.equal(hole(1.5), false);");
+  const hole = named("hole", "assert.equal(hole(8), false);\nassert.equal(hole(12), true);\nassert.equal(hole(9.5), false);");
   assert.equal(hole?.ok, false);
 });
 
-test("one missing property is added to the default object, and two are not", () => {
-  const mod = [
-    "const base = {};",
-    "const api = Object.assign(base, { left: 1 });",
-    "export default api;",
+function publishedTest(): string {
+  return pinned("nkzw-isPositiveInteger.test.ts.txt")
+    .replace("from 'vitest'", "from './shim.mjs'")
+    .replace("from '../isPositiveInteger.ts'", "from './isPositiveInteger.mjs'");
+}
+
+async function runPublished(moduleText: string): Promise<void> {
+  const dir = mkdtempSync(join(tmpdir(), "peaceai-nkzw-"));
+  const shim = [
+    "export function expect(actual) {",
+    "  return { toBe(expected) { if (!Object.is(actual, expected)) throw new Error(String(actual) + ' !== ' + String(expected)); } };",
+    "}",
+    "export function test(_name, fn) { fn(); }",
     "",
   ].join("\n");
-  const calls = "assert.equal(mod.left(0), false);\nassert.equal(mod.whole(1), true);\nassert.equal(mod.whole(6), true);\nassert.equal(mod.whole(0), false);\nassert.equal(mod.whole(-1), false);\nassert.equal(mod.whole(1.5), false);";
-  const one = plan("mod", calls, "TypeError: mod.whole is not a function", (path) => path === "src/mod.ts" ? mod : null);
-  assert.equal(one?.ok, true);
-  if (one?.ok) {
-    assert.match(one.files[0]!.content, /whole: whole/);
-    assert.match(one.files[0]!.content, /export function whole/);
-    assert.match(one.files[0]!.content, /Number\.isInteger\(a\) && a >= 1/);
-    assert.equal(one.files[0]!.content.split("export default").length, 2);
+  const js = (file: string, text: string) => ts.transpileModule(text, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    fileName: file,
+  }).outputText;
+  writeFileSync(join(dir, "shim.mjs"), shim);
+  writeFileSync(join(dir, "isPositiveInteger.mjs"), js("isPositiveInteger.ts", moduleText));
+  writeFileSync(join(dir, "run.mjs"), js("isPositiveInteger.test.ts", publishedTest()));
+  try {
+    await import(`${pathToFileURL(join(dir, "run.mjs")).href}?t=${Date.now()}-${Math.random()}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
-  const two = plan(
-    "mod",
-    "assert.equal(mod.left(1), true);\nassert.equal(mod.right(1), false);",
-    "TypeError: mod.left is not a function\nTypeError: mod.right is not a function",
-    (path) => path === "src/mod.ts" ? mod : null,
+}
+
+test("nkzw-tech/core isPositiveInteger is admitted from the pinned test", async () => {
+  const source = pinned("nkzw-isPositiveInteger.ts.txt");
+  const spec = pinned("nkzw-isPositiveInteger.test.ts.txt");
+  const license = pinned("nkzw-LICENSE.txt");
+  assert.equal(sha256(source), NKZW.sourceSha256);
+  assert.equal(sha256(spec), NKZW.testSha256);
+  assert.equal(sha256(license), NKZW.licenseSha256);
+  assert.match(license, /MIT License/);
+  assert.match(license, /Permission is hereby granted/);
+  assert.match(source, /Number\.isInteger\(number\) && \(number as number\) > 0/);
+  const missing = "export default function isPositiveInteger(_number: unknown): boolean {\n  throw new Error(\"missing\");\n}\n";
+  await assert.rejects(() => runPublished(missing));
+  await runPublished(source);
+  const plan = scaffoldPlan(
+    "src/__tests__/isPositiveInteger.test.ts",
+    spec,
+    "Error [ERR_MODULE_NOT_FOUND]: Cannot find module '../isPositiveInteger.ts'",
+    PATTERN,
+    [],
+    () => null,
   );
-  assert.equal(two?.ok, false);
-  const doubled = [
-    "const api = Object.assign({}, { a: 1 }, { b: 2 });",
-    "export default api;",
-    "",
-  ].join("\n");
-  const bags = plan("mod", calls, "TypeError: mod.whole is not a function", (path) => path === "src/mod.ts" ? doubled : null);
-  assert.equal(bags?.ok, false);
-  const present = [
-    "const api = { whole: 1 };",
-    "export default api;",
-    "",
-  ].join("\n");
-  const again = plan("mod", calls, "TypeError: mod.whole is not a function", (path) => path === "src/mod.ts" ? present : null);
-  assert.equal(again?.ok, false);
+  assert.equal(plan?.ok, true);
+  if (!plan?.ok) return;
+  assert.equal(plan.fit.shape, "integer");
+  assert.match(plan.files[0]!.content, /return Number\.isInteger\(a\) && a >= 1;/);
+  assert.equal(plan.files[0]!.content.includes("> 0"), false);
+  await runPublished(plan.files[0]!.content);
 });
 
 const base = resolve(root, "peaceai/test/.m241-mutants");
@@ -123,33 +146,24 @@ async function mutant(guard: string) {
   const next = lines.filter((_, i) => i !== hits[0]).join("\n").replace(/from "\.\/([A-Za-z0-9-]+\.ts)"/g, (_m, file: string) => `from ${JSON.stringify(pathToFileURL(resolve(root, "peaceai/lib", file)).href)}`);
   const file = join(base, `mutant-${n++}.ts`);
   writeFileSync(file, next);
-  return import(pathToFileURL(file).href);
+  return import(`${pathToFileURL(file).href}?m=${n}`);
 }
 
 test("deleting a scaffold guard admits the case it refused", async () => {
   const opened = await mutant("cmp-guard:closed-bound") as typeof import("../lib/testspec.ts");
   const above = opened.scaffoldPlan(
     "src/above.test.ts",
-    'import { above } from "./above.ts";\nassert.equal(above(-1), false);\nassert.equal(above(0), false);\nassert.equal(above(1), true);\nassert.equal(above(2), true);\n',
+    'import { above } from "./above.ts";\nassert.equal(above(-3), false);\nassert.equal(above(3), false);\nassert.equal(above(4), true);\nassert.equal(above(7), true);\n',
     "Cannot find module '/work/src/above.ts'",
     PATTERN, [], () => null,
   );
   assert.equal(above?.ok, true);
-  if (above?.ok) assert.match(above.files[0]!.content, /return a > 0;/);
-
-  const quant = await mutant("quant-guard:one-class") as typeof import("../lib/testspec.ts");
-  const gap = quant.scaffoldPlan(
-    "src/gap.test.ts",
-    'import { gap } from "./gap.ts";\nassert.equal(gap([0]), false);\nassert.equal(gap([2]), true);\n',
-    "Cannot find module '/work/src/gap.ts'",
-    PATTERN, [], () => null,
-  );
-  assert.equal(gap?.ok, true);
+  if (above?.ok) assert.match(above.files[0]!.content, /return a > 3;/);
 
   const fraction = await mutant("int-guard:needs-fraction") as typeof import("../lib/testspec.ts");
   const bare = fraction.scaffoldPlan(
     "src/above.test.ts",
-    'import { above } from "./above.ts";\nassert.equal(above(-1), false);\nassert.equal(above(0), false);\nassert.equal(above(1), true);\nassert.equal(above(2), true);\n',
+    'import { above } from "./above.ts";\nassert.equal(above(-3), false);\nassert.equal(above(3), false);\nassert.equal(above(4), true);\nassert.equal(above(7), true);\n',
     "Cannot find module '/work/src/above.ts'",
     PATTERN, [], () => null,
   );
@@ -158,7 +172,7 @@ test("deleting a scaffold guard admits the case it refused", async () => {
   const accepted = await mutant("int-guard:others-false") as typeof import("../lib/testspec.ts");
   const half = accepted.scaffoldPlan(
     "src/fraction.test.ts",
-    'import { fraction } from "./fraction.ts";\nassert.equal(fraction(-1), false);\nassert.equal(fraction(0), false);\nassert.equal(fraction(0.5), true);\nassert.equal(fraction(1), true);\nassert.equal(fraction(2), true);\n',
+    'import { fraction } from "./fraction.ts";\nassert.equal(fraction(-4), false);\nassert.equal(fraction(8), false);\nassert.equal(fraction(9.5), true);\nassert.equal(fraction(9), true);\nassert.equal(fraction(12), true);\n',
     "Cannot find module '/work/src/fraction.ts'",
     PATTERN, [], () => null,
   );
@@ -168,46 +182,10 @@ test("deleting a scaffold guard admits the case it refused", async () => {
   const classes = await mutant("int-guard:one-class") as typeof import("../lib/testspec.ts");
   const hole = classes.scaffoldPlan(
     "src/hole.test.ts",
-    'import { hole } from "./hole.ts";\nassert.equal(hole(0), false);\nassert.equal(hole(2), true);\nassert.equal(hole(1.5), false);\n',
+    'import { hole } from "./hole.ts";\nassert.equal(hole(8), false);\nassert.equal(hole(12), true);\nassert.equal(hole(9.5), false);\n',
     "Cannot find module '/work/src/hole.ts'",
     PATTERN, [], () => null,
   );
   assert.equal(hole?.ok, true);
-
-  const mod = "const api = Object.assign({}, { a: 1 }, { b: 2 });\nexport default api;\n";
-  const calls = 'import mod from "./mod.ts";\nassert.equal(mod.left(0), false);\nassert.equal(mod.whole(1), true);\nassert.equal(mod.whole(6), true);\nassert.equal(mod.whole(0), false);\nassert.equal(mod.whole(-1), false);\nassert.equal(mod.whole(1.5), false);\n';
-  const bags = await mutant("prop-guard:one-object") as typeof import("../lib/testspec.ts");
-  const attached = bags.scaffoldPlan("src/mod.test.ts", calls, "TypeError: mod.whole is not a function", PATTERN, [], (path) => path === "src/mod.ts" ? mod : null);
-  assert.equal(attached?.ok, true);
-
-  const many = await mutant("prop-guard:one-prop") as typeof import("../lib/testspec.ts");
-  const pair = many.scaffoldPlan(
-    "src/mod.test.ts",
-    'import mod from "./mod.ts";\nassert.equal(mod.left(1), true);\nassert.equal(mod.right(1), false);\n',
-    "TypeError: mod.left is not a function\nTypeError: mod.right is not a function",
-    PATTERN, [],
-    () => "const api = { kept: 1 };\nexport default api;\n",
-  );
-  assert.equal(pair?.ok, true);
-
-  const present = await mutant("prop-guard:present") as typeof import("../lib/testspec.ts");
-  const again = present.scaffoldPlan(
-    "src/mod.test.ts",
-    calls,
-    "TypeError: mod.whole is not a function",
-    PATTERN, [],
-    (path) => path === "src/mod.ts" ? "const api = { whole: 1 };\nexport default api;\n" : null,
-  );
-  assert.equal(again?.ok, true);
-
-  const member = await mutant("prop-guard:member") as typeof import("../lib/testspec.ts");
-  const receiver = member.scaffoldPlan(
-    "src/mod.test.ts",
-    calls,
-    "TypeError: mod.whole is not a function",
-    PATTERN, [],
-    (path) => path === "src/mod.ts" ? "const base = {};\nconst api = Object.assign(base, { left: 1 });\nexport default api;\n" : null,
-  );
-  assert.equal(receiver?.ok, false);
   rmSync(base, { recursive: true, force: true });
 });

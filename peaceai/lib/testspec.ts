@@ -8,9 +8,8 @@
 // A runner error that names a missing module, a missing export, or a value that is not a function is
 // the spec for a scaffold: one exported function, method, or default at that module, with parameters
 // taken from the call sites and a body taken from the reduced assertions when exactly one body fits.
-// An integer class emits its closed example bound. A number array can be some or every of one
-// comparison. A non-integer the examples reject conjoins Number.isInteger. One missing property
-// of an existing default export is added when that export has one object bag.
+// An integer class emits its closed example bound. A non-integer or non-number the examples
+// reject, when the integers have one class, conjoins Number.isInteger.
 // Other edits come from the loop-v2 repair proposer (the catalog of templates). Attempts stay within
 // that loop's MAX_ATTEMPTS and the proposer's MAX_CANDIDATES. A diff is returned only when the given
 // test passes and the original suite still passes. Nothing here pushes.
@@ -685,14 +684,19 @@ function impliedSource(fromFile: string, spec: string, sourcePattern: string, de
   return allowed.find((path) => exists(path)) ?? allowed[0] ?? null;
 }
 
+/** A numeric literal's value. `_` separators are syntax, so `1_832_923` is 1832923, not NaN. */
+function numberLiteral(text: string): number {
+  return Number(text.replace(/_/g, ""));
+}
+
 function evalConcrete(node: ts.Expression): { ok: true; value: unknown } | { ok: false } {
   const expr = unwrap(node);
   if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return { ok: true, value: expr.text };
-  if (ts.isNumericLiteral(expr)) return { ok: true, value: Number(expr.text) };
+  if (ts.isNumericLiteral(expr)) return { ok: true, value: numberLiteral(expr.text) };
   if (expr.kind === ts.SyntaxKind.TrueKeyword) return { ok: true, value: true };
   if (expr.kind === ts.SyntaxKind.FalseKeyword) return { ok: true, value: false };
   if (expr.kind === ts.SyntaxKind.NullKeyword) return { ok: true, value: null };
-  if (ts.isPrefixUnaryExpression(expr) && expr.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(expr.operand)) return { ok: true, value: -Number(expr.operand.text) };
+  if (ts.isPrefixUnaryExpression(expr) && expr.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(expr.operand)) return { ok: true, value: -numberLiteral(expr.operand.text) };
   const sent = sentinelValue(expr);
   if (sent.ok) return sent; // spec-guard:sentinel-value
   if (ts.isArrayLiteralExpression(expr)) {
@@ -1042,36 +1046,23 @@ function arity1Chosen(examples: Example[]): Map<string, string> | null {
   return chooseCmp(fits);
 }
 
-/** `some` or `every` of one comparison on a number array. Empty arrays distinguish the two. */
-function quantifyBody(examples: Example[]): string | null {
-  if (!examples.length || examples.some((ex) => ex.args.length !== 1 || typeof ex.expected !== "boolean" || !Array.isArray(ex.args[0]))) return null;
-  const arrays = examples.map((ex) => ex.args[0] as unknown[]);
-  if (arrays.some((arr) => arr.some((item) => typeof item !== "number"))) return null;
-  const integers = arrays.every((arr) => arr.every((item) => Number.isInteger(item)));
-  const constants = [...new Set(arrays.flat().filter((item): item is number => typeof item === "number"))];
-  const fits: { text: string; key: string }[] = [];
-  for (const quant of ["some", "every"] as const) for (const n of constants) for (const pred of CMP) {
-    const holds = (arr: number[]) => quant === "some" ? arr.some((item) => pred.fn(item, n)) : arr.every((item) => pred.fn(item, n));
-    if (!examples.every((ex) => holds(ex.args[0] as number[]) === ex.expected)) continue;
-    const cls = integers ? integerCmpClass(pred.op, n) : null;
-    fits.push({ text: `a.${quant}((item) => item ${pred.op} ${JSON.stringify(n)})`, key: `${quant}:${cls ?? `raw:${pred.op}:${JSON.stringify(n)}`}` });
-  }
-  const chosen = chooseCmp(fits);
-  if (chosen.size !== 1) return null; // quant-guard:one-class
-  return `  return ${[...chosen.values()][0]};`;
+function countedInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value);
 }
 
 /**
- * A bare comparison that fits the integers and rejects every non-integer example
- * is `Number.isInteger(a) && <comparison>`. No non-integer example, no conjunction:
- * the bare comparison already says the same thing on those integers.
+ * `Number.isInteger(a) && <comparison>` when every example that is not an integer is
+ * false, and the integers have one class. A string, a boolean, or a fraction is false
+ * under `Number.isInteger`, which is what those examples say. No such example, no
+ * conjunction: the bare comparison already says the same thing on those integers.
+ * A non-integer the examples accept is not this shape.
  */
 function integerBody(examples: Example[]): string | null {
-  if (!examples.length || examples.some((ex) => ex.args.length !== 1 || typeof ex.expected !== "boolean" || typeof ex.args[0] !== "number")) return null;
-  const others = examples.filter((ex) => !Number.isInteger(ex.args[0] as number));
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1 || typeof ex.expected !== "boolean")) return null;
+  const others = examples.filter((ex) => !countedInteger(ex.args[0]));
   if (!others.length) return null; // int-guard:needs-fraction
   if (others.some((ex) => ex.expected !== false)) return null; // int-guard:others-false
-  const integers = examples.filter((ex) => Number.isInteger(ex.args[0] as number));
+  const integers = examples.filter((ex) => countedInteger(ex.args[0]));
   const chosen = arity1Chosen(integers);
   if (!chosen || chosen.size !== 1) return null; // int-guard:one-class
   return `  return Number.isInteger(a) && ${[...chosen.values()][0]};`;
@@ -1152,7 +1143,7 @@ function renderReturn(parts: string[]): string {
 }
 
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "quantify", "integer", "project", "sum", "split", "peer"] as const;
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
 function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
@@ -1181,7 +1172,6 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
     keep(renderReturn(parts.length ? parts : ['""']), "string", "string");
   }
   keep(comparisonBody(concrete), "boolean", "comparison");
-  keep(quantifyBody(concrete), "boolean", "quantify");
   keep(integerBody(concrete), "boolean", "integer");
   keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");
   keep(sumBody(concrete), "number", "sum");
@@ -1204,60 +1194,6 @@ function renderFunction(symbol: string, shape: MissingSymbol["shape"], built: { 
  * Null when the output is not that kind of error. A file is created or extended only at the
  * module the test imports, and only when that path matches sourcePattern.
  */
-function propText(name: ts.PropertyName): string | null {
-  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
-  return null;
-}
-
-function bagHas(bag: ts.ObjectLiteralExpression, symbol: string): boolean {
-  return bag.properties.some((prop) => {
-    if (ts.isPropertyAssignment(prop) || ts.isShorthandPropertyAssignment(prop) || ts.isMethodDeclaration(prop)) return propText(prop.name) === symbol;
-    return false;
-  });
-}
-
-/** The one object a default export is, or the one object literal passed to Object.assign. */
-function defaultBag(sf: ts.SourceFile): ts.ObjectLiteralExpression | null {
-  let exported: ts.Expression | null = null;
-  for (const st of sf.statements) if (ts.isExportAssignment(st)) exported = st.expression;
-  if (!exported) return null;
-  let expr = exported;
-  if (ts.isIdentifier(expr)) {
-    const name = expr.text;
-    let init: ts.Expression | undefined;
-    for (const st of sf.statements) {
-      if (!ts.isVariableStatement(st)) continue;
-      for (const decl of st.declarationList.declarations) {
-        if (ts.isIdentifier(decl.name) && decl.name.text === name && decl.initializer) init = decl.initializer;
-      }
-    }
-    if (!init) return null;
-    expr = init;
-  }
-  if (ts.isObjectLiteralExpression(expr)) return expr;
-  if (!ts.isCallExpression(expr)) return null;
-  const callee = expr.expression;
-  const assign = ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && callee.expression.text === "Object" && callee.name.text === "assign";
-  if (!assign) return null;
-  const bags = expr.arguments.filter((arg): arg is ts.ObjectLiteralExpression => ts.isObjectLiteralExpression(arg));
-  if (bags.length !== 1) return null; // prop-guard:one-object
-  return bags[0] ?? null;
-}
-
-/** Add one property to the default export's object and append its function. Two bags, or a property already there, refuse. */
-function attachDefaultProp(existing: string, symbol: string, fn: string): string | null {
-  const sf = ts.createSourceFile("module.ts", existing, ts.ScriptTarget.Latest, true);
-  const bag = defaultBag(sf);
-  if (!bag) return null;
-  if (bagHas(bag, symbol)) return null; // prop-guard:present
-  const end = bag.getEnd() - 1;
-  if (existing[end] !== "}") return null;
-  const prefix = existing.slice(0, end);
-  const comma = bag.properties.length > 0 && !prefix.trimEnd().endsWith(",") ? "," : "";
-  const body = fn.endsWith("\n") ? fn : `${fn}\n`;
-  return `${prefix}${comma} ${symbol}: ${symbol}${existing.slice(end)}\n${body}`;
-}
-
 export function scaffoldPlan(testFile: string, text: string, output: string, sourcePattern: string, deny: readonly string[] = [], read: (path: string) => string | null = () => null): ScaffoldPlan | null {
   const facts = { modules: [] as string[], members: [] as { quoted: string | null; name: string }[], notFn: [] as string[] };
   for (const line of output.split("\n")) {
@@ -1266,12 +1202,8 @@ export function scaffoldPlan(testFile: string, text: string, output: string, sou
     if (member) facts.members.push({ quoted: stripQuotes(member[2]!), name: member[4]! });
     const provided = /requested module ['"]([^'"]+)['"] does not provide an export named ['"]([^'"]+)['"]/.exec(line);
     if (provided) facts.members.push({ quoted: provided[1]!, name: provided[2]! });
-    const notFn = /TypeError: ([A-Za-z_$][\w$]*)(?:\.([A-Za-z_$][\w$]*))? is not a function\b/.exec(line);
-    if (notFn && notFn[1] !== "undefined") {
-      let missing = notFn[1]!;
-      if (notFn[2]) missing = notFn[2]; // prop-guard:member
-      facts.notFn.push(missing);
-    }
+    const notFn = /TypeError: ([A-Za-z_$][\w$]*) is not a function\b/.exec(line);
+    if (notFn && notFn[1] !== "undefined") facts.notFn.push(notFn[1]!);
   }
   if (!facts.modules.length && !facts.members.length && !facts.notFn.length) return null;
   const exists = (path: string) => read(path) !== null;
@@ -1360,10 +1292,7 @@ export function scaffoldPlan(testFile: string, text: string, output: string, sou
     if (group.filter((want) => want.shape === "default").length > 1) return { ok: false, reason: "CANT_DO_YET_NO_BODY", symbols };
     if (group.some((want) => want.shape === "default") && group.some((want) => want.shape === "default-prop")) return { ok: false, reason: "CANT_DO_YET_NO_BODY", symbols };
     const existing = read(path);
-    const propWants = group.filter((want) => want.shape === "default-prop");
-    if (existing !== null && propWants.length > 0) {
-      if (propWants.length !== 1 || group.length !== 1) return { ok: false, reason: "CANT_DO_YET_NO_BODY", symbols }; // prop-guard:one-prop
-    } else if (existing !== null && group.some((want) => want.shape !== "named")) return { ok: false, reason: "CANT_DO_YET_NO_BODY", symbols };
+    if (existing !== null && group.some((want) => want.shape !== "named")) return { ok: false, reason: "CANT_DO_YET_NO_BODY", symbols };
     const peers = existing === null ? [] : peerFunctions(existing);
     const chunks: string[] = [];
     for (const want of group) {
@@ -1384,19 +1313,13 @@ export function scaffoldPlan(testFile: string, text: string, output: string, sou
         });
       }
     }
-    if (existing === null && group.some((want) => want.shape === "default-prop")) {
+    if (group.some((want) => want.shape === "default-prop")) {
       const props = group.filter((want) => want.shape === "default-prop").map((want) => want.symbol);
       const name = props.includes("api") ? "moduleValue" : "api";
       chunks.push(`const ${name} = { ${props.join(", ")} };\nexport default ${name};\n`);
     }
     const addition = chunks.join("\n");
-    let content = existing === null ? addition : `${existing.endsWith("\n") ? existing : `${existing}\n`}\n${addition}`;
-    if (existing !== null && propWants.length === 1) {
-      const attached = attachDefaultProp(existing, propWants[0]!.symbol, chunks[0] ?? "");
-      if (!attached) return { ok: false, reason: "CANT_DO_YET_NO_BODY", symbols };
-      content = attached;
-    }
-    files.push({ path, content });
+    files.push({ path, content: existing === null ? addition : `${existing.endsWith("\n") ? existing : `${existing}\n`}\n${addition}` });
   }
   const shape = [...new Set(shapes)].join("+") || "literal";
   return { ok: true, files, symbols, expectations, fit: { shape, examples, targets } };
