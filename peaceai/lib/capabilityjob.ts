@@ -19,6 +19,7 @@ import { TSCONFIG_SCRIPT_TRIGGER } from "./tsconfig-script.ts";
 import { WORKFLOW_JOB_TRIGGER } from "./workflow-job.ts";
 import { isCanonical } from "./nlparse.ts";
 import { canonicalRequest, guessFamily, type RequestModel } from "./requestfamily.ts";
+import type { SlotRepo } from "./slotfill.ts";
 import { inSafeZone, selfProtectedReason } from "./self-zone.ts";
 import { cleanIssueText, MAX_OBJECTIVE_CHARS } from "./taskmap.ts";
 
@@ -278,9 +279,9 @@ export type ReplayRoute = { run: string } | { fail: string };
  * `paths` are the files the landing commit touched. A protected file, or a file the existing
  * gate cannot score, is named in the refusal. The characterization path keeps its own adoption check.
  */
-export function routeReplay(o: { model: RequestModel; asked: string; changed: string; issueBody: string | null; seq: number; paths?: readonly string[] }): ReplayRoute {
+export function routeReplay(o: { model: RequestModel; asked: string; changed: string; issueBody: string | null; seq: number; paths?: readonly string[]; repo?: SlotRepo | null }): ReplayRoute {
   const g = guessFamily(o.model, o.asked);
-  const canon = g.family ? canonicalRequest(g.family, o.asked) : null;
+  const canon = g.family ? canonicalRequest(g.family, o.asked, o.repo) : null;
   if (g.family === "TEST_CASE_EXISTING" && canon) {
     const adopted = o.issueBody ? adoptIssueBody(o.asked, o.issueBody, o.seq) : null;
     return { run: adopted ?? canon };
@@ -288,6 +289,10 @@ export function routeReplay(o: { model: RequestModel; asked: string; changed: st
   const adopted = o.issueBody ? agreedIssue(o.asked, o.issueBody, o.seq) : null;
   if (adopted) return { run: adopted };
   if (canon) return { run: canon };
+  if (o.repo && !g.family) {
+    const filled = canonicalRequest("IMPORT_EDIT", o.asked, o.repo);
+    if (filled) return { run: filled };
+  }
   if (g.refusal === "SELF_CHANGE" || ownWorkspaceChange(o.changed)) return { fail: selfChangeFailReason(o.paths) };
   if (g.none) return { fail: "NOT_CODE_FAMILY" };
   if (!g.family) return { fail: "CLASSIFIER_UNSURE" };

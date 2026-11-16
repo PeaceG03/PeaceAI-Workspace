@@ -18,6 +18,17 @@ export interface RequestVariant {
 /** Private-use placeholder for a template literal's backtick while the Markdown backticks are stripped. */
 const TEMPLATE_TICK = "\uE000";
 
+/** A `*` that belongs to a path glob (`src/**\/*.ts`), not Markdown emphasis (`**bold**` or `*word*`). */
+function globStar(text: string, index: number): boolean {
+  let left = index;
+  let right = index;
+  while (left > 0 && text[left - 1] === "*") left--;
+  while (right + 1 < text.length && text[right + 1] === "*") right++;
+  const before = left > 0 ? text[left - 1]! : "";
+  const after = right + 1 < text.length ? text[right + 1]! : "";
+  return before === "/" || before === "." || after === "/" || after === ".";
+}
+
 export function insideCodeSpan(all: string, at: number, end: number): boolean {
   const lineStart = all.lastIndexOf("\n", at - 1) + 1;
   const nl = all.indexOf("\n", end);
@@ -41,7 +52,7 @@ export function cleanIssueText(input: TaskInput): string {
     // Markdown: its backticks are kept (TEMPLATE_TICK placeholder) while every other backtick is dropped.
     .replace(/\uE000/g, " ")
     .replace(/`[^`\n]*\$\{[^`\n]*`/g, (m) => m.replaceAll("`", TEMPLATE_TICK))
-    .replace(/[`#]|(?<!\S )\*|\*(?! )/g, " ")
+    .replace(/[`#]|(?<!\S )\*|\*(?! )/g, (m: string, offset: number, all: string) => (m === "*" && globStar(all, offset) ? m : " "))
     .replaceAll(TEMPLATE_TICK, "`")
     // Markdown emphasis underscores only; identifiers such as MAX_ITEMS keep theirs.
     .replace(/(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])/g, " ")

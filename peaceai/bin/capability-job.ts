@@ -15,6 +15,7 @@ import { makeGitOnMainChecker, denverYmd } from "../../builder-log/coverage.ts";
 import { parseLogEntries } from "../../builder-log/coverage.ts";
 import { buildCapabilityReport, inputDigest, type ReplayBind } from "../lib/capabilityreport.ts";
 import { CORE_ENTRY, boundReplay, citedIssue, classifyJobOutput, commitRef, landingParent, replayIssueTitle, routeReplay, type CommitRef } from "../lib/capabilityjob.ts";
+import { needsRepoSlots, readSlotRepo } from "../lib/slotfill.ts";
 export { publicGateReason } from "../lib/practicereplay.ts";
 import { publicGateReason } from "../lib/practicereplay.ts";
 import { scoreFamilies, trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
@@ -274,18 +275,27 @@ function issueBody(n: number): string | null {
   } catch { return null; }
 }
 
-function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, seq: number, coreDir: string): { status: "pass" | "fail" | "unmeasured"; reason: string } {
-  const src = ref.repo === "PeaceSTOCKS" ? (process.env.PEACESTOCKS_CLONE?.trim() || "") : tooling;
-  if (!src || !existsSync(src)) return { status: "unmeasured", reason: `NO_CLONE: ${ref.repo}` };
-  const rev = landingParent(ref.sha);
-  if (!rev) return { status: "unmeasured", reason: `CHECKOUT_FAILED: ${ref.repo}@${ref.sha}` };
+/** The parent tree, checked out. The caller removes the worktree. */
+export function checkoutParent(src: string, sha: string, seq: number): { dir: string } | { error: string } {
+  if (!src || !existsSync(src)) return { error: `NO_CLONE: ${src ? "missing" : "unset"}` };
+  const rev = landingParent(sha);
+  if (!rev) return { error: `CHECKOUT_FAILED: ${sha}` };
   const dir = jobaWorkDir(seq);
   const add = spawnSync("git", ["-C", src, "worktree", "add", "--detach", "--quiet", dir, rev], { encoding: "utf8", timeout: 60_000 });
   if (add.status !== 0) {
     spawnSync("git", ["-C", src, "worktree", "remove", "--force", dir], { stdio: "ignore" });
     rmSync(dir, { recursive: true, force: true });
-    return { status: "unmeasured", reason: `CHECKOUT_FAILED: ${ref.repo}@${rev}` };
+    return { error: `CHECKOUT_FAILED: ${rev}` };
   }
+  return { dir };
+}
+
+function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, seq: number, coreDir: string, prepared?: string): { status: "pass" | "fail" | "unmeasured"; reason: string } {
+  const src = ref.repo === "PeaceSTOCKS" ? (process.env.PEACESTOCKS_CLONE?.trim() || "") : tooling;
+  if (!prepared && (!src || !existsSync(src))) return { status: "unmeasured", reason: `NO_CLONE: ${ref.repo}` };
+  const opened = prepared ? { dir: prepared } : checkoutParent(src, ref.sha, seq);
+  if ("error" in opened) return { status: "unmeasured", reason: opened.error.includes("NO_CLONE") ? `NO_CLONE: ${ref.repo}` : opened.error };
+  const dir = opened.dir;
   const outDir = mkdtempSync(join(tmpdir(), "peaceai-joba-out-"));
   try {
     const r = spawnSync(join(tooling, "node_modules/.bin/tsx"), [join(tooling, "peaceai/bin/generate.ts")], {
@@ -304,8 +314,10 @@ function runOne(tooling: string, bundle: string, ref: CommitRef, asked: string, 
     if (gated) return gated;
     return classifyJobOutput({ timedOut, code: r.status, candidates, stdout: `${r.stdout ?? ""}\n${r.stderr ?? ""}` });
   } finally {
-    spawnSync("git", ["-C", src, "worktree", "remove", "--force", dir], { stdio: "ignore" });
-    rmSync(dir, { recursive: true, force: true });
+    if (!prepared) {
+      spawnSync("git", ["-C", src, "worktree", "remove", "--force", dir], { stdio: "ignore" });
+      rmSync(dir, { recursive: true, force: true });
+    }
     rmSync(outDir, { recursive: true, force: true });
   }
 }
@@ -354,12 +366,28 @@ function main(): void {
       const cited = citedIssue(asked);
       const raw = cited ? issueBody(cited) : null;
       const paths = target.repo === "PeaceAI-Workspace" ? commitPaths(repo, target.sha) ?? undefined : undefined;
-      const route = routeReplay({ model, asked, changed, issueBody: raw, seq: r.seq, paths });
-      if ("fail" in route) rec = boundReplay(r.seq, "fail", route.fail, bind);
+      let route = routeReplay({ model, asked, changed, issueBody: raw, seq: r.seq, paths });
+      let prepared: string | undefined;
+      if ("fail" in route && needsRepoSlots(asked) && !buildError && bundle) {
+        const src = target.repo === "PeaceSTOCKS" ? stocks : repo;
+        const opened = checkoutParent(src, target.sha, r.seq);
+        if ("error" in opened) rec = boundReplay(r.seq, "unmeasured", opened.error.includes("NO_CLONE") || opened.error.includes("unset") ? `NO_CLONE: ${target.repo}` : opened.error, bind);
+        else {
+          prepared = opened.dir;
+          route = routeReplay({ model, asked, changed, issueBody: raw, seq: r.seq, paths, repo: readSlotRepo(opened.dir, asked) });
+        }
+      }
+      if (rec) { /* slot checkout could not be opened */ }
+      else if ("fail" in route) rec = boundReplay(r.seq, "fail", route.fail, bind);
       else if (buildError || !bundle) rec = boundReplay(r.seq, "unmeasured", buildError ?? "KERNEL_MISSING", bind);
       else {
-        const ran = runOne(repo, bundle, target, route.run, r.seq, "error" in built ? "" : built.coreDir);
+        const ran = runOne(repo, bundle, target, route.run, r.seq, "error" in built ? "" : built.coreDir, prepared);
         rec = boundReplay(r.seq, ran.status, ran.reason, bind);
+      }
+      if (prepared) {
+        const src = target.repo === "PeaceSTOCKS" ? stocks : repo;
+        spawnSync("git", ["-C", src, "worktree", "remove", "--force", prepared], { stdio: "ignore" });
+        rmSync(prepared, { recursive: true, force: true });
       }
     }
     console.log(`row ${r.seq} ${rec.status} ${rec.reason}`);
