@@ -74,6 +74,6 @@ Each published test fails when the function throws and passes on the scaffold. A
 
 `remeda/remeda` at `3baf05ffdb3c366ccebd733cb4dab6f2991ad92b` (MIT) was read and not admitted. The published tests call `sum()` and `flat(1)` as well as the data-first forms, and they throw and pass bigints.
 
-`blakeembrey/change-case` title case walks a word list. `swapCase` calls the function on a loop binding, which is not a literal. `vueuse/vueuse` shared utils and `unjs/scule` test many functions in one file.
+A title-case walker that splits words is not one expression. A letter-case swap called on a loop binding is not a literal. `vueuse/vueuse` shared utils and `unjs/scule` test many functions in one file.
 
 A bare integer comparison still keeps the first form in its class. A number-array `some` / `every` is not emitted. The attempt cap stays 20. `target.ts` was not edited. `capability-job.ts` was not edited.
