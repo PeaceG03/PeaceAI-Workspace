@@ -1,5 +1,6 @@
-// Finite, last, and strict null. The admitting cases are toss/es-toolkit at
-// 24e7a7b8cb8035fae1ea2e7b507aab96698a38b9. A passing log does not build a plan.
+// Last and strict null. The admitting cases are toss/es-toolkit at
+// 24e7a7b8cb8035fae1ea2e7b507aab96698a38b9. Finite is not emitted: Object(1)
+// is not plain data. A passing log does not build a plan.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -18,8 +19,6 @@ const fixture = resolve(import.meta.dirname, "fixtures/m243");
 const COMMIT = "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9";
 
 const PIN = {
-  isFinite: "1416443317d9b3613ffba63d3e68e2340b27377b02f1fc457dc097630db76e78",
-  isFiniteTest: "f0772e3b9e6d2e5bc335e9b3d34a6b863ffefa817bd107e9df24f123f88fdda2",
   isNull: "f12f0fb080f4713d5ddd8875cc793dda5e48ef757e736f5668c71ee6a93f0c3f",
   isNullTest: "ad5df0edb7e274f3467f59548554b6f2459ae538f41f6896d5940c6f6a113bd1",
   last: "dd7db6526a5a7e212cf18d6be64849b6d33ea54aa14daa9ce747b0ba11914a2b",
@@ -94,9 +93,8 @@ function admit(specFile: string, spec: string, moduleFile: string, sandbox?: { b
   return scaffoldPlan(specFile, spec, `Cannot find module '/work/${moduleFile}'`, PATTERN, [], () => null, sandbox);
 }
 
-test("toss/es-toolkit isFinite, last, and isNull are admitted", async () => {
+test("toss/es-toolkit last and isNull are admitted", async () => {
   const cases = [
-    { local: "isFinite", dir: "src/compat/predicate", source: "es-toolkit-isFinite.ts.txt", spec: "es-toolkit-isFinite.spec.ts.txt", sourceSha: PIN.isFinite, specSha: PIN.isFiniteTest, shape: "finite", body: /return Number\.isFinite\(a\);/ },
     { local: "last", dir: "src/array", source: "es-toolkit-last.ts.txt", spec: "es-toolkit-last.spec.ts.txt", sourceSha: PIN.last, specSha: PIN.lastTest, shape: "last", body: /return a\[a\.length - 1\];/ },
     { local: "isNull", dir: "src/predicate", source: "es-toolkit-isNull.ts.txt", spec: "es-toolkit-isNull.spec.ts.txt", sourceSha: PIN.isNull, specSha: PIN.isNullTest, shape: "null", body: /return a === null;/ },
   ];
@@ -109,7 +107,7 @@ test("toss/es-toolkit isFinite, last, and isNull are admitted", async () => {
     await assert.rejects(() => runPublished(row.local, spec, missing), row.local);
     await runPublished(row.local, spec, source);
     const plan = admit(`${row.dir}/${row.local}.spec.ts`, spec, `${row.dir}/${row.local}.ts`);
-    const needsSandbox = row.local !== "isNull";
+    const needsSandbox = row.local === "last";
     if (needsSandbox && !practiceSandboxReady()) {
       assert.equal(plan?.ok, false, row.local);
       continue;
@@ -123,7 +121,7 @@ test("toss/es-toolkit isFinite, last, and isNull are admitted", async () => {
   assert.equal(COMMIT.length, 40);
 });
 
-test("a finite number needs a false non-finite example, and a string is not last", () => {
+test("a finite number is not a body, and a string is not last", () => {
   const finite = admit("src/finite.spec.ts", [
     "import { finite } from './finite';",
     "expect(finite(1)).toBe(true);",
@@ -131,7 +129,7 @@ test("a finite number needs a false non-finite example, and a string is not last
     "expect(finite(Infinity)).toBe(false);",
     "expect(finite('x')).toBe(false);",
   ].join("\n"), "src/finite.ts");
-  assert.match(bodyOf(finite), /return Number\.isFinite\(a\);/);
+  assert.equal(finite?.ok, false);
   const witnessed = admit("src/wide.spec.ts", [
     "import { wide } from './wide';",
     "expect(wide(1)).toBe(true);",
@@ -201,23 +199,6 @@ test("deleting a value-family guard admits the case it refused", async () => {
     const mod = await mutant(guard) as typeof import("../lib/testspec.ts");
     return mod.scaffoldPlan(file, body, `Cannot find module '/work/${file.replace(/\.spec\.ts$/, ".ts")}'`, PATTERN, [], () => null);
   };
-  const disagree = await open("finite-guard:match", "src/bad.spec.ts", [
-    "import { bad } from './bad';",
-    "expect(bad(1)).toBe(true);",
-    "expect(bad(Infinity)).toBe(true);",
-    "expect(bad(NaN)).toBe(false);",
-    "expect(bad('z')).toBe(false);",
-  ].join("\n"));
-  assert.equal(disagree?.ok, true);
-  if (disagree?.ok) assert.match(disagree.files[0]!.content, /return Number\.isFinite\(a\);/);
-  const noWitness = await open("finite-guard:witness", "src/wide.spec.ts", [
-    "import { wide } from './wide';",
-    "expect(wide(1)).toBe(true);",
-    "expect(wide(1.5)).toBe(true);",
-    "expect(wide([1])).toBe(false);",
-  ].join("\n"));
-  assert.equal(noWitness?.ok, false);
-
   const chars = await open("last-guard:arrays", "src/chars.spec.ts", "import { chars } from './chars';\nexpect(chars('ab')).toBe('b');\nexpect(chars('cd')).toBe('d');\n");
   assert.equal(chars?.ok, true);
   if (chars?.ok) assert.match(chars.files[0]!.content, /return a\[a\.length - 1\];/);
@@ -238,16 +219,13 @@ test("deleting a value-family guard admits the case it refused", async () => {
 
   const lie = await open("spec-guard:opaque-call", "src/foo.spec.ts", [
     "import { foo } from './foo';",
-    "expect(foo(1)).toBe(true);",
-    "expect(foo(1.5)).toBe(true);",
-    "expect(foo(-1)).toBe(true);",
-    "expect(foo(Infinity)).toBe(false);",
-    "expect(foo(NaN)).toBe(false);",
-    "expect(foo('x')).toBe(false);",
-    "expect(foo(Object(1))).toBe(true);",
+    "expect(foo([1, 2, 3])).toBe(3);",
+    "expect(foo(['a', 'b', 'c'])).toBe('c');",
+    "expect(foo([])).toBeUndefined();",
+    "expect(foo(Object(1))).toBe(0);",
   ].join("\n"));
   assert.equal(lie?.ok, true);
-  if (lie?.ok) assert.match(lie.files[0]!.content, /return Number\.isFinite\(a\);/);
+  if (lie?.ok) assert.match(lie.files[0]!.content, /return a\[a\.length - 1\];/);
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -264,6 +242,22 @@ function finiteSpec(expr: string, expected: "true" | "false"): string {
   ].join("\n");
 }
 
+function lastCall(expr: string, expected: string): string {
+  return [
+    "import { foo } from './foo';",
+    "expect(foo([1, 2, 3])).toBe(3);",
+    "expect(foo(['a', 'b', 'c'])).toBe('c');",
+    "expect(foo([])).toBeUndefined();",
+    `expect(foo(${expr})).toBe(${expected});`,
+  ].join("\n");
+}
+
+function skipWithoutSandbox(t: { skip: (message?: string) => void }): boolean {
+  if (practiceSandboxReady()) return false;
+  t.skip("bwrap is not installed on this host");
+  return true;
+}
+
 function writeCanary(path: string): string {
   return `(() => { const run = ({}).constructor.constructor; const proc = run("return process")(); proc.getBuiltinModule("fs").writeFileSync(${JSON.stringify(path)}, "x"); return Object(1); })()`;
 }
@@ -274,11 +268,11 @@ test("a hostile opaque argument does not touch the host", () => {
   const secret = `host-secret-${process.pid}`;
   process.env.PEACEAI_OPAQUE_SECRET = secret;
   try {
-    const wrote = admit("src/foo.spec.ts", finiteSpec(writeCanary(canary), "true"), "src/foo.ts");
+    const wrote = admit("src/foo.spec.ts", lastCall(writeCanary(canary), "3"), "src/foo.ts");
     assert.equal(wrote?.ok, false);
     assert.equal(existsSync(canary), false);
-    const read = `(process.env.PEACEAI_OPAQUE_SECRET === ${JSON.stringify(secret)} ? Object(1) : 1)`;
-    const leaked = admit("src/foo.spec.ts", finiteSpec(read, "false"), "src/foo.ts");
+    const read = `(process.env.PEACEAI_OPAQUE_SECRET === ${JSON.stringify(secret)} ? [1, 2, 3] : [0])`;
+    const leaked = admit("src/foo.spec.ts", lastCall(read, "3"), "src/foo.ts");
     assert.equal(leaked?.ok, false);
   } finally {
     delete process.env.PEACEAI_OPAQUE_SECRET;
@@ -290,7 +284,7 @@ test("missing bwrap refuses an opaque call without running it", () => {
   const canary = join(tmpdir(), `peaceai-opaque-nobwrap-${process.pid}`);
   rmSync(canary, { force: true });
   try {
-    const plan = admit("src/foo.spec.ts", finiteSpec(writeCanary(canary), "true"), "src/foo.ts", { bwrap: "/no/such/bwrap" });
+    const plan = admit("src/foo.spec.ts", lastCall(writeCanary(canary), "3"), "src/foo.ts", { bwrap: "/no/such/bwrap" });
     assert.equal(plan?.ok, false);
   } finally {
     rmSync(canary, { force: true });
@@ -298,16 +292,16 @@ test("missing bwrap refuses an opaque call without running it", () => {
   assert.equal(existsSync(canary), false);
 });
 
-test("a forged ok on stdout or stderr does not admit", () => {
-  assert.equal(practiceSandboxReady(), true);
+test("a forged ok on stdout or stderr does not admit", (t) => {
+  if (skipWithoutSandbox(t)) return;
   const stdout = `(process.stdout.write("ok\\n"), process.exit(0), Object(1))`;
   const stderr = `(process.stderr.write("ok\\n"), process.exit(0), Object(1))`;
-  assert.equal(admit("src/foo.spec.ts", finiteSpec(stdout, "true"), "src/foo.ts")?.ok, false);
-  assert.equal(admit("src/foo.spec.ts", finiteSpec(stderr, "true"), "src/foo.ts")?.ok, false);
+  assert.equal(admit("src/foo.spec.ts", lastCall(stdout, "3"), "src/foo.ts")?.ok, false);
+  assert.equal(admit("src/foo.spec.ts", lastCall(stderr, "3"), "src/foo.ts")?.ok, false);
 });
 
-test("monkeypatched serializer globals do not admit", () => {
-  assert.equal(practiceSandboxReady(), true);
+test("monkeypatched serializer globals do not admit", (t) => {
+  if (skipWithoutSandbox(t)) return;
   const expr = `(() => {
     JSON.stringify = () => '[{"t":"b","v":true}]';
     Object.prototype.toJSON = () => true;
@@ -318,11 +312,11 @@ test("monkeypatched serializer globals do not admit", () => {
     Buffer.from = () => ({ length: 0 });
     return Object(1);
   })()`;
-  assert.equal(admit("src/foo.spec.ts", finiteSpec(expr, "true"), "src/foo.ts")?.ok, false);
+  assert.equal(admit("src/foo.spec.ts", lastCall(expr, "3"), "src/foo.ts")?.ok, false);
 });
 
-test("a getter, toJSON, or Proxy result does not admit", () => {
-  assert.equal(practiceSandboxReady(), true);
+test("a getter, toJSON, or Proxy result does not admit", (t) => {
+  if (skipWithoutSandbox(t)) return;
   const lastSpec = (expr: string) => [
     "import { foo } from './foo';",
     "expect(foo([1, 2, 3])).toBe(3);",
@@ -338,8 +332,8 @@ test("a getter, toJSON, or Proxy result does not admit", () => {
   assert.equal(admit("src/foo.spec.ts", lastSpec(proxy), "src/foo.ts")?.ok, false);
 });
 
-test("a reachable nonce cannot be used to forge the frame", () => {
-  assert.equal(practiceSandboxReady(), true);
+test("a reachable nonce cannot be used to forge the frame", (t) => {
+  if (skipWithoutSandbox(t)) return;
   const expr = `(() => {
     const fs = process.getBuiltinModule("node:fs");
     const parts = [];
@@ -363,11 +357,11 @@ test("a reachable nonce cannot be used to forge the frame", () => {
     }
     return Object(1);
   })()`;
-  assert.equal(admit("src/foo.spec.ts", finiteSpec(expr, "true"), "src/foo.ts")?.ok, false);
+  assert.equal(admit("src/foo.spec.ts", lastCall(expr, "3"), "src/foo.ts")?.ok, false);
 });
 
-test("an exit handler or timer cannot append a second frame", () => {
-  assert.equal(practiceSandboxReady(), true);
+test("an exit handler or timer cannot append a second frame", (t) => {
+  if (skipWithoutSandbox(t)) return;
   const expr = `(() => {
     const fs = process.getBuiltinModule("node:fs");
     const extra = () => {
@@ -381,5 +375,23 @@ test("an exit handler or timer cannot append a second frame", () => {
     setTimeout(extra, 0);
     return Object(1);
   })()`;
+  assert.equal(admit("src/foo.spec.ts", lastCall(expr, "3"), "src/foo.ts")?.ok, false);
+});
+
+test("a heap snapshot cannot forge the opaque result", (t) => {
+  if (skipWithoutSandbox(t)) return;
+  const expr = `(() => {
+    const fs = process.getBuiltinModule("node:fs");
+    const v8 = process.getBuiltinModule("v8");
+    const dir = process.argv[1].slice(0, process.argv[1].lastIndexOf("/"));
+    let blob = "";
+    try { v8.writeHeapSnapshot(dir + "/heap.heapsnapshot"); blob = fs.readFileSync(dir + "/heap.heapsnapshot").toString("latin1"); } catch {}
+    const found = blob.match(/[0-9a-f]{64}/);
+    const forged = JSON.stringify([{ t: "b", v: true }]);
+    try { fs.writeFileSync(dir + "/result", (found ? found[0] + "\\n" : "") + forged + "\\n"); } catch {}
+    process.reallyExit(0);
+    return Object(1);
+  })()`;
   assert.equal(admit("src/foo.spec.ts", finiteSpec(expr, "true"), "src/foo.ts")?.ok, false);
+  assert.equal(admit("src/foo.spec.ts", lastCall(expr, "3"), "src/foo.ts")?.ok, false);
 });

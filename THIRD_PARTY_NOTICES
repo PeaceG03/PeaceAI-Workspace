@@ -8697,8 +8697,6 @@ fixtures (commit path):
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m242/es-toolkit-isString.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m242/es-toolkit-reverseString.spec.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m242/es-toolkit-reverseString.ts.txt
-  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m243/es-toolkit-isFinite.spec.ts.txt
-  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m243/es-toolkit-isFinite.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m243/es-toolkit-isNull.spec.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m243/es-toolkit-isNull.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m243/es-toolkit-last.spec.ts.txt

@@ -14,7 +14,6 @@
 // Other edits come from the loop-v2 repair proposer (the catalog of templates). Attempts stay within
 // that loop's MAX_ATTEMPTS and the proposer's MAX_CANDIDATES. A diff is returned only when the given
 // test passes and the original suite still passes. Nothing here pushes.
-import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, posix } from "node:path";
@@ -1276,22 +1275,6 @@ function reverseBody(examples: Example[]): string | null {
   return '  return Array.from(a).reverse().join("");';
 }
 
-function finiteValue(value: unknown): boolean {
-  return Number.isFinite(value);
-}
-
-/**
- * `Number.isFinite(a)`. A non-finite number has to be false, so this is not
- * `typeof a === "number"` and not a constant. A true non-finite example is not this function.
- */
-function finiteBody(examples: Example[]): string | null {
-  if (!examples.length || examples.some((ex) => ex.args.length !== 1 || typeof ex.expected !== "boolean")) return null;
-  if (!examples.every((ex) => finiteValue(ex.args[0]) === ex.expected)) return null; // finite-guard:match
-  const nonfinite = examples.some((ex) => typeof ex.args[0] === "number" && !Number.isFinite(ex.args[0]) && ex.expected === false);
-  if (!nonfinite) return null; // finite-guard:witness
-  return "  return Number.isFinite(a);";
-}
-
 /** The last element, or undefined for an empty array. A string is not an array. */
 function atLast(value: unknown): { ok: true; value: unknown } | { ok: false } {
   if (typeof value === "string" || Array.isArray(value)) return { ok: true, value: value.length === 0 ? undefined : value[value.length - 1] };
@@ -1373,18 +1356,27 @@ function decodeTagged(node: unknown): { ok: true; value: unknown } | { ok: false
   return { ok: false };
 }
 
-/** One nonce line, then one JSON line. Anything else is not a result. */
-function readFrame(path: string, nonce: string, count: number): unknown[] | null {
+/** One JSON line of tagged arguments. Extra bytes are not a payload. */
+function readPayload(path: string, count: number): unknown[] | null {
   let text = "";
   try { text = readFileSync(path, "utf8"); } catch { return null; }
-  const prefix = nonce + "\n";
-  if (!text.startsWith(prefix) || !text.endsWith("\n")) return null;
-  const json = text.slice(prefix.length, -1);
-  if (json.length === 0 || json.includes("\n")) return null;
+  const nl = text.indexOf("\n");
+  if (nl < 0 || nl !== text.length - 1) return null;
   let parsed: unknown;
-  try { parsed = JSON.parse(json); } catch { return null; }
+  try { parsed = JSON.parse(text.slice(0, -1)); } catch { return null; }
   if (!Array.isArray(parsed) || parsed.length !== count) return null;
   return parsed;
+}
+
+function decodeCall(node: unknown, arity: number): unknown[] | null {
+  if (!Array.isArray(node) || node.length !== arity) return null;
+  const args: unknown[] = [];
+  for (const item of node) {
+    const decoded = decodeTagged(item);
+    if (!decoded.ok) return null;
+    args.push(decoded.value);
+  }
+  return args;
 }
 
 function valueAgrees(got: unknown, call: CallFact): boolean {
@@ -1396,13 +1388,20 @@ function valueAgrees(got: unknown, call: CallFact): boolean {
   return Object.is(got, reduced.expected);
 }
 
+/** The parent-generated body, applied to plain data the parent decoded. */
+function applyBody(body: string, args: unknown[]): { ok: true; value: unknown } | { ok: false } {
+  try {
+    const value = (new Function(...PARAMS.slice(0, args.length), body) as (...xs: unknown[]) => unknown)(...args);
+    return { ok: true, value };
+  } catch {
+    return { ok: false };
+  }
+}
+
 /**
- * The sandbox only returns values. The parent compares them.
- * The nonce lives in one closure: it is not an argument, an environment
- * variable, or a global. The file is removed and no descriptor of it remains
- * before the expression runs. Primordials and the result fd are captured
- * first. The frame is plain data, written with the captured write, and the
- * captured exit runs before a handler or timer. Missing bwrap does not start
+ * The sandbox only returns the arguments. It holds no secret and does not
+ * decide the check. The parent parses the tagged values and runs the
+ * parent-generated body on that plain data. Missing bwrap does not start
  * the script.
  */
 function replayInSandbox(body: string, calls: readonly CallFact[], bwrap?: string): boolean {
@@ -1420,93 +1419,16 @@ function replayInSandbox(body: string, calls: readonly CallFact[], bwrap?: strin
     }
     cases.push({ exprs });
   }
-  const width = Math.max(...cases.map((item) => item.exprs.length), 0);
-  const names = PARAMS.slice(0, width);
-  const nonce = randomBytes(32).toString("hex");
   const script = [
-    "import * as fs from 'node:fs';",
+    "import { writeFileSync } from 'node:fs';",
     "import { types } from 'node:util';",
-    "import { createRequire } from 'node:module';",
-    "const readFile = fs.readFileSync;",
-    "const remove = fs.unlinkSync;",
-    "const exists = fs.existsSync;",
-    "const open = fs.openSync;",
-    "const write = fs.writeSync;",
-    "const trunc = fs.ftruncateSync;",
-    "const readdir = fs.readdirSync;",
-    "const readlink = fs.readlinkSync;",
-    "const bind = Function.prototype.bind;",
-    "const halt = bind.call(process.reallyExit, process);",
-    "const compile = Function;",
-    "const bufFrom = Buffer.from;",
-    "const fromChar = String.fromCharCode;",
-    "const toStr = String;",
-    "const isArray = Array.isArray;",
-    "const keysOf = Object.keys;",
-    "const namesOf = Object.getOwnPropertyNames;",
-    "const protoOf = Object.getPrototypeOf;",
-    "const ownDesc = Object.getOwnPropertyDescriptor;",
-    "const define = Object.defineProperty;",
-    "const typedLen = bind.call(Function.prototype.call, ownDesc(protoOf(Uint8Array.prototype), 'length').get);",
-    "const ownSymbols = Object.getOwnPropertySymbols;",
-    "const objectProto = Object.prototype;",
-    "const arrayProto = Array.prototype;",
-    "const same = Object.is;",
     "const isProxy = types.isProxy;",
-    "const numToString = bind.call(Function.prototype.call, Number.prototype.toString);",
-    "const charCodeAt = bind.call(Function.prototype.call, String.prototype.charCodeAt);",
-    "const here = import.meta.dirname;",
-    "const noncePath = here + '/nonce';",
-    "const resultPath = here + '/result';",
-    "const req = createRequire(import.meta.url);",
-    "const commit = (() => {",
-    "  const nonce = readFile(noncePath, 'utf8');",
-    "  remove(noncePath);",
-    "  if (exists(noncePath)) halt(1);",
-    "  const seen = (blob) => { if (typeof blob === 'string' && blob.includes(nonce)) halt(1); };",
-    "  seen(process.argv.join('\\0'));",
-    "  for (const value of Object.values(process.env)) seen(value);",
-    "  seen(toStr(readFile('/proc/self/cmdline')));",
-    "  seen(toStr(readFile('/proc/self/environ')));",
-    "  for (const name of readdir('/proc/self/fd')) {",
-    "    let link = '';",
-    "    try { link = readlink('/proc/self/fd/' + name); } catch { continue; }",
-    "    if (link.includes('nonce') || link.includes(nonce)) halt(1);",
-    "  }",
-    "  for (const key of namesOf(globalThis)) {",
-    "    const desc = ownDesc(globalThis, key);",
-    "    if (desc && 'value' in desc) seen(desc.value);",
-    "  }",
-    "  const cache = req.cache;",
-    "  if (cache) {",
-    "    for (const key of namesOf(cache)) {",
-    "      seen(key);",
-    "      const mod = cache[key];",
-    "      if (!mod || typeof mod.exports !== 'object' || mod.exports === null) continue;",
-    "      for (const name of namesOf(mod.exports)) {",
-    "        const desc = ownDesc(mod.exports, name);",
-    "        if (desc && 'value' in desc) seen(desc.value);",
-    "      }",
-    "    }",
-    "  }",
-    "  const fd = open(resultPath, 'w');",
-    "  return (payload) => {",
-    "    const text = nonce + '\\n' + payload + '\\n';",
-    "    const bytes = bufFrom(text);",
-    "    const n = typedLen(bytes);",
-    "    write(fd, bytes, 0, n, 0);",
-    "    trunc(fd, n);",
-    "    halt(0);",
-    "  };",
-    "})();",
     "const cases = " + JSON.stringify(cases) + ";",
-    "const body = " + JSON.stringify(body) + ";",
-    "const names = " + JSON.stringify(names) + ";",
     "function plain(v, proto) {",
+    "  if (v === null || typeof v !== 'object') return false;",
     "  if (isProxy(v)) return false;",
-    "  if (ownSymbols(v).length) return false;",
-    "  if (protoOf(v) !== proto) return false;",
-    "  return true;",
+    "  if (Object.getOwnPropertySymbols(v).length) return false;",
+    "  return Object.getPrototypeOf(v) === proto;",
     "}",
     "function ser(v) {",
     "  if (v === undefined) return { t: 'u' };",
@@ -1515,123 +1437,62 @@ function replayInSandbox(body: string, calls: readonly CallFact[], bwrap?: strin
     "  if (ty === 'boolean') return { t: 'b', v };",
     "  if (ty === 'string') return { t: 's', v };",
     "  if (ty === 'number') {",
-    "    if (same(v, -0)) return { t: 'nz' };",
+    "    if (Object.is(v, -0)) return { t: 'nz' };",
     "    if (v !== v) return { t: 'nan' };",
     "    if (v === Infinity) return { t: 'pinf' };",
     "    if (v === -Infinity) return { t: 'ninf' };",
     "    return { t: 'n', v };",
     "  }",
     "  if (ty !== 'object') return { t: 'bad' };",
-    "  if (isArray(v)) {",
-    "    if (!plain(v, arrayProto)) return { t: 'bad' };",
-    "    const lenDesc = ownDesc(v, 'length');",
-    "    if (!lenDesc || !('value' in lenDesc) || lenDesc.get || lenDesc.set) return { t: 'bad' };",
+    "  if (Array.isArray(v)) {",
+    "    if (!plain(v, Array.prototype)) return { t: 'bad' };",
     "    const out = [];",
-    "    for (let i = 0; i < lenDesc.value; i++) {",
-    "      const desc = ownDesc(v, toStr(i));",
-    "      if (!desc || !('value' in desc) || desc.get || desc.set || desc.value === undefined) return { t: 'bad' };",
+    "    for (let i = 0; i < v.length; i++) {",
+    "      const desc = Object.getOwnPropertyDescriptor(v, String(i));",
+    "      if (!desc || desc.get || desc.set || !('value' in desc) || desc.value === undefined) return { t: 'bad' };",
     "      const s = ser(desc.value);",
     "      if (s.t === 'bad') return s;",
-    "      define(out, toStr(i), { value: s, writable: true, enumerable: true, configurable: true });",
+    "      out.push(s);",
     "    }",
     "    return { t: 'a', v: out };",
     "  }",
-    "  const proto = protoOf(v);",
-    "  if (proto !== objectProto && proto !== null) return { t: 'bad' };",
+    "  const proto = Object.getPrototypeOf(v);",
+    "  if (proto !== Object.prototype && proto !== null) return { t: 'bad' };",
     "  if (!plain(v, proto)) return { t: 'bad' };",
     "  const out = {};",
-    "  const ks = keysOf(v);",
-    "  const kn = ownDesc(ks, 'length').value;",
-    "  for (let i = 0; i < kn; i++) {",
-    "    const key = ownDesc(ks, toStr(i)).value;",
+    "  for (const key of Object.keys(v)) {",
     "    if (key === 'toJSON') return { t: 'bad' };",
-    "    const desc = ownDesc(v, key);",
-    "    if (!desc || !('value' in desc) || desc.get || desc.set || desc.value === undefined) return { t: 'bad' };",
+    "    const desc = Object.getOwnPropertyDescriptor(v, key);",
+    "    if (!desc || desc.get || desc.set || !('value' in desc) || desc.value === undefined) return { t: 'bad' };",
     "    const s = ser(desc.value);",
     "    if (s.t === 'bad') return s;",
-    "    define(out, key, { value: s, writable: true, enumerable: true, configurable: true });",
+    "    out[key] = s;",
     "  }",
     "  return { t: 'o', v: out };",
     "}",
-    "function hex4(n) {",
-    "  let h = numToString(n, 16);",
-    "  let nlen = 0;",
-    "  for (;;) { const c = charCodeAt(h, nlen); if (c !== c) break; nlen++; }",
-    "  while (nlen < 4) { h = '0' + h; nlen++; }",
-    "  return h;",
-    "}",
-    "function quote(s) {",
-    "  let out = '\"';",
-    "  for (let i = 0; ; i++) {",
-    "    const end = charCodeAt(s, i);",
-    "    if (end !== end) break;",
-    "    const c = end;",
-    "    if (c === 34 || c === 92) out += '\\\\' + fromChar(c);",
-    "    else if (c < 32) out += '\\\\u' + hex4(c);",
-    "    else out += fromChar(c);",
-    "  }",
-    "  return out + '\"';",
-    "}",
-    "function enc(v) {",
-    "  if (v === null) return 'null';",
-    "  const ty = typeof v;",
-    "  if (ty === 'string') return quote(v);",
-    "  if (ty === 'boolean') return v ? 'true' : 'false';",
-    "  if (ty === 'number') return numToString(v);",
-    "  if (isArray(v)) {",
-    "    const len = ownDesc(v, 'length').value;",
-    "    let out = '[';",
-    "    for (let i = 0; i < len; i++) { if (i) out += ','; out += enc(ownDesc(v, toStr(i)).value); }",
-    "    return out + ']';",
-    "  }",
-    "  let out = '{';",
-    "  let first = true;",
-    "  const ks = keysOf(v);",
-    "  const kn = ownDesc(ks, 'length').value;",
-    "  for (let i = 0; i < kn; i++) {",
-    "    const key = ownDesc(ks, toStr(i)).value;",
-    "    if (!first) out += ',';",
-    "    first = false;",
-    "    out += quote(key) + ':' + enc(ownDesc(v, key).value);",
-    "  }",
-    "  return out + '}';",
-    "}",
-    "function at(arr, i) { return ownDesc(arr, toStr(i)).value; }",
-    "const f = compile(...names, body);",
-    "const values = [];",
-    "const caseCount = ownDesc(cases, 'length').value;",
-    "for (let i = 0; i < caseCount; i++) {",
-    "  const exprs = ownDesc(at(cases, i), 'exprs').value;",
-    "  const argc = ownDesc(exprs, 'length').value;",
+    "const out = [];",
+    "for (const item of cases) {",
     "  const args = [];",
-    "  for (let j = 0; j < argc; j++) define(args, toStr(j), { value: compile('return (' + at(exprs, j) + ')')(), writable: true, enumerable: true, configurable: true });",
-    "  let got;",
-    "  if (argc === 0) got = f();",
-    "  else if (argc === 1) got = f(at(args, 0));",
-    "  else if (argc === 2) got = f(at(args, 0), at(args, 1));",
-    "  else if (argc === 3) got = f(at(args, 0), at(args, 1), at(args, 2));",
-    "  else if (argc === 4) got = f(at(args, 0), at(args, 1), at(args, 2), at(args, 3));",
-    "  else if (argc === 5) got = f(at(args, 0), at(args, 1), at(args, 2), at(args, 3), at(args, 4));",
-    "  else got = f(at(args, 0), at(args, 1), at(args, 2), at(args, 3), at(args, 4), at(args, 5));",
-    "  define(values, toStr(i), { value: ser(got), writable: true, enumerable: true, configurable: true });",
+    "  for (const src of item.exprs) args.push(ser(Function('return (' + src + ')')()));",
+    "  out.push(args);",
     "}",
-    "commit(enc(values));",
+    "writeFileSync(new URL('./result', import.meta.url), JSON.stringify(out) + '\\n');",
     "",
   ].join("\n");
   const dir = mkdtempSync(join(tmpdir(), "peaceai-opaque-"));
-  const noncePath = join(dir, "nonce");
   const resultPath = join(dir, "result");
   try {
-    writeFileSync(noncePath, nonce, { mode: 0o600 });
     const file = join(dir, "replay.mjs");
     writeFileSync(file, script);
     const ran = runInPracticeSandbox(dir, [node, file], 10_000, { capture: true, nodePath: node, ...(bwrap ? { bwrap } : {}) });
     if (ran.unsafe || ran.code !== 0) return false;
-    const frame = readFrame(resultPath, nonce, cases.length);
-    if (!frame) return false;
+    const payload = readPayload(resultPath, cases.length);
+    if (!payload) return false;
     for (let i = 0; i < calls.length; i++) {
-      const decoded = decodeTagged(frame[i]);
-      if (!decoded.ok || !valueAgrees(decoded.value, calls[i]!)) return false;
+      const args = decodeCall(payload[i], cases[i]!.exprs.length);
+      if (!args) return false;
+      const got = applyBody(body, args);
+      if (!got.ok || !valueAgrees(got.value, calls[i]!)) return false;
     }
     return true;
   } finally {
@@ -1646,7 +1507,7 @@ function opaqueAgrees(body: string, calls: readonly CallFact[], bwrap?: string):
 }
 
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "finite", "last", "null", "peer"] as const;
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
 function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string, bwrap?: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
@@ -1683,7 +1544,6 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   keep(nilBody(concrete), "boolean", "nil");
   keep(headBody(concrete), resultType(concrete.map((ex) => ex.expected)), "head");
   keep(reverseBody(concrete), "string", "reverse");
-  keep(finiteBody(concrete), "boolean", "finite");
   keep(lastBody(concrete), resultType(concrete.map((ex) => ex.expected)), "last");
   keep(nullBody(concrete), "boolean", "null");
   keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");

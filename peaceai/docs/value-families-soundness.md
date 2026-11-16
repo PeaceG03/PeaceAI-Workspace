@@ -1,12 +1,10 @@
-# Value families: finite, last, strict null
+# Value families: last, strict null
 
 These shapes read only the recorded calls. They do not copy a fix. A shape is kept only when every reduced call agrees with that one form. Two forms are `CANT_DO_YET_NO_BODY`. A call whose argument is not a literal, a sentinel, or a collection of those is not an example. A throw is still part of the spec, and the body is refused. A plan is built only from a missing-module, missing-export, or not-a-function error. A passing log does not build one.
 
-## Finite
+## Finite, dropped
 
-`Number.isFinite(a)` is emitted when every example matches that test and some number example is `Infinity`, `-Infinity`, or `NaN` and false. A true non-finite example is not this function. Without a non-finite example the number tag already says the same thing on the finite numbers, so finite stays out.
-
-`finite-guard:match` is the agreement check. `finite-guard:witness` requires the non-finite false example.
+`Number.isFinite(a)` is not emitted. The published `toss/es-toolkit` compat `isFinite` spec expects `Object(1)` to be false. That value is a number object. The sandbox carries only primitives, plain arrays, and plain objects with own data properties, so the call refuses. Loosening the serializer to carry it would let the evaluating process decide the check. The family stays out.
 
 ## Last
 
@@ -22,7 +20,7 @@ These shapes read only the recorded calls. They do not copy a fix. A shape is ke
 
 ## Opaque calls
 
-A call whose argument is not a literal still has its expectation. After one body is chosen from the concrete calls, the argument is run inside the practice sandbox (`bwrap`, no network, scrubbed environment, timeout). The sandbox writes the value, framed by a nonce that stays in one closure. It is not an argument, an environment variable, or a global, and the file and any descriptor of it are gone before the expression runs. Primordials and the result fd are captured first. The serializer accepts only primitives, plain arrays, and plain objects with own data properties, and refuses a getter, a Proxy, `toJSON`, a symbol, or any other prototype. The frame is written with the captured `writeSync`, then the captured exit runs before a handler or timer. The parent compares the value and refuses extra bytes after the frame. The child does not decide pass or fail. Stdout and stderr are not a verdict. A missing frame, a second frame, or a frame that does not start with that nonce refuses the body. An identifier is the const it names, one step, when that const is earlier in the same block. Missing `bwrap` refuses the body and does not start the script. `expect(foo(Object(1))).toBe(true)` does not emit `Number.isFinite(a)`. A nested `{a: undefined}` cannot be carried back, so that `toEqual` stays refused.
+A call whose argument is not a literal still has its expectation. After one body is chosen from the concrete calls, the argument is run inside the practice sandbox (`bwrap`, no network, scrubbed environment, timeout). That process holds no secret and does not decide the check. It writes a tagged serialization of the argument only. The parent parses that as data and applies the parent-generated body to the deserialized value. The serializer accepts only primitives, plain arrays, and plain objects with own data properties, and refuses a getter, a Proxy, `toJSON`, a symbol, or any other prototype. A missing payload, extra bytes, or a value the serializer cannot carry refuses the body. Stdout and stderr are not a verdict. An identifier is the const it names, one step, when that const is earlier in the same block. Missing `bwrap` refuses the body and does not start the script. A nested `{a: undefined}` cannot be carried back, so that `toEqual` stays refused. A lying serialization can only misreport the argument. The published test still has to fail before the scaffold and pass after it.
 
 `spec-guard:opaque-call` is that check. Deleting it keeps the body without running the opaque call.
 
@@ -30,8 +28,8 @@ A call whose argument is not a literal still has its expectation. After one body
 
 `toss/es-toolkit` at `24e7a7b8cb8035fae1ea2e7b507aab96698a38b9` (MIT). The bytes are pinned in `peaceai/test/m243-value-families.test.ts`.
 
-- compat `isFinite` is `Number.isFinite(value)`. The published test fails when the function throws and passes on `Number.isFinite(a)`. `Object(1)` is expected false, and `Number.isFinite` is false there, so the call is kept.
-- `last` is `arr[arr.length - 1]`. The scaffold emits `a[a.length - 1]`, and `last([])` is `undefined`. `largeArray` and `nestedArray` are consts. The body is run on both, and both agree.
+- compat `isFinite` is not admitted. `Object(1)` cannot be carried back as plain data.
+- `last` is `arr[arr.length - 1]`. The scaffold emits `a[a.length - 1]`, and `last([])` is `undefined`. `largeArray` and `nestedArray` are consts. The parent runs the body on both deserialized arrays, and both agree.
 - `isNull` is `x === null`. `undefined` is false in the published test, so nil does not fit.
 
 ## Not in this batch
