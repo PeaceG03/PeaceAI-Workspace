@@ -14,6 +14,7 @@
 // Other edits come from the loop-v2 repair proposer (the catalog of templates). Attempts stay within
 // that loop's MAX_ATTEMPTS and the proposer's MAX_CANDIDATES. A diff is returned only when the given
 // test passes and the original suite still passes. Nothing here pushes.
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, posix } from "node:path";
@@ -1325,97 +1326,191 @@ function nullBody(examples: Example[]): string | null {
   return "  return a === null;";
 }
 
-interface ReplaySpec { k: "equal" | "boolean" | "type"; e?: unknown; deep?: boolean; u?: boolean; nan?: boolean; nz?: boolean }
+interface Tagged { t: string; v?: unknown }
 
-function replaySpec(call: CallFact): ReplaySpec | null {
+function deepSame(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) && Array.isArray(right)) return left.length === right.length && left.every((item, i) => deepSame(item, right[i]));
+  if (left && right && typeof left === "object" && typeof right === "object" && !Array.isArray(left) && !Array.isArray(right)) {
+    const a = left as Record<string, unknown>;
+    const b = right as Record<string, unknown>;
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every((key) => deepSame(a[key], b[key]));
+  }
+  return false;
+}
+
+function decodeTagged(node: unknown): { ok: true; value: unknown } | { ok: false } {
+  if (!node || typeof node !== "object") return { ok: false };
+  const tag = node as Tagged;
+  if (tag.t === "u") return { ok: true, value: undefined };
+  if (tag.t === "z") return { ok: true, value: null };
+  if (tag.t === "b") return typeof tag.v === "boolean" ? { ok: true, value: tag.v } : { ok: false };
+  if (tag.t === "s") return typeof tag.v === "string" ? { ok: true, value: tag.v } : { ok: false };
+  if (tag.t === "n") return typeof tag.v === "number" && Number.isFinite(tag.v) ? { ok: true, value: tag.v } : { ok: false };
+  if (tag.t === "nz") return { ok: true, value: -0 };
+  if (tag.t === "nan") return { ok: true, value: Number.NaN };
+  if (tag.t === "pinf") return { ok: true, value: Number.POSITIVE_INFINITY };
+  if (tag.t === "ninf") return { ok: true, value: Number.NEGATIVE_INFINITY };
+  if (tag.t === "a" && Array.isArray(tag.v)) {
+    const items: unknown[] = [];
+    for (const item of tag.v) {
+      const decoded = decodeTagged(item);
+      if (!decoded.ok) return decoded;
+      items.push(decoded.value);
+    }
+    return { ok: true, value: items };
+  }
+  if (tag.t === "o" && tag.v && typeof tag.v === "object" && !Array.isArray(tag.v)) {
+    const obj: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(tag.v as Record<string, unknown>)) {
+      const decoded = decodeTagged(item);
+      if (!decoded.ok) return decoded;
+      obj[key] = decoded.value;
+    }
+    return { ok: true, value: obj };
+  }
+  return { ok: false };
+}
+
+/** One nonce line, then one JSON line. Anything else is not a result. */
+function readFrame(path: string, nonce: string, count: number): unknown[] | null {
+  let text = "";
+  try { text = readFileSync(path, "utf8"); } catch { return null; }
+  const prefix = nonce + "\n";
+  if (!text.startsWith(prefix) || !text.endsWith("\n")) return null;
+  const json = text.slice(prefix.length, -1);
+  if (json.length === 0 || json.includes("\n")) return null;
+  let parsed: unknown;
+  try { parsed = JSON.parse(json); } catch { return null; }
+  if (!Array.isArray(parsed) || parsed.length !== count) return null;
+  return parsed;
+}
+
+function valueAgrees(got: unknown, call: CallFact): boolean {
   const reduced = call.reduced;
-  if (!reduced || reduced.kind === "throws") return null;
-  const deep = reduced.kind === "equal" && reduced.deep === true;
-  if (reduced.expected === undefined) return { k: reduced.kind, u: true, deep };
-  if (typeof reduced.expected === "number" && Number.isNaN(reduced.expected)) return { k: reduced.kind, nan: true, deep };
-  if (typeof reduced.expected === "number" && Object.is(reduced.expected, -0)) return { k: reduced.kind, nz: true, deep };
-  return { k: reduced.kind, e: reduced.expected, deep };
+  if (!reduced || reduced.kind === "throws") return false;
+  if (reduced.kind === "type") return (got === null ? "object" : typeof got) === reduced.expected;
+  if (reduced.kind === "boolean") return Object.is(got, reduced.expected);
+  if (reduced.kind === "equal" && reduced.deep) return deepSame(got, reduced.expected);
+  return Object.is(got, reduced.expected);
 }
 
 /**
- * Run opaque calls in the practice sandbox. There is no in-process evaluator.
- * Missing bwrap is a refusal and does not start the script.
+ * The sandbox only returns values. The parent compares them.
+ * The nonce is read from a file and that file is removed before the untrusted
+ * expression runs, so the expression cannot frame a verdict. Missing bwrap
+ * does not start the script.
  */
-function replayInSandbox(body: string, calls: readonly CallFact[]): boolean {
+function replayInSandbox(body: string, calls: readonly CallFact[], bwrap?: string): boolean {
   const node = visibleNodeBin();
   if (!node) return false;
-  const cases: { exprs: string[]; spec: ReplaySpec }[] = [];
+  const cases: { exprs: string[] }[] = [];
   for (const call of calls) {
-    const spec = replaySpec(call);
     const replay = call.replay;
-    if (!spec || !replay || replay.length !== call.arity) return false;
+    if (!call.reduced || call.reduced.kind === "throws" || !replay || replay.length !== call.arity) return false;
     const exprs: string[] = [];
     for (const item of replay) {
       const expr = item.init ?? item.source;
       if (!expr || (item.init === null && /^[A-Za-z_$][\w$]*$/.test(item.source))) return false;
       exprs.push(expr);
     }
-    cases.push({ exprs, spec });
+    cases.push({ exprs });
   }
   const width = Math.max(...cases.map((item) => item.exprs.length), 0);
   const names = PARAMS.slice(0, width);
+  const nonce = randomBytes(32).toString("hex");
   const script = [
+    "import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';",
+    "const readFile = readFileSync;",
+    "const remove = unlinkSync;",
+    "const writeFile = writeFileSync;",
+    "const halt = process.exit;",
+    "const compile = Function;",
+    "const stringify = JSON.stringify;",
+    "const isArray = Array.isArray;",
+    "const keysOf = Object.keys;",
+    "const protoOf = Object.getPrototypeOf;",
+    "const same = Object.is;",
+    "const nonce = readFile(process.argv[2], 'utf8');",
+    "remove(process.argv[2]);",
     "const cases = " + JSON.stringify(cases) + ";",
     "const body = " + JSON.stringify(body) + ";",
     "const names = " + JSON.stringify(names) + ";",
-    "function deep(a, b) {",
-    "  if (Object.is(a, b)) return true;",
-    "  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((item, i) => deep(item, b[i]));",
-    "  if (a && b && typeof a === 'object' && typeof b === 'object') {",
-    "    const keys = Object.keys(a);",
-    "    return keys.length === Object.keys(b).length && keys.every((key) => deep(a[key], b[key]));",
+    "function ser(v) {",
+    "  if (v === undefined) return { t: 'u' };",
+    "  if (v === null) return { t: 'z' };",
+    "  const ty = typeof v;",
+    "  if (ty === 'boolean') return { t: 'b', v };",
+    "  if (ty === 'string') return { t: 's', v };",
+    "  if (ty === 'number') {",
+    "    if (same(v, -0)) return { t: 'nz' };",
+    "    if (v !== v) return { t: 'nan' };",
+    "    if (v === Infinity) return { t: 'pinf' };",
+    "    if (v === -Infinity) return { t: 'ninf' };",
+    "    return { t: 'n', v };",
     "  }",
-    "  return false;",
+    "  if (isArray(v)) {",
+    "    const out = [];",
+    "    for (const item of v) { const s = ser(item); if (s.t === 'bad') return s; out.push(s); }",
+    "    return { t: 'a', v: out };",
+    "  }",
+    "  if (ty === 'object') {",
+    "    const p = protoOf(v);",
+    "    if (p !== Object.prototype && p !== null) return { t: 'bad' };",
+    "    const out = {};",
+    "    for (const key of keysOf(v)) {",
+    "      if (v[key] === undefined) return { t: 'bad' };",
+    "      const s = ser(v[key]);",
+    "      if (s.t === 'bad') return s;",
+    "      out[key] = s;",
+    "    }",
+    "    return { t: 'o', v: out };",
+    "  }",
+    "  return { t: 'bad' };",
     "}",
-    "function expected(spec) {",
-    "  if (spec.u) return undefined;",
-    "  if (spec.nan) return NaN;",
-    "  if (spec.nz) return -0;",
-    "  return spec.e;",
-    "}",
-    "function match(value, spec) {",
-    "  const want = expected(spec);",
-    "  if (spec.k === 'type') return (value === null ? 'object' : typeof value) === want;",
-    "  if (spec.k === 'boolean' || !spec.deep) return Object.is(value, want);",
-    "  return deep(value, want);",
-    "}",
-    "const f = Function(...names, body);",
+    "const f = compile(...names, body);",
+    "const values = [];",
     "for (const item of cases) {",
-    "  const args = item.exprs.map((src) => Function('return (' + src + ')')());",
-    "  if (!match(f(...args), item.spec)) process.exit(2);",
+    "  const args = item.exprs.map((src) => compile('return (' + src + ')')());",
+    "  values.push(ser(f(...args)));",
     "}",
-    "process.stdout.write('ok\\n');",
-    "process.exit(0);",
+    "writeFile(process.argv[3], nonce + '\\n' + stringify(values) + '\\n');",
+    "halt(0);",
     "",
   ].join("\n");
   const dir = mkdtempSync(join(tmpdir(), "peaceai-opaque-"));
+  const noncePath = join(dir, "nonce");
+  const resultPath = join(dir, "result");
   try {
+    writeFileSync(noncePath, nonce, { mode: 0o600 });
     const file = join(dir, "replay.mjs");
     writeFileSync(file, script);
-    const ran = runInPracticeSandbox(dir, [node, file], 10_000, { capture: true, nodePath: node });
-    if (ran.unsafe) return false;
-    return ran.code === 0 && ran.stdout.includes("ok\n");
+    const ran = runInPracticeSandbox(dir, [node, file, noncePath, resultPath], 10_000, { capture: true, nodePath: node, ...(bwrap ? { bwrap } : {}) });
+    if (ran.unsafe || ran.code !== 0) return false;
+    const frame = readFrame(resultPath, nonce, cases.length);
+    if (!frame) return false;
+    for (let i = 0; i < calls.length; i++) {
+      const decoded = decodeTagged(frame[i]);
+      if (!decoded.ok || !valueAgrees(decoded.value, calls[i]!)) return false;
+    }
+    return true;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
-function opaqueAgrees(body: string, calls: readonly CallFact[]): boolean {
+function opaqueAgrees(body: string, calls: readonly CallFact[], bwrap?: string): boolean {
   const pending = calls.filter((call) => call.args === null && call.reduced && call.reduced.kind !== "throws");
   if (!pending.length) return true;
-  return replayInSandbox(body, pending);
+  return replayInSandbox(body, pending, bwrap);
 }
 
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
 export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "finite", "last", "null", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
-function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
+function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string, bwrap?: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
   if (!calls.length) return "no-body";
   const arities = new Set(calls.map((call) => call.arity));
   if (arities.size !== 1) return "signature";
@@ -1460,7 +1555,7 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   const unique = [...new Map(options.map((option) => [option.body, option])).values()];
   if (unique.length !== 1) return "no-body";
   let checked = true;
-  checked = opaqueAgrees(unique[0]!.body, reduced); // spec-guard:opaque-call
+  checked = opaqueAgrees(unique[0]!.body, reduced, bwrap); // spec-guard:opaque-call
   if (!checked) return "no-body";
   return { body: unique[0]!.body, types, ret: unique[0]!.ret, shape: unique[0]!.shape };
 }
@@ -1476,7 +1571,7 @@ function renderFunction(symbol: string, shape: MissingSymbol["shape"], built: { 
  * Null when the output is not that kind of error. A file is created or extended only at the
  * module the test imports, and only when that path matches sourcePattern.
  */
-export function scaffoldPlan(testFile: string, text: string, output: string, sourcePattern: string, deny: readonly string[] = [], read: (path: string) => string | null = () => null): ScaffoldPlan | null {
+export function scaffoldPlan(testFile: string, text: string, output: string, sourcePattern: string, deny: readonly string[] = [], read: (path: string) => string | null = () => null, sandbox?: { bwrap?: string }): ScaffoldPlan | null {
   const facts = { modules: [] as string[], members: [] as { quoted: string | null; name: string }[], notFn: [] as string[] };
   for (const line of output.split("\n")) {
     for (const match of line.matchAll(/(?:Cannot find module|ERR_MODULE_NOT_FOUND)[^'"\n]*['"]([^'"]+)['"]/g)) facts.modules.push(match[1]!);
@@ -1580,7 +1675,7 @@ export function scaffoldPlan(testFile: string, text: string, output: string, sou
     const peers = existing === null ? [] : peerFunctions(existing);
     const chunks: string[] = [];
     for (const want of group) {
-      const built = bodyFor(want.calls, peers, want.symbol);
+      const built = bodyFor(want.calls, peers, want.symbol, sandbox?.bwrap);
       if (built === "signature") return { ok: false, reason: "CANT_DO_YET_SIGNATURE", symbols };
       if (built === "no-body") return { ok: false, reason: "CANT_DO_YET_NO_BODY", symbols };
       chunks.push(renderFunction(want.symbol, want.shape, built));

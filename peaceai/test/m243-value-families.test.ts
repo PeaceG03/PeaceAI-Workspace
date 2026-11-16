@@ -90,8 +90,8 @@ async function runPublished(local: string, spec: string, moduleText: string): Pr
   }
 }
 
-function admit(specFile: string, spec: string, moduleFile: string) {
-  return scaffoldPlan(specFile, spec, `Cannot find module '/work/${moduleFile}'`, PATTERN, [], () => null);
+function admit(specFile: string, spec: string, moduleFile: string, sandbox?: { bwrap?: string }) {
+  return scaffoldPlan(specFile, spec, `Cannot find module '/work/${moduleFile}'`, PATTERN, [], () => null, sandbox);
 }
 
 test("toss/es-toolkit isFinite, last, and isNull are admitted", async () => {
@@ -289,15 +289,19 @@ test("a hostile opaque argument does not touch the host", () => {
 test("missing bwrap refuses an opaque call without running it", () => {
   const canary = join(tmpdir(), `peaceai-opaque-nobwrap-${process.pid}`);
   rmSync(canary, { force: true });
-  const saved = process.env.PATH;
-  process.env.PATH = "/no/such/bin";
   try {
-    const plan = admit("src/foo.spec.ts", finiteSpec(writeCanary(canary), "true"), "src/foo.ts");
+    const plan = admit("src/foo.spec.ts", finiteSpec(writeCanary(canary), "true"), "src/foo.ts", { bwrap: "/no/such/bwrap" });
     assert.equal(plan?.ok, false);
   } finally {
-    if (saved === undefined) delete process.env.PATH;
-    else process.env.PATH = saved;
     rmSync(canary, { force: true });
   }
   assert.equal(existsSync(canary), false);
+});
+
+test("a forged ok on stdout or stderr does not admit", () => {
+  assert.equal(practiceSandboxReady(), true);
+  const stdout = `(process.stdout.write("ok\\n"), process.exit(0), Object(1))`;
+  const stderr = `(process.stderr.write("ok\\n"), process.exit(0), Object(1))`;
+  assert.equal(admit("src/foo.spec.ts", finiteSpec(stdout, "true"), "src/foo.ts")?.ok, false);
+  assert.equal(admit("src/foo.spec.ts", finiteSpec(stderr, "true"), "src/foo.ts")?.ok, false);
 });
