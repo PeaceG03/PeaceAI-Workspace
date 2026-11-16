@@ -273,6 +273,17 @@ export function ownWorkspaceChange(changed: string): boolean {
 
 export type ReplayRoute = { run: string } | { fail: string };
 
+/** What one issue fetch returned. An error is not an empty body. */
+export type IssueBodyResult =
+  | { kind: "body"; body: string }
+  | { kind: "empty" }
+  | { kind: "error"; reason: string };
+
+/** A cited issue whose body could not be fetched. The row is unmeasured and earns no credit. */
+export const ISSUE_FETCH_FAILED = "ISSUE_FETCH_FAILED";
+
+export type FetchedRoute = ReplayRoute | { status: "unmeasured"; reason: typeof ISSUE_FETCH_FAILED };
+
 /**
  * What the production replay should do with one row. A cited issue that is the same learned
  * task is handed to Job A. PeaceAI's own tooling, with no such task, is a self-change refusal.
@@ -297,6 +308,19 @@ export function routeReplay(o: { model: RequestModel; asked: string; changed: st
   if (g.none) return { fail: "NOT_CODE_FAMILY" };
   if (!g.family) return { fail: "CLASSIFIER_UNSURE" };
   return { fail: `NO_SLOTS: ${g.family}` };
+}
+
+/**
+ * Route one row after the issue fetch. A cited issue that failed to load is unmeasured
+ * (`ISSUE_FETCH_FAILED`): the one-line summary is not used, and the row cannot pass.
+ * A real empty or absent body keeps the summary route. No cited issue is that route too.
+ * Credit stays false either way.
+ */
+export function routeFetchedIssue(o: { model: RequestModel; asked: string; changed: string; seq: number; paths?: readonly string[]; repo?: SlotRepo | null; fetched: IssueBodyResult | null }): FetchedRoute {
+  if (citedIssue(o.asked) === null) return routeReplay({ model: o.model, asked: o.asked, changed: o.changed, issueBody: null, seq: o.seq, paths: o.paths, repo: o.repo });
+  if (!o.fetched || o.fetched.kind === "error") return { status: "unmeasured", reason: ISSUE_FETCH_FAILED };
+  const issueBody = o.fetched.kind === "body" ? o.fetched.body : null;
+  return routeReplay({ model: o.model, asked: o.asked, changed: o.changed, issueBody, seq: o.seq, paths: o.paths, repo: o.repo });
 }
 
 export function boundReplay(seq: number, status: ReplayRecord["status"], reason: string, bind: ReplayBind): ReplayRecord {
