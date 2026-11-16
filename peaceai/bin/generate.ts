@@ -23,7 +23,7 @@ const PRACTICE_GRADER_FILES = ["peaceai/lib/specgrade.ts", "peaceai/lib/practice
 void PRACTICE_GRADER_FILES;
 import { nlDecision, taskSource, understandIssue, UNDERSTAND_REASONS } from "../lib/nlparse.ts";
 import { openRepo } from "../lib/codesearch.ts";
-import { TEXT_REPAIR_LIMIT, TEXT_REPAIR_REASONS, textRepairBatches, type RepairEdit } from "../lib/editpropose.ts";
+import { TEXT_REPAIR_LIMIT, TEXT_REPAIR_REASONS, specDemand, specEdits, textRepairBatches, type RepairEdit } from "../lib/editpropose.ts";
 import { regradeOf, type RegradeRequest } from "../lib/regrade.ts";
 import { regularFileReader, repoFileLists } from "../lib/learned-test-existing.ts";
 import { spawnSync } from "node:child_process";
@@ -140,10 +140,27 @@ const understood = nl.status === "unsure" && (UNDERSTAND_REASONS as readonly str
     })
   : null;
 
-/** Repair-v2 batches for a sentence the phrase list could not map. Empty when the sentence names no symbol. */
+function scopedSources(): { path: string; content: string }[] {
+  const out: { path: string; content: string }[] = [];
+  for (const path of tracked) {
+    if (!scope.isSource(path) || scope.isTest(path) || scope.isDenied(path) || !path.endsWith(".ts")) continue;
+    try {
+      out.push({ path, content: readFileSync(join(repo, path), "utf8") });
+    } catch { /* a missing file is not a source the spec can edit */ }
+  }
+  return out;
+}
+
+/** Repair-v2 batches for a sentence the phrase list could not map. Empty when the sentence names no symbol.
+ *  A sentence that demands a spec edit does not fall through to an unvalidated text repair. */
 function textRepairFromIssue(): RepairEdit[][] {
+  const source = taskSource({ title: issueTask.title, body: issueTask.body });
+  if (specDemand(source)) {
+    const edits = specEdits(scopedSources(), source);
+    return edits.length ? [edits] : [];
+  }
   if (understood?.status !== "cant" || !(TEXT_REPAIR_REASONS as readonly string[]).includes(understood.reason)) return [];
-  return textRepairBatches(openRepo(repo), taskSource({ title: issueTask.title, body: issueTask.body }), TEXT_REPAIR_LIMIT);
+  return textRepairBatches(openRepo(repo), source, TEXT_REPAIR_LIMIT);
 }
 
 let textBatches: RepairEdit[][] = [];

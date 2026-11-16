@@ -18,6 +18,7 @@ import { METHOD_GUARD_TRIGGER } from "./method-guard.ts";
 import { TSCONFIG_SCRIPT_TRIGGER } from "./tsconfig-script.ts";
 import { WORKFLOW_JOB_TRIGGER } from "./workflow-job.ts";
 import { isCanonical } from "./nlparse.ts";
+import { specDemand } from "./editpropose.ts";
 import { canonicalRequest, guessFamily, type RequestModel } from "./requestfamily.ts";
 import { inSafeZone, selfProtectedReason } from "./self-zone.ts";
 import { cleanIssueText, MAX_OBJECTIVE_CHARS } from "./taskmap.ts";
@@ -290,6 +291,8 @@ export function routeReplay(o: { model: RequestModel; asked: string; changed: st
   if (canon) return { run: canon };
   if (g.refusal === "SELF_CHANGE" || ownWorkspaceChange(o.changed)) return { fail: selfChangeFailReason(o.paths) };
   if (g.none) return { fail: "NOT_CODE_FAMILY" };
+  // A spec-gated edit is a real diff, not a family label. Self-changes stay refused above.
+  if (!g.family && specDemand(o.asked)) return { run: o.asked };
   if (!g.family) return { fail: "CLASSIFIER_UNSURE" };
   return { fail: `NO_SLOTS: ${g.family}` };
 }
