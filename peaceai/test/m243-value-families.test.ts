@@ -305,3 +305,81 @@ test("a forged ok on stdout or stderr does not admit", () => {
   assert.equal(admit("src/foo.spec.ts", finiteSpec(stdout, "true"), "src/foo.ts")?.ok, false);
   assert.equal(admit("src/foo.spec.ts", finiteSpec(stderr, "true"), "src/foo.ts")?.ok, false);
 });
+
+test("monkeypatched serializer globals do not admit", () => {
+  assert.equal(practiceSandboxReady(), true);
+  const expr = `(() => {
+    JSON.stringify = () => '[{"t":"b","v":true}]';
+    Object.prototype.toJSON = () => true;
+    Object.prototype.toString = () => "true";
+    const fs = process.getBuiltinModule("node:fs");
+    fs.writeSync = () => 0;
+    process.stdout.write = () => true;
+    Buffer.from = () => ({ length: 0 });
+    return Object(1);
+  })()`;
+  assert.equal(admit("src/foo.spec.ts", finiteSpec(expr, "true"), "src/foo.ts")?.ok, false);
+});
+
+test("a getter, toJSON, or Proxy result does not admit", () => {
+  assert.equal(practiceSandboxReady(), true);
+  const lastSpec = (expr: string) => [
+    "import { foo } from './foo';",
+    "expect(foo([1, 2, 3])).toBe(3);",
+    "expect(foo(['a', 'b', 'c'])).toBe('c');",
+    "expect(foo([])).toBeUndefined();",
+    `expect(foo(${expr})).toEqual({ a: 1 });`,
+  ].join("\n");
+  const getter = `(() => { const o = {}; Object.defineProperty(o, "a", { get: () => 1, enumerable: true }); return [0, o]; })()`;
+  const toJSON = `(() => [{ a: 1, toJSON() { return { a: 1 }; } }])()`;
+  const proxy = `(() => [0, new Proxy({ a: 1 }, { get: () => 1 })])()`;
+  assert.equal(admit("src/foo.spec.ts", lastSpec(getter), "src/foo.ts")?.ok, false);
+  assert.equal(admit("src/foo.spec.ts", lastSpec(toJSON), "src/foo.ts")?.ok, false);
+  assert.equal(admit("src/foo.spec.ts", lastSpec(proxy), "src/foo.ts")?.ok, false);
+});
+
+test("a reachable nonce cannot be used to forge the frame", () => {
+  assert.equal(practiceSandboxReady(), true);
+  const expr = `(() => {
+    const fs = process.getBuiltinModule("node:fs");
+    const parts = [];
+    parts.push(process.argv.join("\\0"));
+    parts.push(JSON.stringify(process.env));
+    try { parts.push(fs.readFileSync("/proc/self/cmdline").toString("latin1")); } catch {}
+    try { parts.push(fs.readFileSync("/proc/self/environ").toString("latin1")); } catch {}
+    try {
+      for (const name of fs.readdirSync("/proc/self/fd")) {
+        try { parts.push(fs.readlinkSync("/proc/self/fd/" + name)); } catch {}
+      }
+    } catch {}
+    try { parts.push(fs.readFileSync(process.argv[1], "utf8")); } catch {}
+    const blob = parts.join("\\0");
+    const found = blob.match(/[0-9a-f]{64}/);
+    if (found) {
+      let result = "";
+      try { result = new URL("./result", "file://" + process.argv[1]).pathname; } catch {}
+      try { fs.writeFileSync(result, found[0] + "\\n" + JSON.stringify([{ t: "b", v: true }]) + "\\n"); } catch {}
+      process.reallyExit(0);
+    }
+    return Object(1);
+  })()`;
+  assert.equal(admit("src/foo.spec.ts", finiteSpec(expr, "true"), "src/foo.ts")?.ok, false);
+});
+
+test("an exit handler or timer cannot append a second frame", () => {
+  assert.equal(practiceSandboxReady(), true);
+  const expr = `(() => {
+    const fs = process.getBuiltinModule("node:fs");
+    const extra = () => {
+      try {
+        const text = fs.readFileSync(new URL("./result", "file://" + process.argv[1]).pathname, "utf8");
+        fs.writeFileSync(new URL("./result", "file://" + process.argv[1]).pathname, text + "\\n" + text);
+      } catch {}
+    };
+    process.on("exit", extra);
+    process.on("beforeExit", extra);
+    setTimeout(extra, 0);
+    return Object(1);
+  })()`;
+  assert.equal(admit("src/foo.spec.ts", finiteSpec(expr, "true"), "src/foo.ts")?.ok, false);
+});
