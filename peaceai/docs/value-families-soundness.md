@@ -22,7 +22,7 @@ These shapes read only the recorded calls. They do not copy a fix. A shape is ke
 
 ## Opaque calls
 
-A call whose argument is not a literal still has its expectation. After one body is chosen from the concrete calls, that body is run on the argument. An identifier is the const it names, one step, when that const is earlier in the same block. `Object(1)`, `Array(1000).fill(0).map((_, i) => i)`, and an array written in a const are run. A mismatch refuses the body. An argument that cannot be run refuses it too. `expect(foo(Object(1))).toBe(true)` does not emit `Number.isFinite(a)`, which is false for `Object(1)`.
+A call whose argument is not a literal still has its expectation. After one body is chosen from the concrete calls, that body is run on the argument inside the practice sandbox (`bwrap`, no network, scrubbed environment, timeout). An identifier is the const it names, one step, when that const is earlier in the same block. A mismatch refuses the body. An argument that cannot be run refuses it too. There is no in-process evaluator. Missing `bwrap` refuses the body and does not start the script. `expect(foo(Object(1))).toBe(true)` does not emit `Number.isFinite(a)`.
 
 `spec-guard:opaque-call` is that check. Deleting it keeps the body without running the opaque call.
 

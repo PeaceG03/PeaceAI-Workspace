@@ -2,13 +2,14 @@
 // 24e7a7b8cb8035fae1ea2e7b507aab96698a38b9. A passing log does not build a plan.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
+import { practiceSandboxReady } from "../lib/practicemine.ts";
 import { scaffoldPlan } from "../lib/testspec.ts";
 
 const PATTERN = "^src/.+\\.ts$";
@@ -108,6 +109,11 @@ test("toss/es-toolkit isFinite, last, and isNull are admitted", async () => {
     await assert.rejects(() => runPublished(row.local, spec, missing), row.local);
     await runPublished(row.local, spec, source);
     const plan = admit(`${row.dir}/${row.local}.spec.ts`, spec, `${row.dir}/${row.local}.ts`);
+    const needsSandbox = row.local !== "isNull";
+    if (needsSandbox && !practiceSandboxReady()) {
+      assert.equal(plan?.ok, false, row.local);
+      continue;
+    }
     assert.equal(plan?.ok, true, row.local);
     if (!plan?.ok) continue;
     assert.equal(plan.fit.shape, row.shape, row.local);
@@ -243,4 +249,55 @@ test("deleting a value-family guard admits the case it refused", async () => {
   assert.equal(lie?.ok, true);
   if (lie?.ok) assert.match(lie.files[0]!.content, /return Number\.isFinite\(a\);/);
   rmSync(base, { recursive: true, force: true });
+});
+
+function finiteSpec(expr: string, expected: "true" | "false"): string {
+  return [
+    "import { foo } from './foo';",
+    "expect(foo(1)).toBe(true);",
+    "expect(foo(1.5)).toBe(true);",
+    "expect(foo(-1)).toBe(true);",
+    "expect(foo(Infinity)).toBe(false);",
+    "expect(foo(NaN)).toBe(false);",
+    "expect(foo('x')).toBe(false);",
+    `expect(foo(${expr})).toBe(${expected});`,
+  ].join("\n");
+}
+
+function writeCanary(path: string): string {
+  return `(() => { const run = ({}).constructor.constructor; const proc = run("return process")(); proc.getBuiltinModule("fs").writeFileSync(${JSON.stringify(path)}, "x"); return Object(1); })()`;
+}
+
+test("a hostile opaque argument does not touch the host", () => {
+  const canary = join(tmpdir(), `peaceai-opaque-canary-${process.pid}`);
+  rmSync(canary, { force: true });
+  const secret = `host-secret-${process.pid}`;
+  process.env.PEACEAI_OPAQUE_SECRET = secret;
+  try {
+    const wrote = admit("src/foo.spec.ts", finiteSpec(writeCanary(canary), "true"), "src/foo.ts");
+    assert.equal(wrote?.ok, false);
+    assert.equal(existsSync(canary), false);
+    const read = `(process.env.PEACEAI_OPAQUE_SECRET === ${JSON.stringify(secret)} ? Object(1) : 1)`;
+    const leaked = admit("src/foo.spec.ts", finiteSpec(read, "false"), "src/foo.ts");
+    assert.equal(leaked?.ok, false);
+  } finally {
+    delete process.env.PEACEAI_OPAQUE_SECRET;
+    rmSync(canary, { force: true });
+  }
+});
+
+test("missing bwrap refuses an opaque call without running it", () => {
+  const canary = join(tmpdir(), `peaceai-opaque-nobwrap-${process.pid}`);
+  rmSync(canary, { force: true });
+  const saved = process.env.PATH;
+  process.env.PATH = "/no/such/bin";
+  try {
+    const plan = admit("src/foo.spec.ts", finiteSpec(writeCanary(canary), "true"), "src/foo.ts");
+    assert.equal(plan?.ok, false);
+  } finally {
+    if (saved === undefined) delete process.env.PATH;
+    else process.env.PATH = saved;
+    rmSync(canary, { force: true });
+  }
+  assert.equal(existsSync(canary), false);
 });

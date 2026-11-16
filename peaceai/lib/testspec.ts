@@ -14,14 +14,14 @@
 // Other edits come from the loop-v2 repair proposer (the catalog of templates). Attempts stay within
 // that loop's MAX_ATTEMPTS and the proposer's MAX_CANDIDATES. A diff is returned only when the given
 // test passes and the original suite still passes. Nothing here pushes.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, posix } from "node:path";
-import vm from "node:vm";
 import ts from "typescript";
 import { isTestPath, openRepo } from "./codesearch.ts";
 import { MAX_CANDIDATES, repairProposer, type RepairFeedback } from "./editpropose.ts";
 import { MAX_ATTEMPTS } from "./loop.ts";
-import { applyPracticeTestLaunch, declaredTypeScriptLoader, poisonChanges, poisonStamp, practiceGit, practiceTestLaunch, releaseWorktree, runInPracticeSandbox, type PracticeToolchain } from "./practicemine.ts";
+import { applyPracticeTestLaunch, declaredTypeScriptLoader, poisonChanges, poisonStamp, practiceGit, practiceTestLaunch, releaseWorktree, runInPracticeSandbox, visibleNodeBin, type PracticeToolchain } from "./practicemine.ts";
 
 export const SPEC_SCHEMA = "peaceai-test-spec:v1";
 export const UNDERSTANDINGS = ["text", "test-as-spec"] as const;
@@ -1325,56 +1325,90 @@ function nullBody(examples: Example[]): string | null {
   return "  return a === null;";
 }
 
-const REPLAY_DENY = /\b(?:require|import|process|eval|Function|globalThis|constructor|__proto__|arguments)\b/;
+interface ReplaySpec { k: "equal" | "boolean" | "type"; e?: unknown; deep?: boolean; u?: boolean; nan?: boolean; nz?: boolean }
 
-function replayContext(): vm.Context {
-  return vm.createContext({ Object, Array, Number, String, Boolean, Math, JSON, NaN, Infinity, undefined });
-}
-
-function safeReplay(expr: string): boolean {
-  return expr.length > 0 && expr.length <= 2000 && !REPLAY_DENY.test(expr) && !expr.includes("`");
-}
-
-function deepSame(left: unknown, right: unknown): boolean {
-  if (Object.is(left, right)) return true;
-  if (Array.isArray(left) && Array.isArray(right)) return left.length === right.length && left.every((item, i) => deepSame(item, right[i]));
-  if (left && right && typeof left === "object" && typeof right === "object") {
-    const a = left as Record<string, unknown>;
-    const b = right as Record<string, unknown>;
-    const keys = Object.keys(a);
-    return keys.length === Object.keys(b).length && keys.every((key) => deepSame(a[key], b[key]));
-  }
-  return false;
-}
-
-/** Run the chosen body on one opaque call. False when the argument cannot be run or the result disagrees. */
-function replayHolds(body: string, call: CallFact): boolean {
+function replaySpec(call: CallFact): ReplaySpec | null {
   const reduced = call.reduced;
-  const replay = call.replay;
-  if (!reduced || reduced.kind === "throws" || !replay || replay.length !== call.arity) return false;
-  const params = PARAMS.slice(0, replay.length);
-  const lines: string[] = [];
-  for (let i = 0; i < replay.length; i++) {
-    const item = replay[i]!;
-    const expr = item.init ?? item.source;
-    if (item.init === null && /^[A-Za-z_$][\w$]*$/.test(item.source)) return false;
-    if (!safeReplay(expr)) return false;
-    lines.push(`const ${params[i]} = (${expr});`);
+  if (!reduced || reduced.kind === "throws") return null;
+  const deep = reduced.kind === "equal" && reduced.deep === true;
+  if (reduced.expected === undefined) return { k: reduced.kind, u: true, deep };
+  if (typeof reduced.expected === "number" && Number.isNaN(reduced.expected)) return { k: reduced.kind, nan: true, deep };
+  if (typeof reduced.expected === "number" && Object.is(reduced.expected, -0)) return { k: reduced.kind, nz: true, deep };
+  return { k: reduced.kind, e: reduced.expected, deep };
+}
+
+/**
+ * Run opaque calls in the practice sandbox. There is no in-process evaluator.
+ * Missing bwrap is a refusal and does not start the script.
+ */
+function replayInSandbox(body: string, calls: readonly CallFact[]): boolean {
+  const node = visibleNodeBin();
+  if (!node) return false;
+  const cases: { exprs: string[]; spec: ReplaySpec }[] = [];
+  for (const call of calls) {
+    const spec = replaySpec(call);
+    const replay = call.replay;
+    if (!spec || !replay || replay.length !== call.arity) return false;
+    const exprs: string[] = [];
+    for (const item of replay) {
+      const expr = item.init ?? item.source;
+      if (!expr || (item.init === null && /^[A-Za-z_$][\w$]*$/.test(item.source))) return false;
+      exprs.push(expr);
+    }
+    cases.push({ exprs, spec });
   }
-  const src = `${lines.join("\n")}\nfunction f(${params.join(", ")}) {\n${body}\n}\nf(${params.join(", ")})`;
-  let value: unknown;
-  try { value = vm.runInNewContext(src, replayContext(), { timeout: 50 }); } catch { return false; }
-  if (reduced.kind === "type") return (value === null ? "object" : typeof value) === reduced.expected;
-  if (reduced.kind === "boolean") return Object.is(value, reduced.expected);
-  return reduced.kind === "equal" && reduced.deep ? deepSame(value, reduced.expected) : Object.is(value, reduced.expected);
+  const width = Math.max(...cases.map((item) => item.exprs.length), 0);
+  const names = PARAMS.slice(0, width);
+  const script = [
+    "const cases = " + JSON.stringify(cases) + ";",
+    "const body = " + JSON.stringify(body) + ";",
+    "const names = " + JSON.stringify(names) + ";",
+    "function deep(a, b) {",
+    "  if (Object.is(a, b)) return true;",
+    "  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((item, i) => deep(item, b[i]));",
+    "  if (a && b && typeof a === 'object' && typeof b === 'object') {",
+    "    const keys = Object.keys(a);",
+    "    return keys.length === Object.keys(b).length && keys.every((key) => deep(a[key], b[key]));",
+    "  }",
+    "  return false;",
+    "}",
+    "function expected(spec) {",
+    "  if (spec.u) return undefined;",
+    "  if (spec.nan) return NaN;",
+    "  if (spec.nz) return -0;",
+    "  return spec.e;",
+    "}",
+    "function match(value, spec) {",
+    "  const want = expected(spec);",
+    "  if (spec.k === 'type') return (value === null ? 'object' : typeof value) === want;",
+    "  if (spec.k === 'boolean' || !spec.deep) return Object.is(value, want);",
+    "  return deep(value, want);",
+    "}",
+    "const f = Function(...names, body);",
+    "for (const item of cases) {",
+    "  const args = item.exprs.map((src) => Function('return (' + src + ')')());",
+    "  if (!match(f(...args), item.spec)) process.exit(2);",
+    "}",
+    "process.stdout.write('ok\\n');",
+    "process.exit(0);",
+    "",
+  ].join("\n");
+  const dir = mkdtempSync(join(tmpdir(), "peaceai-opaque-"));
+  try {
+    const file = join(dir, "replay.mjs");
+    writeFileSync(file, script);
+    const ran = runInPracticeSandbox(dir, [node, file], 10_000, { capture: true, nodePath: node });
+    if (ran.unsafe) return false;
+    return ran.code === 0 && ran.stdout.includes("ok\n");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 function opaqueAgrees(body: string, calls: readonly CallFact[]): boolean {
-  for (const call of calls) {
-    if (call.args !== null || !call.reduced || call.reduced.kind === "throws") continue;
-    if (!replayHolds(body, call)) return false;
-  }
-  return true;
+  const pending = calls.filter((call) => call.args === null && call.reduced && call.reduced.kind !== "throws");
+  if (!pending.length) return true;
+  return replayInSandbox(body, pending);
 }
 
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
