@@ -14,13 +14,14 @@
 // Other edits come from the loop-v2 repair proposer (the catalog of templates). Attempts stay within
 // that loop's MAX_ATTEMPTS and the proposer's MAX_CANDIDATES. A diff is returned only when the given
 // test passes and the original suite still passes. Nothing here pushes.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, posix } from "node:path";
 import ts from "typescript";
 import { isTestPath, openRepo } from "./codesearch.ts";
 import { MAX_CANDIDATES, repairProposer, type RepairFeedback } from "./editpropose.ts";
 import { MAX_ATTEMPTS } from "./loop.ts";
-import { applyPracticeTestLaunch, declaredTypeScriptLoader, poisonChanges, poisonStamp, practiceGit, practiceTestLaunch, releaseWorktree, runInPracticeSandbox, type PracticeToolchain } from "./practicemine.ts";
+import { applyPracticeTestLaunch, declaredTypeScriptLoader, poisonChanges, poisonStamp, practiceGit, practiceTestLaunch, releaseWorktree, runInPracticeSandbox, visibleNodeBin, type PracticeToolchain } from "./practicemine.ts";
 
 export const SPEC_SCHEMA = "peaceai-test-spec:v1";
 export const UNDERSTANDINGS = ["text", "test-as-spec"] as const;
@@ -657,7 +658,14 @@ export type ScaffoldPlan =
 const PARAMS = ["a", "b", "c", "d", "e", "f"];
 
 interface BindingRef { spec: string; file: string | null; local: string; imported: string; kind: "named" | "default" | "namespace" }
-interface CallFact { arity: number; args: unknown[] | null; reduced: { kind: "equal" | "boolean" | "type"; expected: unknown } | { kind: "throws" } | null }
+interface CallReplay { source: string; init: string | null }
+interface CallFact {
+  arity: number;
+  args: unknown[] | null;
+  /** Argument text for a call whose value was not concrete. `init` is the const it names, one step. */
+  replay?: CallReplay[];
+  reduced: { kind: "equal"; expected: unknown; deep?: boolean } | { kind: "boolean" | "type"; expected: unknown } | { kind: "throws" } | null;
+}
 interface Want { symbol: string; module: string; file: string | null; shape: MissingSymbol["shape"]; calls: CallFact[] }
 
 function stripQuotes(text: string): string {
@@ -724,6 +732,31 @@ function evalConcrete(node: ts.Expression): { ok: true; value: unknown } | { ok:
   return { ok: false };
 }
 
+/** The const initializer an identifier names, when that const is earlier in the same block. One step. */
+function constInit(name: string, at: ts.Node, sf: ts.SourceFile): string | null {
+  let node: ts.Node | undefined = at.parent;
+  while (node) {
+    if ((ts.isBlock(node) || ts.isSourceFile(node) || ts.isModuleBlock(node) || ts.isCaseClause(node) || ts.isDefaultClause(node)) && "statements" in node) {
+      for (const st of node.statements) {
+        if (!ts.isVariableStatement(st) || !(st.declarationList.flags & ts.NodeFlags.Const)) continue;
+        for (const decl of st.declarationList.declarations) {
+          if (!ts.isIdentifier(decl.name) || decl.name.text !== name || !decl.initializer) continue;
+          if (decl.initializer.end > at.getStart(sf)) continue;
+          return decl.initializer.getText(sf);
+        }
+      }
+    }
+    node = node.parent;
+  }
+  return null;
+}
+
+function replayArg(expr: ts.Expression, at: ts.Node, sf: ts.SourceFile): CallReplay {
+  const source = expr.getText(sf);
+  if (!ts.isIdentifier(expr)) return { source, init: null };
+  return { source, init: constInit(expr.text, at, sf) };
+}
+
 function reducedOf(call: ts.CallExpression): CallFact["reduced"] {
   const parent = call.parent;
   if (ts.isCallExpression(parent) && ts.isIdentifier(parent.expression) && parent.expression.text === "typeof" && parent.arguments[0] === call) {
@@ -751,10 +784,10 @@ function reducedOf(call: ts.CallExpression): CallFact["reduced"] {
     if (ts.isPropertyAccessExpression(outer) && ts.isCallExpression(outer.parent) && outer.parent.expression === outer) {
       const name = outer.name.text;
       if (name === "toBeUndefined") return { kind: "equal", expected: undefined }; // spec-guard:be-undefined
-      if ((name === "toBe" || name === "toEqual" || name === "toStrictEqual") && outer.parent.arguments[0]) {
-        const v = evalConcrete(outer.parent.arguments[0]);
-        return v.ok ? { kind: "equal", expected: v.value } : null;
-      }
+        if ((name === "toBe" || name === "toEqual" || name === "toStrictEqual") && outer.parent.arguments[0]) {
+          const v = evalConcrete(outer.parent.arguments[0]);
+          return v.ok ? { kind: "equal", expected: v.value, ...(name === "toBe" ? {} : { deep: true }) } : null;
+        }
       if (name === "toThrow" || name === "toThrowError") return { kind: "throws" };
     }
   }
@@ -766,7 +799,8 @@ function reducedOf(call: ts.CallExpression): CallFact["reduced"] {
   if ((obj === "assert" || obj === "assertStrict") && at === 0) {
     if ((method === "equal" || method === "strictEqual" || method === "deepEqual" || method === "deepStrictEqual") && other) {
       const v = evalConcrete(other);
-      return v.ok ? { kind: "equal", expected: v.value } : null;
+      const deep = method === "deepEqual" || method === "deepStrictEqual";
+      return v.ok ? { kind: "equal", expected: v.value, ...(deep ? { deep: true } : {}) } : null;
     }
     if (method === "ok") return { kind: "boolean", expected: true };
   }
@@ -775,7 +809,7 @@ function reducedOf(call: ts.CallExpression): CallFact["reduced"] {
     if (at === 0 && method === "false") return { kind: "boolean", expected: false };
     if ((method === "is" || method === "deepEqual") && other) {
       const v = evalConcrete(other);
-      return v.ok ? { kind: "equal", expected: v.value } : null;
+      return v.ok ? { kind: "equal", expected: v.value, ...(method === "deepEqual" ? { deep: true } : {}) } : null;
     }
   }
   return throwsOf(call);
@@ -1241,22 +1275,256 @@ function reverseBody(examples: Example[]): string | null {
   return '  return Array.from(a).reverse().join("");';
 }
 
+/** The last element, or undefined for an empty array. A string is not an array. */
+function atLast(value: unknown): { ok: true; value: unknown } | { ok: false } {
+  if (typeof value === "string" || Array.isArray(value)) return { ok: true, value: value.length === 0 ? undefined : value[value.length - 1] };
+  return { ok: false };
+}
+
+/** `a[a.length - 1]`, including undefined for `[]`. One repeated last element stays the literal. */
+function lastBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // last-guard:arrays
+  if (!examples.every((ex) => { const got = atLast(ex.args[0]); return got.ok && Object.is(got.value, ex.expected); })) return null; // last-guard:index
+  const shown = examples.map((ex) => Object.is(ex.expected, undefined) ? "undefined" : JSON.stringify(ex.expected));
+  if (new Set(shown).size < 2) return null; // last-guard:varies
+  return "  return a[a.length - 1];";
+}
+
+/**
+ * `a === null` when null is true, undefined is present and false, and every
+ * other example is false. Missing undefined is also `a == null`. Both nullish
+ * values true is nil, not this.
+ */
+function nullBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1 || typeof ex.expected !== "boolean")) return null;
+  const isNull = (ex: Example) => ex.args[0] === null;
+  const isUndef = (ex: Example) => ex.args[0] === undefined;
+  const nulls = examples.filter(isNull);
+  const undefs = examples.filter(isUndef);
+  const rest = examples.filter((ex) => !isNull(ex) && !isUndef(ex));
+  if (!nulls.length || nulls.some((ex) => ex.expected !== true)) return null; // null-guard:null-true
+  if (!undefs.length || undefs.some((ex) => ex.expected !== false)) return null; // null-guard:undef-false
+  if (rest.some((ex) => ex.expected !== false)) return null; // null-guard:others-false
+  return "  return a === null;";
+}
+
+interface Tagged { t: string; v?: unknown }
+
+function deepSame(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) && Array.isArray(right)) return left.length === right.length && left.every((item, i) => deepSame(item, right[i]));
+  if (left && right && typeof left === "object" && typeof right === "object" && !Array.isArray(left) && !Array.isArray(right)) {
+    const a = left as Record<string, unknown>;
+    const b = right as Record<string, unknown>;
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every((key) => deepSame(a[key], b[key]));
+  }
+  return false;
+}
+
+function decodeTagged(node: unknown): { ok: true; value: unknown } | { ok: false } {
+  if (!node || typeof node !== "object") return { ok: false };
+  const tag = node as Tagged;
+  if (tag.t === "u") return { ok: true, value: undefined };
+  if (tag.t === "z") return { ok: true, value: null };
+  if (tag.t === "b") return typeof tag.v === "boolean" ? { ok: true, value: tag.v } : { ok: false };
+  if (tag.t === "s") return typeof tag.v === "string" ? { ok: true, value: tag.v } : { ok: false };
+  if (tag.t === "n") return typeof tag.v === "number" && Number.isFinite(tag.v) ? { ok: true, value: tag.v } : { ok: false };
+  if (tag.t === "nz") return { ok: true, value: -0 };
+  if (tag.t === "nan") return { ok: true, value: Number.NaN };
+  if (tag.t === "pinf") return { ok: true, value: Number.POSITIVE_INFINITY };
+  if (tag.t === "ninf") return { ok: true, value: Number.NEGATIVE_INFINITY };
+  if (tag.t === "a" && Array.isArray(tag.v)) {
+    const items: unknown[] = [];
+    for (const item of tag.v) {
+      const decoded = decodeTagged(item);
+      if (!decoded.ok) return decoded;
+      items.push(decoded.value);
+    }
+    return { ok: true, value: items };
+  }
+  if (tag.t === "o" && tag.v && typeof tag.v === "object" && !Array.isArray(tag.v)) {
+    const obj: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(tag.v as Record<string, unknown>)) {
+      const decoded = decodeTagged(item);
+      if (!decoded.ok) return decoded;
+      obj[key] = decoded.value;
+    }
+    return { ok: true, value: obj };
+  }
+  return { ok: false };
+}
+
+/** One JSON line of tagged arguments. Extra bytes are not a payload. */
+function readPayload(path: string, count: number): unknown[] | null {
+  let text = "";
+  try { text = readFileSync(path, "utf8"); } catch { return null; }
+  const nl = text.indexOf("\n");
+  if (nl < 0 || nl !== text.length - 1) return null;
+  let parsed: unknown;
+  try { parsed = JSON.parse(text.slice(0, -1)); } catch { return null; }
+  if (!Array.isArray(parsed) || parsed.length !== count) return null;
+  return parsed;
+}
+
+function decodeCall(node: unknown, arity: number): unknown[] | null {
+  if (!Array.isArray(node) || node.length !== arity) return null;
+  const args: unknown[] = [];
+  for (const item of node) {
+    const decoded = decodeTagged(item);
+    if (!decoded.ok) return null;
+    args.push(decoded.value);
+  }
+  return args;
+}
+
+function valueAgrees(got: unknown, call: CallFact): boolean {
+  const reduced = call.reduced;
+  if (!reduced || reduced.kind === "throws") return false;
+  if (reduced.kind === "type") return (got === null ? "object" : typeof got) === reduced.expected;
+  if (reduced.kind === "boolean") return Object.is(got, reduced.expected);
+  if (reduced.kind === "equal" && reduced.deep) return deepSame(got, reduced.expected);
+  return Object.is(got, reduced.expected);
+}
+
+/** The parent-generated body, applied to plain data the parent decoded. */
+function applyBody(body: string, args: unknown[]): { ok: true; value: unknown } | { ok: false } {
+  try {
+    const value = (new Function(...PARAMS.slice(0, args.length), body) as (...xs: unknown[]) => unknown)(...args);
+    return { ok: true, value };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * The sandbox only returns the arguments. It holds no secret and does not
+ * decide the check. The parent parses the tagged values and runs the
+ * parent-generated body on that plain data. Missing bwrap does not start
+ * the script.
+ */
+function replayInSandbox(body: string, calls: readonly CallFact[], bwrap?: string): boolean {
+  const node = visibleNodeBin();
+  if (!node) return false;
+  const cases: { exprs: string[] }[] = [];
+  for (const call of calls) {
+    const replay = call.replay;
+    if (!call.reduced || call.reduced.kind === "throws" || !replay || replay.length !== call.arity) return false;
+    const exprs: string[] = [];
+    for (const item of replay) {
+      const expr = item.init ?? item.source;
+      if (!expr || (item.init === null && /^[A-Za-z_$][\w$]*$/.test(item.source))) return false;
+      exprs.push(expr);
+    }
+    cases.push({ exprs });
+  }
+  const script = [
+    "import { writeFileSync } from 'node:fs';",
+    "import { types } from 'node:util';",
+    "const isProxy = types.isProxy;",
+    "const cases = " + JSON.stringify(cases) + ";",
+    "function plain(v, proto) {",
+    "  if (v === null || typeof v !== 'object') return false;",
+    "  if (isProxy(v)) return false;",
+    "  if (Object.getOwnPropertySymbols(v).length) return false;",
+    "  return Object.getPrototypeOf(v) === proto;",
+    "}",
+    "function ser(v) {",
+    "  if (v === undefined) return { t: 'u' };",
+    "  if (v === null) return { t: 'z' };",
+    "  const ty = typeof v;",
+    "  if (ty === 'boolean') return { t: 'b', v };",
+    "  if (ty === 'string') return { t: 's', v };",
+    "  if (ty === 'number') {",
+    "    if (Object.is(v, -0)) return { t: 'nz' };",
+    "    if (v !== v) return { t: 'nan' };",
+    "    if (v === Infinity) return { t: 'pinf' };",
+    "    if (v === -Infinity) return { t: 'ninf' };",
+    "    return { t: 'n', v };",
+    "  }",
+    "  if (ty !== 'object') return { t: 'bad' };",
+    "  if (Array.isArray(v)) {",
+    "    if (!plain(v, Array.prototype)) return { t: 'bad' };",
+    "    const out = [];",
+    "    for (let i = 0; i < v.length; i++) {",
+    "      const desc = Object.getOwnPropertyDescriptor(v, String(i));",
+    "      if (!desc || desc.get || desc.set || !('value' in desc) || desc.value === undefined) return { t: 'bad' };",
+    "      const s = ser(desc.value);",
+    "      if (s.t === 'bad') return s;",
+    "      out.push(s);",
+    "    }",
+    "    return { t: 'a', v: out };",
+    "  }",
+    "  const proto = Object.getPrototypeOf(v);",
+    "  if (proto !== Object.prototype && proto !== null) return { t: 'bad' };",
+    "  if (!plain(v, proto)) return { t: 'bad' };",
+    "  const out = {};",
+    "  for (const key of Object.keys(v)) {",
+    "    if (key === 'toJSON') return { t: 'bad' };",
+    "    const desc = Object.getOwnPropertyDescriptor(v, key);",
+    "    if (!desc || desc.get || desc.set || !('value' in desc) || desc.value === undefined) return { t: 'bad' };",
+    "    const s = ser(desc.value);",
+    "    if (s.t === 'bad') return s;",
+    "    out[key] = s;",
+    "  }",
+    "  return { t: 'o', v: out };",
+    "}",
+    "const out = [];",
+    "for (const item of cases) {",
+    "  const args = [];",
+    "  for (const src of item.exprs) args.push(ser(Function('return (' + src + ')')()));",
+    "  out.push(args);",
+    "}",
+    "writeFileSync(new URL('./result', import.meta.url), JSON.stringify(out) + '\\n');",
+    "",
+  ].join("\n");
+  const dir = mkdtempSync(join(tmpdir(), "peaceai-opaque-"));
+  const resultPath = join(dir, "result");
+  try {
+    const file = join(dir, "replay.mjs");
+    writeFileSync(file, script);
+    const ran = runInPracticeSandbox(dir, [node, file], 10_000, { capture: true, nodePath: node, ...(bwrap ? { bwrap } : {}) });
+    if (ran.unsafe || ran.code !== 0) return false;
+    const payload = readPayload(resultPath, cases.length);
+    if (!payload) return false;
+    for (let i = 0; i < calls.length; i++) {
+      const args = decodeCall(payload[i], cases[i]!.exprs.length);
+      if (!args) return false;
+      const got = applyBody(body, args);
+      if (!got.ok || !valueAgrees(got.value, calls[i]!)) return false;
+    }
+    return true;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function opaqueAgrees(body: string, calls: readonly CallFact[], bwrap?: string): boolean {
+  const pending = calls.filter((call) => call.args === null && call.reduced && call.reduced.kind !== "throws");
+  if (!pending.length) return true;
+  return replayInSandbox(body, pending, bwrap);
+}
+
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "peer"] as const;
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
-function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
+function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string, bwrap?: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
   if (!calls.length) return "no-body";
   const arities = new Set(calls.map((call) => call.arity));
   if (arities.size !== 1) return "signature";
   const arity = [...arities][0]!;
   if (arity > PARAMS.length) return "signature";
   const reduced = calls.filter((call) => call.reduced);
-  if (!reduced.length || reduced.some((call) => call.args === null || call.reduced?.kind === "throws")) return "no-body";
-  const examples: Example[] = reduced.map((call) => ({ args: call.args as unknown[], expected: call.reduced && "expected" in call.reduced ? call.reduced.expected : null }));
-  const concrete = examples.filter((_, i) => reduced[i]?.reduced?.kind !== "type");
-  if (!concrete.length || reduced.every((call) => call.reduced?.kind === "type")) return "no-body";
-  const agree = (value: unknown) => reduced.every((call) => call.reduced?.kind !== "type" || ("expected" in call.reduced && call.reduced.expected === valueType(value)));
+  const threw = reduced.some((call) => call.reduced?.kind === "throws");
+  if (!reduced.length || threw) return "no-body";
+  const usable = reduced.filter((call) => call.args !== null);
+  if (!usable.length) return "no-body";
+  const examples: Example[] = usable.map((call) => ({ args: call.args as unknown[], expected: call.reduced && "expected" in call.reduced ? call.reduced.expected : null }));
+  const concrete = examples.filter((_, i) => usable[i]?.reduced?.kind !== "type");
+  if (!concrete.length || usable.every((call) => call.reduced?.kind === "type")) return "no-body";
+  const agree = (value: unknown) => usable.every((call) => call.reduced?.kind !== "type" || ("expected" in call.reduced && call.reduced.expected === valueType(value)));
   const types = Array.from({ length: arity }, (_, i) => paramType(concrete.map((ex) => ex.args[i])));
   const options: { body: string; ret: string; shape: BodyShape }[] = [];
   const keep = (body: string | null, ret: string, shape: BodyShape) => { if (body && agree(concrete[0]!.expected)) options.push({ body, ret, shape }); };
@@ -1276,6 +1544,8 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   keep(nilBody(concrete), "boolean", "nil");
   keep(headBody(concrete), resultType(concrete.map((ex) => ex.expected)), "head");
   keep(reverseBody(concrete), "string", "reverse");
+  keep(lastBody(concrete), resultType(concrete.map((ex) => ex.expected)), "last");
+  keep(nullBody(concrete), "boolean", "null");
   keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");
   keep(sumBody(concrete), "number", "sum");
   keep(splitBody(concrete), "string", "split");
@@ -1283,6 +1553,9 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   if (peersFit.length === 1) keep(`  return ${peersFit[0]!.name}(${PARAMS.slice(0, arity).join(", ")});`, "unknown", "peer");
   const unique = [...new Map(options.map((option) => [option.body, option])).values()];
   if (unique.length !== 1) return "no-body";
+  let checked = true;
+  checked = opaqueAgrees(unique[0]!.body, reduced, bwrap); // spec-guard:opaque-call
+  if (!checked) return "no-body";
   return { body: unique[0]!.body, types, ret: unique[0]!.ret, shape: unique[0]!.shape };
 }
 
@@ -1297,7 +1570,7 @@ function renderFunction(symbol: string, shape: MissingSymbol["shape"], built: { 
  * Null when the output is not that kind of error. A file is created or extended only at the
  * module the test imports, and only when that path matches sourcePattern.
  */
-export function scaffoldPlan(testFile: string, text: string, output: string, sourcePattern: string, deny: readonly string[] = [], read: (path: string) => string | null = () => null): ScaffoldPlan | null {
+export function scaffoldPlan(testFile: string, text: string, output: string, sourcePattern: string, deny: readonly string[] = [], read: (path: string) => string | null = () => null, sandbox?: { bwrap?: string }): ScaffoldPlan | null {
   const facts = { modules: [] as string[], members: [] as { quoted: string | null; name: string }[], notFn: [] as string[] };
   for (const line of output.split("\n")) {
     for (const match of line.matchAll(/(?:Cannot find module|ERR_MODULE_NOT_FOUND)[^'"\n]*['"]([^'"]+)['"]/g)) facts.modules.push(match[1]!);
@@ -1352,9 +1625,11 @@ export function scaffoldPlan(testFile: string, text: string, output: string, sou
       }
       if (hit && selected(hit.binding, hit.symbol, hit.binding.local)) {
         const args = node.arguments.map((arg) => evalConcrete(unwrap(arg)));
+        const concrete = args.every((arg) => arg.ok);
         add({ symbol: hit.symbol, module: hit.binding.spec, file: hit.binding.file, shape: hit.shape }, {
           arity: node.arguments.length,
-          args: args.every((arg) => arg.ok) ? args.map((arg) => arg.ok ? arg.value : null) : null,
+          args: concrete ? args.map((arg) => arg.ok ? arg.value : null) : null,
+          ...(concrete ? {} : { replay: node.arguments.map((arg) => replayArg(unwrap(arg), node, sf)) }),
           reduced: reducedOf(node),
         });
       }
@@ -1399,7 +1674,7 @@ export function scaffoldPlan(testFile: string, text: string, output: string, sou
     const peers = existing === null ? [] : peerFunctions(existing);
     const chunks: string[] = [];
     for (const want of group) {
-      const built = bodyFor(want.calls, peers, want.symbol);
+      const built = bodyFor(want.calls, peers, want.symbol, sandbox?.bwrap);
       if (built === "signature") return { ok: false, reason: "CANT_DO_YET_SIGNATURE", symbols };
       if (built === "no-body") return { ok: false, reason: "CANT_DO_YET_NO_BODY", symbols };
       chunks.push(renderFunction(want.symbol, want.shape, built));

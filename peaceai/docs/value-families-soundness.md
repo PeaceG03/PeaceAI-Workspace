@@ -1,0 +1,47 @@
+# Value families: last, strict null
+
+These shapes read only the recorded calls. They do not copy a fix. A shape is kept only when every reduced call agrees with that one form. Two forms are `CANT_DO_YET_NO_BODY`. A call whose argument is not a literal, a sentinel, or a collection of those is not an example. A throw is still part of the spec, and the body is refused. A plan is built only from a missing-module, missing-export, or not-a-function error. A passing log does not build one.
+
+## Finite, dropped
+
+`Number.isFinite(a)` is not emitted. The published `toss/es-toolkit` compat `isFinite` spec expects `Object(1)` to be false. That value is a number object. The sandbox carries only primitives, plain arrays, and plain objects with own data properties, so the call refuses. Loosening the serializer to carry it would let the evaluating process decide the check. The family stays out.
+
+## Last
+
+`a[a.length - 1]` is emitted when every argument is an array, the expected value is the last element, and an empty array's expected value is `undefined`. Two different results are required. One repeated last element stays the literal, because `return 2` and `return a[a.length - 1]` disagree on an array that ends with something else. A one-element array agrees with the first-element shape, so a spec that is only one-element arrays is two forms and is refused.
+
+`last-guard:arrays` refuses a string. `last-guard:index` refuses an earlier element. `last-guard:varies` refuses one repeated result.
+
+## Strict null
+
+`a === null` is emitted when `null` is true, `undefined` is present and false, and every other example is false. `undefined` that was not in the spec also agrees with `a == null`, so the body is refused. Both nullish values true is nil (`a == null`), not this. A true non-null example is not this function.
+
+`null-guard:null-true` requires `null` to be true. `null-guard:undef-false` requires `undefined` present and false. `null-guard:others-false` requires every other example false.
+
+## Opaque calls
+
+A call whose argument is not a literal still has its expectation. After one body is chosen from the concrete calls, the argument is run inside the practice sandbox (`bwrap`, no network, scrubbed environment, timeout). That process holds no secret and does not decide the check. It writes a tagged serialization of the argument only. The parent parses that as data and applies the parent-generated body to the deserialized value. The serializer accepts only primitives, plain arrays, and plain objects with own data properties, and refuses a getter, a Proxy, `toJSON`, a symbol, or any other prototype. A missing payload, extra bytes, or a value the serializer cannot carry refuses the body. Stdout and stderr are not a verdict. An identifier is the const it names, one step, when that const is earlier in the same block. Missing `bwrap` refuses the body and does not start the script. A nested `{a: undefined}` cannot be carried back, so that `toEqual` stays refused. A lying serialization can only misreport the argument. The published test still has to fail before the scaffold and pass after it.
+
+`spec-guard:opaque-call` is that check. Deleting it keeps the body without running the opaque call.
+
+## Admitted
+
+`toss/es-toolkit` at `24e7a7b8cb8035fae1ea2e7b507aab96698a38b9` (MIT). The bytes are pinned in `peaceai/test/m243-value-families.test.ts`.
+
+- compat `isFinite` is not admitted. `Object(1)` cannot be carried back as plain data.
+- `last` is `arr[arr.length - 1]`. The scaffold emits `a[a.length - 1]`, and `last([])` is `undefined`. `largeArray` and `nestedArray` are consts. The parent runs the body on both deserialized arrays, and both agree.
+- `isNull` is `x === null`. `undefined` is false in the published test, so nil does not fit.
+
+## Not in this batch
+
+Appending one property onto an existing default object is not emitted. `sindresorhus/is` builds that object with `Object.assign` and a second typed `assert` object. Its published suite imports jsdom, rxjs, and tempy. Those installs are network, which these tests do not do. An existing file with a default-property call stays `CANT_DO_YET_NO_BODY`.
+
+`unjs/defu` is not a key of `targets.json`. Scoring it would edit `targets.json`, `target.ts`, `gate.ts`, or `scope.ts`. Those files were not edited. The rows stay `GATE_NO_TARGET`.
+
+An Ava worker that stops on `TS2339` stays `CANT_DO_YET_AVA_EARLY_EXIT`. The line names a type mismatch. It does not say whether the test or the declaration should change, and there is no assertion value yet.
+
+A sentence that says `make NAME strict` without a `.ts` path and without `flag` or `integer 1..N` does not become an env-fix line. A wider cue would only rename `CLASSIFIER_UNSURE` to `NO_SLOTS`. The two dev workflow rows name a job and not `npm` or `pnpm run <script>`. The workflow file is the file being created, so the tree cannot fill that slot.
+
+PeaceSTOCKS subjects that say a candidate was chosen in review do not name an edit. They stay `CANT_DO_YET_NO_EDIT`. `Add \`name\`` without the behavior stays `CANT_DO_YET_ADD_UNSPECIFIED` on the sentence. The behavior is the failing test, and only a missing module is scaffolded from it.
+
+The attempt cap stays 20. `target.ts` was not edited. `capability-job.ts` was not edited.
