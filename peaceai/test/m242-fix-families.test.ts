@@ -101,7 +101,7 @@ test("head is the first element, and a repeated first element stays a literal", 
   ].join("\n"));
   assert.match(bodyOf(first), /return a\[0\];/);
   const later = named("later", "assert.equal(later([1, 2]), 2);\nassert.equal(later([3, 4]), 4);");
-  assert.equal(later?.ok, false);
+  assert.match(bodyOf(later), /return a\[a\.length - 1\];/);
   const word = named("word", "assert.equal(word('ab'), 'a');\nassert.equal(word('cd'), 'c');");
   assert.equal(word?.ok, false);
   const same = named("same", "assert.equal(same([1, 2]), 1);\nassert.equal(same([1, 9]), 1);");
@@ -124,7 +124,7 @@ test("reverse is the code-point reverse, and a palindrome stays the identity", (
 const EMPTY_HEAD = [
   'import { expect } from "vitest";',
   'import { empty } from "./empty.ts";',
-  "expect(empty([7])).toBe(7);",
+  "expect(empty([7, 8])).toBe(7);",
   "expect(empty([])).toBeUndefined();",
   "",
 ].join("\n");
@@ -266,7 +266,7 @@ test("deleting a fix-family guard admits the case it refused", async () => {
   const word = await open("head-guard:arrays", "src/word.test.ts", 'import { word } from "./word.ts";\nassert.equal(word("ab"), "a");\nassert.equal(word("cd"), "c");\n');
   assert.equal(word?.ok, true);
   if (word?.ok) assert.match(word.files[0]!.content, /return a\[0\];/);
-  const later = await open("head-guard:index0", "src/later.test.ts", 'import { later } from "./later.ts";\nassert.equal(later([1, 2]), 2);\nassert.equal(later([3, 4]), 4);\n');
+  const later = await open("head-guard:index0", "src/later.test.ts", 'import { later } from "./later.ts";\nassert.equal(later([1, 9, 3]), 9);\nassert.equal(later([4, 8, 6]), 8);\n');
   assert.equal(later?.ok, true);
   if (later?.ok) assert.match(later.files[0]!.content, /return a\[0\];/);
   const same = await open("head-guard:varies", "src/same.test.ts", 'import { same } from "./same.ts";\nassert.equal(same([1, 2]), 1);\nassert.equal(same([1, 9]), 1);\n');

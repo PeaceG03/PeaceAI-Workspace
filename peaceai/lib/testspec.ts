@@ -1241,8 +1241,58 @@ function reverseBody(examples: Example[]): string | null {
   return '  return Array.from(a).reverse().join("");';
 }
 
+function finiteValue(value: unknown): boolean {
+  return Number.isFinite(value);
+}
+
+/**
+ * `Number.isFinite(a)`. A non-finite number has to be false, so this is not
+ * `typeof a === "number"` and not a constant. A true non-finite example is not this function.
+ */
+function finiteBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1 || typeof ex.expected !== "boolean")) return null;
+  if (!examples.every((ex) => finiteValue(ex.args[0]) === ex.expected)) return null; // finite-guard:match
+  const nonfinite = examples.some((ex) => typeof ex.args[0] === "number" && !Number.isFinite(ex.args[0]) && ex.expected === false);
+  if (!nonfinite) return null; // finite-guard:witness
+  return "  return Number.isFinite(a);";
+}
+
+/** The last element, or undefined for an empty array. A string is not an array. */
+function atLast(value: unknown): { ok: true; value: unknown } | { ok: false } {
+  if (typeof value === "string" || Array.isArray(value)) return { ok: true, value: value.length === 0 ? undefined : value[value.length - 1] };
+  return { ok: false };
+}
+
+/** `a[a.length - 1]`, including undefined for `[]`. One repeated last element stays the literal. */
+function lastBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // last-guard:arrays
+  if (!examples.every((ex) => { const got = atLast(ex.args[0]); return got.ok && Object.is(got.value, ex.expected); })) return null; // last-guard:index
+  const shown = examples.map((ex) => Object.is(ex.expected, undefined) ? "undefined" : JSON.stringify(ex.expected));
+  if (new Set(shown).size < 2) return null; // last-guard:varies
+  return "  return a[a.length - 1];";
+}
+
+/**
+ * `a === null` when null is true, undefined is present and false, and every
+ * other example is false. Missing undefined is also `a == null`. Both nullish
+ * values true is nil, not this.
+ */
+function nullBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1 || typeof ex.expected !== "boolean")) return null;
+  const isNull = (ex: Example) => ex.args[0] === null;
+  const isUndef = (ex: Example) => ex.args[0] === undefined;
+  const nulls = examples.filter(isNull);
+  const undefs = examples.filter(isUndef);
+  const rest = examples.filter((ex) => !isNull(ex) && !isUndef(ex));
+  if (!nulls.length || nulls.some((ex) => ex.expected !== true)) return null; // null-guard:null-true
+  if (!undefs.length || undefs.some((ex) => ex.expected !== false)) return null; // null-guard:undef-false
+  if (rest.some((ex) => ex.expected !== false)) return null; // null-guard:others-false
+  return "  return a === null;";
+}
+
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "peer"] as const;
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "finite", "last", "null", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
 function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
@@ -1252,11 +1302,16 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   const arity = [...arities][0]!;
   if (arity > PARAMS.length) return "signature";
   const reduced = calls.filter((call) => call.reduced);
-  if (!reduced.length || reduced.some((call) => call.args === null || call.reduced?.kind === "throws")) return "no-body";
-  const examples: Example[] = reduced.map((call) => ({ args: call.args as unknown[], expected: call.reduced && "expected" in call.reduced ? call.reduced.expected : null }));
-  const concrete = examples.filter((_, i) => reduced[i]?.reduced?.kind !== "type");
-  if (!concrete.length || reduced.every((call) => call.reduced?.kind === "type")) return "no-body";
-  const agree = (value: unknown) => reduced.every((call) => call.reduced?.kind !== "type" || ("expected" in call.reduced && call.reduced.expected === valueType(value)));
+  const threw = reduced.some((call) => call.reduced?.kind === "throws");
+  let hidden = reduced.some((call) => call.args === null);
+  hidden = false; // spec-guard:opaque-call
+  if (!reduced.length || threw || hidden) return "no-body";
+  const usable = reduced.filter((call) => call.args !== null);
+  if (!usable.length) return "no-body";
+  const examples: Example[] = usable.map((call) => ({ args: call.args as unknown[], expected: call.reduced && "expected" in call.reduced ? call.reduced.expected : null }));
+  const concrete = examples.filter((_, i) => usable[i]?.reduced?.kind !== "type");
+  if (!concrete.length || usable.every((call) => call.reduced?.kind === "type")) return "no-body";
+  const agree = (value: unknown) => usable.every((call) => call.reduced?.kind !== "type" || ("expected" in call.reduced && call.reduced.expected === valueType(value)));
   const types = Array.from({ length: arity }, (_, i) => paramType(concrete.map((ex) => ex.args[i])));
   const options: { body: string; ret: string; shape: BodyShape }[] = [];
   const keep = (body: string | null, ret: string, shape: BodyShape) => { if (body && agree(concrete[0]!.expected)) options.push({ body, ret, shape }); };
@@ -1276,6 +1331,9 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   keep(nilBody(concrete), "boolean", "nil");
   keep(headBody(concrete), resultType(concrete.map((ex) => ex.expected)), "head");
   keep(reverseBody(concrete), "string", "reverse");
+  keep(finiteBody(concrete), "boolean", "finite");
+  keep(lastBody(concrete), resultType(concrete.map((ex) => ex.expected)), "last");
+  keep(nullBody(concrete), "boolean", "null");
   keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");
   keep(sumBody(concrete), "number", "sum");
   keep(splitBody(concrete), "string", "split");

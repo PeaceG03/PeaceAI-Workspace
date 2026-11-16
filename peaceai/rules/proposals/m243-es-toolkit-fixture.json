@@ -1,0 +1,48 @@
+{
+  "schema": "peaceai-m243-es-toolkit-fixture:v1",
+  "note": "Pinned copies of toss/es-toolkit used by the finite, last, and strict-null scaffolds. License text is MIT at the named commit.",
+  "examples": [
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m242/es-toolkit-LICENSE.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m243/es-toolkit-isFinite.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m243/es-toolkit-isFinite.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m243/es-toolkit-isNull.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m243/es-toolkit-isNull.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m243/es-toolkit-last.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m243/es-toolkit-last.ts.txt"
+    }
+  ]
+}
