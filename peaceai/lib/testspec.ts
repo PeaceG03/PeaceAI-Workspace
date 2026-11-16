@@ -1309,6 +1309,65 @@ function nullBody(examples: Example[]): string | null {
   return "  return a === null;";
 }
 
+/**
+ * `a != null` when null and undefined are both present and false, and every
+ * other example is true. Both nullish values true is nil. Null true is strict null.
+ */
+function notNilBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1 || typeof ex.expected !== "boolean")) return null;
+  const isNull = (ex: Example) => ex.args[0] === null;
+  const isUndef = (ex: Example) => ex.args[0] === undefined;
+  const nulls = examples.filter(isNull);
+  const undefs = examples.filter(isUndef);
+  const rest = examples.filter((ex) => !isNull(ex) && !isUndef(ex));
+  if (!nulls.length || !undefs.length) return null; // notnil-guard:both
+  if (nulls.some((ex) => ex.expected !== false) || undefs.some((ex) => ex.expected !== false)) return null; // notnil-guard:nullish-false
+  if (!rest.length || rest.some((ex) => ex.expected !== true)) return null; // notnil-guard:others-true
+  return "  return a != null;";
+}
+
+/** Every element but the last. A string is not an array. */
+function atInitial(value: unknown): { ok: true; value: unknown } | { ok: false } {
+  if (typeof value === "string" || Array.isArray(value)) return { ok: true, value: value.slice(0, -1) };
+  return { ok: false };
+}
+
+/** `a.slice(0, -1)`. One repeated prefix stays the literal. */
+function initialBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // init-guard:arrays
+  if (!examples.every((ex) => { const got = atInitial(ex.args[0]); return got.ok && deepSame(got.value, ex.expected); })) return null; // init-guard:prefix
+  const shown = examples.map((ex) => JSON.stringify(ex.expected));
+  if (new Set(shown).size < 2) return null; // init-guard:varies
+  return "  return a.slice(0, -1);";
+}
+
+/** Every element but the first. A string is not an array. */
+function atTail(value: unknown): { ok: true; value: unknown } | { ok: false } {
+  if (typeof value === "string" || Array.isArray(value)) return { ok: true, value: value.slice(1) };
+  return { ok: false };
+}
+
+/** `a.slice(1)`. One repeated suffix stays the literal. */
+function tailBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // tail-guard:arrays
+  if (!examples.every((ex) => { const got = atTail(ex.args[0]); return got.ok && deepSame(got.value, ex.expected); })) return null; // tail-guard:rest
+  const shown = examples.map((ex) => JSON.stringify(ex.expected));
+  if (new Set(shown).size < 2) return null; // tail-guard:varies
+  return "  return a.slice(1);";
+}
+
+/** `a.slice(0, b)` when the second argument is a number and the result is that prefix. */
+function takeBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2 || typeof ex.args[1] !== "number" || !Number.isFinite(ex.args[1]))) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // take-guard:arrays
+  if (!examples.every((ex) => deepSame((ex.args[0] as unknown[]).slice(0, ex.args[1] as number), ex.expected))) return null; // take-guard:count
+  const shown = examples.map((ex) => JSON.stringify(ex.expected));
+  if (new Set(shown).size < 2) return null; // take-guard:varies
+  return "  return a.slice(0, b);";
+}
+
 interface Tagged { t: string; v?: unknown }
 
 function deepSame(left: unknown, right: unknown): boolean {
@@ -1323,34 +1382,52 @@ function deepSame(left: unknown, right: unknown): boolean {
   return false;
 }
 
-function decodeTagged(node: unknown): { ok: true; value: unknown } | { ok: false } {
+/** A tagged payload is plain data. Depth, node count, and a few keys are refused. */
+export const OPAQUE_DECODE_LIMITS = { depth: 32, nodes: 10000, keys: 1000, string: 100_000 } as const;
+const OPAQUE_FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+/**
+ * Parent-side parse of one tagged value. The sandbox does not decide the
+ * check, so a deep, wide, or prototype-key payload is data and is refused.
+ */
+export function decodeTagged(node: unknown, budget: { nodes: number; depth: number } = { nodes: 0, depth: 0 }): { ok: true; value: unknown } | { ok: false } {
+  budget.nodes += 1;
+  if (budget.nodes > OPAQUE_DECODE_LIMITS.nodes || budget.depth > OPAQUE_DECODE_LIMITS.depth) return { ok: false }; // decode-guard:budget
   if (!node || typeof node !== "object") return { ok: false };
   const tag = node as Tagged;
   if (tag.t === "u") return { ok: true, value: undefined };
   if (tag.t === "z") return { ok: true, value: null };
   if (tag.t === "b") return typeof tag.v === "boolean" ? { ok: true, value: tag.v } : { ok: false };
-  if (tag.t === "s") return typeof tag.v === "string" ? { ok: true, value: tag.v } : { ok: false };
+  if (tag.t === "s") return typeof tag.v === "string" && tag.v.length <= OPAQUE_DECODE_LIMITS.string ? { ok: true, value: tag.v } : { ok: false };
   if (tag.t === "n") return typeof tag.v === "number" && Number.isFinite(tag.v) ? { ok: true, value: tag.v } : { ok: false };
   if (tag.t === "nz") return { ok: true, value: -0 };
   if (tag.t === "nan") return { ok: true, value: Number.NaN };
   if (tag.t === "pinf") return { ok: true, value: Number.POSITIVE_INFINITY };
   if (tag.t === "ninf") return { ok: true, value: Number.NEGATIVE_INFINITY };
   if (tag.t === "a" && Array.isArray(tag.v)) {
+    if (tag.v.length > OPAQUE_DECODE_LIMITS.nodes) return { ok: false };
     const items: unknown[] = [];
+    budget.depth += 1;
     for (const item of tag.v) {
-      const decoded = decodeTagged(item);
+      const decoded = decodeTagged(item, budget);
       if (!decoded.ok) return decoded;
       items.push(decoded.value);
     }
+    budget.depth -= 1;
     return { ok: true, value: items };
   }
   if (tag.t === "o" && tag.v && typeof tag.v === "object" && !Array.isArray(tag.v)) {
+    const entries = Object.entries(tag.v as Record<string, unknown>);
+    if (entries.length > OPAQUE_DECODE_LIMITS.keys) return { ok: false };
     const obj: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(tag.v as Record<string, unknown>)) {
-      const decoded = decodeTagged(item);
+    budget.depth += 1;
+    for (const [key, item] of entries) {
+      if (OPAQUE_FORBIDDEN_KEYS.has(key)) return { ok: false }; // decode-guard:keys
+      const decoded = decodeTagged(item, budget);
       if (!decoded.ok) return decoded;
-      obj[key] = decoded.value;
+      Object.defineProperty(obj, key, { value: decoded.value, enumerable: true, writable: true, configurable: true });
     }
+    budget.depth -= 1;
     return { ok: true, value: obj };
   }
   return { ok: false };
@@ -1368,11 +1445,11 @@ function readPayload(path: string, count: number): unknown[] | null {
   return parsed;
 }
 
-function decodeCall(node: unknown, arity: number): unknown[] | null {
+function decodeCall(node: unknown, arity: number, budget: { nodes: number; depth: number }): unknown[] | null {
   if (!Array.isArray(node) || node.length !== arity) return null;
   const args: unknown[] = [];
   for (const item of node) {
-    const decoded = decodeTagged(item);
+    const decoded = decodeTagged(item, budget);
     if (!decoded.ok) return null;
     args.push(decoded.value);
   }
@@ -1488,8 +1565,9 @@ function replayInSandbox(body: string, calls: readonly CallFact[], bwrap?: strin
     if (ran.unsafe || ran.code !== 0) return false;
     const payload = readPayload(resultPath, cases.length);
     if (!payload) return false;
+    const budget = { nodes: 0, depth: 0 };
     for (let i = 0; i < calls.length; i++) {
-      const args = decodeCall(payload[i], cases[i]!.exprs.length);
+      const args = decodeCall(payload[i], cases[i]!.exprs.length, budget);
       if (!args) return false;
       const got = applyBody(body, args);
       if (!got.ok || !valueAgrees(got.value, calls[i]!)) return false;
@@ -1507,7 +1585,7 @@ function opaqueAgrees(body: string, calls: readonly CallFact[], bwrap?: string):
 }
 
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "peer"] as const;
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
 function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string, bwrap?: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
@@ -1546,6 +1624,10 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   keep(reverseBody(concrete), "string", "reverse");
   keep(lastBody(concrete), resultType(concrete.map((ex) => ex.expected)), "last");
   keep(nullBody(concrete), "boolean", "null");
+  keep(notNilBody(concrete), "boolean", "notnil");
+  keep(initialBody(concrete), resultType(concrete.map((ex) => ex.expected)), "initial");
+  keep(tailBody(concrete), resultType(concrete.map((ex) => ex.expected)), "tail");
+  keep(takeBody(concrete), resultType(concrete.map((ex) => ex.expected)), "take");
   keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");
   keep(sumBody(concrete), "number", "sum");
   keep(splitBody(concrete), "string", "split");
