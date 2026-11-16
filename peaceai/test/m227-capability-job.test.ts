@@ -7,11 +7,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { buildCapabilityReport, realPercent, type ReplayBind } from "../lib/capabilityreport.ts";
-import { CORE_ENTRY, adoptIssueBody, agreedIssue, boundReplay, classifyJobOutput, commitRef, ownWorkspaceChange, replayIssueTitle, routeReplay, rowUnrunnable, selfChangeFailReason } from "../lib/capabilityjob.ts";
+import { CORE_ENTRY, ISSUE_FETCH_FAILED, adoptIssueBody, agreedIssue, boundReplay, classifyJobOutput, commitRef, ownWorkspaceChange, replayIssueTitle, routeFetchedIssue, routeReplay, rowUnrunnable, selfChangeFailReason } from "../lib/capabilityjob.ts";
 import { cleanIssueText } from "../lib/taskmap.ts";
 import { trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
 import { indexGitTree } from "../lib/coreindex.ts";
-import { archiveSha256, classifyGateRun, classifyGenerateRun, coreStillPinned, extractPinnedCore, gitTreeSha, jobaWorkDir, pinnedKernel, readCorePin, type CorePin } from "../bin/capability-job.ts";
+import { ISSUE_FETCH_BACKOFF_MS, archiveSha256, classifyGateRun, classifyGenerateRun, coreStillPinned, extractPinnedCore, gitTreeSha, issueBody, jobaWorkDir, pinnedKernel, readCorePin, type CorePin } from "../bin/capability-job.ts";
 
 const repo = resolve(import.meta.dirname, "../..");
 const tsx = join(repo, "node_modules/.bin/tsx");
@@ -259,6 +259,107 @@ test("a gate timeout, signal, or crash is unmeasured, and a GATE FAIL message is
   assert.equal(classifyGenerateRun({ error: null }), null);
   assert.equal(realPercent(1, 4, 1), null);
   assert.equal(realPercent(1, 4, 0), 25);
+});
+
+test("a cited issue whose fetch fails is unmeasured, and an empty body still uses the summary", () => {
+  const model = trainRequestModel(log.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l) as FamilyRow));
+  const asked = "Please guard total in src/cart.ts against a negative count (NEGATIVE_VALUE) PeaceAI-Workspace#437";
+  const issue = [
+    "Target: PeaceG03/PeaceSTOCKS",
+    "",
+    "guard `total` in `src/cart.ts`: throw NEGATIVE_VALUE when n < 0",
+    "- `total(-1)` throws NEGATIVE_VALUE",
+    "- `total(1)` is 1",
+    "",
+    "(A note that is not a second task.)",
+  ].join("\n");
+  const changed = "PeaceSTOCKS@abcdef1";
+  const base = { model, asked, changed, seq: 244 };
+  const summary = routeReplay({ model, asked, changed, issueBody: null, seq: 244 });
+  const full = routeReplay({ model, asked, changed, issueBody: issue, seq: 244 });
+  assert.deepEqual(full, { run: issue });
+
+  let calls = 0;
+  const sleeps: number[] = [];
+  const failed = issueBody(437, {
+    spawn: () => { calls += 1; return { status: 1, stdout: "" }; },
+    sleep: (ms) => { sleeps.push(ms); },
+  });
+  assert.equal(calls, 2);
+  assert.deepEqual(sleeps, [ISSUE_FETCH_BACKOFF_MS]);
+  assert.deepEqual(failed, { kind: "error", reason: "ISSUE_FETCH_FAILED: exit 1" });
+  const row = routeFetchedIssue({ ...base, fetched: failed });
+  assert.deepEqual(row, { status: "unmeasured", reason: ISSUE_FETCH_FAILED });
+  assert.equal("run" in row, false);
+  assert.equal("fail" in row, false);
+  if (!("status" in row)) throw new Error("cited fetch failure was routed");
+  assert.equal(row.status, "unmeasured");
+  assert.notEqual(row.status, "pass");
+  assert.notEqual(row.status, "fail");
+  assert.notDeepEqual(row, summary);
+  assert.notDeepEqual(row, full);
+  const recorded = boundReplay(244, row.status, row.reason, bind);
+  assert.equal(recorded.status, "unmeasured");
+  assert.equal(recorded.reason, "ISSUE_FETCH_FAILED");
+  assert.notEqual(recorded.status, "pass");
+  const seq = buildCapabilityReport(log, "2026-11-10", null, [], null, bind).rows.find((r) => r.inSet)!.seq;
+  const counted = buildCapabilityReport(log, "2026-11-10", null, [boundReplay(seq, "unmeasured", ISSUE_FETCH_FAILED, bind)], null, bind);
+  assert.equal(counted.credit, false);
+  assert.equal(counted.passes, 0);
+  assert.equal(counted.rows.find((r) => r.seq === seq)?.status, "unmeasured");
+  assert.equal(counted.rows.find((r) => r.seq === seq)?.reason, ISSUE_FETCH_FAILED);
+
+  const timed = issueBody(437, { spawn: () => ({ status: null, error: { code: "ETIMEDOUT" } }), sleep: () => {} });
+  assert.deepEqual(timed, { kind: "error", reason: "ETIMEDOUT" });
+  assert.deepEqual(routeFetchedIssue({ ...base, fetched: timed }), { status: "unmeasured", reason: ISSUE_FETCH_FAILED });
+  let bad = 0;
+  const badJson = issueBody(437, { spawn: () => { bad += 1; return { status: 0, stdout: "not-json" }; }, sleep: () => {} });
+  assert.equal(bad, 2);
+  assert.deepEqual(badJson, { kind: "error", reason: "ISSUE_FETCH_FAILED: bad json" });
+  assert.deepEqual(routeFetchedIssue({ ...base, fetched: null }), { status: "unmeasured", reason: ISSUE_FETCH_FAILED });
+
+  let n = 0;
+  const recovered = issueBody(437, {
+    spawn: () => {
+      n += 1;
+      return n === 1 ? { status: null, error: { code: "ETIMEDOUT" } } : { status: 0, stdout: JSON.stringify({ body: issue }) };
+    },
+    sleep: () => {},
+  });
+  assert.equal(n, 2);
+  assert.deepEqual(recovered, { kind: "body", body: issue });
+  assert.deepEqual(routeFetchedIssue({ ...base, fetched: recovered }), full);
+
+  const noRetry = () => { throw new Error("a real body is not retried"); };
+  let emptyCalls = 0;
+  const empty = issueBody(437, { spawn: () => { emptyCalls += 1; return { status: 0, stdout: JSON.stringify({ body: "" }) }; }, sleep: noRetry });
+  assert.equal(emptyCalls, 1);
+  assert.deepEqual(empty, { kind: "empty" });
+  const absent = issueBody(437, { spawn: () => ({ status: 0, stdout: JSON.stringify({ body: null }) }), sleep: noRetry });
+  const blank = issueBody(437, { spawn: () => ({ status: 0, stdout: JSON.stringify({ body: " \n" }) }), sleep: noRetry });
+  const missing = issueBody(437, { spawn: () => ({ status: 0, stdout: "{}" }), sleep: noRetry });
+  assert.deepEqual(absent, { kind: "empty" });
+  assert.deepEqual(blank, { kind: "empty" });
+  assert.deepEqual(missing, { kind: "empty" });
+  assert.deepEqual(routeFetchedIssue({ ...base, fetched: empty }), summary);
+  assert.deepEqual(routeFetchedIssue({ ...base, fetched: absent }), summary);
+
+  const cache = new Map<number, ReturnType<typeof issueBody>>();
+  let cachedCalls = 0;
+  const spawn = () => { cachedCalls += 1; return { status: 0, stdout: JSON.stringify({ body: issue }) }; };
+  assert.deepEqual(issueBody(437, { spawn, sleep: noRetry, cache }), { kind: "body", body: issue });
+  assert.deepEqual(issueBody(437, { spawn, sleep: noRetry, cache }), { kind: "body", body: issue });
+  assert.equal(cachedCalls, 1);
+
+  const plain = "Please guard total in src/cart.ts against a negative count (NEGATIVE_VALUE)";
+  assert.deepEqual(
+    routeFetchedIssue({ model, asked: plain, changed, seq: 4, fetched: null }),
+    routeReplay({ model, asked: plain, changed, issueBody: null, seq: 4 }),
+  );
+  assert.deepEqual(
+    routeFetchedIssue({ model, asked: plain, changed, seq: 4, fetched: { kind: "error", reason: "ETIMEDOUT" } }),
+    routeReplay({ model, asked: plain, changed, issueBody: null, seq: 4 }),
+  );
 });
 
 test("two concurrent row directories are distinct", () => {
