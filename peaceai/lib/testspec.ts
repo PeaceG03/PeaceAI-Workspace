@@ -1540,6 +1540,190 @@ function undefBody(examples: Example[]): string | null {
   return "  return a === undefined;";
 }
 
+/** The published `words` split. `match` resets `lastIndex`. The emitted body uses a fresh literal. */
+const WORD_RE_SRC = String.raw`/\p{Lu}?\p{Ll}+|[0-9]+|\p{Lu}+(?!\p{Ll})|\p{Emoji_Presentation}|\p{Extended_Pictographic}|\p{L}+/gu`;
+const CASE_SPLIT = new RegExp(WORD_RE_SRC.slice(1, WORD_RE_SRC.lastIndexOf("/")), WORD_RE_SRC.slice(WORD_RE_SRC.lastIndexOf("/") + 1));
+const WORDS_EXPR = `Array.from(a.match(${WORD_RE_SRC}) ?? [])`;
+
+/**
+ * Words of a string, or, for the string guard's mutant, the array already given.
+ * An array is not split again: the published function only accepts a string.
+ */
+function splitWords(value: unknown): string[] | null {
+  if (typeof value === "string") return Array.from(value.match(CASE_SPLIT) ?? []);
+  if (Array.isArray(value) && value.every((item) => typeof item === "string")) return [...value];
+  return null;
+}
+
+/** A separator split that does not break camel case or acronyms. */
+function asciiWords(value: string): string[] {
+  return value.split(/[^A-Za-z0-9]+/).filter((word) => word.length > 0);
+}
+
+function lowerJoin(value: unknown, sep: string): string | null {
+  const parts = splitWords(value);
+  if (!parts) return null;
+  return parts.map((word) => word.toLowerCase()).join(sep);
+}
+
+/**
+ * `Array.from(a.match(CASE_SPLIT) ?? [])`. Some word must be a camel or
+ * acronym break. A separator-only split is a different function, and one
+ * repeated word list stays the literal.
+ */
+function wordsBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => typeof ex.args[0] === "string")) return null; // words-guard:strings
+  if (!examples.every((ex) => { const got = splitWords(ex.args[0]); return got !== null && deepSame(got, ex.expected); })) return null; // words-guard:split
+  if (examples.some((ex) => typeof ex.args[0] === "string") && !examples.some((ex) => typeof ex.args[0] === "string" && !deepSame(asciiWords(ex.args[0] as string), ex.expected))) return null; // words-guard:camel
+  return `  return ${WORDS_EXPR};`;
+}
+
+/**
+ * `words(a).map(lower).join("-")`. A snake join of the same words is a
+ * different function, and so is a split that does not break camel case.
+ */
+function kebabBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => typeof ex.args[0] === "string")) return null; // kebab-guard:strings
+  if (!examples.every((ex) => lowerJoin(ex.args[0], "-") === ex.expected)) return null; // kebab-guard:joined
+  if (!examples.some((ex) => lowerJoin(ex.args[0], "_") !== ex.expected)) return null; // kebab-guard:hyphen
+  if (examples.some((ex) => typeof ex.args[0] === "string") && !examples.some((ex) => typeof ex.args[0] === "string" && asciiWords(ex.args[0] as string).map((word) => word.toLowerCase()).join("-") !== ex.expected)) return null; // kebab-guard:camel
+  return `  return ${WORDS_EXPR}.map((word) => word.toLowerCase()).join("-");`;
+}
+
+/** `words(a).map(lower).join("_")`. The hyphen join is kebab, not this. */
+function snakeBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => typeof ex.args[0] === "string")) return null; // snake-guard:strings
+  if (!examples.every((ex) => lowerJoin(ex.args[0], "_") === ex.expected)) return null; // snake-guard:joined
+  if (!examples.some((ex) => lowerJoin(ex.args[0], "-") !== ex.expected)) return null; // snake-guard:underscore
+  if (examples.some((ex) => typeof ex.args[0] === "string") && !examples.some((ex) => typeof ex.args[0] === "string" && asciiWords(ex.args[0] as string).map((word) => word.toLowerCase()).join("_") !== ex.expected)) return null; // snake-guard:camel
+  return `  return ${WORDS_EXPR}.map((word) => word.toLowerCase()).join("_");`;
+}
+
+/** Published camel case: the first word lower, every later word capitalized. */
+function camelText(value: unknown): string | null {
+  const parts = splitWords(value);
+  if (!parts) return null;
+  if (!parts.length) return "";
+  const [first, ...rest] = parts;
+  return first.toLowerCase() + rest.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join("");
+}
+
+/** The same join on a separator split, which leaves an acronym as one word. */
+function looseCamel(value: string): string {
+  const parts = asciiWords(value);
+  if (!parts.length) return "";
+  const [first, ...rest] = parts;
+  return first.toLowerCase() + rest.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join("");
+}
+
+/**
+ * First word lower, later words capitalized, joined with nothing. A
+ * separator-only split agrees until an acronym or a camel boundary appears.
+ */
+function camelBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => typeof ex.args[0] === "string")) return null; // camel-guard:strings
+  if (!examples.every((ex) => camelText(ex.args[0]) === ex.expected)) return null; // camel-guard:joined
+  if (!examples.some((ex) => { const parts = splitWords(ex.args[0]); return parts !== null && parts.length > 1; })) return null; // camel-guard:hump
+  if (examples.some((ex) => typeof ex.args[0] === "string") && !examples.some((ex) => typeof ex.args[0] === "string" && looseCamel(ex.args[0] as string) !== ex.expected)) return null; // camel-guard:boundary
+  return `  return ((words) => words.length === 0 ? "" : words[0].toLowerCase() + words.slice(1).map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(""))(${WORDS_EXPR});`;
+}
+
+/** Array elements, or the characters of a string for the array guard's mutant. */
+function asItems(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") return Array.from(value);
+  return null;
+}
+
+/** Published `difference`: `Set.has`, which is `includes` on plain values. */
+function filteredOut(left: unknown, right: unknown): unknown[] | null {
+  const items = asItems(left);
+  const gone = asItems(right);
+  if (!items || !gone) return null;
+  return items.filter((item) => !gone.includes(item));
+}
+
+/**
+ * `a.filter((item) => !b.includes(item))`. This is SameValueZero, including
+ * `NaN` and `-0`. Something has to be removed: a disjoint pair is also `a`.
+ */
+function differenceBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]) && Array.isArray(ex.args[1]))) return null; // diff-guard:arrays
+  if (!examples.every((ex) => { const got = filteredOut(ex.args[0], ex.args[1]); return got !== null && deepSame(got, ex.expected); })) return null; // diff-guard:rest
+  if (examples.every((ex) => Array.isArray(ex.args[0])) && !examples.some((ex) => Array.isArray(ex.args[0]) && Array.isArray(ex.expected) && (ex.expected as unknown[]).length < (ex.args[0] as unknown[]).length)) return null; // diff-guard:removed
+  return "  return a.filter((item) => !b.includes(item));";
+}
+
+/** Published `intersection`: `Set.has`, which is `includes` on plain values. */
+function filteredIn(left: unknown, right: unknown): unknown[] | null {
+  const items = asItems(left);
+  const stay = asItems(right);
+  if (!items || !stay) return null;
+  return items.filter((item) => stay.includes(item));
+}
+
+/**
+ * `a.filter((item) => b.includes(item))`. Something has to be dropped: a
+ * second array that contains the first is also `a`.
+ */
+function intersectionBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]) && Array.isArray(ex.args[1]))) return null; // inter-guard:arrays
+  if (!examples.every((ex) => { const got = filteredIn(ex.args[0], ex.args[1]); return got !== null && deepSame(got, ex.expected); })) return null; // inter-guard:rest
+  if (examples.every((ex) => Array.isArray(ex.args[0])) && !examples.some((ex) => Array.isArray(ex.args[0]) && Array.isArray(ex.expected) && (ex.expected as unknown[]).length < (ex.args[0] as unknown[]).length)) return null; // inter-guard:drops
+  return "  return a.filter((item) => b.includes(item));";
+}
+
+/**
+ * Published `at`. `Math.trunc(i) || 0` maps `NaN` to `0`. A negative index
+ * counts from the end. A string is not an array.
+ */
+function indexed(value: unknown, indices: unknown): unknown[] | null {
+  if (!Array.isArray(indices)) return null;
+  const read = (length: number, at: (index: number) => unknown): unknown[] => indices.map((item) => {
+    const n = Number.isInteger(item) ? (item as number) : Math.trunc(item as number) || 0;
+    return at(n < 0 ? n + length : n);
+  });
+  if (Array.isArray(value)) return read(value.length, (index) => value[index]);
+  if (typeof value === "string") return read(value.length, (index) => value[index]);
+  return null;
+}
+
+/**
+ * `b.map` of the truncated index. A negative index has to be present:
+ * `b.map((i) => a[i])` agrees while every index is already non-negative.
+ */
+function atBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]) && Array.isArray(ex.args[1]))) return null; // at-guard:arrays
+  if (!examples.every((ex) => { const got = indexed(ex.args[0], ex.args[1]); return got !== null && deepSame(got, ex.expected); })) return null; // at-guard:picked
+  if (!examples.some((ex) => Array.isArray(ex.args[1]) && (ex.args[1] as unknown[]).some((item) => typeof item === "number" && item < 0))) return null; // at-guard:negative
+  return "  return b.map((i) => a[(n => n < 0 ? n + a.length : n)(Number.isInteger(i) ? i : Math.trunc(i) || 0)]);";
+}
+
+/** Published `lerp`. `fraction === 1` returns `stop` even when the multiply rounds. */
+function lerpAt(start: unknown, stop: unknown, fraction: unknown): unknown {
+  return fraction === 1 ? stop : (start as number) + ((stop as number) - (start as number)) * (fraction as number);
+}
+
+/**
+ * `c === 1 ? b : a + (b - a) * c`. The multiply form is a different function
+ * at `c === 1` for some floats. A spec that is only `c === 1` is `b`.
+ */
+function lerpBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 3)) return null;
+  if (!examples.every((ex) => ex.args.every((arg) => typeof arg === "number"))) return null; // lerp-guard:numbers
+  if (!examples.every((ex) => Object.is(lerpAt(ex.args[0], ex.args[1], ex.args[2]), ex.expected))) return null; // lerp-guard:line
+  if (examples.every((ex) => ex.args.every((arg) => typeof arg === "number")) && !examples.some((ex) => ex.args[2] === 1 && !Object.is((ex.args[0] as number) + ((ex.args[1] as number) - (ex.args[0] as number)) * (ex.args[2] as number), ex.expected))) return null; // lerp-guard:exact
+  if (!examples.some((ex) => ex.args[2] !== 1)) return null; // lerp-guard:span
+  return "  return c === 1 ? b : a + (b - a) * c;";
+}
+
 interface Tagged { t: string; v?: unknown }
 
 function deepSame(left: unknown, right: unknown): boolean {
@@ -1757,7 +1941,7 @@ function opaqueAgrees(body: string, calls: readonly CallFact[], bwrap?: string):
 }
 
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "drop", "dropright", "takeright", "capitalize", "upper", "lower", "undef", "peer"] as const;
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "drop", "dropright", "takeright", "capitalize", "upper", "lower", "undef", "words", "kebab", "snake", "camel", "diff", "inter", "at", "lerp", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
 function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string, bwrap?: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
@@ -1807,6 +1991,14 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   keep(upperFirstBody(concrete), "string", "upper");
   keep(lowerFirstBody(concrete), "string", "lower");
   keep(undefBody(concrete), "boolean", "undef");
+  keep(wordsBody(concrete), resultType(concrete.map((ex) => ex.expected)), "words");
+  keep(kebabBody(concrete), "string", "kebab");
+  keep(snakeBody(concrete), "string", "snake");
+  keep(camelBody(concrete), "string", "camel");
+  keep(differenceBody(concrete), resultType(concrete.map((ex) => ex.expected)), "diff");
+  keep(intersectionBody(concrete), resultType(concrete.map((ex) => ex.expected)), "inter");
+  keep(atBody(concrete), resultType(concrete.map((ex) => ex.expected)), "at");
+  keep(lerpBody(concrete), "number", "lerp");
   keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");
   keep(sumBody(concrete), "number", "sum");
   keep(splitBody(concrete), "string", "split");
