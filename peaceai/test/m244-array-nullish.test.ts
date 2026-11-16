@@ -225,6 +225,27 @@ test("a tagged payload refuses depth, size, and prototype keys", () => {
   }
 });
 
+test("decodeTagged takes the exact depth and key bounds", () => {
+  const num = (v: number) => ({ t: "n", v });
+  const nested = (depth: number): unknown => depth <= 0 ? num(1) : { t: "a", v: [nested(depth - 1)] };
+  const atDepth = decodeTagged(nested(32));
+  assert.equal(atDepth.ok, true);
+  const pastDepth = decodeTagged(nested(33));
+  assert.equal(pastDepth.ok, false);
+  const keys = (count: number) => {
+    const v: Record<string, unknown> = {};
+    for (let i = 0; i < count; i++) v[`k${i}`] = num(i);
+    return { t: "o", v };
+  };
+  const atKeys = decodeTagged(keys(1000));
+  assert.equal(atKeys.ok, true);
+  if (atKeys.ok) assert.equal(Object.keys(atKeys.value as object).length, 1000);
+  assert.equal(decodeTagged(keys(1001)).ok, false);
+  const nestedProto = JSON.parse('{"t":"o","v":{"kept":{"t":"n","v":1},"inner":{"t":"o","v":{"__proto__":{"t":"n","v":2}}}}}');
+  assert.equal(decodeTagged(nestedProto).ok, false);
+  assert.equal(Object.getOwnPropertyDescriptor(Object.prototype, "peaceaiNestedProto"), undefined);
+});
+
 const base = resolve(root, "peaceai/test/.m244-mutants");
 mkdirSync(base, { recursive: true });
 let n = 0;
