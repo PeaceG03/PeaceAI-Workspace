@@ -187,5 +187,6 @@ test("deleting a scaffold guard admits the case it refused", async () => {
     PATTERN, [], () => null,
   );
   assert.equal(hole?.ok, true);
+  if (hole?.ok) assert.match(hole.files[0]!.content, /return Number\.isInteger\(a\) && a > 8;/);
   rmSync(base, { recursive: true, force: true });
 });
