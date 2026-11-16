@@ -87,7 +87,7 @@ test("nil needs both nullish values true and one other value false", () => {
   const absent = named("absent", "assert.equal(absent(null), true);\nassert.equal(absent(0), false);");
   assert.equal(absent?.ok, false);
   const flipped = named("flipped", "assert.equal(flipped(null), false);\nassert.equal(flipped(undefined), true);\nassert.equal(flipped(0), false);");
-  assert.equal(flipped?.ok, false);
+  assert.match(bodyOf(flipped), /return a === undefined;/);
   const kept = named("kept", "assert.equal(kept(null), true);\nassert.equal(kept(undefined), true);\nassert.equal(kept(1), true);");
   assert.match(bodyOf(kept), /return true;/);
   assert.equal(bodyOf(kept).includes("== null"), false);
@@ -258,8 +258,7 @@ test("deleting a fix-family guard admits the case it refused", async () => {
   assert.equal(absent?.ok, true);
   if (absent?.ok) assert.match(absent.files[0]!.content, /return a == null;/);
   const flipped = await open("nil-guard:nullish-true", "src/flipped.test.ts", 'import { flipped } from "./flipped.ts";\nassert.equal(flipped(null), false);\nassert.equal(flipped(undefined), true);\nassert.equal(flipped(0), false);\n');
-  assert.equal(flipped?.ok, true);
-  if (flipped?.ok) assert.match(flipped.files[0]!.content, /return a == null;/);
+  assert.equal(flipped?.ok, false);
   const kept = await open("nil-guard:others-false", "src/kept.test.ts", 'import { kept } from "./kept.ts";\nassert.equal(kept(null), true);\nassert.equal(kept(undefined), true);\nassert.equal(kept(1), true);\n');
   assert.equal(kept?.ok, false);
 

@@ -1368,6 +1368,162 @@ function takeBody(examples: Example[]): string | null {
   return "  return a.slice(0, b);";
 }
 
+function finiteCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** `slice` on an array or, for the array guard's mutant, on a string. */
+function sliced(value: string | unknown[], start: number, end?: number): unknown {
+  if (typeof value === "string") return end === undefined ? value.slice(start) : value.slice(start, end);
+  return end === undefined ? value.slice(start) : value.slice(start, end);
+}
+
+function asSequence(value: unknown): string | unknown[] | null {
+  if (typeof value === "string" || Array.isArray(value)) return value;
+  return null;
+}
+
+/** Drop a clamped count from the front. A negative count keeps the sequence. */
+function atDrop(value: unknown, count: unknown): { ok: true; value: unknown } | { ok: false } {
+  const seq = asSequence(value);
+  const n = finiteCount(count);
+  if (!seq || n === null) return { ok: false };
+  return { ok: true, value: sliced(seq, Math.max(n, 0)) };
+}
+
+/**
+ * `a.slice(Math.max(b, 0))`. A negative count is required: without it,
+ * `a.slice(b)` says the same thing on the examples. One repeated result stays the literal.
+ */
+function dropBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // drop-guard:arrays
+  if (!examples.every((ex) => { const got = atDrop(ex.args[0], ex.args[1]); return got.ok && deepSame(got.value, ex.expected); })) return null; // drop-guard:rest
+  if (!examples.some((ex) => (ex.args[1] as number) < 0)) return null; // drop-guard:negative
+  const shown = examples.map((ex) => JSON.stringify(ex.expected));
+  if (new Set(shown).size < 2) return null; // drop-guard:varies
+  return "  return a.slice(Math.max(b, 0));";
+}
+
+/** Drop a positive count from the end. A non-positive count copies the sequence. */
+function atDropRight(value: unknown, count: unknown): { ok: true; value: unknown } | { ok: false } {
+  const seq = asSequence(value);
+  const n = finiteCount(count);
+  if (!seq || n === null) return { ok: false };
+  return { ok: true, value: n > 0 ? sliced(seq, 0, -n) : sliced(seq, 0) };
+}
+
+/**
+ * `b > 0 ? a.slice(0, -b) : a.slice()`. Zero and a negative count keep every
+ * element. `a.slice(0, -b)` at zero is empty, so that count has to be present.
+ */
+function dropRightBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // dright-guard:arrays
+  if (!examples.every((ex) => { const got = atDropRight(ex.args[0], ex.args[1]); return got.ok && deepSame(got.value, ex.expected); })) return null; // dright-guard:rest
+  if (!examples.some((ex) => (ex.args[1] as number) <= 0)) return null; // dright-guard:nonpos
+  const shown = examples.map((ex) => JSON.stringify(ex.expected));
+  if (new Set(shown).size < 2) return null; // dright-guard:varies
+  return "  return b > 0 ? a.slice(0, -b) : a.slice();";
+}
+
+/** The last `count` elements, or empty when the count is not positive. */
+function atTakeRight(value: unknown, count: unknown): { ok: true; value: unknown } | { ok: false } {
+  const seq = asSequence(value);
+  const n = finiteCount(count);
+  if (!seq || n === null) return { ok: false };
+  return { ok: true, value: n > 0 ? sliced(seq, -n) : [] };
+}
+
+/**
+ * `b > 0 ? a.slice(-b) : []`. A count of zero or less is empty, which
+ * `a.slice(-b)` is not. One repeated result stays the literal.
+ */
+function takeRightBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // tright-guard:arrays
+  if (!examples.every((ex) => { const got = atTakeRight(ex.args[0], ex.args[1]); return got.ok && deepSame(got.value, ex.expected); })) return null; // tright-guard:rest
+  if (!examples.some((ex) => (ex.args[1] as number) <= 0)) return null; // tright-guard:nonpos
+  const shown = examples.map((ex) => JSON.stringify(ex.expected));
+  if (new Set(shown).size < 2) return null; // tright-guard:varies
+  return "  return b > 0 ? a.slice(-b) : [];";
+}
+
+function upperFirstText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function capitalizeText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
+
+function lowerFirstText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  return value.charAt(0).toLowerCase() + value.slice(1);
+}
+
+function oneString(examples: Example[]): boolean {
+  return examples.length > 0 && examples.every((ex) => ex.args.length === 1);
+}
+
+/**
+ * `a.charAt(0).toUpperCase() + a.slice(1).toLowerCase()`. Some later character
+ * must change case. If the tail is already lower, upper-first is the same function.
+ */
+function capitalizeBody(examples: Example[]): string | null {
+  if (!oneString(examples)) return null;
+  if (!examples.every((ex) => capitalizeText(ex.args[0]) === ex.expected)) return null; // cap-guard:cased
+  if (!examples.some((ex) => upperFirstText(ex.args[0]) !== ex.expected)) return null; // cap-guard:lowered
+  const shown = examples.map((ex) => JSON.stringify(ex.expected));
+  if (new Set(shown).size < 2) return null; // cap-guard:varies
+  return "  return a.charAt(0).toUpperCase() + a.slice(1).toLowerCase();";
+}
+
+/**
+ * `a.charAt(0).toUpperCase() + a.slice(1)`. Some later character must stay
+ * upper. If every tail is already lower, capitalize is the same function.
+ */
+function upperFirstBody(examples: Example[]): string | null {
+  if (!oneString(examples)) return null;
+  if (!examples.every((ex) => upperFirstText(ex.args[0]) === ex.expected)) return null; // upper-guard:cased
+  if (!examples.some((ex) => capitalizeText(ex.args[0]) !== ex.expected)) return null; // upper-guard:kept
+  const shown = examples.map((ex) => JSON.stringify(ex.expected));
+  if (new Set(shown).size < 2) return null; // upper-guard:varies
+  return "  return a.charAt(0).toUpperCase() + a.slice(1);";
+}
+
+/**
+ * `a.charAt(0).toLowerCase() + a.slice(1)`. Some later character must stay
+ * upper, so the whole string is not `toLowerCase()`.
+ */
+function lowerFirstBody(examples: Example[]): string | null {
+  if (!oneString(examples)) return null;
+  if (!examples.every((ex) => lowerFirstText(ex.args[0]) === ex.expected)) return null; // lower-guard:cased
+  if (!examples.some((ex) => typeof ex.args[0] === "string" && (ex.args[0] as string).toLowerCase() !== ex.expected)) return null; // lower-guard:kept
+  const shown = examples.map((ex) => JSON.stringify(ex.expected));
+  if (new Set(shown).size < 2) return null; // lower-guard:varies
+  return "  return a.charAt(0).toLowerCase() + a.slice(1);";
+}
+
+/**
+ * `a === undefined` when undefined is true, null is present and false, and
+ * every other example is false. Missing null is also `a == null`.
+ */
+function undefBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1 || typeof ex.expected !== "boolean")) return null;
+  const isUndef = (ex: Example) => ex.args[0] === undefined;
+  const isNull = (ex: Example) => ex.args[0] === null;
+  const undefs = examples.filter(isUndef);
+  const nulls = examples.filter(isNull);
+  const rest = examples.filter((ex) => !isUndef(ex) && !isNull(ex));
+  if (!undefs.length || undefs.some((ex) => ex.expected !== true)) return null; // undef-guard:undef-true
+  if (!nulls.length || nulls.some((ex) => ex.expected !== false)) return null; // undef-guard:null-false
+  if (rest.some((ex) => ex.expected !== false)) return null; // undef-guard:others-false
+  return "  return a === undefined;";
+}
+
 interface Tagged { t: string; v?: unknown }
 
 function deepSame(left: unknown, right: unknown): boolean {
@@ -1585,7 +1741,7 @@ function opaqueAgrees(body: string, calls: readonly CallFact[], bwrap?: string):
 }
 
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "peer"] as const;
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "drop", "dropright", "takeright", "capitalize", "upper", "lower", "undef", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
 function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string, bwrap?: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
@@ -1628,6 +1784,13 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   keep(initialBody(concrete), resultType(concrete.map((ex) => ex.expected)), "initial");
   keep(tailBody(concrete), resultType(concrete.map((ex) => ex.expected)), "tail");
   keep(takeBody(concrete), resultType(concrete.map((ex) => ex.expected)), "take");
+  keep(dropBody(concrete), resultType(concrete.map((ex) => ex.expected)), "drop");
+  keep(dropRightBody(concrete), resultType(concrete.map((ex) => ex.expected)), "dropright");
+  keep(takeRightBody(concrete), resultType(concrete.map((ex) => ex.expected)), "takeright");
+  keep(capitalizeBody(concrete), "string", "capitalize");
+  keep(upperFirstBody(concrete), "string", "upper");
+  keep(lowerFirstBody(concrete), "string", "lower");
+  keep(undefBody(concrete), "boolean", "undef");
   keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");
   keep(sumBody(concrete), "number", "sum");
   keep(splitBody(concrete), "string", "split");
