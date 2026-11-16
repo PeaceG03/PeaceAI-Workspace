@@ -12,17 +12,15 @@ These shapes read only the recorded calls. They do not copy a fix. A shape is ke
 
 ## Drop right
 
-`b > 0 ? a.slice(0, -b) : a.slice()` is emitted when the first argument is an array, the second is a finite number, and the expected value is that suffix-drop. A count of `0` or less copies the array. `a.slice(0, -b)` at `0` is `[]`, so a non-positive count has to be present. A fractional count is truncated by `slice`, which is what `1.5` shows.
+`Math.min(-b, 0) === 0 ? a.slice() : a.slice(0, Math.min(-b, 0))` is the published function. A finite count above zero drops that many from the end. Zero and a negative count copy the array. A count past the length is `[]`. A fractional count is truncated by `slice`. `NaN` and `undefined` make `Math.min` return `NaN`, and `slice(0, NaN)` is `[]`. `b > 0 ? a.slice(0, -b) : a.slice()` copies the array for those two counts, so that form is not emitted. A recorded `NaN` or `undefined` that keeps the array is refused. A finite non-positive count has to be present, because `a.slice(0, -b)` is empty at zero.
 
-`dright-guard:arrays` refuses a string. `dright-guard:rest` refuses a different slice. `dright-guard:nonpos` refuses a case with no non-positive count. `dright-guard:varies` refuses one repeated result.
+`dright-guard:arrays` refuses a string. `dright-guard:rest` refuses a different slice. `dright-guard:nonpos` refuses a case with no finite non-positive count. `dright-guard:varies` refuses one repeated result.
 
 ## Take right
 
-`b > 0 ? a.slice(-b) : []` is emitted when the first argument is an array, the second is a finite number, and the expected value is that suffix, or `[]` when the count is not positive. `a.slice(-b)` at `0` is the whole array, and at a negative count it reads from the front, so a non-positive count has to be present. A count past the length is the whole array.
+`b <= 0 ? [] : a.slice(-b)` is the published function. A positive count takes that suffix, and a count past the length is the whole array. Zero and a negative count are `[]`. `NaN` and `undefined` are not `<= 0`, so `slice` copies the array. `b > 0 ? a.slice(-b) : []` returns `[]` for those two counts, so that form is not emitted. A recorded `NaN` or `undefined` that expects `[]` is refused. A finite non-positive count has to be present, because `a.slice(-b)` at zero is the whole array.
 
-`tright-guard:arrays` refuses a string. `tright-guard:rest` refuses a different slice. `tright-guard:nonpos` refuses a case with no non-positive count. `tright-guard:varies` refuses one repeated result.
-
-`NaN` is not in the published test. `NaN > 0` is false, and the published function's `count <= 0` is also false for `NaN`, so this expression does not claim that case.
+`tright-guard:arrays` refuses a string. `tright-guard:rest` refuses a different slice. `tright-guard:nonpos` refuses a case with no finite non-positive count. `tright-guard:varies` refuses one repeated result.
 
 ## Capitalize, upper first, lower first
 
@@ -38,13 +36,15 @@ Capitalize is emitted only when some later character changes case. Without that,
 
 `undef-guard:undef-true` requires `undefined` true. `undef-guard:null-false` requires `null` present and false. `undef-guard:others-false` requires every other example false.
 
+`nil-guard:nullish-true` stays. Null true with one `undefined` true and another `undefined` false is refused: strict undefined does not fit, because null is true, and `a == null` is false for that second `undefined`. Deleting the guard admits `a == null`.
+
 ## Admitted
 
 `toss/es-toolkit` at `24e7a7b8cb8035fae1ea2e7b507aab96698a38b9` (MIT). The bytes are pinned in `peaceai/test/m245-slice-case.test.ts`.
 
 - `drop` is `arr.slice(Math.max(itemsCount, 0))`. The scaffold emits `a.slice(Math.max(b, 0))`.
-- `dropRight` copies the array when the count is not positive and otherwise drops that many from the end. The scaffold emits `b > 0 ? a.slice(0, -b) : a.slice()`.
-- `takeRight` is empty when the count is not positive and otherwise `arr.slice(-count)`. The scaffold emits `b > 0 ? a.slice(-b) : []`.
+- `dropRight` is `Math.min(-count, 0)`, then a copy when that is `0`, otherwise `slice(0, n)`. The scaffold emits `Math.min(-b, 0) === 0 ? a.slice() : a.slice(0, Math.min(-b, 0))`. `NaN` and `undefined` are `[]`.
+- `takeRight` is `[]` when `count <= 0`, otherwise `arr.slice(-count)`. The scaffold emits `b <= 0 ? [] : a.slice(-b)`. `NaN` and `undefined` copy the array.
 - `capitalize` lowercases the tail. The scaffold emits `a.charAt(0).toUpperCase() + a.slice(1).toLowerCase()`.
 - `upperFirst` leaves the tail. The scaffold emits `a.charAt(0).toUpperCase() + a.slice(1)`.
 - `lowerFirst` leaves the tail. The scaffold emits `a.charAt(0).toLowerCase() + a.slice(1)`.

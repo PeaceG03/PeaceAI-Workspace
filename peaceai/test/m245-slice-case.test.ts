@@ -106,8 +106,8 @@ function admit(specFile: string, spec: string, moduleFile: string) {
 test("toss/es-toolkit drop, dropRight, takeRight, case, and isUndefined are admitted", async () => {
   const cases = [
     { local: "drop", dir: "src/array", source: "es-toolkit-drop.ts.txt", spec: "es-toolkit-drop.spec.ts.txt", sourceSha: PIN.drop, specSha: PIN.dropTest, shape: "drop", body: /return a\.slice\(Math\.max\(b, 0\)\);/ },
-    { local: "dropRight", dir: "src/array", source: "es-toolkit-dropRight.ts.txt", spec: "es-toolkit-dropRight.spec.ts.txt", sourceSha: PIN.dropRight, specSha: PIN.dropRightTest, shape: "dropright", body: /return b > 0 \? a\.slice\(0, -b\) : a\.slice\(\);/ },
-    { local: "takeRight", dir: "src/array", source: "es-toolkit-takeRight.ts.txt", spec: "es-toolkit-takeRight.spec.ts.txt", sourceSha: PIN.takeRight, specSha: PIN.takeRightTest, shape: "takeright", body: /return b > 0 \? a\.slice\(-b\) : \[\];/ },
+    { local: "dropRight", dir: "src/array", source: "es-toolkit-dropRight.ts.txt", spec: "es-toolkit-dropRight.spec.ts.txt", sourceSha: PIN.dropRight, specSha: PIN.dropRightTest, shape: "dropright", body: /return Math\.min\(-b, 0\) === 0 \? a\.slice\(\) : a\.slice\(0, Math\.min\(-b, 0\)\);/ },
+    { local: "takeRight", dir: "src/array", source: "es-toolkit-takeRight.ts.txt", spec: "es-toolkit-takeRight.spec.ts.txt", sourceSha: PIN.takeRight, specSha: PIN.takeRightTest, shape: "takeright", body: /return b <= 0 \? \[\] : a\.slice\(-b\);/ },
     { local: "capitalize", dir: "src/string", source: "es-toolkit-capitalize.ts.txt", spec: "es-toolkit-capitalize.spec.ts.txt", sourceSha: PIN.capitalize, specSha: PIN.capitalizeTest, shape: "capitalize", body: /return a\.charAt\(0\)\.toUpperCase\(\) \+ a\.slice\(1\)\.toLowerCase\(\);/ },
     { local: "upperFirst", dir: "src/string", source: "es-toolkit-upperFirst.ts.txt", spec: "es-toolkit-upperFirst.spec.ts.txt", sourceSha: PIN.upperFirst, specSha: PIN.upperFirstTest, shape: "upper", body: /return a\.charAt\(0\)\.toUpperCase\(\) \+ a\.slice\(1\);/ },
     { local: "lowerFirst", dir: "src/string", source: "es-toolkit-lowerFirst.ts.txt", spec: "es-toolkit-lowerFirst.spec.ts.txt", sourceSha: PIN.lowerFirst, specSha: PIN.lowerFirstTest, shape: "lower", body: /return a\.charAt\(0\)\.toLowerCase\(\) \+ a\.slice\(1\);/ },
@@ -149,7 +149,7 @@ test("a front drop, a back drop, and a back take are different slices", () => {
     "expect(back([1, 2, 3], 0)).toEqual([1, 2, 3]);",
     "expect(back([1, 2, 3], -2)).toEqual([1, 2, 3]);",
   ].join("\n"), "src/back.ts");
-  assert.match(bodyOf(back), /return b > 0 \? a\.slice\(0, -b\) : a\.slice\(\);/);
+  assert.match(bodyOf(back), /return Math\.min\(-b, 0\) === 0 \? a\.slice\(\) : a\.slice\(0, Math\.min\(-b, 0\)\);/);
   const tail = admit("src/end.spec.ts", [
     "import { end } from './end';",
     "expect(end([1, 2, 3, 4], 2)).toEqual([3, 4]);",
@@ -158,7 +158,7 @@ test("a front drop, a back drop, and a back take are different slices", () => {
     "expect(end([1, 2, 3], -1)).toEqual([]);",
     "expect(end([1], 5)).toEqual([1]);",
   ].join("\n"), "src/end.ts");
-  assert.match(bodyOf(tail), /return b > 0 \? a\.slice\(-b\) : \[\];/);
+  assert.match(bodyOf(tail), /return b <= 0 \? \[\] : a\.slice\(-b\);/);
   const prefix = admit("src/prefix.spec.ts", [
     "import { prefix } from './prefix';",
     "expect(prefix([1, 2, 3], 2)).toEqual([1, 2]);",
@@ -173,6 +173,74 @@ test("a front drop, a back drop, and a back take are different slices", () => {
   assert.equal(open?.ok, false);
   const same = admit("src/same.spec.ts", "import { same } from './same';\nexpect(same([], -1)).toEqual([]);\nexpect(same([], 4)).toEqual([]);\n", "src/same.ts");
   assert.match(bodyOf(same), /return \[\];/);
+});
+
+const DROP_RIGHT = "  return Math.min(-b, 0) === 0 ? a.slice() : a.slice(0, Math.min(-b, 0));";
+const TAKE_RIGHT = "  return b <= 0 ? [] : a.slice(-b);";
+
+function runReturn(body: string, args: unknown[]): unknown {
+  return new Function("a", "b", body)(...args);
+}
+
+function loadPublished(source: string, name: string): (a: unknown[], b: unknown) => unknown {
+  const js = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    fileName: `${name}.ts`,
+  }).outputText.replace(/^export /m, "");
+  return new Function(`${js}\nreturn ${name};`)() as (a: unknown[], b: unknown) => unknown;
+}
+
+test("dropRight and takeRight follow the published count on NaN, undefined, fractions, and a long count", () => {
+  const back = admit("src/nanback.spec.ts", [
+    "import { nanback } from './nanback';",
+    "expect(nanback([1, 2, 3, 4], 1)).toEqual([1, 2, 3]);",
+    "expect(nanback([1.2, 2.3, 3.4], 1.5)).toEqual([1.2, 2.3]);",
+    "expect(nanback([1, 2, 3], 0)).toEqual([1, 2, 3]);",
+    "expect(nanback([1, 2, 3], -1)).toEqual([1, 2, 3]);",
+    "expect(nanback([1, 2, 3], 4)).toEqual([]);",
+    "expect(nanback([1, 2, 3], NaN)).toEqual([]);",
+    "expect(nanback([1, 2, 3], undefined)).toEqual([]);",
+  ].join("\n"), "src/nanback.ts");
+  const backBody = bodyOf(back);
+  assert.match(backBody, /return Math\.min\(-b, 0\) === 0 \? a\.slice\(\) : a\.slice\(0, Math\.min\(-b, 0\)\);/);
+  const end = admit("src/nanend.spec.ts", [
+    "import { nanend } from './nanend';",
+    "expect(nanend([1, 2, 3, 4], 2)).toEqual([3, 4]);",
+    "expect(nanend([1, 2, 3, 4], 1.5)).toEqual([4]);",
+    "expect(nanend([1, 2, 3], 0)).toEqual([]);",
+    "expect(nanend([1, 2, 3], -1)).toEqual([]);",
+    "expect(nanend([1, 2, 3], 5)).toEqual([1, 2, 3]);",
+    "expect(nanend([1, 2, 3], NaN)).toEqual([1, 2, 3]);",
+    "expect(nanend([1, 2, 3], undefined)).toEqual([1, 2, 3]);",
+  ].join("\n"), "src/nanend.ts");
+  const endBody = bodyOf(end);
+  assert.match(endBody, /return b <= 0 \? \[\] : a\.slice\(-b\);/);
+  const publishedDrop = loadPublished(pinned("es-toolkit-dropRight.ts.txt"), "dropRight");
+  const publishedTake = loadPublished(pinned("es-toolkit-takeRight.ts.txt"), "takeRight");
+  const counts: unknown[] = [1, 1.5, 0, -1, 4, 5, Number.NaN, undefined, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+  for (const count of counts) {
+    const arr = [1, 2, 3];
+    assert.deepEqual(runReturn(DROP_RIGHT, [arr, count]), publishedDrop(arr, count), `dropRight ${String(count)}`);
+    assert.deepEqual(runReturn(TAKE_RIGHT, [arr, count]), publishedTake(arr, count), `takeRight ${String(count)}`);
+    assert.deepEqual(runReturn(DROP_RIGHT, [[], count]), publishedDrop([], count), `dropRight empty ${String(count)}`);
+    assert.deepEqual(runReturn(TAKE_RIGHT, [[], count]), publishedTake([], count), `takeRight empty ${String(count)}`);
+  }
+  const kept = admit("src/keptnan.spec.ts", [
+    "import { keptnan } from './keptnan';",
+    "expect(keptnan([1, 2, 3], 1)).toEqual([1, 2]);",
+    "expect(keptnan([1, 2, 3], 0)).toEqual([1, 2, 3]);",
+    "expect(keptnan([1, 2, 3], NaN)).toEqual([1, 2, 3]);",
+    "expect(keptnan([1, 2, 3], undefined)).toEqual([1, 2, 3]);",
+  ].join("\n"), "src/keptnan.ts");
+  assert.equal(kept?.ok, false);
+  const emptied = admit("src/emptied.spec.ts", [
+    "import { emptied } from './emptied';",
+    "expect(emptied([1, 2, 3, 4], 2)).toEqual([3, 4]);",
+    "expect(emptied([1, 2, 3], 0)).toEqual([]);",
+    "expect(emptied([1, 2, 3], NaN)).toEqual([]);",
+    "expect(emptied([1, 2, 3], undefined)).toEqual([]);",
+  ].join("\n"), "src/emptied.ts");
+  assert.equal(emptied?.ok, false);
 });
 
 test("capitalize, upper first, and lower first need a tail that tells them apart", () => {
@@ -277,25 +345,25 @@ test("deleting a slice or case guard admits the case it refused", async () => {
 
   const letters = await open("dright-guard:arrays", "src/letters.spec.ts", "import { letters } from './letters';\nexpect(letters('abcd', 1)).toEqual('abc');\nexpect(letters('xy', -1)).toEqual('xy');\n");
   assert.equal(letters?.ok, true);
-  if (letters?.ok) assert.match(letters.files[0]!.content, /return b > 0 \? a\.slice\(0, -b\) : a\.slice\(\);/);
+  if (letters?.ok) assert.match(letters.files[0]!.content, /return Math\.min\(-b, 0\) === 0 \? a\.slice\(\) : a\.slice\(0, Math\.min\(-b, 0\)\);/);
   const head = await open("dright-guard:rest", "src/headn.spec.ts", "import { headn } from './headn';\nexpect(headn([1, 2, 3], 1)).toEqual([3]);\nexpect(headn([4, 5, 6], 0)).toEqual([4]);\n");
   assert.equal(head?.ok, true);
-  if (head?.ok) assert.match(head.files[0]!.content, /return b > 0 \? a\.slice\(0, -b\) : a\.slice\(\);/);
+  if (head?.ok) assert.match(head.files[0]!.content, /return Math\.min\(-b, 0\) === 0 \? a\.slice\(\) : a\.slice\(0, Math\.min\(-b, 0\)\);/);
   const onlyPos = await open("dright-guard:nonpos", "src/onlypos.spec.ts", "import { onlypos } from './onlypos';\nexpect(onlypos([1, 2, 3], 1)).toEqual([1, 2]);\nexpect(onlypos(['a', 'b', 'c', 'd'], 2)).toEqual(['a', 'b']);\n");
   assert.equal(onlyPos?.ok, true);
-  if (onlyPos?.ok) assert.match(onlyPos.files[0]!.content, /return b > 0 \? a\.slice\(0, -b\) : a\.slice\(\);/);
+  if (onlyPos?.ok) assert.match(onlyPos.files[0]!.content, /return Math\.min\(-b, 0\) === 0 \? a\.slice\(\) : a\.slice\(0, Math\.min\(-b, 0\)\);/);
   const blanks = await open("dright-guard:varies", "src/blanks.spec.ts", "import { blanks } from './blanks';\nexpect(blanks([], 0)).toEqual([]);\nexpect(blanks([], -2)).toEqual([]);\n");
   assert.equal(blanks?.ok, false);
 
   const text = await open("tright-guard:arrays", "src/text.spec.ts", "import { text } from './text';\nexpect(text('abcd', 2)).toEqual('cd');\nexpect(text('xy', 0)).toEqual([]);\n");
   assert.equal(text?.ok, true);
-  if (text?.ok) assert.match(text.files[0]!.content, /return b > 0 \? a\.slice\(-b\) : \[\];/);
+  if (text?.ok) assert.match(text.files[0]!.content, /return b <= 0 \? \[\] : a\.slice\(-b\);/);
   const front = await open("tright-guard:rest", "src/frontn.spec.ts", "import { frontn } from './frontn';\nexpect(frontn([1, 2, 3], 1)).toEqual([1]);\nexpect(frontn([4, 5, 6], -1)).toEqual([4, 5, 6]);\n");
   assert.equal(front?.ok, true);
-  if (front?.ok) assert.match(front.files[0]!.content, /return b > 0 \? a\.slice\(-b\) : \[\];/);
+  if (front?.ok) assert.match(front.files[0]!.content, /return b <= 0 \? \[\] : a\.slice\(-b\);/);
   const counted = await open("tright-guard:nonpos", "src/counted.spec.ts", "import { counted } from './counted';\nexpect(counted([1, 2, 3, 4], 2)).toEqual([3, 4]);\nexpect(counted(['a', 'b', 'c'], 1)).toEqual(['c']);\n");
   assert.equal(counted?.ok, true);
-  if (counted?.ok) assert.match(counted.files[0]!.content, /return b > 0 \? a\.slice\(-b\) : \[\];/);
+  if (counted?.ok) assert.match(counted.files[0]!.content, /return b <= 0 \? \[\] : a\.slice\(-b\);/);
   const zeros = await open("tright-guard:varies", "src/zeros.spec.ts", "import { zeros } from './zeros';\nexpect(zeros([1], 0)).toEqual([]);\nexpect(zeros([2], -3)).toEqual([]);\n");
   assert.equal(zeros?.ok, false);
 

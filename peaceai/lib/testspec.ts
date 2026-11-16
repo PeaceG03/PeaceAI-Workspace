@@ -1405,48 +1405,64 @@ function dropBody(examples: Example[]): string | null {
   return "  return a.slice(Math.max(b, 0));";
 }
 
-/** Drop a positive count from the end. A non-positive count copies the sequence. */
-function atDropRight(value: unknown, count: unknown): { ok: true; value: unknown } | { ok: false } {
-  const seq = asSequence(value);
-  const n = finiteCount(count);
-  if (!seq || n === null) return { ok: false };
-  return { ok: true, value: n > 0 ? sliced(seq, 0, -n) : sliced(seq, 0) };
+/** A count the published end-slice accepts: any number, including `NaN`, or `undefined`. */
+function endCount(value: unknown): number | undefined | null {
+  if (value === undefined || typeof value === "number") return value as number | undefined;
+  return null;
 }
 
 /**
- * `b > 0 ? a.slice(0, -b) : a.slice()`. Zero and a negative count keep every
- * element. `a.slice(0, -b)` at zero is empty, so that count has to be present.
+ * Published `dropRight`: `Math.min(-count, 0)`, then a copy when that is `0`,
+ * otherwise `slice(0, n)`. `NaN` and `undefined` become `[]`. A finite
+ * non-positive count copies the sequence.
+ */
+function atDropRight(value: unknown, count: unknown): { ok: true; value: unknown } | { ok: false } {
+  const seq = asSequence(value);
+  const n = endCount(count);
+  if (!seq || n === null) return { ok: false };
+  const end = Math.min(-(n as number), 0);
+  return { ok: true, value: end === 0 ? sliced(seq, 0) : sliced(seq, 0, end) };
+}
+
+/**
+ * `Math.min(-b, 0) === 0 ? a.slice() : a.slice(0, Math.min(-b, 0))`.
+ * This is the published function on every count, including `NaN` and `undefined`.
+ * A finite non-positive count has to be present: `a.slice(0, -b)` is empty at zero.
  */
 function dropRightBody(examples: Example[]): string | null {
   if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
   if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // dright-guard:arrays
   if (!examples.every((ex) => { const got = atDropRight(ex.args[0], ex.args[1]); return got.ok && deepSame(got.value, ex.expected); })) return null; // dright-guard:rest
-  if (!examples.some((ex) => (ex.args[1] as number) <= 0)) return null; // dright-guard:nonpos
+  if (!examples.some((ex) => typeof ex.args[1] === "number" && (ex.args[1] as number) <= 0)) return null; // dright-guard:nonpos
   const shown = examples.map((ex) => JSON.stringify(ex.expected));
   if (new Set(shown).size < 2) return null; // dright-guard:varies
-  return "  return b > 0 ? a.slice(0, -b) : a.slice();";
-}
-
-/** The last `count` elements, or empty when the count is not positive. */
-function atTakeRight(value: unknown, count: unknown): { ok: true; value: unknown } | { ok: false } {
-  const seq = asSequence(value);
-  const n = finiteCount(count);
-  if (!seq || n === null) return { ok: false };
-  return { ok: true, value: n > 0 ? sliced(seq, -n) : [] };
+  return "  return Math.min(-b, 0) === 0 ? a.slice() : a.slice(0, Math.min(-b, 0));";
 }
 
 /**
- * `b > 0 ? a.slice(-b) : []`. A count of zero or less is empty, which
- * `a.slice(-b)` is not. One repeated result stays the literal.
+ * Published `takeRight`: empty when `count <= 0`, otherwise `slice(-count)`.
+ * `NaN` and `undefined` are not `<= 0`, so they copy the sequence. A finite
+ * non-positive count is empty, which `slice(-count)` is not.
+ */
+function atTakeRight(value: unknown, count: unknown): { ok: true; value: unknown } | { ok: false } {
+  const seq = asSequence(value);
+  const n = endCount(count);
+  if (!seq || n === null) return { ok: false };
+  return { ok: true, value: (n as number) <= 0 ? [] : sliced(seq, -(n as number)) };
+}
+
+/**
+ * `b <= 0 ? [] : a.slice(-b)`. `b > 0 ? a.slice(-b) : []` returns `[]` for
+ * `NaN` and `undefined`; the published function copies the array there.
  */
 function takeRightBody(examples: Example[]): string | null {
   if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
   if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // tright-guard:arrays
   if (!examples.every((ex) => { const got = atTakeRight(ex.args[0], ex.args[1]); return got.ok && deepSame(got.value, ex.expected); })) return null; // tright-guard:rest
-  if (!examples.some((ex) => (ex.args[1] as number) <= 0)) return null; // tright-guard:nonpos
+  if (!examples.some((ex) => typeof ex.args[1] === "number" && (ex.args[1] as number) <= 0)) return null; // tright-guard:nonpos
   const shown = examples.map((ex) => JSON.stringify(ex.expected));
   if (new Set(shown).size < 2) return null; // tright-guard:varies
-  return "  return b > 0 ? a.slice(-b) : [];";
+  return "  return b <= 0 ? [] : a.slice(-b);";
 }
 
 function upperFirstText(value: unknown): string | null {

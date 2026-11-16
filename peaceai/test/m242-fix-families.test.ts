@@ -86,6 +86,13 @@ test("nil needs both nullish values true and one other value false", () => {
   assert.match(bodyOf(nil), /return a == null;/);
   const absent = named("absent", "assert.equal(absent(null), true);\nassert.equal(absent(0), false);");
   assert.equal(absent?.ok, false);
+  const split = named("split", [
+    "assert.equal(split(null), true);",
+    "assert.equal(split(undefined), true);",
+    "assert.equal(split(undefined), false);",
+    "assert.equal(split(0), false);",
+  ].join("\n"));
+  assert.equal(split?.ok, false);
   const flipped = named("flipped", "assert.equal(flipped(null), false);\nassert.equal(flipped(undefined), true);\nassert.equal(flipped(0), false);");
   assert.match(bodyOf(flipped), /return a === undefined;/);
   const kept = named("kept", "assert.equal(kept(null), true);\nassert.equal(kept(undefined), true);\nassert.equal(kept(1), true);");
@@ -257,8 +264,15 @@ test("deleting a fix-family guard admits the case it refused", async () => {
   const absent = await open("nil-guard:both", "src/absent.test.ts", 'import { absent } from "./absent.ts";\nassert.equal(absent(null), true);\nassert.equal(absent(0), false);\n');
   assert.equal(absent?.ok, true);
   if (absent?.ok) assert.match(absent.files[0]!.content, /return a == null;/);
-  const flipped = await open("nil-guard:nullish-true", "src/flipped.test.ts", 'import { flipped } from "./flipped.ts";\nassert.equal(flipped(null), false);\nassert.equal(flipped(undefined), true);\nassert.equal(flipped(0), false);\n');
-  assert.equal(flipped?.ok, false);
+  const split = await open("nil-guard:nullish-true", "src/split.test.ts", [
+    'import { split } from "./split.ts";',
+    "assert.equal(split(null), true);",
+    "assert.equal(split(undefined), true);",
+    "assert.equal(split(undefined), false);",
+    "assert.equal(split(0), false);",
+  ].join("\n"));
+  assert.equal(split?.ok, true);
+  if (split?.ok) assert.match(split.files[0]!.content, /return a == null;/);
   const kept = await open("nil-guard:others-false", "src/kept.test.ts", 'import { kept } from "./kept.ts";\nassert.equal(kept(null), true);\nassert.equal(kept(undefined), true);\nassert.equal(kept(1), true);\n');
   assert.equal(kept?.ok, false);
 
