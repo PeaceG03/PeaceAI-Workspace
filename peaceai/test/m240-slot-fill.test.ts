@@ -12,6 +12,9 @@ import { applyRule } from "../lib/learned.ts";
 import { buildTsconfigScript, tsconfigScriptCandidateReason } from "../lib/tsconfig-script.ts";
 import { checkCandidateScope } from "../lib/scope.ts";
 import { guessFamily, trainRequestModel, canonicalRequest, type FamilyRow } from "../lib/requestfamily.ts";
+import { isCanonical } from "../lib/nlparse.ts";
+import { cleanIssueText } from "../lib/taskmap.ts";
+import { parseTsconfigScriptTask, TSCONFIG_SCRIPT_TRIGGER } from "../lib/tsconfig-script.ts";
 import { importLine, readImportDiagnostics, readSlotTree, testLine, tsconfigLine, type SlotRepo } from "../lib/slotfill.ts";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -36,6 +39,15 @@ const TSCONFIG = `{
   "include": ["src/**/*.ts"]
 }
 `;
+
+test("a path glob keeps its stars through issue cleaning, and emphasis stars do not", () => {
+  const line = "add a typecheck script typecheck:lib with a new tsconfig.lib.json excluding src/**/*.test.ts";
+  const cleaned = cleanIssueText({ title: "builder-log seq 4", body: line });
+  assert.match(cleaned, /excluding src\/\*\*\/\*\.test\.ts/);
+  assert.ok(parseTsconfigScriptTask(TSCONFIG_SCRIPT_TRIGGER, cleaned));
+  assert.equal(isCanonical(cleaned), true);
+  assert.equal(cleanIssueText({ title: "T", body: "`code` **bold** # head" }), "T\n\n code bold head");
+});
 
 test("a typecheck:name token is code context, and read-only is not a one-file cue", () => {
   assert.equal(guessFamily(model, "please add a typecheck:tools script for the library").family, "TSCONFIG_SCRIPT");
@@ -104,10 +116,11 @@ test("the typecheck-script rule emits the filled line, and the scope check accep
 test("an exported function named in the sentence supplies the file, and two names refuse", () => {
   const email = readFileSync(resolve(root, "peaceai/test/fixtures/m80/brazilian-utils__javascript-eae100a5ddb3.txt"), "utf8");
   const files = { "src/utilities/email/index.ts": email, "src/other.ts": "export function other(n: number): number { return n; }\n" };
-  const asked = "add a characterization test for `isValid`\n- isValid(\"a@b.co\") is true\n- isValid(\"\") is false";
+  const asked = "add a characterization test for `isValid`\n- isValid(\"ab\") is false\n- isValid(\"zz\") is false";
   const line = testLine(asked, repo(files));
   assert.equal(line?.split("\n")[0], "add a characterization test for isValid in src/utilities/email/index.ts");
-  assert.match(line ?? "", /isValid\(""\) is false/);
+  assert.match(line ?? "", /isValid\("ab"\) is false/);
+  assert.equal(testLine("add a characterization test for `isValid`", repo({ "src/email.ts": "export default function isValid(value: string): boolean { return value.length > 1; }\n" })), null);
   assert.equal(testLine("add a characterization test for `isValid` and `other`", repo(files)), null);
   assert.equal(testLine("add a characterization test for the planner", repo(files)), null);
   const ruled = applyRule(spec("public-test-case-existing-v1"), line!, Object.entries(files).map(([path, content]) => ({ path, content })), (p) => p.endsWith(".test.ts"));
@@ -125,7 +138,7 @@ test("an exported function named in the sentence supplies the file, and two name
     assert.equal(pass.status, 0, pass.stdout + pass.stderr);
     const stub = mkdtempSync(join(tmpdir(), "peaceai-slot-email-stub-"));
     mkdirSync(dirname(join(stub, ruled!.path)), { recursive: true });
-    writeFileSync(join(stub, "src/utilities/email/index.ts"), "export function isValid(email: string): boolean { return false; }\n");
+    writeFileSync(join(stub, "src/utilities/email/index.ts"), "export function isValid(value: string): boolean { return true; }\n");
     writeFileSync(join(stub, ruled!.path), ruled!.content);
     const fail = spawnSync(tsxBin, ["--test", ruled!.path], { cwd: stub, env, encoding: "utf8" });
     rmSync(stub, { recursive: true, force: true });
@@ -237,8 +250,8 @@ test("a real package.json anchor, a real tsconfig, and a real source file typech
 const base = resolve(root, "peaceai/test/.slot-mutants");
 mkdirSync(base, { recursive: true });
 let n = 0;
-async function mutant(guard: string) {
-  const text = readFileSync(resolve(root, "peaceai/lib/slotfill.ts"), "utf8");
+async function mutant(guard: string, source = "peaceai/lib/slotfill.ts") {
+  const text = readFileSync(resolve(root, source), "utf8");
   const lines = text.split("\n");
   const hits = lines.flatMap((l, i) => (l.includes(`// ${guard}`) ? [i] : []));
   assert.equal(hits.length, 1, guard);
@@ -289,5 +302,42 @@ test("deleting the one-candidate guards admits an ambiguous pair", async () => {
   assert.equal(tsconfigLine("Add a typecheck:lib script for the library and javascript", repo(bothModes)), null);
   const ts = await mutant("slot-guard:one-tsconfig") as { tsconfigLine: typeof tsconfigLine };
   assert.match(ts.tsconfigLine("Add a typecheck:lib script for the library and javascript", repo(bothModes)) ?? "", /typecheck:lib/);
+
+  const missing = repo(
+    { "a.ts": 'import { n } from "./gone.ts";\nexport const a = 1;\n' },
+    [{ code: 5097, file: "a.ts", specifier: "./gone.ts" }],
+  );
+  assert.equal(importLine("Fix the typecheck failure", missing), null);
+  const unresolved = await mutant("slot-guard:resolves") as { importLine: typeof importLine };
+  assert.match(unresolved.importLine("Fix the typecheck failure", missing) ?? "", /fix the import of \.\/gone\.ts in a\.ts/);
+
+  const names = Array.from({ length: 30 }, (_, i) => `binding${"x".repeat(12)}${i}`);
+  const huge = `import { ${names.join(", ")} } from "./n.ts";\nexport const a = binding${"x".repeat(12)}0;\n`;
+  const hugeRepo = repo({ "a.ts": huge, "n.ts": `export const ${names.join(" = 1, ")} = 1;\n` }, [{ code: 5097, file: "a.ts", specifier: "./n.ts" }]);
+  assert.equal(importLine("Fix the typecheck failure", hugeRepo), null);
+  const unparsed = await mutant("slot-guard:import-trigger") as { importLine: typeof importLine };
+  assert.match(unparsed.importLine("Fix the typecheck failure", hugeRepo) ?? "", /fix the import of \.\/n\.ts in a\.ts/);
+
+  const spaced = repo({ "package.json": PKG, "tsconfig.json": TSCONFIG, "src/my file.ts": "export const my = 1;\n" });
+  assert.equal(tsconfigLine("add a typecheck:my script over the notes", spaced), null);
+  const badGlob = await mutant("slot-guard:tsconfig-trigger") as { tsconfigLine: typeof tsconfigLine };
+  assert.match(badGlob.tsconfigLine("add a typecheck:my script over the notes", spaced) ?? "", /src\/my file\.ts/);
+
+  const plug = mkdtempSync(join(tmpdir(), "peaceai-slot-plug-"));
+  mkdirSync(join(plug, "src"), { recursive: true });
+  writeFileSync(join(plug, "tsconfig.json"), JSON.stringify({
+    compilerOptions: { strict: true, noEmit: true, module: "esnext", moduleResolution: "bundler", plugins: [{ name: "not-a-real-plugin" }] },
+    include: ["src/**/*.ts"],
+  }));
+  writeFileSync(join(plug, "src/a.ts"), 'import { n } from "./n.ts";\nexport const a = n;\n');
+  writeFileSync(join(plug, "src/n.ts"), "export const n = 1;\n");
+  assert.ok(readImportDiagnostics(plug).some((d) => d.code === 5097));
+  const bare = await mutant("slot-guard:no-plugin") as { readImportDiagnostics: typeof readImportDiagnostics };
+  assert.deepEqual(bare.readImportDiagnostics(plug).filter((d) => d.code === 5097), []);
+  rmSync(plug, { recursive: true, force: true });
+
+  const family = await mutant("slot-guard:cue-token", "peaceai/lib/requestfamily.ts") as typeof import("../lib/requestfamily.ts");
+  const trained = family.trainRequestModel(rows);
+  assert.equal(family.guessFamily(trained, "please add a typecheck:tools script for the library").family, null);
   rmSync(base, { recursive: true, force: true });
 });

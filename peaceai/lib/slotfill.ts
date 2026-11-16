@@ -102,8 +102,11 @@ export function readImportDiagnostics(root: string): ImportHit[] {
   const parseHost: ts.ParseConfigHost = { useCaseSensitiveFileNames: true, readDirectory: ts.sys.readDirectory, fileExists: ts.sys.fileExists, readFile: ts.sys.readFile };
   const parsed = ts.parseJsonConfigFileContent(read.config, parseHost, root);
   const host = ts.createCompilerHost(parsed.options, true);
-  const options = { ...parsed.options };
+  const options: ts.CompilerOptions = { ...parsed.options };
   delete options.plugins; // slot-guard:no-plugin
+  // A plugin host is not this process. Leaving the list on the program is not the repo's plain typecheck.
+  const pluginsLeft = (options as { plugins?: readonly { name?: string }[] }).plugins;
+  if (pluginsLeft?.length) return [];
   const program = ts.createProgram({ rootNames: parsed.fileNames, options, host });
   const out: ImportHit[] = [];
   for (const d of ts.getPreEmitDiagnostics(program)) {
@@ -198,13 +201,23 @@ export function importLine(asked: string, repo: SlotRepo): string | null {
   if (cands.length !== 1) return null; // slot-guard:one-import
   const hit = cands[0]!;
   const line = `fix the import of ${hit.from} in ${hit.file} to: ${hit.to}`;
-  return parseImportEditV2Task(IMPORT_EDIT_V2_TRIGGER, line) ? line : null; // slot-guard:import-trigger
+  if (!parseImportEditV2Task(IMPORT_EDIT_V2_TRIGGER, line)) return null; // slot-guard:import-trigger
+  return line;
 }
 
 interface ExportHit { name: string; file: string }
 
+function hasModifier(n: ts.Node, kind: ts.SyntaxKind): boolean {
+  return ts.canHaveModifiers(n) && (ts.getModifiers(n) ?? []).some((m) => m.kind === kind);
+}
+
 function hasExport(n: ts.Node): boolean {
-  return ts.canHaveModifiers(n) && (ts.getModifiers(n) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+  return hasModifier(n, ts.SyntaxKind.ExportKeyword);
+}
+
+/** `export default function name` is not a named export. The characterization import would be wrong. */
+function isDefaultExport(n: ts.Node): boolean {
+  return hasModifier(n, ts.SyntaxKind.DefaultKeyword);
 }
 
 function exportedFunctions(files: readonly SlotFile[]): ExportHit[] {
@@ -214,7 +227,7 @@ function exportedFunctions(files: readonly SlotFile[]): ExportHit[] {
     const tsx = f.path.endsWith(".tsx");
     const sf = ts.createSourceFile(tsx ? "m.tsx" : "m.ts", f.content, ts.ScriptTarget.Latest, true, tsx ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
     for (const s of sf.statements) {
-      if (ts.isFunctionDeclaration(s) && s.name && hasExport(s) && s.body) out.push({ name: s.name.text, file: f.path });
+      if (ts.isFunctionDeclaration(s) && s.name && hasExport(s) && !isDefaultExport(s) && s.body) out.push({ name: s.name.text, file: f.path });
       if (ts.isVariableStatement(s) && hasExport(s)) {
         for (const d of s.declarationList.declarations) {
           if (!ts.isIdentifier(d.name) || !d.initializer) continue;
@@ -349,5 +362,6 @@ export function tsconfigLine(asked: string, repo: SlotRepo): string | null {
   const hit = cands[0]!;
   const how = hit.mode === "exclude" ? `excluding ${hit.pattern}` : hit.mode === "files" ? `checking only ${hit.pattern}` : `checking ${hit.pattern} with checkJs`;
   const line = `add a typecheck script typecheck:${hit.name} with a new tsconfig.${hit.name}.json ${how}`;
-  return parseTsconfigScriptTask(TSCONFIG_SCRIPT_TRIGGER, line) ? line : null; // slot-guard:tsconfig-trigger
+  if (!parseTsconfigScriptTask(TSCONFIG_SCRIPT_TRIGGER, line)) return null; // slot-guard:tsconfig-trigger
+  return line;
 }
