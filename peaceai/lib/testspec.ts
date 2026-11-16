@@ -8,6 +8,9 @@
 // A runner error that names a missing module, a missing export, or a value that is not a function is
 // the spec for a scaffold: one exported function, method, or default at that module, with parameters
 // taken from the call sites and a body taken from the reduced assertions when exactly one body fits.
+// A non-integer or non-number the examples reject, when the integers have one class,
+// conjoins Number.isInteger. That conjunction uses the closed example bound. A bare
+// comparison keeps the first form in the integer class.
 // Other edits come from the loop-v2 repair proposer (the catalog of templates). Attempts stay within
 // that loop's MAX_ATTEMPTS and the proposer's MAX_CANDIDATES. A diff is returned only when the given
 // test passes and the original suite still passes. Nothing here pushes.
@@ -682,14 +685,19 @@ function impliedSource(fromFile: string, spec: string, sourcePattern: string, de
   return allowed.find((path) => exists(path)) ?? allowed[0] ?? null;
 }
 
+/** A numeric literal's value. `_` separators are syntax, so `1_832_923` is 1832923, not NaN. */
+function numberLiteral(text: string): number {
+  return Number(text.replace(/_/g, ""));
+}
+
 function evalConcrete(node: ts.Expression): { ok: true; value: unknown } | { ok: false } {
   const expr = unwrap(node);
   if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return { ok: true, value: expr.text };
-  if (ts.isNumericLiteral(expr)) return { ok: true, value: Number(expr.text) };
+  if (ts.isNumericLiteral(expr)) return { ok: true, value: numberLiteral(expr.text) };
   if (expr.kind === ts.SyntaxKind.TrueKeyword) return { ok: true, value: true };
   if (expr.kind === ts.SyntaxKind.FalseKeyword) return { ok: true, value: false };
   if (expr.kind === ts.SyntaxKind.NullKeyword) return { ok: true, value: null };
-  if (ts.isPrefixUnaryExpression(expr) && expr.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(expr.operand)) return { ok: true, value: -Number(expr.operand.text) };
+  if (ts.isPrefixUnaryExpression(expr) && expr.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(expr.operand)) return { ok: true, value: -numberLiteral(expr.operand.text) };
   const sent = sentinelValue(expr);
   if (sent.ok) return sent; // spec-guard:sentinel-value
   if (ts.isArrayLiteralExpression(expr)) {
@@ -983,6 +991,25 @@ export function integerCmpClass(op: string, n: number): string | null {
   return null;
 }
 
+function closedCmp(text: string): boolean {
+  return text.includes(">=") || text.includes("<=");
+}
+
+/**
+ * One text per integer class, for the integer conjunction only. The first form
+ * is stored, then a closed bound (`>=` / `<=`) whose literal is an example
+ * replaces an open bound in that same class. A bare comparison does not use this.
+ */
+function chooseCmp(fits: { text: string; key: string }[]): Map<string, string> {
+  const chosen = new Map<string, string>();
+  for (const fit of fits) {
+    const prev = chosen.get(fit.key);
+    if (!prev) chosen.set(fit.key, fit.text);
+    if (prev && closedCmp(fit.text) && !closedCmp(prev)) chosen.set(fit.key, fit.text); // cmp-guard:closed-bound
+  }
+  return chosen;
+}
+
 function comparisonBody(examples: Example[]): string | null {
   if (!examples.length || examples.some((ex) => typeof ex.expected !== "boolean" || ex.args.some((arg) => typeof arg !== "number"))) return null;
   const arity = examples[0]!.args.length;
@@ -1004,6 +1031,42 @@ function comparisonBody(examples: Example[]): string | null {
   for (const fit of fits) if (!chosen.has(fit.key)) chosen.set(fit.key, fit.text);
   if (chosen.size !== 1) return null;
   return `  return ${[...chosen.values()][0]};`;
+}
+
+/** Arity-1 numeric comparisons, including more than one integer class. */
+function arity1Chosen(examples: Example[]): Map<string, string> | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1 || typeof ex.expected !== "boolean" || typeof ex.args[0] !== "number")) return null;
+  const integers = examples.every((ex) => Number.isInteger(ex.args[0] as number));
+  const constants = [...new Set(examples.map((ex) => ex.args[0] as number))];
+  const fits: { text: string; key: string }[] = [];
+  for (const n of constants) for (const pred of CMP) {
+    if (!examples.every((ex) => pred.fn(ex.args[0] as number, n) === ex.expected)) continue;
+    const cls = integers ? integerCmpClass(pred.op, n) : null;
+    fits.push({ text: `a ${pred.op} ${JSON.stringify(n)}`, key: cls ?? `raw:${pred.op}:${JSON.stringify(n)}` });
+  }
+  return chooseCmp(fits);
+}
+
+function countedInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value);
+}
+
+/**
+ * `Number.isInteger(a) && <comparison>` when every example that is not an integer is
+ * false, and the integers have one class. A string, a boolean, or a fraction is false
+ * under `Number.isInteger`, which is what those examples say. No such example, no
+ * conjunction: the bare comparison already says the same thing on those integers.
+ * A non-integer the examples accept is not this shape.
+ */
+function integerBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1 || typeof ex.expected !== "boolean")) return null;
+  const others = examples.filter((ex) => !countedInteger(ex.args[0]));
+  if (!others.length) return null; // int-guard:needs-fraction
+  if (others.some((ex) => ex.expected !== false)) return null; // int-guard:others-false
+  const integers = examples.filter((ex) => countedInteger(ex.args[0]));
+  const chosen = arity1Chosen(integers);
+  if (!chosen || chosen.size !== 1) return null; // int-guard:one-class
+  return `  return Number.isInteger(a) && ${[...chosen.values()][0]};`;
 }
 
 /** Every combination of boolean arguments is present, so one formula fits. */
@@ -1081,7 +1144,7 @@ function renderReturn(parts: string[]): string {
 }
 
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "project", "sum", "split", "peer"] as const;
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
 function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
@@ -1110,6 +1173,7 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
     keep(renderReturn(parts.length ? parts : ['""']), "string", "string");
   }
   keep(comparisonBody(concrete), "boolean", "comparison");
+  keep(integerBody(concrete), "boolean", "integer");
   keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");
   keep(sumBody(concrete), "number", "sum");
   keep(splitBody(concrete), "string", "split");

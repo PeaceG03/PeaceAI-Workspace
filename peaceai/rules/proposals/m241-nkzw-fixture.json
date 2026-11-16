@@ -1,0 +1,24 @@
+{
+  "schema": "peaceai-m241-nkzw-fixture:v1",
+  "note": "Pinned copies of nkzw-tech/core isPositiveInteger used by the integer-conjunction scaffold test. License text is MIT at the named commit.",
+  "examples": [
+    {
+      "repo": "nkzw-tech/core",
+      "commit": "e2f272e057cd87c4a0fcc650dd508ea40d4a62dc",
+      "licenseSha256": "a61e28b706b22aa278ad398db7da6f6c9fdaf6296482b1ff54d1946295b91403",
+      "fixture": "peaceai/test/fixtures/m241/nkzw-LICENSE.txt"
+    },
+    {
+      "repo": "nkzw-tech/core",
+      "commit": "e2f272e057cd87c4a0fcc650dd508ea40d4a62dc",
+      "licenseSha256": "a61e28b706b22aa278ad398db7da6f6c9fdaf6296482b1ff54d1946295b91403",
+      "fixture": "peaceai/test/fixtures/m241/nkzw-isPositiveInteger.test.ts.txt"
+    },
+    {
+      "repo": "nkzw-tech/core",
+      "commit": "e2f272e057cd87c4a0fcc650dd508ea40d4a62dc",
+      "licenseSha256": "a61e28b706b22aa278ad398db7da6f6c9fdaf6296482b1ff54d1946295b91403",
+      "fixture": "peaceai/test/fixtures/m241/nkzw-isPositiveInteger.ts.txt"
+    }
+  ]
+}
