@@ -751,7 +751,6 @@ function reducedOf(call: ts.CallExpression): CallFact["reduced"] {
     if (ts.isPropertyAccessExpression(outer) && ts.isCallExpression(outer.parent) && outer.parent.expression === outer) {
       const name = outer.name.text;
       if (name === "toBeUndefined") return { kind: "equal", expected: undefined }; // spec-guard:be-undefined
-      if (name === "toBeNull") return { kind: "equal", expected: null }; // spec-guard:be-null
       if ((name === "toBe" || name === "toEqual" || name === "toStrictEqual") && outer.parent.arguments[0]) {
         const v = evalConcrete(outer.parent.arguments[0]);
         return v.ok ? { kind: "equal", expected: v.value } : null;

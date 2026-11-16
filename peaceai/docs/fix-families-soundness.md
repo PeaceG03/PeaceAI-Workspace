@@ -37,6 +37,4 @@ One tag is true and every other tag that appears is false. The tags are `boolean
 
 ## Not in this batch
 
-`isNumber` calls `new Number(42)`. That argument is not concrete, so the file stays unreduced. `isEmptyObject` calls another function and constructs objects the recorder does not evaluate. A number-array `some` / `every` still has no pinned permissive test of one comparison. One property on an existing default object still has no pin. The attempt cap stays 20. `target.ts` was not edited.
-
-The replay wrappers in `peaceai/bin/capability-job.ts` wait 90s for generate and 120s for the gate spawn. Those stops were `GENERATE_TIMEOUT` and `GATE_TIMEOUT`. `generate.ts` and `gate.ts` were not edited.
+`isNumber` calls `new Number(42)`. That argument is not concrete, so the file stays unreduced. `isEmptyObject` calls another function and constructs objects the recorder does not evaluate. A number-array `some` / `every` still has no pinned permissive test of one comparison. One property on an existing default object still has no pin. The attempt cap stays 20. `target.ts` was not edited. The generate and gate waits stay 45s and 60s. Longer waits were dropped: they can turn an unmeasured row into a pass without a capability change.

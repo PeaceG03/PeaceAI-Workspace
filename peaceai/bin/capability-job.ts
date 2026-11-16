@@ -20,8 +20,7 @@ export { publicGateReason } from "../lib/practicereplay.ts";
 import { publicGateReason } from "../lib/practicereplay.ts";
 import { scoreFamilies, trainRequestModel, type FamilyRow } from "../lib/requestfamily.ts";
 
-/** Job A replay budget. Was 45s; a cold generate was stopping as GENERATE_TIMEOUT. The generator is unchanged. */
-const ROW_MS = 90_000;
+const ROW_MS = 45_000;
 
 const USAGE = "usage: capability-job.ts --core-archive <file> [--as-of YYYY-MM-DD] [--out <dir>]";
 const PIN_PATH = "peaceai/core-pin.json";
@@ -249,7 +248,7 @@ function productionGate(tooling: string, dir: string, outDir: string, coreDir: s
   try { count = ((JSON.parse(readFileSync(summary, "utf8")) as { candidates?: unknown[] }).candidates ?? []).length; } catch { return null; }
   if (count < 1) return null;
   const ran = spawnSync(join(tooling, "node_modules/.bin/tsx"), [join(tooling, "peaceai/bin/gate.ts")], {
-    cwd: tooling, encoding: "utf8", timeout: 120_000, // was 60s; that stop was GATE_TIMEOUT. gate.ts is unchanged.
+    cwd: tooling, encoding: "utf8", timeout: 60_000,
     env: { ...process.env, PEACEAI_OUT_DIR: outDir, PEACEAI_WORKSPACE_DIR: dir, PEACEAI_CORE_DIR: coreDir, PEACEAI_TARGET: targetName },
   });
   const error = ran.error as NodeJS.ErrnoException | undefined;

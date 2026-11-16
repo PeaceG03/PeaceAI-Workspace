@@ -8,6 +8,8 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
+import { practiceSandboxReady, visibleNodeBin } from "../lib/practicemine.ts";
+import { gradeBehavior } from "../lib/specgrade.ts";
 import { scaffoldPlan } from "../lib/testspec.ts";
 
 const PATTERN = "^src/.+\\.ts$";
@@ -117,6 +119,20 @@ test("reverse is the code-point reverse, and a palindrome stays the identity", (
   assert.equal(wrong?.ok, false);
   const chars = named("chars", "assert.equal(chars(['a', 'b']), 'ba');\nassert.equal(chars(['c', 'd']), 'dc');");
   assert.equal(chars?.ok, false);
+});
+
+const EMPTY_HEAD = [
+  'import { expect } from "vitest";',
+  'import { empty } from "./empty.ts";',
+  "expect(empty([7])).toBe(7);",
+  "expect(empty([])).toBeUndefined();",
+  "",
+].join("\n");
+
+test("toBeUndefined is what keeps one filled array as head", () => {
+  const plan = scaffoldPlan("src/empty.test.ts", EMPTY_HEAD, "Cannot find module '/work/src/empty.ts'", PATTERN, [], () => null);
+  assert.match(bodyOf(plan), /return a\[0\];/);
+  assert.equal(bodyOf(plan).includes("return 7"), false);
 });
 
 test("a passing log does not scaffold", () => {
@@ -264,5 +280,40 @@ test("deleting a fix-family guard admits the case it refused", async () => {
   if (wrong?.ok) assert.match(wrong.files[0]!.content, /return Array\.from\(a\)\.reverse\(\)\.join\(""\);/);
   const pal = await open("rev-guard:not-identity", "src/pal.test.ts", 'import { pal } from "./pal.ts";\nassert.equal(pal("aba"), "aba");\nassert.equal(pal("cc"), "cc");\n');
   assert.equal(pal?.ok, false);
+
+  const dropped = await open("spec-guard:be-undefined", "src/empty.test.ts", EMPTY_HEAD);
+  assert.equal(dropped?.ok, true);
+  if (dropped?.ok) {
+    assert.match(dropped.files[0]!.content, /return 7;/);
+    assert.equal(dropped.files[0]!.content.includes("a[0]"), false);
+  }
   rmSync(base, { recursive: true, force: true });
+});
+
+test("a === true || a === false is not verified_strict on the published isBoolean calls", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const nodePath = visibleNodeBin();
+  if (!nodePath) { t.skip("no visible node"); return; }
+  const tree = (text: string) => {
+    const dir = mkdtempSync(join(tmpdir(), "peaceai-bool-"));
+    mkdirSync(join(dir, "src/predicate"), { recursive: true });
+    writeFileSync(join(dir, "src/predicate/isBoolean.ts"), text);
+    return dir;
+  };
+  const candidate = tree("export function isBoolean(a: unknown): boolean {\n  return a === true || a === false;\n}\n");
+  const fix = tree(pinned("es-toolkit-isBoolean.ts.txt"));
+  // Every value the published spec passes to isBoolean, including arr.filter(isBoolean).
+  const args = [[true], [false], [0], ["abc"], [123], [{ a: 1 }], [[1, 2, 3]], [1], [2], [4]];
+  try {
+    const grade = gradeBehavior({
+      candidateRoot: candidate, fixRoot: fix, nodePath,
+      target: { symbol: "isBoolean", file: "src/predicate/isBoolean.ts", form: "named", exportName: "isBoolean", args },
+    });
+    assert.equal(grade.behavior, "verified_test_only");
+    assert.equal(grade.counterexample, undefined);
+    assert.equal(grade.compared, 51);
+  } finally {
+    rmSync(candidate, { recursive: true, force: true });
+    rmSync(fix, { recursive: true, force: true });
+  }
 });
