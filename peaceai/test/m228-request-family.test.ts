@@ -82,7 +82,8 @@ test("an ordinary sentence does not pick a family, and dev accepted answers are 
     for (const hole of holes) assert.equal(guessFamily(model, `please ${cue} ${hole}`).family, null, `${family}: ${hole}`);
   }
   const dev = scoreFamilies(model, rows, false);
-  assert.deepEqual(dev, { rows: 152, correct: 83, wrong: 0, refused: 69 });
+  // A cue that is the head of `typecheck:name` now counts as code context, so one more dev row classifies and none misclassify.
+  assert.deepEqual(dev, { rows: 152, correct: 84, wrong: 0, refused: 68 });
   assert.equal(guessFamily(model, "add a typecheck script beside tsconfig.tools.json").family, "TSCONFIG_SCRIPT");
   assert.equal(guessFamily(model, "add a job to nightly.yml").family, "WORKFLOW_JOB");
   assert.equal(guessFamily(model, "please typecheck on page4").family, null);

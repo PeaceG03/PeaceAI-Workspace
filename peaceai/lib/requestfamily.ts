@@ -4,6 +4,7 @@
 // is dropped. Zero cues or two cues refuse. A request that names PeaceAI's own tooling, and
 // no edit family, refuses as a self-change. A hash of seq and asked text holds rows out.
 import { createHash } from "node:crypto";
+import { importLine, testLine, tsconfigLine, type SlotRepo } from "./slotfill.ts";
 
 export const REQUEST_FAMILY_SCHEMA = "peaceai-request-family:v1";
 export const NONE_FAMILY = "none";
@@ -57,7 +58,14 @@ const CODE_CONTEXT = new RegExp(String.raw`(?:(?:^|[^\w./-])(?:\.{1,2}/)?(?:[A-Z
 function contextNear(text: string, start: number, end: number): boolean {
   const from = Math.max(0, start - 96);
   const to = Math.min(text.length, end + 96);
-  return CODE_CONTEXT.test(`${text.slice(from, start)} ${text.slice(end, to)}`);
+  if (CODE_CONTEXT.test(`${text.slice(from, start)} ${text.slice(end, to)}`)) return true;
+  // The cue can be only the head of a code token (`typecheck` inside `typecheck:lib`).
+  let a = start;
+  let b = end;
+  while (a > 0 && !/\s/.test(text[a - 1]!)) a--;
+  while (b < text.length && !/\s/.test(text[b]!)) b++;
+  const token = text.slice(a, b);
+  return token.length > end - start && CODE_CONTEXT.test(token); // slot-guard:cue-token
 }
 
 function matched(text: string, families: readonly string[]): string[] {
@@ -147,14 +155,16 @@ const NAME = String.raw`[A-Za-z_$][\w$]{0,63}`;
 const FILE = String.raw`[\w./-]+\.[cm]?[jt]sx?`;
 const ENVNAME = String.raw`[A-Z][A-Z0-9_]{1,80}`;
 
-/** A canonical Job A line, only when every slot is already written in the request. */
-export function canonicalRequest(family: string, asked: string): string | null {
+/** A canonical Job A line. Slots already written in the sentence win. A repo fills a missing slot only when it names exactly one. */
+export function canonicalRequest(family: string, asked: string, repo?: SlotRepo | null): string | null {
   if (family === "TEST_CASE_EXISTING") {
     const m = new RegExp(String.raw`characteri[sz]ation test for \`?(${NAME})\`? in \`?(${FILE})`, "i").exec(asked);
-    if (!m) return null;
-    const title = new RegExp(String.raw` in \`?${FILE}\`?: ([^#\n]{1,120}?)(?:\s+#|\s*$)`, "i").exec(asked);
-    const base = `add a characterization test for ${m[1]} in ${m[2]}`;
-    return title ? `${base}: ${title[1]!.trim()}` : base;
+    if (m) {
+      const title = new RegExp(String.raw` in \`?${FILE}\`?: ([^#\n]{1,120}?)(?:\s+#|\s*$)`, "i").exec(asked);
+      const base = `add a characterization test for ${m[1]} in ${m[2]}`;
+      return title ? `${base}: ${title[1]!.trim()}` : base;
+    }
+    return repo ? testLine(asked, repo) : null;
   }
   if (family === "ENV_FIX") {
     const m = new RegExp(String.raw`make (?:the )?env(?:ironment variable)? \`?(${ENVNAME})\`? strict in \`?(${FILE})\`? as (?:a |an )?(flag|integer 1\.\.(\d{1,9}))`, "i").exec(asked);
@@ -162,5 +172,7 @@ export function canonicalRequest(family: string, asked: string): string | null {
     const how = m[3]!.toLowerCase() === "flag" ? "a flag" : `integer 1..${m[4]}`;
     return `make env ${m[1]} strict in ${m[2]} as ${how}`;
   }
+  if (family === "TSCONFIG_SCRIPT") return repo ? tsconfigLine(asked, repo) : null;
+  if (family === "IMPORT_EDIT") return repo ? importLine(asked, repo) : null;
   return null;
 }
