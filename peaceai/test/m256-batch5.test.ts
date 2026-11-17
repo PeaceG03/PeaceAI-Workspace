@@ -124,29 +124,42 @@ test("deleting the batch 5 guards admits the near miss, with bwrap and without i
   assert.match(opened.coerceCookieValue(bareCookie) ?? "", /String\(_val \?\? ""\)/);
   const fixed = preserveUncResolve(readFix("pathe-path.ts.txt"))!;
   assert.equal(preserveUncResolve(fixed), null);
-  const unc = await mutant("path-guard:unc") as { preserveUncResolve: typeof preserveUncResolve };
+  const unc = await mutant("path-guard:unc") as { preserveUncResolve: typeof preserveUncResolve; repairBatch5: typeof repairBatch5 };
   assert.ok((unc.preserveUncResolve(fixed) ?? "").split("let resolvedUNC").length > 2);
   const bare = `const strings = new Set<string>();\n  // Add parsed values\n  (out as any)[key] = value;\n`;
   assert.equal(coerceArgValues(bare), null);
-  const arg = await mutant("arg-guard:typed") as { coerceArgValues: typeof coerceArgValues };
+  const arg = await mutant("arg-guard:typed") as { coerceArgValues: typeof coerceArgValues; repairBatch5: typeof repairBatch5 };
   assert.match(arg.coerceArgValues(bare) ?? "", /value !== "false"/);
   const node = visibleNodeBin();
   assert.ok(node);
   const root = mkdtempSync(join(tmpdir(), "m256-miss-"));
-  place(root, { "src/serialize.ts": bareCookie, "run.mjs": "process.exit(0)\n" });
+  place(root, { "src/serialize.ts": readFix("cookie-es-serialize.ts.txt"), "run.mjs": "process.exit(0)\n" });
   gitInit(root);
   const missing = repairBatch5({
     root, output: "Error: not equal", sourcePattern: "^src/.+\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"], bwrap: "/no/such/bwrap",
   });
   assert.equal(missing, null);
   if (practiceSandboxReady()) {
-    const admitted = opened.repairBatch5({
-      root, output: "Error: not equal", sourcePattern: "^src/.+\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"],
+    const run = (fn: typeof repairBatch5, dir: string) => fn({
+      root: dir, output: "Error: not equal", sourcePattern: "^src/.+\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"],
     });
-    assert.match(admitted?.diff ?? "", /_val \?\? ""/);
-    assert.equal(repairBatch5({
-      root, output: "Error: not equal", sourcePattern: "^src/.+\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"],
-    }), null);
+    const cookieDir = mkdtempSync(join(tmpdir(), "m256-cookie-miss-"));
+    place(cookieDir, { "src/serialize.ts": bareCookie, "run.mjs": "process.exit(0)\n" });
+    gitInit(cookieDir);
+    assert.match(run(opened.repairBatch5, cookieDir)?.diff ?? "", /_val \?\? ""/);
+    rmSync(cookieDir, { recursive: true, force: true });
+    const uncDir = mkdtempSync(join(tmpdir(), "m256-unc-miss-"));
+    place(uncDir, { "src/_path.ts": fixed, "run.mjs": "process.exit(0)\n" });
+    gitInit(uncDir);
+    assert.equal(run(repairBatch5, uncDir), null);
+    assert.match(run(unc.repairBatch5, uncDir)?.diff ?? "", /resolvedUNC/);
+    const argDir = mkdtempSync(join(tmpdir(), "m256-arg-miss-"));
+    place(argDir, { "src/_parser.ts": bare, "run.mjs": "process.exit(0)\n" });
+    gitInit(argDir);
+    assert.equal(run(repairBatch5, argDir), null);
+    assert.match(run(arg.repairBatch5, argDir)?.diff ?? "", /value !== "false"/);
+    rmSync(uncDir, { recursive: true, force: true });
+    rmSync(argDir, { recursive: true, force: true });
   }
   rmSync(root, { recursive: true, force: true });
 });
