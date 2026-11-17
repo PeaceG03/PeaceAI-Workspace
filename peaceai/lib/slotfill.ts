@@ -4,7 +4,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { relative, sep } from "node:path";
 import ts from "typescript";
-import { ENV_FIX_TRIGGER, parseEnvFixTask } from "./env-fix.ts";
+import { ENV_FIX_TRIGGER, envSourcePath, parseEnvFixTask } from "./env-fix.ts";
 import { IMPORT_EDIT_V2_TRIGGER, parseImportEditV2Task } from "./import-edit-v2.ts";
 import { TEST_EXISTING_TRIGGER } from "./learned-test-existing.ts";
 import { parseTsconfigScriptTask, TSCONFIG_SCRIPT_TRIGGER } from "./tsconfig-script.ts";
@@ -246,13 +246,13 @@ function envReadKind(content: string, name: string): "none" | "flag" | "other" {
 }
 
 /**
- * The env-fix line when exactly one non-test source file reads NAME, and every read is the flag shape
- * the approved rule already rewrites. A second file, a test file, or any other read shape refuses.
- * An integer max is not invented from prose.
+ * The env-fix flag line when exactly one source file reads NAME, and every read is
+ * `=== "1"` or `!== "1"`. A second file, a test, a fixture, generated output, a vendored path,
+ * or any other read shape refuses. The file keeps its real path.
  */
 export function envLine(name: string, repo: SlotRepo): string | null {
   if (!/^[A-Z][A-Z0-9_]{1,80}$/.test(name)) return null;
-  const files = repo.files.filter((f) => f.path.startsWith("src/") && SOURCE.test(f.path) && !TEST_FILE.test(f.path) && !f.path.endsWith(".d.ts"));
+  const files = repo.files.filter((f) => envSourcePath(f.path));
   const flags: string[] = [];
   for (const f of files) {
     const kind = envReadKind(f.content, name);

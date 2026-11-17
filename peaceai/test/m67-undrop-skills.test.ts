@@ -214,13 +214,22 @@ const efBad: [string, string, string, string][] = [
   ["mixed: a flag read plus a raw read", "src/a.ts", "export const a = process.env.FOO === \"1\";\nexport const b = process.env.FOO;\n", "env_fix_mixed_reads"],
   ["helper name taken", "src/a.ts", "export const a = process.env.FOO === \"1\";\nexport const strictFoo = 1;\n", "env_fix_helper_taken"],
   ["test file target", "src/a.test.ts", "export const a = process.env.FOO === \"1\";\n", "path_not_plain"],
-  ["outside src/", "lib/a.ts", "export const a = process.env.FOO === \"1\";\n", "path_not_plain"],
+  ["fixture path", "fixtures/a.ts", "export const a = process.env.FOO === \"1\";\n", "path_not_plain"],
+  ["generated path", "dist/a.ts", "export const a = process.env.FOO === \"1\";\n", "path_not_plain"],
+  ["vendored path", "vendor/a.ts", "export const a = process.env.FOO === \"1\";\n", "path_not_plain"],
 ];
 for (const [name, file, content, code] of efBad)
   test(`ENV_FIX refused (${code}): ${name}`, () => {
     const { e, r } = run(EF, `make env \`FOO\` strict in \`${file}\` as a flag`, [{ path: file, content }]);
     assert.equal(e, null); assert.equal(r, code);
   });
+test("ENV_FIX flag: a nested package and a lib file keep their real paths [synthetic fixture]", () => {
+  for (const file of ["packages/bench/a.ts", "lib/a.ts"]) {
+    const { e, r } = run(EF, `make env \`FOO\` strict in \`${file}\` as a flag`, [{ path: file, content: "export const a = process.env.FOO === \"1\";\n" }]);
+    assert.ok(e, r);
+    assert.equal(e!.path, file);
+  }
+});
 test("ENV_FIX int refuses a read that is not the Number(X) > 0 ? Number(X) : D shape [synthetic fixture]", () => {
   const { e, r } = run(EF, "make env `FOO` strict in `src/a.ts` as an integer 1..10", [{ path: "src/a.ts", content: "export const n = Number(process.env.FOO) || 3;\n" }]);
   assert.equal(e, null); assert.equal(r, "env_fix_mixed_reads");
