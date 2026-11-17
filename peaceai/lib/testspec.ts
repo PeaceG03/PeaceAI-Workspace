@@ -22,6 +22,7 @@ import { isTestPath, openRepo } from "./codesearch.ts";
 import { MAX_CANDIDATES, repairProposer, type RepairFeedback } from "./editpropose.ts";
 import { MAX_ATTEMPTS } from "./loop.ts";
 import { applyPracticeTestLaunch, declaredTypeScriptLoader, poisonChanges, poisonStamp, practiceGit, practiceTestLaunch, releaseWorktree, runInPracticeSandbox, visibleNodeBin, type PracticeToolchain } from "./practicemine.ts";
+import { repairRuntimeFailure } from "./arrayfix.ts";
 import { parseTypeDiagnostics, repairTypedFailure } from "./sigfix.ts";
 
 export const SPEC_SCHEMA = "peaceai-test-spec:v1";
@@ -3017,6 +3018,18 @@ export function runTestSpec(input: SpecInput): SpecResult {
     return {
       status: "diff", diff: typed.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
       fit: { shape: "signature", examples: typed.args.length, targets: [{ symbol: typed.symbol, file: typed.file, form: "named", exportName: typed.symbol, args: typed.args }] },
+    };
+  }
+  const runtime = !typed && !parseTypeDiagnostics(output).length && input.toolchain.nodePath
+    ? repairRuntimeFailure({
+      root: input.root, output, sourcePattern: input.sourcePattern,
+      nodePath: input.toolchain.nodePath, nodeModules: input.nodeModules, testCommand: input.testCommand,
+    })
+    : null;
+  if (runtime) {
+    return {
+      status: "diff", diff: runtime.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
+      fit: { shape: "array", examples: 0, targets: [{ symbol: "array", file: runtime.file, form: "named", exportName: "array", args: [] }] },
     };
   }
   if (parseTypeDiagnostics(output).length) {

@@ -527,14 +527,21 @@ export function sandboxExtraEnv(src: Readonly<Record<string, string>> | undefine
  * A bare command name is resolved on the caller's PATH. The sandbox's own PATH always
  * includes `/usr/bin`, so it is not the lookup that decides whether bwrap is installed.
  */
-function commandOnCallerPath(bin: string): string | null {
+/** The absolute real path of `bin` on `pathEnv`, or null when it is missing or only on a relative entry. */
+export function resolvedCommand(bin: string, pathEnv = process.env.PATH ?? ""): string | null {
+  return commandOnCallerPath(bin, pathEnv);
+}
+
+function commandOnCallerPath(bin: string, pathEnv = process.env.PATH ?? ""): string | null {
   if (bin.includes("/") || isAbsolute(bin)) return null;
-  for (const dir of (process.env.PATH ?? "").split(":")) {
-    if (!dir) continue;
+  for (const dir of pathEnv.split(":")) {
+    // A relative PATH entry is resolved from the current directory. That is not a stable install location.
+    if (!dir || !isAbsolute(dir)) continue; // path-guard:absolute
     const candidate = join(dir, bin);
     try {
       const st = statSync(candidate);
-      if (st.isFile() && (st.mode & 0o111) !== 0) return candidate;
+      if (!st.isFile() || (st.mode & 0o111) === 0) continue;
+      return realpathSync(candidate);
     } catch { /* the next directory */ }
   }
   return null;
