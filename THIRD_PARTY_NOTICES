@@ -8866,6 +8866,14 @@ fixtures (commit path):
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m250/string/escape.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m250/string/unescape.spec.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m250/string/unescape.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/_internal/basePull.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/_internal/hasOwn.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/array/pull.spec.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/array/pull.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/predicate/isSymbol.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/util/gte.spec.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/util/gte.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/util/toNumber.ts.txt
   c64e27288ad98f369b918574a669b5636b98e626 peaceai/test/fixtures/m99-dfb/toss__es-toolkit-698de7aa942a.txt
 license URL: https://github.com/toss/es-toolkit/blob/24e7a7b8cb8035fae1ea2e7b507aab96698a38b9/LICENSE
 ---- license text ----

@@ -2277,6 +2277,26 @@ function ltBody(examples: Example[]): string | null {
   return "  return ((num) => typeof a === \"string\" && typeof b === \"string\" ? a < b : num(a) < num(b))((n) => typeof n === \"symbol\" || (typeof n === \"object\" && n instanceof Symbol) ? NaN : Number(n));";
 }
 
+/** Published `gte`: string comparison, otherwise `toNumber`. */
+function gteBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2 || typeof ex.expected !== "boolean")) return null;
+  if (!examples.every((ex) => (typeof ex.args[0] === "string" && typeof ex.args[1] === "string" ? (ex.args[0] as string) >= (ex.args[1] as string) : plainNumber(ex.args[0]) >= plainNumber(ex.args[1])) === ex.expected)) return null; // gte-guard:fit
+  if (!examples.some((ex) => typeof ex.args[0] === "string" || typeof ex.args[1] === "string")) return null; // gte-guard:text
+  return "  return ((num) => typeof a === \"string\" && typeof b === \"string\" ? a >= b : num(a) >= num(b))((n) => typeof n === \"symbol\" || (typeof n === \"object\" && n instanceof Symbol) ? NaN : Number(n));";
+}
+
+/**
+ * Published `pull`. No `length` returns the value itself. Otherwise the array
+ * is mutated with SameValueZero, and a hole stays a hole.
+ */
+function pullBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
+  const bare = (value: unknown) => value == null || (value as { length?: unknown }).length == null;
+  if (!examples.every((ex) => bare(ex.args[0]) && Object.is(ex.args[0], ex.expected))) return null; // pul-guard:fit
+  if (!examples.some((ex) => ex.args[0] === null) || !examples.some((ex) => ex.args[0] === undefined)) return null; // pul-guard:nullish
+  return "  if (a == null || a.length == null) return a; const drop = new Set(Array.prototype.slice.call(arguments, 1)); let w = 0; for (let i = 0; i < a.length; i++) { if (drop.has(a[i])) continue; if (!Object.prototype.hasOwnProperty.call(a, i)) { delete a[w++]; continue; } a[w++] = a[i]; } a.length = w; return a;";
+}
+
 function arrayLike(value: unknown): value is ArrayLike<unknown> {
   return value != null && typeof value !== "function" && Number.isSafeInteger((value as { length?: unknown }).length) && ((value as { length: number }).length as number) >= 0;
 }
@@ -2579,7 +2599,7 @@ function opaqueAgrees(body: string, calls: readonly CallFact[], bwrap?: string):
 }
 
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "drop", "dropright", "takeright", "capitalize", "upper", "lower", "undef", "words", "kebab", "snake", "camel", "pascal", "constant", "lcase", "ucase", "start", "sentence", "diff", "inter", "xor", "at", "lerp", "ilerp", "phex", "zobj", "mean", "bg", "chunk", "combo", "pct", "toupr", "tolow", "csum", "tlen", "tkey", "zde", "idn", "uesc", "dden", "gt", "lt", "peer"] as const;
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "drop", "dropright", "takeright", "capitalize", "upper", "lower", "undef", "words", "kebab", "snake", "camel", "pascal", "constant", "lcase", "ucase", "start", "sentence", "diff", "inter", "xor", "at", "lerp", "ilerp", "phex", "zobj", "mean", "bg", "chunk", "combo", "pct", "toupr", "tolow", "csum", "tlen", "tkey", "zde", "idn", "uesc", "dden", "gt", "lt", "gte", "pull", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
 function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string, bwrap?: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
@@ -2663,6 +2683,8 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   keep(ddenBody(concrete), "string", "dden");
   keep(gtBody(concrete), "boolean", "gt");
   keep(ltBody(concrete), "boolean", "lt");
+  keep(gteBody(concrete), "boolean", "gte");
+  keep(pullBody(concrete), resultType(concrete.map((ex) => ex.expected)), "pull");
   keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");
   keep(sumBody(concrete), "number", "sum");
   keep(splitBody(concrete), "string", "split");
