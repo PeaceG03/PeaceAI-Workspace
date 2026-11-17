@@ -16,13 +16,13 @@ Strip one leading `#`. Anything that is not 3 or 6 hex digits is `[0, 0, 0]`. Th
 
 ## zipObject
 
-`Array.from(a).reduce((o, k, i) => (o[k] = b[i], o), {})`. `Array.from` visits a hole in the keys, and the published loop does too. On `null` both throw a `TypeError`; the published loop reads `.length` and this expression is rejected by `Array.from`, so the messages differ. `b[i]` reads a hole in the values as `undefined`. A missing value is stored as `undefined`. Extra values are ignored. Assignment of a `__proto__` key sets the prototype. `Object.fromEntries` would keep that key as its own property. A symbol key is assigned. Some value has to be missing.
+`for (let i = 0; i < a.length; i++) o[a[i]] = b[i]`. A hole is `a[i]`, which is `undefined`, the same read as the published loop. A `Set` has no `length`, so the loop does not run and the object stays empty. `Array.from` would walk the set's values instead. On `null` both throw a `TypeError` from reading `.length`. `b[i]` reads a hole in the values as `undefined`. A missing value is stored as `undefined`. Extra values are ignored. Assignment of a `__proto__` key sets the prototype. `Object.fromEntries` would keep that key as its own property. A symbol key is assigned. Some value has to be missing.
 
 `zobj-guard:arrays` refuses a string. `zobj-guard:built` refuses a different object. `zobj-guard:missing` refuses a case where every value is present.
 
 ## Mean
 
-`Array.from(a).reduce((s, n) => s + n, 0) / a.length`. On `null` both throw a `TypeError`; the published loop reads `.length` and this expression is rejected by `Array.from`, so the messages differ. The empty list is `0 / 0`, which is `NaN`. `Array.from` turns a hole into `undefined`, and adding that is `NaN`. A `reduce` that skips holes divides the dense sum by the full length. An empty string is `NaN`. The digit string `'5'` is `5`, because the published sum concatenates and the division coerces. Some example has to be empty.
+Add `a[i]` while `i < a.length`, then divide by `a.length`. On `null` both throw a `TypeError` from reading `.length`. The empty list is `0 / 0`, which is `NaN`. A hole is read as `undefined`, and adding that is `NaN`. A `Set` has no length, so the sum stays `0` and the quotient is `NaN`; giving that set a `length` still reads `set[i]`, not the iterated values. A `reduce` that skips holes divides the dense sum by the full length. An empty string is `NaN`. The digit string `'5'` is `5`, because the published sum concatenates and the division coerces. Some example has to be empty.
 
 `mean-guard:arrays` refuses a string. `mean-guard:avg` refuses a different number. `mean-guard:empty` refuses a case with no empty list.
 

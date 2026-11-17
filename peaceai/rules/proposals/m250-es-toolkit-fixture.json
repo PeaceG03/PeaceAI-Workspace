@@ -1,0 +1,294 @@
+{
+  "schema": "peaceai-m250-es-toolkit-fixture:v1",
+  "note": "Pinned copies of toss/es-toolkit used by the length-index, identity, unescape, dedent, and string-comparison scaffolds. License text is MIT at the named commit.",
+  "examples": [
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m242/es-toolkit-LICENSE.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/_internal/isUnsafeProperty.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/_internal/isUnsafeToWriteProperty.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/array/zip.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/_internal/GetFieldType.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/_internal/MAX_ARRAY_LENGTH.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/_internal/MAX_INTEGER.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/_internal/Many.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/_internal/assignValue.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/_internal/baseToString.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/_internal/hasOwn.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/_internal/isDeepKey.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/_internal/isIndex.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/_internal/isKey.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/_internal/toKey.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/_internal/toKey.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/array/zipObjectDeep.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/array/zipObjectDeep.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/function/identity.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/function/identity.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/math/clamp.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/object/get.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/object/set.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/object/updateWith.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/predicate/isArrayLike.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/predicate/isObject.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/predicate/isSymbol.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/types/PropertyPath.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/util/eq.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/util/gt.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/util/gt.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/util/lt.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/util/lt.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/util/toFinite.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/util/toInteger.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/util/toLength.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/util/toLength.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/util/toNumber.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/util/toPath.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/compat/util/toString.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/function/identity.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/function/identity.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/predicate/isLength.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/string/dedent.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/string/dedent.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/string/escape.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/string/unescape.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "24e7a7b8cb8035fae1ea2e7b507aab96698a38b9",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m250/string/unescape.ts.txt"
+    }
+  ]
+}
