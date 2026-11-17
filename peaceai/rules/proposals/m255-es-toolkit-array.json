@@ -1,0 +1,54 @@
+{
+  "schema": "peaceai-m255-es-toolkit-array:v1",
+  "note": "Pinned copies of toss/es-toolkit array sources at the parent of three published fixes, and the test files those fixes changed. License text is MIT. The bytes are unmodified.",
+  "examples": [
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "658bc937f9678f3d0a7741512bae82431f38a8e4",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m255/pullAt.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "658bc937f9678f3d0a7741512bae82431f38a8e4",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m255/at.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "6d18625796a93b1df527775c9631f92c48162bf3",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m255/pullAt.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "58ecef5dbff23b71c4e2ba41725a11b96d8e62b7",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m255/unzipWith.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "58ecef5dbff23b71c4e2ba41725a11b96d8e62b7",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m255/zip-parent.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "e77ab9a65f89f307a94390afb23d02134986bbb2",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m255/unzipWith.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "953920b2b6f84aab17cedbc9c3f5f74d5023380b",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m255/partition.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "b854e154b107836afe3dd2e6de9c98c702979531",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m255/partition.spec.ts.txt"
+    }
+  ]
+}

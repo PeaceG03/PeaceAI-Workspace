@@ -216,8 +216,11 @@ function listed(root: string, diag: TypeDiagnostic, local: string, sourceOk: (pa
 }
 
 function onlyOne(hits: FnHit[]): FnHit | null {
-  if (hits.length !== 1) return null; // sig-guard:one
-  return hits[0] ?? null;
+  const bodies = hits.filter((h) => h.node.body);
+  if (bodies.length !== 1) return null; // sig-guard:one
+  const body = bodies[0]!;
+  if (hits.some((h) => h.name !== body.name || h.path !== body.path)) return null;
+  return body;
 }
 
 function rejectedTarget(hit: FnHit, sourceOk: (path: string) => boolean): boolean {
@@ -230,7 +233,7 @@ function rejectedType(types: readonly (string | null | undefined)[]): boolean {
   return false;
 }
 
-function planCall(root: string, diag: TypeDiagnostic, sourceOk: (path: string) => boolean): Span | null {
+function planCall(root: string, diag: TypeDiagnostic, sourceOk: (path: string) => boolean): Span[] | null {
   if (HELPER.test(diag.file)) return null; // sig-guard:helper
   const text = readLocal(root, diag.file);
   if (text === null) return null;
@@ -243,20 +246,78 @@ function planCall(root: string, diag: TypeDiagnostic, sourceOk: (path: string) =
   const concrete = args.every((a) => a !== undefined) ? [args as unknown[]] : [];
   const hit = onlyOne(listed(root, diag, name.local, sourceOk));
   if (!hit || rejectedTarget(hit, sourceOk)) return null;
-  if (diag.code === "TS2345") {
-    if (rejectedType([diag.argument, diag.parameter])) return null;
+  if (diag.code === "TS2345" || diag.code === "TS2769") {
     const pos = offsetAt(sf, diag.line, diag.col);
-    let index = call.arguments.findIndex((a) => a.getStart(sf) <= pos && pos <= a.getEnd());
+    const index = call.arguments.findIndex((a) => a.getStart(sf) <= pos && pos <= a.getEnd());
     if (index < 0) return null;
+    if (diag.code === "TS2769" || ((diag.argument ?? "").includes("=>") && (diag.parameter ?? "").includes("=>"))) {
+      if (/\bany\b/.test(`${diag.argument ?? ""} ${diag.parameter ?? ""}`)) return null;
+      return predicateSpans(root, hit, index, concrete);
+    }
+    if (rejectedType([diag.argument, diag.parameter])) return null;
     const param = hit.node.parameters[index];
     if (!param?.type) return null;
     const current = param.type.getText(hit.sf);
     if (current.replace(/\s+/g, "") !== diag.parameter!.replace(/\s+/g, "")) return null;
     const next = widenParam(current, diag.argument!);
     if (!next || next === current) return null;
-    return { path: hit.path, start: param.type.getStart(hit.sf), end: param.type.getEnd(), insert: next, symbol: hit.name, args: concrete, text: hit.text };
+    return [{ path: hit.path, start: param.type.getStart(hit.sf), end: param.type.getEnd(), insert: next, symbol: hit.name, args: concrete, text: hit.text }];
   }
   return null;
+}
+
+/** A `=> boolean` callback used only as a condition may return `unknown`. A returned or compared result may not. */
+function predicateSpans(root: string, hit: FnHit, index: number, concrete: unknown[][]): Span[] | null {
+  if (!hit.node.body || !truthyOnly(hit.node, hit.node.parameters[index]?.name)) return null; // sig-guard:predicate
+  const text = readLocal(root, hit.path);
+  if (text === null) return null;
+  const sf = ts.createSourceFile(hit.path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const spans: Span[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === hit.name && node.parameters[index]?.type) {
+      const ret = booleanReturn(node.parameters[index]!.type!);
+      if (ret) spans.push({ path: hit.path, start: ret.getStart(sf), end: ret.getEnd(), insert: "unknown", symbol: hit.name, args: concrete, text });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return spans.length ? spans : null;
+}
+
+function booleanReturn(type: ts.TypeNode): ts.Node | null {
+  if (!ts.isFunctionTypeNode(type) || !type.type || type.type.kind !== ts.SyntaxKind.BooleanKeyword) return null;
+  return type.type;
+}
+
+function truthyOnly(fn: ts.FunctionLikeDeclaration, name: ts.BindingName | undefined): boolean {
+  if (!name || !ts.isIdentifier(name) || !fn.body) return false;
+  const id = name.text;
+  let seen = 0;
+  let ok = true;
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node) && node.text === id && !(ts.isParameter(node.parent) && node.parent.name === node)) {
+      seen += 1;
+      const call = node.parent;
+      if (!ts.isCallExpression(call) || call.expression !== node || !isTruthyUse(call)) ok = false;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(fn.body);
+  return ok && seen > 0;
+}
+
+function isTruthyUse(call: ts.CallExpression): boolean {
+  let node: ts.Node = call;
+  if (ts.isPrefixUnaryExpression(node.parent) && node.parent.operator === ts.SyntaxKind.ExclamationToken && node.parent.operand === node) node = node.parent;
+  while (ts.isParenthesizedExpression(node.parent) && node.parent.expression === node) node = node.parent;
+  while (ts.isBinaryExpression(node.parent) && (node.parent.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken || node.parent.operatorToken.kind === ts.SyntaxKind.BarBarToken) && (node.parent.left === node || node.parent.right === node)) node = node.parent;
+  const parent = node.parent;
+  if (ts.isIfStatement(parent) && parent.expression === node) return true;
+  if (ts.isWhileStatement(parent) && parent.expression === node) return true;
+  if (ts.isDoStatement(parent) && parent.expression === node) return true;
+  if (ts.isForStatement(parent) && parent.condition === node) return true;
+  if (ts.isConditionalExpression(parent) && parent.condition === node) return true;
+  return false;
 }
 
 function applySpans(text: string, spans: readonly Span[]): string {
@@ -302,13 +363,13 @@ export function typecheckRejected(input: RepairInput): boolean {
  * Null when the diagnostic is not a single safe widening, the project no longer type-checks, or the test still fails.
  */
 function readonlySpans(root: string, output: string, sourcePattern?: string, denyPatterns?: readonly string[]): Span[] | null {
-  const diags = parseTypeDiagnostics(output).filter((d) => d.code === "TS2345");
+  const diags = parseTypeDiagnostics(output).filter((d) => d.code === "TS2345" || d.code === "TS2769");
   if (!diags.length) return null;
   const spans: Span[] = [];
   for (const diag of diags) {
-    const span = planCall(root, diag, (path) => sourceOk(path, sourcePattern, denyPatterns));
-    if (!span) return null;
-    spans.push(span);
+    const planned = planCall(root, diag, (path) => sourceOk(path, sourcePattern, denyPatterns));
+    if (!planned?.length) return null;
+    spans.push(...planned);
   }
   return spans;
 }

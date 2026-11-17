@@ -8874,6 +8874,14 @@ fixtures (commit path):
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/util/gte.spec.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/util/gte.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/util/toNumber.ts.txt
+  658bc937f9678f3d0a7741512bae82431f38a8e4 peaceai/test/fixtures/m255/at.ts.txt
+  658bc937f9678f3d0a7741512bae82431f38a8e4 peaceai/test/fixtures/m255/pullAt.ts.txt
+  6d18625796a93b1df527775c9631f92c48162bf3 peaceai/test/fixtures/m255/pullAt.spec.ts.txt
+  58ecef5dbff23b71c4e2ba41725a11b96d8e62b7 peaceai/test/fixtures/m255/unzipWith.ts.txt
+  58ecef5dbff23b71c4e2ba41725a11b96d8e62b7 peaceai/test/fixtures/m255/zip-parent.ts.txt
+  e77ab9a65f89f307a94390afb23d02134986bbb2 peaceai/test/fixtures/m255/unzipWith.spec.ts.txt
+  953920b2b6f84aab17cedbc9c3f5f74d5023380b peaceai/test/fixtures/m255/partition.ts.txt
+  b854e154b107836afe3dd2e6de9c98c702979531 peaceai/test/fixtures/m255/partition.spec.ts.txt
   c64e27288ad98f369b918574a669b5636b98e626 peaceai/test/fixtures/m99-dfb/toss__es-toolkit-698de7aa942a.txt
 license URL: https://github.com/toss/es-toolkit/blob/24e7a7b8cb8035fae1ea2e7b507aab96698a38b9/LICENSE
 ---- license text ----

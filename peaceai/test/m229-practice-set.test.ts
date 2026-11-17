@@ -6,11 +6,11 @@ import { readFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import test from "node:test";
 import { keptLicense } from "../lib/practicemine.ts";
-import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync as readText, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync as readText, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
   GIT_LOCK_ARGS, LOCK_EMPTY_GRACE_MS, cloneCheckProblems, cloneRootProblems, dependencyFingerprint, diffChangesDeps, ensurePracticeInstall, exclusionHits, extManifestProblems, falseRootProblems, heldOutHash, heldOutPairHash, heldOutWatchProblems, identitiesForRoots, installArgv, INSTALL_TIMEOUT_MS, installEnv, isSourceFile, isTestFile, manifestProblems, mergeCloneRootCollisions, processStartId, readCloneIdentity, readPairFingerprint, replayCloneRecord, SANDBOX_RAN, sanitizeInstallLines,
-  pairFiles, pairProblems, parseRepoToken, poisonChanges, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxArgv, practiceSandboxReady, practiceWatchFiles, releaseWorktree, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
+  pairFiles, pairProblems, parseRepoToken, poisonChanges, poisonStamp, practiceGit, practiceGitEnv, practiceSandboxArgv, practiceSandboxReady, practiceWatchFiles, releaseWorktree, resolvedCommand, rootProblems, runInPracticeSandbox, sandboxHome, scrubEnv, testCommandFor, trainingSources, visibleNodeBin,
   type CorpusRoots, type PracticeManifest, type PracticePair, type PracticeRepo,
 } from "../lib/practicemine.ts";
 import { countBySplit, gapRecord, gradePracticeRow, replayDocument, targetIsScorable, writePracticeOutputs } from "../lib/practicereplay.ts";
@@ -562,6 +562,17 @@ test("a PATH without bwrap is not a ready sandbox", () => {
     process.env.PATH = saved;
     practiceSandboxReady(true);
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a relative PATH entry is ignored, and an absolute entry is spawned at its real path", () => {
+  const abs = mkdtempSync(join(tmpdir(), "practice-absbin-"));
+  try {
+    assert.equal(resolvedCommand("bwrap", "relative-bin"), null);
+    spawnSync("ln", ["-s", "/usr/bin/bwrap", join(abs, "bwrap")], { stdio: "ignore" });
+    assert.equal(resolvedCommand("bwrap", abs), realpathSync("/usr/bin/bwrap"));
+  } finally {
+    rmSync(abs, { recursive: true, force: true });
   }
 });
 
