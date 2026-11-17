@@ -1918,45 +1918,51 @@ function phexBody(examples: Example[]): string | null {
   return "  return ((raw) => /^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/.test(raw) ? ((full) => ((n) => [(n >> 16) & 255, (n >> 8) & 255, n & 255])(parseInt(full, 16)))(raw.length === 3 ? raw[0] + raw[0] + raw[1] + raw[1] + raw[2] + raw[2] : raw) : [0, 0, 0])(a.startsWith(\"#\") ? a.slice(1) : a);";
 }
 
-/** Published `zipObject`. Assignment stores a missing value as `undefined`. */
+/** Published `zipObject`. The loop reads `keys.length` and `keys[i]`, so a `Set` is empty. */
 function zobjText(keys: unknown, values: unknown): Record<PropertyKey, unknown> | null {
-  if (typeof keys !== "string" && !Array.isArray(keys)) return null;
-  if (typeof values !== "string" && !Array.isArray(values)) return null;
-  return Array.from(keys as ArrayLike<PropertyKey>).reduce<Record<PropertyKey, unknown>>((o, k, i) => {
-    o[k] = (values as ArrayLike<unknown>)[i];
-    return o;
-  }, {});
+  if (keys == null || (typeof keys !== "string" && !Array.isArray(keys))) return null;
+  if (values == null || (typeof values !== "string" && !Array.isArray(values))) return null;
+  const out: Record<PropertyKey, unknown> = {};
+  const list = keys as ArrayLike<PropertyKey>;
+  const vals = values as ArrayLike<unknown>;
+  for (let i = 0; i < list.length; i++) out[list[i]!] = vals[i];
+  return out;
 }
 
 /**
- * `Array.from` so a hole is visited, then assign. `Object.fromEntries` would
- * keep a `__proto__` key as its own property. Some value has to be missing.
+ * Index loop, the same as the published function. A hole is `keys[i]`, which
+ * is `undefined`. A `Set` has no `length`, so the loop does not run.
+ * `Object.fromEntries` would keep a `__proto__` key as its own property.
+ * Some value has to be missing.
  */
 function zobjBody(examples: Example[]): string | null {
   if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
   if (!examples.every((ex) => Array.isArray(ex.args[0]) && Array.isArray(ex.args[1]))) return null; // zobj-guard:arrays
   if (!examples.every((ex) => { const got = zobjText(ex.args[0], ex.args[1]); return got !== null && deepSame(got, ex.expected); })) return null; // zobj-guard:built
   if (!examples.some((ex) => { const got = zobjText(ex.args[0], ex.args[1]); return got !== null && Object.keys(got).some((key) => got[key] === undefined); })) return null; // zobj-guard:missing
-  return "  return Array.from(a).reduce((o, k, i) => (o[k] = b[i], o), {});";
+  return "  return ((o) => { for (let i = 0; i < a.length; i++) o[a[i]] = b[i]; return o; })({});";
 }
 
-/** Published `mean`. `Array.from` turns a hole into `undefined`, so the sum is `NaN`. */
+/** Published `mean`: add `nums[i]` while `i < nums.length`, then divide by that length. */
 function meanOf(value: unknown): number | null {
   if (typeof value !== "string" && !Array.isArray(value)) return null;
-  const length = (value as { length: number }).length;
-  return Array.from(value as ArrayLike<number>).reduce((sum, item) => sum + item, 0) / length;
+  const list = value as ArrayLike<number>;
+  let sum = 0;
+  for (let i = 0; i < list.length; i++) sum += list[i]!;
+  return sum / list.length;
 }
 
 /**
- * `Array.from(a).reduce((s, n) => s + n, 0) / a.length`. An empty list is
- * `0 / 0`, which is `NaN`. A `reduce` that skips holes is a different function.
+ * Index sum divided by `a.length`. An empty list is `0 / 0`, which is `NaN`.
+ * A hole is read as `undefined`, so the sum is `NaN`. A `Set` has no length,
+ * so the sum stays `0` and the quotient is `NaN`.
  */
 function meanBody(examples: Example[]): string | null {
   if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
   if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // mean-guard:arrays
   if (!examples.every((ex) => { const got = meanOf(ex.args[0]); return got !== null && Object.is(got, ex.expected); })) return null; // mean-guard:avg
   if (!examples.some((ex) => (ex.args[0] as { length: number }).length === 0)) return null; // mean-guard:empty
-  return "  return Array.from(a).reduce((s, n) => s + n, 0) / a.length;";
+  return "  return ((n) => { let s = 0; for (let i = 0; i < n; i++) s += a[i]; return s / n; })(a.length);";
 }
 
 const BG_OPEN = "\x1b[41m";
@@ -2125,6 +2131,255 @@ function csumBody(examples: Example[]): string | null {
   if (!examples.some((ex) => { const items = itemsOf(ex.args[0]); return items !== null && items.some((item) => item === undefined); })) return null; // csum-guard:skip
   if (!examples.some((ex) => { const items = itemsOf(ex.args[0]); return items !== null && items.some((item) => typeof item === "string"); })) return null; // csum-guard:text
   return "  return (!a || !a.length) ? 0 : Array.from(a).reduce((result, current) => current === undefined ? result : result === undefined ? current : result + current, undefined);";
+}
+
+const MAX_ARRAY_LENGTH = 4294967295;
+
+/** Published `toFinite`, then drop the fraction toward zero. A symbol is `NaN`, which `toFinite` turns into `0`. */
+function toIntegerOf(value: unknown): number {
+  if (typeof value === "symbol" || (typeof value === "object" && value instanceof Symbol)) value = Number.NaN;
+  if (!value) return Object.is(value, 0) || value === 0 ? (value as number) : 0;
+  let n = Number(value);
+  if (n === Infinity || n === -Infinity) n = (n < 0 ? -1 : 1) * Number.MAX_VALUE;
+  else if (n !== n) return 0;
+  const remainder = n % 1;
+  return remainder ? n - remainder : n;
+}
+
+/** Published `toLength`: an integer from `0` through `2^32 - 1`. `-0` becomes `0`. */
+function toLengthOf(value: unknown): number {
+  if (value == null) return 0;
+  return Math.min(Math.max(toIntegerOf(value), 0), MAX_ARRAY_LENGTH);
+}
+
+/**
+ * A length in `0..2^32-1`. A negative number is `0`, and `'12px'` is `0`
+ * rather than `12`. Some example has to be negative and some has to be junk.
+ */
+function tlenBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => Object.is(toLengthOf(ex.args[0]), ex.expected))) return null; // tlen-guard:fit
+  if (!examples.some((ex) => typeof ex.args[0] === "number" && ex.args[0] < 0 && ex.expected === 0)) return null; // tlen-guard:neg
+  if (!examples.some((ex) => typeof ex.args[0] === "string" && Number.isNaN(Number(ex.args[0])) && ex.expected === 0)) return null; // tlen-guard:junk
+  if (!examples.some((ex) => typeof ex.args[0] === "number" && !Number.isInteger(ex.args[0]) && ex.expected !== ex.args[0])) return null; // tlen-guard:cut
+  return "  return a == null ? 0 : Math.min(Math.max((value => { if (typeof value === \"symbol\" || (typeof value === \"object\" && value instanceof Symbol)) value = NaN; const finite = !value ? (value === 0 ? value : 0) : Number(value); const n = finite !== finite ? 0 : (finite === Infinity || finite === -Infinity ? (finite < 0 ? -1 : 1) * Number.MAX_VALUE : finite); const r = n % 1; return r ? n - r : n; })(a), 0), 4294967295);";
+}
+
+/** Published `toKey`. `-0` is the string `'-0'`, not `'0'`. */
+function toKeyOf(value: unknown): string | symbol {
+  if (typeof value === "string" || typeof value === "symbol") return value;
+  if (value != null && typeof (value as { valueOf?: unknown }).valueOf === "function" && Object.is((value as { valueOf: () => unknown }).valueOf(), -0)) return "-0";
+  return String(value);
+}
+
+/**
+ * `-0` has to appear. Without that, `'aba'` is this function and also the
+ * identity string.
+ */
+function tkeyBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => Object.is(toKeyOf(ex.args[0]), ex.expected))) return null; // tkey-guard:fit
+  if (!examples.some((ex) => Object.is(ex.args[0], -0))) return null; // tkey-guard:sign
+  return "  return typeof a === \"string\" || typeof a === \"symbol\" ? a : (a != null && typeof a.valueOf === \"function\" && Object.is(a.valueOf(), -0) ? \"-0\" : String(a));";
+}
+
+/**
+ * Every recorded call returns its argument with `Object.is` and no transform.
+ * Two results have to differ, so one repeated value stays the literal.
+ * Some argument is not a string, so a palindrome stays the string concatenation.
+ * `null` and `undefined` stay out: `clone` and `deepFreeze` return them unchanged.
+ */
+function idnBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => Object.is(ex.args[0], ex.expected)) || !examples.some((ex, i) => examples.slice(i + 1).some((other) => !Object.is(ex.expected, other.expected))) || !examples.some((ex) => typeof ex.args[0] !== "string")) return null; // idn-guard:fit
+  if (examples.some((ex) => ex.args[0] == null)) return null; // idn-guard:value
+  return "  return a;";
+}
+
+const UNESCAPE_MAP: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#39;": "'" };
+
+/** Published `unescape`. A run of zeros before `39` is still an apostrophe. */
+function unescapeText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  return value.replace(/&(?:amp|lt|gt|quot|#(0+)?39);/g, (match) => UNESCAPE_MAP[match] ?? "'");
+}
+
+const UNESCAPE_ENTITY = /&(?:amp|lt|gt|quot|#(?:0+)?39);/;
+
+/**
+ * HTML unescape. Some argument has to contain one published entity:
+ * `&amp;`, `&lt;`, `&gt;`, `&quot;`, or `&#39;` with optional leading zeros.
+ * That argument is not a piece of the result, so it is not string concatenation.
+ */
+function uescBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => { const got = unescapeText(ex.args[0]); return got !== null && got === ex.expected; })) return null; // uesc-guard:fit
+  if (!examples.some((ex) => typeof ex.args[0] === "string" && UNESCAPE_ENTITY.test(ex.args[0]))) return null; // uesc-guard:entity
+  return "  return a.replace(/&(?:amp|lt|gt|quot|#(0+)?39);/g, (match) => ({ \"&amp;\": \"&\", \"&lt;\": \"<\", \"&gt;\": \">\", \"&quot;\": \"\\\"\", \"&#39;\": \"'\" })[match] || \"'\");";
+}
+
+/** Published string `dedent`: drop a blank first and last line, then the shared indent. */
+function dedentText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const lines = value.replace(/\r\n/g, "\n").split("\n");
+  if (lines.length > 0 && lines[0]!.trim() === "") lines.shift();
+  if (lines.length > 0 && lines[lines.length - 1]!.trim() === "") lines.pop();
+  let common = Infinity;
+  for (const line of lines) {
+    if (line.trim() === "") continue;
+    let indent = 0;
+    while (indent < line.length && (line[indent] === " " || line[indent] === "\t")) indent++;
+    if (indent < common) common = indent;
+  }
+  if (common === Infinity) return "";
+  return lines.map((line) => line.trim() === "" ? "" : line.slice(common)).join("\n");
+}
+
+/**
+ * Shared leading indent. A newline has to appear. A one-line trim is this
+ * function too, and the argument is not a piece of the result.
+ */
+function ddenBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => { const got = dedentText(ex.args[0]); return got !== null && got === ex.expected; })) return null; // dden-guard:fit
+  if (!examples.some((ex) => typeof ex.args[0] === "string" && ex.args[0].includes("\n"))) return null; // dden-guard:line
+  return "  const value = a; const rest = Array.prototype.slice.call(arguments, 1); const impl = (text) => { const lines = String(text).replace(/\\r\\n/g, \"\\n\").split(\"\\n\"); if (lines.length > 0 && lines[0].trim() === \"\") lines.shift(); if (lines.length > 0 && lines[lines.length - 1].trim() === \"\") lines.pop(); let common = Infinity; for (const line of lines) { if (line.trim() === \"\") continue; let indent = 0; while (indent < line.length && (line[indent] === \" \" || line[indent] === \"\\t\")) indent++; if (indent < common) common = indent; } if (common === Infinity) return \"\"; return lines.map((line) => line.trim() === \"\" ? \"\" : line.slice(common)).join(\"\\n\"); }; const shape = (strings) => { const first = strings[0]; const open = first.indexOf(\"\\n\"); if (open === -1 || first.slice(0, open).trim() !== \"\") throw new TypeError(\"Invalid opening line.\"); const last = strings[strings.length - 1]; const close = last.lastIndexOf(\"\\n\"); if (close === -1 || last.slice(close + 1).trim() !== \"\") throw new TypeError(\"Invalid closing line.\"); }; const partsOf = (strings) => { shape(strings); const parts = Array.from(strings); if (parts.length === 1) return [impl(parts[0])]; let mark = \"\\0\"; const joined = parts.join(\"\"); while (joined.includes(mark)) mark += \"\\0\"; return impl(parts.join(mark)).split(mark); }; const asRaw = (parts) => Object.assign(parts, { raw: parts }); if (typeof value === \"function\") return (strings, ...args) => value(asRaw(partsOf(strings)), ...args); if (typeof value === \"string\") return impl(value); const parts = partsOf(value); let text = parts[0]; for (let i = 0; i < rest.length; i++) text += String(rest[i]) + parts[i + 1]; return text;";
+}
+
+/** Published `toNumber`: a symbol is `NaN` instead of throwing. */
+function plainNumber(value: unknown): number {
+  if (typeof value === "symbol" || (typeof value === "object" && value instanceof Symbol)) return Number.NaN;
+  return Number(value);
+}
+
+/**
+ * Published `gt` / `lt`. Both strings compare as strings. Anything else uses
+ * `toNumber`, so a symbol is false and an object uses `valueOf` then `toString`.
+ */
+function ordered(left: unknown, right: unknown, greater: boolean): boolean {
+  if (typeof left === "string" && typeof right === "string") return greater ? left > right : left < right;
+  return greater ? plainNumber(left) > plainNumber(right) : plainNumber(left) < plainNumber(right);
+}
+
+/** `a > b` for two strings, otherwise `toNumber(a) > toNumber(b)`. A string argument has to appear. */
+function gtBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2 || typeof ex.expected !== "boolean")) return null;
+  if (!examples.every((ex) => ordered(ex.args[0], ex.args[1], true) === ex.expected)) return null; // gt-guard:fit
+  if (!examples.some((ex) => typeof ex.args[0] === "string" || typeof ex.args[1] === "string")) return null; // gt-guard:text
+  return "  return ((num) => typeof a === \"string\" && typeof b === \"string\" ? a > b : num(a) > num(b))((n) => typeof n === \"symbol\" || (typeof n === \"object\" && n instanceof Symbol) ? NaN : Number(n));";
+}
+
+/** `a < b` for two strings, otherwise `toNumber(a) < toNumber(b)`. A string argument has to appear. */
+function ltBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2 || typeof ex.expected !== "boolean")) return null;
+  if (!examples.every((ex) => ordered(ex.args[0], ex.args[1], false) === ex.expected)) return null; // lt-guard:fit
+  if (!examples.some((ex) => typeof ex.args[0] === "string" || typeof ex.args[1] === "string")) return null; // lt-guard:text
+  return "  return ((num) => typeof a === \"string\" && typeof b === \"string\" ? a < b : num(a) < num(b))((n) => typeof n === \"symbol\" || (typeof n === \"object\" && n instanceof Symbol) ? NaN : Number(n));";
+}
+
+/** Published `gte`: string comparison, otherwise `toNumber`. */
+function gteBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2 || typeof ex.expected !== "boolean")) return null;
+  if (!examples.every((ex) => (typeof ex.args[0] === "string" && typeof ex.args[1] === "string" ? (ex.args[0] as string) >= (ex.args[1] as string) : plainNumber(ex.args[0]) >= plainNumber(ex.args[1])) === ex.expected)) return null; // gte-guard:fit
+  if (!examples.some((ex) => typeof ex.args[0] === "string" || typeof ex.args[1] === "string")) return null; // gte-guard:text
+  return "  return ((num) => typeof a === \"string\" && typeof b === \"string\" ? a >= b : num(a) >= num(b))((n) => typeof n === \"symbol\" || (typeof n === \"object\" && n instanceof Symbol) ? NaN : Number(n));";
+}
+
+/**
+ * Published `pull`. No `length` returns the value itself. Otherwise the array
+ * is mutated with SameValueZero, and a hole stays a hole.
+ */
+function pullBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
+  const bare = (value: unknown) => value == null || (value as { length?: unknown }).length == null;
+  if (!examples.every((ex) => bare(ex.args[0]) && Object.is(ex.args[0], ex.expected))) return null; // pul-guard:fit
+  if (!examples.some((ex) => ex.args[0] === null) || !examples.some((ex) => ex.args[0] === undefined)) return null; // pul-guard:nullish
+  return "  if (a == null || a.length == null) return a; const drop = new Set(Array.prototype.slice.call(arguments, 1)); let w = 0; for (let i = 0; i < a.length; i++) { if (drop.has(a[i])) continue; if (!Object.prototype.hasOwnProperty.call(a, i)) { delete a[w++]; continue; } a[w++] = a[i]; } a.length = w; return a;";
+}
+
+function arrayLike(value: unknown): value is ArrayLike<unknown> {
+  return value != null && typeof value !== "function" && Number.isSafeInteger((value as { length?: unknown }).length) && ((value as { length: number }).length as number) >= 0;
+}
+
+function deepKeyOf(value: unknown): Array<string | symbol> {
+  if (Array.isArray(value)) return value.map((item) => typeof item === "symbol" ? item : toKeyOf(item));
+  if (typeof value === "symbol") return [value];
+  if (typeof value !== "string") return [toKeyOf(value)];
+  if (!value.includes(".") && !value.includes("[")) return [value];
+  const result: string[] = [];
+  let index = 0;
+  let key = "";
+  let quote = "";
+  let bracket = false;
+  let quoted = false;
+  const numberKey = /^-?\d+(?:\.\d+)?$/;
+  if (value.charCodeAt(0) === 46) result.push("");
+  while (index < value.length) {
+    const char = value[index]!;
+    if (quote) {
+      if (char === "\\" && index + 1 < value.length) { index++; key += value[index]; }
+      else if (char === quote) quote = "";
+      else key += char;
+    } else if (bracket) {
+      if (char === "\"" || char === "'") { quote = char; quoted = true; }
+      else if (char === "]") {
+        bracket = false;
+        if (!quoted && key.includes(".") && !numberKey.test(key)) { for (const seg of key.split(".")) if (seg !== "") result.push(seg); }
+        else result.push(key);
+        key = "";
+      } else key += char;
+    } else if (char === "[") {
+      bracket = true;
+      quoted = false;
+      if (key) { result.push(key); key = ""; }
+    } else if (char === ".") {
+      if (key) { result.push(key); key = ""; }
+      const next = value[index + 1];
+      if (next === undefined || next === ".") result.push("");
+    } else key += char;
+    index++;
+  }
+  if (key) result.push(key);
+  return result;
+}
+
+/** Published `zipObjectDeep` for the recorded calls: paths, brackets, and missing values. */
+function zdeOf(keys: unknown, values: unknown): Record<PropertyKey, unknown> | null {
+  const result: Record<PropertyKey, unknown> = {};
+  if (!arrayLike(keys)) return result;
+  const vals = arrayLike(values) ? values : [];
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (key == null) continue;
+    const path = Array.isArray(key) || typeof key === "symbol" || (typeof key === "string" && (key.includes(".") || key.includes("["))) ? deepKeyOf(key) : [toKeyOf(key)];
+    if (!path.length) continue;
+    let cur: Record<PropertyKey, unknown> = result;
+    let blocked = false;
+    for (let j = 0; j < path.length; j++) {
+      const step = path[j]!;
+      if (step === "__proto__" || step === "constructor" || step === "prototype") { blocked = true; break; }
+      if (j === path.length - 1) { cur[step] = vals[i]; break; }
+      const next = path[j + 1]!;
+      const index = typeof next === "string" && /^(?:0|[1-9]\d*)$/.test(next);
+      const slot = cur[step];
+      if (slot == null || typeof slot !== "object") cur[step] = index ? [] : {};
+      cur = cur[step] as Record<PropertyKey, unknown>;
+    }
+    if (blocked) continue;
+  }
+  return result;
+}
+
+/**
+ * Nested paths. A flat zip would keep `'a.b'` as one key. Some path has to
+ * contain `.` or `[`, and some value has to be missing.
+ */
+function zdeBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
+  if (!examples.every((ex) => { const got = zdeOf(ex.args[0], ex.args[1]); return got !== null && deepSame(got, ex.expected); })) return null; // zde-guard:built
+  if (!examples.some((ex) => Array.isArray(ex.args[0]) && (ex.args[0] as unknown[]).some((key) => typeof key === "string" && (key.includes(".") || key.includes("["))))) return null; // zde-guard:nest
+  if (!examples.some((ex) => { const got = zdeOf(ex.args[0], ex.args[1]); const hole = (v: unknown): boolean => v != null && typeof v === "object" && (Array.isArray(v) ? v.some((item) => item === undefined || hole(item)) : Object.keys(v).some((key) => (v as Record<string, unknown>)[key] === undefined || hole((v as Record<string, unknown>)[key]))); return got !== null && hole(got); })) return null; // zde-guard:miss
+  return "  return ((keys, values) => { const like = (v) => v != null && typeof v !== \"function\" && Number.isSafeInteger(v.length) && v.length >= 0; const result = {}; if (!like(keys)) return result; const vals = like(values) ? values : []; const keyOf = (v) => typeof v === \"string\" || typeof v === \"symbol\" ? v : (v != null && typeof v.valueOf === \"function\" && Object.is(v.valueOf(), -0) ? \"-0\" : String(v)); const pathOf = (v) => { if (Array.isArray(v)) return v.map(keyOf); if (typeof v === \"symbol\") return [v]; if (typeof v !== \"string\" || (!v.includes(\".\") && !v.includes(\"[\"))) return [keyOf(v)]; const out = []; let i = 0, key = \"\", quote = \"\", bracket = false, quoted = false; if (v.charCodeAt(0) === 46) out.push(\"\"); while (i < v.length) { const ch = v[i]; if (quote) { if (ch === \"\\\\\" && i + 1 < v.length) { i++; key += v[i]; } else if (ch === quote) quote = \"\"; else key += ch; } else if (bracket) { if (ch === \"\\\"\" || ch === \"'\") { quote = ch; quoted = true; } else if (ch === \"]\") { bracket = false; if (!quoted && key.includes(\".\") && !/^-?\\d+(?:\\.\\d+)?$/.test(key)) { for (const seg of key.split(\".\")) if (seg !== \"\") out.push(seg); } else out.push(key); key = \"\"; } else key += ch; } else if (ch === \"[\") { bracket = true; quoted = false; if (key) { out.push(key); key = \"\"; } } else if (ch === \".\") { if (key) { out.push(key); key = \"\"; } const next = v[i + 1]; if (next === undefined || next === \".\") out.push(\"\"); } else key += ch; i++; } if (key) out.push(key); return out; }; const unsafe = (key) => key === \"__proto__\" || key === \"constructor\" || key === \"prototype\"; for (let i = 0; i < keys.length; i++) { const raw = keys[i]; if (raw == null) continue; const path = pathOf(raw); let cur = result; for (let j = 0; j < path.length; j++) { const step = path[j]; if (unsafe(step)) break; if (j === path.length - 1) { cur[step] = vals[i]; break; } const next = path[j + 1]; if (cur[step] == null || typeof cur[step] !== \"object\") cur[step] = typeof next === \"string\" && /^(?:0|[1-9]\\d*)$/.test(next) ? [] : {}; cur = cur[step]; } } return result; })(a, b);";
 }
 
 interface Tagged { t: string; v?: unknown }
@@ -2344,7 +2599,7 @@ function opaqueAgrees(body: string, calls: readonly CallFact[], bwrap?: string):
 }
 
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "drop", "dropright", "takeright", "capitalize", "upper", "lower", "undef", "words", "kebab", "snake", "camel", "pascal", "constant", "lcase", "ucase", "start", "sentence", "diff", "inter", "xor", "at", "lerp", "ilerp", "phex", "zobj", "mean", "bg", "chunk", "combo", "pct", "toupr", "tolow", "csum", "peer"] as const;
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "drop", "dropright", "takeright", "capitalize", "upper", "lower", "undef", "words", "kebab", "snake", "camel", "pascal", "constant", "lcase", "ucase", "start", "sentence", "diff", "inter", "xor", "at", "lerp", "ilerp", "phex", "zobj", "mean", "bg", "chunk", "combo", "pct", "toupr", "tolow", "csum", "tlen", "tkey", "zde", "idn", "uesc", "dden", "gt", "lt", "gte", "pull", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
 function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string, bwrap?: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
@@ -2420,6 +2675,16 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   keep(touprBody(concrete), "string", "toupr");
   keep(tolowBody(concrete), "string", "tolow");
   keep(csumBody(concrete), resultType(concrete.map((ex) => ex.expected)), "csum");
+  keep(tlenBody(concrete), "number", "tlen");
+  keep(tkeyBody(concrete), resultType(concrete.map((ex) => ex.expected)), "tkey");
+  keep(zdeBody(concrete), resultType(concrete.map((ex) => ex.expected)), "zde");
+  keep(idnBody(concrete), resultType(concrete.map((ex) => ex.expected)), "idn");
+  keep(uescBody(concrete), "string", "uesc");
+  keep(ddenBody(concrete), "string", "dden");
+  keep(gtBody(concrete), "boolean", "gt");
+  keep(ltBody(concrete), "boolean", "lt");
+  keep(gteBody(concrete), "boolean", "gte");
+  keep(pullBody(concrete), resultType(concrete.map((ex) => ex.expected)), "pull");
   keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");
   keep(sumBody(concrete), "number", "sum");
   keep(splitBody(concrete), "string", "split");
