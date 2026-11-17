@@ -549,6 +549,22 @@ test("a missing bwrap is UNSAFE_ENV", () => {
   }
 });
 
+test("a PATH without bwrap is not a ready sandbox", () => {
+  const saved = process.env.PATH;
+  const dir = mkdtempSync(join(tmpdir(), "practice-nopath-"));
+  try {
+    process.env.PATH = dir;
+    assert.equal(practiceSandboxReady(true), false);
+    const ran = runInPracticeSandbox(dir, ["/bin/true"], 5_000);
+    assert.equal(ran.unsafe, true);
+    assert.equal(ran.code, null);
+  } finally {
+    process.env.PATH = saved;
+    practiceSandboxReady(true);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("the held-out hash changes when a pin changes, and the committed manifest matches", () => {
   const problems = manifestProblems(manifest);
   assert.deepEqual(problems, [], problems.join(","));

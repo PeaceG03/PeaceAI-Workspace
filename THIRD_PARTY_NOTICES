@@ -12002,3 +12002,34 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: oaverify/oaverify
+license: MIT (LICENSE, sha256 of trimmed text fef34339f28940bcab1d22ad32435f2efd3d18e545a3938149d1fa0c74fb6b2d)
+fixtures (commit path):
+  44511f2b9daa20e9850c5a156c306f14a2180083 peaceai/test/fixtures/m254/errors.ts.txt
+  888eb66ea0a386f01e507c48d1930fe9d2422121 peaceai/test/fixtures/m254/errors.test.ts.txt
+license URL: https://github.com/oaverify/oaverify/blob/44511f2b9daa20e9850c5a156c306f14a2180083/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2026 Andrew Houghton
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----

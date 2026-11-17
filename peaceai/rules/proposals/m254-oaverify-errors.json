@@ -1,0 +1,18 @@
+{
+  "schema": "peaceai-m254-oaverify-errors:v1",
+  "note": "Pinned copies of oaverify/oaverify packages/core/src/errors.ts at the parent of the readonly-path fix, and packages/core/test/errors.test.ts at that fix. License text is MIT. The bytes are unmodified.",
+  "examples": [
+    {
+      "repo": "oaverify/oaverify",
+      "commit": "44511f2b9daa20e9850c5a156c306f14a2180083",
+      "licenseSha256": "fef34339f28940bcab1d22ad32435f2efd3d18e545a3938149d1fa0c74fb6b2d",
+      "fixture": "peaceai/test/fixtures/m254/errors.ts.txt"
+    },
+    {
+      "repo": "oaverify/oaverify",
+      "commit": "888eb66ea0a386f01e507c48d1930fe9d2422121",
+      "licenseSha256": "fef34339f28940bcab1d22ad32435f2efd3d18e545a3938149d1fa0c74fb6b2d",
+      "fixture": "peaceai/test/fixtures/m254/errors.test.ts.txt"
+    }
+  ]
+}
