@@ -1,0 +1,23 @@
+{
+  "schema": "peaceai-m256-batch5:v1",
+  "note": "Pinned copies of unjs/pathe, unjs/citty, and unjs/cookie-es at the parent of a published bug fix, plus the test file that fix changed. License text is MIT. The bytes are unmodified.",
+  "examples": [
+    { "repo": "unjs/pathe", "commit": "55a21be8a14b70ec67098d3f68f54a34f3796fd4", "licenseSha256": "d785edfd5a8ff55734ddd8cf37c398a1e01b02dbb5069f1e01eba1a90523e6f4", "fixture": "peaceai/test/fixtures/m256/pathe-path.ts.txt" },
+    { "repo": "unjs/pathe", "commit": "55a21be8a14b70ec67098d3f68f54a34f3796fd4", "licenseSha256": "d785edfd5a8ff55734ddd8cf37c398a1e01b02dbb5069f1e01eba1a90523e6f4", "fixture": "peaceai/test/fixtures/m256/pathe-internal.ts.txt" },
+    { "repo": "unjs/pathe", "commit": "55a21be8a14b70ec67098d3f68f54a34f3796fd4", "licenseSha256": "d785edfd5a8ff55734ddd8cf37c398a1e01b02dbb5069f1e01eba1a90523e6f4", "fixture": "peaceai/test/fixtures/m256/pathe-glob.ts.txt" },
+    { "repo": "unjs/pathe", "commit": "55a21be8a14b70ec67098d3f68f54a34f3796fd4", "licenseSha256": "d785edfd5a8ff55734ddd8cf37c398a1e01b02dbb5069f1e01eba1a90523e6f4", "fixture": "peaceai/test/fixtures/m256/pathe-index.ts.txt" },
+    { "repo": "unjs/pathe", "commit": "55a21be8a14b70ec67098d3f68f54a34f3796fd4", "licenseSha256": "d785edfd5a8ff55734ddd8cf37c398a1e01b02dbb5069f1e01eba1a90523e6f4", "fixture": "peaceai/test/fixtures/m256/pathe-utils.ts.txt" },
+    { "repo": "unjs/pathe", "commit": "b52fcacc59717a1e4a8783d4bbfae7fa81b4db07", "licenseSha256": "d785edfd5a8ff55734ddd8cf37c398a1e01b02dbb5069f1e01eba1a90523e6f4", "fixture": "peaceai/test/fixtures/m256/pathe-index.spec.ts.txt" },
+    { "repo": "unjs/citty", "commit": "ea428c76e46eb959a17cd62089fa28604fe22e0a", "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94", "fixture": "peaceai/test/fixtures/m256/citty-parser.ts.txt" },
+    { "repo": "unjs/citty", "commit": "e6fa9ac717d5b175a67211311748df9825fe0ba0", "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94", "fixture": "peaceai/test/fixtures/m256/citty-parser.test.ts.txt" },
+    { "repo": "unjs/cookie-es", "commit": "26ea164c10fb0ba347e47697ac282ff12fe00d0b", "licenseSha256": "05ed7b4f22dcd03fd065486af0d863eed21a4e0041d05d1f0e4d76f33bb307e7", "fixture": "peaceai/test/fixtures/m256/cookie-es-utils.ts.txt" },
+    { "repo": "unjs/cookie-es", "commit": "26ea164c10fb0ba347e47697ac282ff12fe00d0b", "licenseSha256": "05ed7b4f22dcd03fd065486af0d863eed21a4e0041d05d1f0e4d76f33bb307e7", "fixture": "peaceai/test/fixtures/m256/cookie-es-index.ts.txt" },
+    { "repo": "unjs/cookie-es", "commit": "26ea164c10fb0ba347e47697ac282ff12fe00d0b", "licenseSha256": "05ed7b4f22dcd03fd065486af0d863eed21a4e0041d05d1f0e4d76f33bb307e7", "fixture": "peaceai/test/fixtures/m256/cookie-es-parse.ts.txt" },
+    { "repo": "unjs/cookie-es", "commit": "26ea164c10fb0ba347e47697ac282ff12fe00d0b", "licenseSha256": "05ed7b4f22dcd03fd065486af0d863eed21a4e0041d05d1f0e4d76f33bb307e7", "fixture": "peaceai/test/fixtures/m256/cookie-es-serialize.ts.txt" },
+    { "repo": "unjs/cookie-es", "commit": "26ea164c10fb0ba347e47697ac282ff12fe00d0b", "licenseSha256": "05ed7b4f22dcd03fd065486af0d863eed21a4e0041d05d1f0e4d76f33bb307e7", "fixture": "peaceai/test/fixtures/m256/cookie-es-types.ts.txt" },
+    { "repo": "unjs/cookie-es", "commit": "26ea164c10fb0ba347e47697ac282ff12fe00d0b", "licenseSha256": "05ed7b4f22dcd03fd065486af0d863eed21a4e0041d05d1f0e4d76f33bb307e7", "fixture": "peaceai/test/fixtures/m256/cookie-es-set-parse.ts.txt" },
+    { "repo": "unjs/cookie-es", "commit": "26ea164c10fb0ba347e47697ac282ff12fe00d0b", "licenseSha256": "05ed7b4f22dcd03fd065486af0d863eed21a4e0041d05d1f0e4d76f33bb307e7", "fixture": "peaceai/test/fixtures/m256/cookie-es-set-split.ts.txt" },
+    { "repo": "unjs/cookie-es", "commit": "26ea164c10fb0ba347e47697ac282ff12fe00d0b", "licenseSha256": "05ed7b4f22dcd03fd065486af0d863eed21a4e0041d05d1f0e4d76f33bb307e7", "fixture": "peaceai/test/fixtures/m256/cookie-es-set-types.ts.txt" },
+    { "repo": "unjs/cookie-es", "commit": "55855c6ccef4370701268122dd817e382f9e14ca", "licenseSha256": "05ed7b4f22dcd03fd065486af0d863eed21a4e0041d05d1f0e4d76f33bb307e7", "fixture": "peaceai/test/fixtures/m256/cookie-es-serialize.test.ts.txt" }
+  ]
+}
