@@ -13,7 +13,7 @@ Rows-moved per unit of work, from the batch 1-3 triage and the non-self-change b
 | 1 | `PEACEAI_SELF_CHANGE` | 140 | Off limits. No edit. |
 | 2 | Test-as-spec `CANT_DO_YET_CAP` on existing-module edits | 11 | The recorded diffs do not share one predicate. A template for one of them would be fitted. Dropped. |
 | 3 | `verified_test_only` scaffolds that already match on the recorded calls | about 14 | Promoting them edits `specgrade.ts`. Dropped. |
-| 4 | Text `NO_EDIT`, `ADD_UNSPECIFIED`, `TEST_STILL_FAILS` | 21 + 7 + 7 | A review note, a bare `Add name`, and a template the test still fails. None of those is a new family. Dropped. |
+| 4 | Text `NO_EDIT`, `ADD_UNSPECIFIED`, `TEST_STILL_FAILS` | 21 + 8 + 7 | A review note, a bare `Add name`, and a template the test still fails. None of those is a new family. Dropped. |
 | 5 | `CANT_DO_YET_AVA_EARLY_EXIT` predicate-array `TS2345` | 5 | The argument is a function array, not a readonly array and not a `=> boolean` callback used only as a condition. Still refused. |
 | 6 | Builder-log `CLASSIFIER_UNSURE` planners, file-less workflow words, a test import, a stem test, and a bare `fail closed` | 13 | No signature, no path, or a context rule that is already correct. Dropped. |
 | 7 | `NO_SLOTS` workflow, multi-file env, duration integer, and the 1000-page loop | 5 | `targets.json` stays, one file stays the env rule, the duration fill was removed, and a loop bound would be fitted to one project. Dropped. |

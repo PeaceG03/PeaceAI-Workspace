@@ -3,15 +3,15 @@
 // Third-party bytes run only inside the practice sandbox.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { normalizeNegativeSplice, repairRuntimeFailure, seedEmptyMax } from "../lib/arrayfix.ts";
 import { gradeBehavior } from "../lib/specgrade.ts";
-import { repairTypedFailure } from "../lib/sigfix.ts";
-import { practiceSandboxReady, runInPracticeSandbox, visibleNodeBin } from "../lib/practicemine.ts";
+import { proposedSignature, repairTypedFailure } from "../lib/sigfix.ts";
+import { practiceSandboxReady, resolvedCommand, runInPracticeSandbox, visibleNodeBin } from "../lib/practicemine.ts";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const fix = resolve(import.meta.dirname, "fixtures/m255");
@@ -62,6 +62,81 @@ test("deleting an array guard admits the near miss", async () => {
   const order = await mutant("peaceai/lib/arrayfix.ts", "arr-guard:descend") as { normalizeNegativeSplice: typeof normalizeNegativeSplice };
   const up = slice.replace("(x, y) => y - x", "(x, y) => x - y");
   assert.match(order.normalizeNegativeSplice(up) ?? "", /index < 0/);
+});
+
+function diag(file: string, text: string, needle: string, message: string): string {
+  const at = text.lastIndexOf(needle);
+  const pre = text.slice(0, at);
+  const line = pre.split("\n").length;
+  const col = at - pre.lastIndexOf("\n");
+  return `${file}(${line},${col}): error TS2345: ${message}`;
+}
+
+test("deleting the predicate and absolute-path guards admits the near miss, with bwrap and without it", async () => {
+  const rel = `.m255-rel-${process.pid}`;
+  const saved = process.env.PATH;
+  const node = visibleNodeBin();
+  assert.ok(node);
+  try {
+    mkdirSync(rel);
+    writeFileSync(join(rel, "bwrap"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    const stub = realpathSync(join(rel, "bwrap"));
+    assert.equal(resolvedCommand("bwrap", rel), null);
+    const pathOpen = await mutant("peaceai/lib/practicemine.ts", "path-guard:absolute") as {
+      resolvedCommand: typeof resolvedCommand;
+      runInPracticeSandbox: typeof runInPracticeSandbox;
+    };
+    assert.equal(pathOpen.resolvedCommand("bwrap", rel), stub);
+    const work = mkdtempSync(join(tmpdir(), "m255-relpath-"));
+    process.env.PATH = rel;
+    const held = runInPracticeSandbox(work, [node!, "-e", "process.exit(3)"], 15_000, { nodePath: node });
+    assert.equal(held.unsafe, true);
+    const lied = pathOpen.runInPracticeSandbox(work, [node!, "-e", "process.exit(3)"], 15_000, { nodePath: node });
+    assert.equal(lied.unsafe, false);
+    assert.equal(lied.code, 0);
+    process.env.PATH = saved;
+    if (practiceSandboxReady(true)) {
+      process.env.PATH = `${rel}:${saved}`;
+      const real = runInPracticeSandbox(work, [node!, "-e", "process.exit(3)"], 15_000, { nodePath: node });
+      assert.equal(real.unsafe, false);
+      assert.equal(real.code, 3);
+      const first = pathOpen.runInPracticeSandbox(work, [node!, "-e", "process.exit(3)"], 15_000, { nodePath: node });
+      assert.equal(first.code, 0);
+    }
+    rmSync(work, { recursive: true, force: true });
+    const src = `export function keep(xs: string[], pred: (x: string) => boolean): string[] {\n  const flag = pred(xs[0]!);\n  return flag ? xs : [];\n}\n`;
+    const call = `import { keep } from "../src/keep.ts";\nexport const out = keep(["a"], (x) => x);\n`;
+    const root = mkdtempSync(join(tmpdir(), "m255-pred-"));
+    place(root, { "src/keep.ts": src, "test/call.ts": call });
+    const output = diag("test/call.ts", call, "(x) => x", "Argument of type '(x: string) => string' is not assignable to parameter of type '(x: string) => boolean'.");
+    assert.equal(proposedSignature(root, output, "^src/.+\\.ts$"), null);
+    const pred = await mutant("peaceai/lib/sigfix.ts", "sig-guard:predicate") as { proposedSignature: typeof proposedSignature; repairTypedFailure: typeof repairTypedFailure };
+    assert.match(pred.proposedSignature(root, output, "^src/.+\\.ts$")?.content ?? "", /=> unknown/);
+    if (practiceSandboxReady()) {
+      const nm = join(mkdtempSync(join(tmpdir(), "m255-predmod-")), "node_modules");
+      mkdirSync(join(nm, "@types"), { recursive: true });
+      spawnSync("cp", ["-a", join(modules, "typescript"), join(nm, "typescript")], { stdio: "ignore" });
+      spawnSync("cp", ["-a", join(modules, "@types/node"), join(nm, "@types/node")], { stdio: "ignore" });
+      const tsconfig = { compilerOptions: { strict: true, target: "ES2022", module: "ESNext", moduleResolution: "Bundler", noEmit: true, allowImportingTsExtensions: true, skipLibCheck: true, types: [] }, include: ["src", "test"] };
+      place(root, {
+        "tsconfig.json": JSON.stringify(tsconfig) + "\n",
+        "package.json": `{ "type": "module" }\n`,
+        "run.mjs": `import { spawnSync } from "node:child_process";\nconst tsc = spawnSync(process.execPath, ["node_modules/typescript/lib/tsc.js", "--noEmit", "--pretty", "false", "-p", "tsconfig.json"], { encoding: "utf8" });\nprocess.stdout.write(tsc.stdout); process.stderr.write(tsc.stderr);\nprocess.exit(tsc.status ?? 1);\n`,
+      });
+      gitInit(root);
+      const cmd = [node!, "run.mjs"];
+      const input = { root, output, sourcePattern: "^src/.+\\.ts$", nodePath: node!, nodeModules: nm, testCommand: cmd };
+      assert.equal(repairTypedFailure(input), null);
+      const admitted = pred.repairTypedFailure(input);
+      assert.match(admitted?.diff ?? "", /=> unknown/);
+      rmSync(resolve(nm, ".."), { recursive: true, force: true });
+    }
+    rmSync(root, { recursive: true, force: true });
+  } finally {
+    process.env.PATH = saved;
+    practiceSandboxReady(true);
+    rmSync(rel, { recursive: true, force: true });
+  }
 });
 
 function gitInit(root: string) {
