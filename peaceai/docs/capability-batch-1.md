@@ -103,6 +103,22 @@ Eleven of these exhaust the 20 attempts with templates still left. The right edi
 
 `CANT_DO_YET_AVA_EARLY_EXIT` (5) is still a worker stop, including `TS2339`, with no result for the target test. The line does not say whether the test or the declaration should change. No early-exit change is in this batch.
 
+## What this batch changes
+
+Two classifier moves, both only when no kept cue already fired.
+
+`Make NAME strict`, with exactly one screaming snake name, is `ENV_FIX`. `fail closed` in that same sentence is not `MODIFY_LOGIC`. Training had dropped `MODIFY_LOGIC` because of that collision, so a real `fail closed` sentence could not match. Seq 220 is `NO_SLOTS: MODIFY_LOGIC` again. Seq 216, 218, and 219 are `ENV_FIX`. Seq 216 has the integer ternary and no `integer 1..N`, so no max is invented and the route stays `NO_SLOTS`. Seq 219 names more than one file, so the fill refuses. Seq 218's parent has one source file and every read is `=== "1"` or `!== "1"`. With that tree open, the line is `make env TENMIN_REDISPATCH_DRY_RUN strict in src/tenmin-redispatch.ts as a flag`, which the approved trigger parses. Without the tree the route is `NO_SLOTS: ENV_FIX`. A pass still needs the pinned kernel and the production gate. This environment has no core archive, so that row was not replayed through Job A.
+
+An operational sentence (rebase, close a PR, measure coverage, or a read-only check) with no path, call, or snake_case token is `none`, so the route is `NOT_CODE_FAMILY`. Seq 65 takes that route. A path beside the same verb stays unsure.
+
+Dev family score: wrong stays 0, correct 84 to 88, refused 68 to 64. The held-out hash score is unchanged, wrong 0. The extra four dev rows are the three `Make NAME strict` sentences and the `fail closed` sentence the dropped family had been hiding.
+
+Route of the 18 unsure rows, with no base tree opened: 13 stay `CLASSIFIER_UNSURE` (6, 8, 10, 12, 13, 17, 19, 20, 22, 24, 26, 214, 217), seq 65 is `NOT_CODE_FAMILY`, seq 216, 218, and 219 are `NO_SLOTS: ENV_FIX`, and seq 220 is `NO_SLOTS: MODIFY_LOGIC`. Opening the base tree turns seq 218 into the flag line above. The full builder-log Job A replay was not repeated: the pinned core archive is not on this machine, and `capability-job.ts` refuses to invent a pass without it. Practice dev was not re-run: bubblewrap is not installed, and third-party tests are not run in-process.
+
+`family-guard:env-not-logic` is the skip. Deleting it makes `Make NAME strict and fail closed` classify as `MODIFY_LOGIC`. `slot-guard:one-env` refuses two files. Deleting it emits a line for the first file. `slot-guard:env-shape` refuses a read that is not the flag comparison. Deleting it emits a flag line for that read. `family-guard:ops-code` keeps a path out of the operational refusal. Deleting it treats `rebase src/worker.ts` as not code.
+
+No repair template was reordered. `specgrade.ts` was not edited. Derive-wire was not extended. Workflow targets were not opted in. The attempt cap stays 20.
+
 ## Text mode
 
 Text dev is 21 `CANT_DO_YET_NO_EDIT`, 7 `ADD_UNSPECIFIED`, 7 `TEST_STILL_FAILS`, 2 `VERIFIED_TEST_ONLY`, and one each of `NAME_SHAPE`, `NOT_A_FAMILY`, plus 7 `GATE_NO_TARGET` and 1 `TIMEOUT` unmeasured. A subject that says a candidate was chosen in review names no edit. `Add name` without the behavior stays unspecified. Text mode has no path back to `verified_strict`. This batch does not add one.
