@@ -4,7 +4,7 @@
 // is dropped. Zero cues or two cues refuse. A request that names PeaceAI's own tooling, and
 // no edit family, refuses as a self-change. A hash of seq and asked text holds rows out.
 import { createHash } from "node:crypto";
-import { importLine, testLine, tsconfigLine, type SlotRepo } from "./slotfill.ts";
+import { envLine, importLine, testLine, tsconfigLine, type SlotRepo } from "./slotfill.ts";
 
 export const REQUEST_FAMILY_SCHEMA = "peaceai-request-family:v1";
 export const NONE_FAMILY = "none";
@@ -68,11 +68,30 @@ function contextNear(text: string, start: number, end: number): boolean {
   return token.length > end - start && CODE_CONTEXT.test(token); // slot-guard:cue-token
 }
 
+/**
+ * `Make NAME strict`, NAME a screaming snake token, and only one such token in the sentence.
+ * That is the env-fix trigger without the word `env`. Two names, or none, are not a guess.
+ */
+export function envStrictName(text: string): string | null {
+  const found: string[] = [];
+  for (const m of text.matchAll(/\bmake ([A-Za-z0-9_]+) strict\b/gi)) {
+    const name = m[1]!;
+    if (/^[A-Z][A-Z0-9_]{1,80}$/.test(name)) found.push(name);
+  }
+  const names = [...new Set(found)];
+  if (names.length !== 1) return null;
+  const ids = text.match(/\b[A-Z][A-Z0-9_]{1,80}\b/g) ?? [];
+  if (ids.some((id) => id !== names[0])) return null;
+  return names[0]!;
+}
+
 function matched(text: string, families: readonly string[]): string[] {
   const allow = new Set(families);
   const hits: string[] = [];
   for (const cue of CUES) {
     if (!allow.has(cue.family)) continue;
+    // "fail closed" inside Make NAME strict is the env helper, not a logic edit.
+    if (cue.family === "MODIFY_LOGIC" && envStrictName(text)) continue; // family-guard:env-not-logic
     const re = new RegExp(cue.re.source, `${cue.re.flags}g`);
     let found = false;
     for (let m = re.exec(text); m; m = re.exec(text)) {
@@ -121,12 +140,28 @@ export function selfChangeRequest(asked: string): boolean {
   return SELF_CHANGE_TEXT.some((re) => re.test(asked));
 }
 
+/** An operational sentence: rebase, close a PR, measure coverage, or a read-only check. A path, a call, or a snake_case token is code, so this stays silent. */
+const OPS_TEXT: readonly RegExp[] = [
+  /\brebase\b/i,
+  /\bclose\b[^.\n]{0,80}\b(?:pull request|PR)\b/i,
+  /\bmeasure\b[^.\n]{0,80}\bcoverage\b/i,
+  /\bread-only check\b/i,
+];
+
+export function opsRequest(asked: string): boolean {
+  if (CODE_CONTEXT.test(asked)) return false; // family-guard:ops-code
+  return OPS_TEXT.some((re) => re.test(asked));
+}
+
 export interface FamilyGuess { family: string | null; share: number; none: boolean; refusal?: "SELF_CHANGE" }
 
 export function guessFamily(model: RequestModel, asked: string): FamilyGuess {
   const hit = matched(asked, model.families);
   if (hit.length === 1) return { family: hit[0]!, share: 1, none: false };
   if (hit.length === 0 && selfChangeRequest(asked)) return { family: null, share: 0, none: false, refusal: "SELF_CHANGE" };
+  // The env-fix trigger without the word env. Only when no kept cue fired, and only while that family is still kept.
+  if (hit.length === 0 && model.families.includes("ENV_FIX") && envStrictName(asked)) return { family: "ENV_FIX", share: 1, none: false };
+  if (hit.length === 0 && opsRequest(asked)) return { family: null, share: 0, none: true };
   return { family: null, share: 0, none: false };
 }
 
@@ -168,9 +203,18 @@ export function canonicalRequest(family: string, asked: string, repo?: SlotRepo 
   }
   if (family === "ENV_FIX") {
     const m = new RegExp(String.raw`make (?:the )?env(?:ironment variable)? \`?(${ENVNAME})\`? strict in \`?(${FILE})\`? as (?:a |an )?(flag|integer 1\.\.(\d{1,9}))`, "i").exec(asked);
-    if (!m) return null;
-    const how = m[3]!.toLowerCase() === "flag" ? "a flag" : `integer 1..${m[4]}`;
-    return `make env ${m[1]} strict in ${m[2]} as ${how}`;
+    if (m) {
+      const how = m[3]!.toLowerCase() === "flag" ? "a flag" : `integer 1..${m[4]}`;
+      return `make env ${m[1]} strict in ${m[2]} as ${how}`;
+    }
+    const name = envStrictName(asked);
+    if (!name) return null;
+    const file = new RegExp(String.raw`\bin \`?(${FILE})\`?`, "i").exec(asked);
+    const flag = /\bas (?:a |an )?flag\b/i.test(asked);
+    const max = /\bas (?:an )?integer 1\.\.(\d{1,9})\b/i.exec(asked);
+    if (file && flag) return `make env ${name} strict in ${file[1]} as a flag`;
+    if (file && max) return `make env ${name} strict in ${file[1]} as integer 1..${max[1]}`;
+    return repo ? envLine(name, repo) : null;
   }
   if (family === "TSCONFIG_SCRIPT") return repo ? tsconfigLine(asked, repo) : null;
   if (family === "IMPORT_EDIT") return repo ? importLine(asked, repo) : null;

@@ -4,6 +4,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { relative, sep } from "node:path";
 import ts from "typescript";
+import { ENV_FIX_TRIGGER, parseEnvFixTask } from "./env-fix.ts";
 import { IMPORT_EDIT_V2_TRIGGER, parseImportEditV2Task } from "./import-edit-v2.ts";
 import { TEST_EXISTING_TRIGGER } from "./learned-test-existing.ts";
 import { parseTsconfigScriptTask, TSCONFIG_SCRIPT_TRIGGER } from "./tsconfig-script.ts";
@@ -43,9 +44,24 @@ export function tsconfigSlotWording(asked: string): boolean {
   return !/\bexcluding\b|\bchecking only\b|\bwith checkJs\b/i.test(asked);
 }
 
+/** `Make NAME strict` without both the file and the mode already written. The name rule matches envStrictName. */
+export function envSlotWording(asked: string): boolean {
+  const found: string[] = [];
+  for (const m of asked.matchAll(/\bmake ([A-Za-z0-9_]+) strict\b/gi)) {
+    const name = m[1]!;
+    if (/^[A-Z][A-Z0-9_]{1,80}$/.test(name)) found.push(name);
+  }
+  if (new Set(found).size !== 1) return false;
+  const ids = asked.match(/\b[A-Z][A-Z0-9_]{1,80}\b/g) ?? [];
+  if (ids.some((id) => id !== found[0])) return false;
+  const filed = /\bin [`']?[\w./-]+\.[cm]?[jt]sx?[`']?/i.test(asked);
+  const moded = /\bas (?:a |an )?(?:flag|integer 1\.\.\d+)/i.test(asked);
+  return !(filed && moded);
+}
+
 /** The router should open the base tree before refusing these sentences. */
 export function needsRepoSlots(asked: string): boolean {
-  return typecheckFailureWording(asked) || testSlotWording(asked) || tsconfigSlotWording(asked);
+  return typecheckFailureWording(asked) || testSlotWording(asked) || tsconfigSlotWording(asked) || envSlotWording(asked);
 }
 
 function posix(path: string): string {
@@ -192,6 +208,62 @@ function importCandidates(repo: SlotRepo): ImportCandidate[] {
     out.push({ file: hit.file, from: hit.specifier, to: statement });
   }
   return out;
+}
+
+function isEnvObject(e: ts.Expression): boolean {
+  if (ts.isIdentifier(e) && e.text === "env") return true;
+  return ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === "process" && e.name.text === "env";
+}
+
+function isEnvRead(n: ts.Node, name: string): boolean {
+  if (ts.isPropertyAccessExpression(n) && n.name.text === name && isEnvObject(n.expression)) return true;
+  return ts.isElementAccessExpression(n)
+    && (ts.isStringLiteral(n.argumentExpression) || ts.isNoSubstitutionTemplateLiteral(n.argumentExpression))
+    && n.argumentExpression.text === name
+    && isEnvObject(n.expression);
+}
+
+/** `none` when NAME is not read. `flag` when every read is `=== "1"` or `!== "1"`. `other` otherwise. */
+function envReadKind(content: string, name: string): "none" | "flag" | "other" {
+  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
+  let flag = 0;
+  let other = 0;
+  const visit = (n: ts.Node): void => {
+    if (isEnvRead(n, name)) {
+      const p = n.parent;
+      const flagShape = !!p && ts.isBinaryExpression(p)
+        && (p.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken || p.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken)
+        && isEnvRead(p.left, name)
+        && ts.isStringLiteral(p.right) && p.right.text === "1";
+      if (flagShape) flag++;
+      else other++;
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(sf);
+  if (other > 0) return "other";
+  return flag > 0 ? "flag" : "none";
+}
+
+/**
+ * The env-fix line when exactly one non-test source file reads NAME, and every read is the flag shape
+ * the approved rule already rewrites. A second file, a test file, or any other read shape refuses.
+ * An integer max is not invented from prose.
+ */
+export function envLine(name: string, repo: SlotRepo): string | null {
+  if (!/^[A-Z][A-Z0-9_]{1,80}$/.test(name)) return null;
+  const files = repo.files.filter((f) => f.path.startsWith("src/") && SOURCE.test(f.path) && !TEST_FILE.test(f.path) && !f.path.endsWith(".d.ts"));
+  const flags: string[] = [];
+  for (const f of files) {
+    const kind = envReadKind(f.content, name);
+    if (kind === "none") continue;
+    if (kind !== "flag") return null; // slot-guard:env-shape
+    flags.push(f.path);
+  }
+  if (flags.length !== 1) return null; // slot-guard:one-env
+  const line = `make env ${name} strict in ${flags[0]} as a flag`;
+  if (!parseEnvFixTask(ENV_FIX_TRIGGER, line)) return null; // slot-guard:env-trigger
+  return line;
 }
 
 /** `fix the import of SPEC in FILE to: import ...` when the type checker names exactly one. */
