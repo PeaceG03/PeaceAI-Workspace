@@ -1,6 +1,6 @@
 // Based on https://github.com/jshttp/cookie (MIT)
-// Copyright (c) 2012-2014 Roman Shtylman <shtylman@gmail.com>
-// Copyright (c) 2015 Douglas Christopher Wilson <doug@somethingdoug.com>
+// Copyright (c) 2012-2014 Roman Shtylman <email address omitted; see the license URL above>
+// Copyright (c) 2015 Douglas Christopher Wilson <email address omitted; see the license URL above>
 // Last sync: v1.1.1 (e264dfa)
 
 import type { CookieParseOptions, Cookies, MultiCookies } from "./types.ts";

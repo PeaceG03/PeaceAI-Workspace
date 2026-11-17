@@ -1,5 +1,5 @@
 // Based on https://github.com/nfriedly/set-cookie-parser (MIT)
-// Copyright (c) 2015 Nathan Friedly <nathan@nfriedly.com> (http://nfriedly.com/)
+// Copyright (c) 2015 Nathan Friedly <email address omitted; see the license URL above> (http://nfriedly.com/)
 // Last sync: v3.1.0
 
 /**

@@ -1,7 +1,7 @@
 // Based on https://github.com/nfriedly/set-cookie-parser (MIT) and https://github.com/jshttp/cookie (MIT)
-// Copyright (c) 2015 Nathan Friedly <nathan@nfriedly.com> (http://nfriedly.com/)
-// Copyright (c) 2012-2014 Roman Shtylman <shtylman@gmail.com>
-// Copyright (c) 2015 Douglas Christopher Wilson <doug@somethingdoug.com>
+// Copyright (c) 2015 Nathan Friedly <email address omitted; see the license URL above> (http://nfriedly.com/)
+// Copyright (c) 2012-2014 Roman Shtylman <email address omitted; see the license URL above>
+// Copyright (c) 2015 Douglas Christopher Wilson <email address omitted; see the license URL above>
 
 import type { SetCookie, SetCookieParseOptions } from "./types.ts";
 import { COOKIE_MAX_AGE_LIMIT } from "../_utils.ts";
