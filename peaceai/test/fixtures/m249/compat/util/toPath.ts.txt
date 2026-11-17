@@ -1,0 +1,124 @@
+import { toString } from './toString.ts';
+import { toKey } from '../_internal/toKey.ts';
+
+/**
+ * Converts a deep key string into an array of path segments.
+ *
+ * This function takes a string representing a deep key (e.g., 'a.b.c' or 'a[b][c]') and breaks it down into an array of strings, each representing a segment of the path.
+ *
+ * @param deepKey - The deep key string to convert.
+ * @returns An array of strings, each representing a segment of the path.
+ *
+ * Examples:
+ *
+ * toPath('a.b.c') // Returns ['a', 'b', 'c']
+ * toPath('a[b][c]') // Returns ['a', 'b', 'c']
+ * toPath('.a.b.c') // Returns ['', 'a', 'b', 'c']
+ * toPath('a["b.c"].d') // Returns ['a', 'b.c', 'd']
+ * toPath('') // Returns []
+ * toPath('.a[b].c.d[e]["f.g"].h') // Returns ['', 'a', 'b', 'c', 'd', 'e', 'f.g', 'h']
+ */
+export function toPath(deepKey: any): string[] {
+  if (Array.isArray(deepKey)) {
+    // @types/lodash defines this as string[], but lodash itself returns (string | symbol)[]
+    return deepKey.map(toKey) as string[];
+  }
+  if (typeof deepKey === 'symbol') {
+    // @types/lodash defines this as string[], but lodash itself returns [symbol]
+    return [deepKey as unknown as string];
+  }
+  deepKey = toString(deepKey);
+  const result: string[] = [];
+  const length = deepKey.length;
+
+  if (length === 0) {
+    return result;
+  }
+
+  let index = 0;
+  let key = '';
+  let quoteChar = '';
+  let bracket = false;
+  let bracketHadQuote = false;
+  const bracketNumberRegex = /^-?\d+(?:\.\d+)?$/;
+
+  // Leading dot. Record the empty segment that precedes it, but leave the dot for the
+  // main loop so it is still treated as a separator (e.g. '..a' -> ['', '', 'a']).
+  if (deepKey.charCodeAt(0) === 46) {
+    result.push('');
+  }
+
+  while (index < length) {
+    const char = deepKey[index];
+
+    if (quoteChar) {
+      if (char === '\\' && index + 1 < length) {
+        // Escape character
+        index++;
+        key += deepKey[index];
+      } else if (char === quoteChar) {
+        // End of quote
+        quoteChar = '';
+      } else {
+        key += char;
+      }
+    } else if (bracket) {
+      if (char === '"' || char === "'") {
+        // Start of quoted string inside brackets
+        quoteChar = char;
+        bracketHadQuote = true;
+      } else if (char === ']') {
+        // End of bracketed segment. Unquoted, non-numeric content with dots is
+        // tokenized like normal path access (matching lodash), e.g. '[a.b]' ->
+        // ['a', 'b']; quoted strings and numbers are kept whole ('["a.b"]',
+        // '[-1.23]').
+        bracket = false;
+        if (!bracketHadQuote && key.includes('.') && !bracketNumberRegex.test(key)) {
+          const segments = key.split('.');
+          for (let i = 0; i < segments.length; i++) {
+            if (segments[i] !== '') {
+              result.push(segments[i]);
+            }
+          }
+        } else {
+          result.push(key);
+        }
+        key = '';
+      } else {
+        key += char;
+      }
+    } else {
+      if (char === '[') {
+        // Start of bracketed segment
+        bracket = true;
+        bracketHadQuote = false;
+        if (key) {
+          result.push(key);
+          key = '';
+        }
+      } else if (char === '.') {
+        if (key) {
+          result.push(key);
+          key = '';
+        }
+        // A dot that is directly followed by another dot or the end of the string
+        // separates an empty segment, matching lodash (e.g. 'a..b' -> ['a', '', 'b'],
+        // 'a.' -> ['a', '']).
+        const next = deepKey[index + 1];
+        if (next === undefined || next === '.') {
+          result.push('');
+        }
+      } else {
+        key += char;
+      }
+    }
+
+    index++;
+  }
+
+  if (key) {
+    result.push(key);
+  }
+
+  return result;
+}

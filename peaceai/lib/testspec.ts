@@ -1937,7 +1937,7 @@ function zobjBody(examples: Example[]): string | null {
   if (!examples.every((ex) => Array.isArray(ex.args[0]) && Array.isArray(ex.args[1]))) return null; // zobj-guard:arrays
   if (!examples.every((ex) => { const got = zobjText(ex.args[0], ex.args[1]); return got !== null && deepSame(got, ex.expected); })) return null; // zobj-guard:built
   if (!examples.some((ex) => { const got = zobjText(ex.args[0], ex.args[1]); return got !== null && Object.keys(got).some((key) => got[key] === undefined); })) return null; // zobj-guard:missing
-  return "  return (a.length, Array.from(a).reduce((o, k, i) => (o[k] = b[i], o), {}));";
+  return "  return Array.from(a).reduce((o, k, i) => (o[k] = b[i], o), {});";
 }
 
 /** Published `mean`. `Array.from` turns a hole into `undefined`, so the sum is `NaN`. */
@@ -1956,7 +1956,7 @@ function meanBody(examples: Example[]): string | null {
   if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // mean-guard:arrays
   if (!examples.every((ex) => { const got = meanOf(ex.args[0]); return got !== null && Object.is(got, ex.expected); })) return null; // mean-guard:avg
   if (!examples.some((ex) => (ex.args[0] as { length: number }).length === 0)) return null; // mean-guard:empty
-  return "  return (a.length, Array.from(a).reduce((s, n) => s + n, 0) / a.length);";
+  return "  return Array.from(a).reduce((s, n) => s + n, 0) / a.length;";
 }
 
 const BG_OPEN = "\x1b[41m";
@@ -2000,6 +2000,131 @@ function chunkBody(examples: Example[]): string | null {
   if (!examples.some((ex) => typeof ex.args[1] === "number" && (ex.args[0] as { length: number }).length > (ex.args[1] as number))) return null; // chunk-guard:cut
   if (!examples.some((ex) => { const got = chunkOf(ex.args[0], ex.args[1]); const last = got === null ? null : got[got.length - 1] as { length: number } | undefined; return last != null && last.length < (ex.args[1] as number); })) return null; // chunk-guard:rest
   return "  return (!Number.isInteger(b) || b <= 0) ? (() => { throw new Error(\"Size must be an integer greater than zero.\"); })() : Array.from({ length: Math.ceil(a.length / b) }, (_, i) => a.slice(i * b, i * b + b));";
+}
+
+/** Published combinations. `Array.from` visits a hole as `undefined`. Order is by index. */
+function comboOf(value: unknown, size: unknown): unknown[] | null {
+  if (typeof size !== "number") return null;
+  if (typeof value !== "string" && !Array.isArray(value)) return null;
+  const go = (items: unknown[], r: number): unknown[] | null => {
+    if (!Number.isInteger(r) || r < 0) return null;
+    if (r > items.length) return [];
+    if (r === 0) return [[]];
+    return items.flatMap((item, i) => (go(items.slice(i + 1), r - 1) ?? []).map((rest) => [item].concat(rest as unknown[])));
+  };
+  return go(Array.from(value as ArrayLike<unknown>), size);
+}
+
+/**
+ * Index combinations. `r === 0` is `[[]]`. A larger `r` is `[]`. A bad `r`
+ * throws, so the recorded calls stay on a non-negative integer.
+ */
+function comboBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]) && typeof ex.args[1] === "number")) return null; // combo-guard:pair
+  if (!examples.every((ex) => { const got = comboOf(ex.args[0], ex.args[1]); return got !== null && deepSame(got, ex.expected); })) return null; // combo-guard:rows
+  if (!examples.some((ex) => ex.args[1] === 0)) return null; // combo-guard:zero
+  if (!examples.some((ex) => typeof ex.args[1] === "number" && (ex.args[0] as unknown[]).length < (ex.args[1] as number))) return null; // combo-guard:over
+  if (!examples.some((ex) => typeof ex.args[1] === "number" && (ex.args[1] as number) > 0 && (ex.args[0] as unknown[]).length > (ex.args[1] as number))) return null; // combo-guard:pick
+  return "  return ((function comb(arr, r) { if (!Number.isInteger(r) || r < 0) throw new Error(\"r must be a non-negative integer.\"); const items = Array.from(arr); if (r > items.length) return []; if (r === 0) return [[]]; return items.flatMap((item, i) => comb(items.slice(i + 1), r - 1).map((rest) => [item].concat(rest))); })(a, b));";
+}
+
+/** Published nearest-rank percentile. `NaN` sorts as the smallest value. */
+function pctOf(value: unknown, rank: unknown): number | null {
+  if (!Array.isArray(value) || typeof rank !== "number") return null;
+  if (Number.isNaN(Number(rank)) || rank < 0 || rank > 100) return null;
+  if (value.length === 0) return Number.NaN;
+  const sorted = value.slice().sort((left, right) => {
+    const x = Number.isNaN(left) ? Number.NEGATIVE_INFINITY : left as number;
+    const y = Number.isNaN(right) ? Number.NEGATIVE_INFINITY : right as number;
+    return x - y;
+  });
+  if (rank === 0) return sorted[0] as number;
+  return sorted[Math.ceil(sorted.length * (rank / 100)) - 1] as number;
+}
+
+/**
+ * `slice` keeps the published order, including a `NaN` sorted as `-Infinity`.
+ * An empty list is `NaN`. A rank outside `0..100` throws in the body.
+ */
+function pctBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
+  if (!examples.every((ex) => { const got = pctOf(ex.args[0], ex.args[1]); return got !== null && Object.is(got, ex.expected); })) return null; // pct-guard:rank
+  if (!examples.some((ex) => ex.args[1] === 0 || ex.args[1] === 100)) return null; // pct-guard:ends
+  if (!examples.some((ex) => Array.isArray(ex.args[0]) && (ex.args[0] as unknown[]).some((item) => typeof item === "number" && Number.isNaN(item)))) return null; // pct-guard:nan
+  return "  return ((arr, p) => { if (Number.isNaN(Number(p))) throw new Error(\"Expected percentile to be a number but got \\\"\" + p + \"\\\".\"); if (p < 0) throw new Error(\"Expected percentile to be >= 0 but got \\\"\" + p + \"\\\".\"); if (p > 100) throw new Error(\"Expected percentile to be <= 100 but got \\\"\" + p + \"\\\".\"); if (arr.length === 0) return NaN; const sorted = arr.slice().sort((x, y) => (Number.isNaN(x) ? -Infinity : x) - (Number.isNaN(y) ? -Infinity : y)); return p === 0 ? sorted[0] : sorted[Math.ceil(sorted.length * (p / 100)) - 1]; })(a, b);";
+}
+
+/** Lodash `baseToString`, then a case change. Top-level null and undefined are `""`. */
+function baseToString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    let result = "";
+    for (let i = 0; i < value.length; i++) {
+      if (i > 0) result += ",";
+      result += baseToString(value[i]);
+    }
+    return result;
+  }
+  if (typeof value === "symbol" || value instanceof Symbol) return value.toString();
+  const result = `${value as string}`;
+  if (result === "0" && Object.is(Number(value), -0)) return "-0";
+  return result;
+}
+
+function casedText(value: unknown, upper: boolean): string {
+  if (value == null) return "";
+  const text = baseToString(value);
+  return upper ? text.toUpperCase() : text.toLowerCase();
+}
+
+const CASED_BODY = "((base) => a == null ? \"\" : base(a))(function base(value) { if (typeof value === \"string\") return value; if (Array.isArray(value)) { let result = \"\"; for (let i = 0; i < value.length; i++) { if (i > 0) result += \",\"; result += base(value[i]); } return result; } if (typeof value === \"symbol\" || value instanceof Symbol) return value.toString(); const result = value + \"\"; return result === \"0\" && Object.is(Number(value), -0) ? \"-0\" : result; })";
+
+/**
+ * Whole-string upper case after the published string conversion. A letter has
+ * to change, so an already-upper string is not this shape by itself.
+ */
+function touprBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => casedText(ex.args[0], true) === ex.expected)) return null; // toupr-guard:case
+  if (!examples.some((ex) => typeof ex.args[0] === "string" && ex.args[0] !== ex.args[0].toUpperCase())) return null; // toupr-guard:rise
+  if (!examples.some((ex) => typeof ex.args[0] === "string" && /[^ \p{L}]| {2}/u.test(ex.args[0]))) return null; // toupr-guard:mark
+  return `  return ${CASED_BODY}.toUpperCase();`;
+}
+
+/**
+ * Whole-string lower case after the same conversion. `'aba'` does not change,
+ * so a palindrome is not this shape.
+ */
+function tolowBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => casedText(ex.args[0], false) === ex.expected)) return null; // tolow-guard:case
+  if (!examples.some((ex) => typeof ex.args[0] === "string" && ex.args[0] !== ex.args[0].toLowerCase())) return null; // tolow-guard:sink
+  if (!examples.some((ex) => typeof ex.args[0] === "string" && /[^ \p{L}]| {2}/u.test(ex.args[0]))) return null; // tolow-guard:mark
+  return `  return ${CASED_BODY}.toLowerCase();`;
+}
+
+/**
+ * Published compat `sum`. `undefined` elements are skipped, a hole is
+ * `undefined`, and strings concatenate. `null` and an empty list are `0`.
+ */
+function itemsOf(value: unknown): unknown[] | null {
+  if (value == null || typeof (value as { length?: unknown }).length !== "number") return null;
+  return Array.from(value as ArrayLike<unknown>);
+}
+
+function csumOf(value: unknown): unknown {
+  if (value == null || (value as { length?: number }).length == null || (value as { length: number }).length === 0) return 0;
+  return Array.from(value as ArrayLike<unknown>).reduce<unknown>((result, current) => current === undefined ? result : result === undefined ? current : (result as number) + (current as number), undefined);
+}
+
+function csumBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // csum-guard:lists
+  if (!examples.every((ex) => Object.is(csumOf(ex.args[0]), ex.expected))) return null; // csum-guard:total
+  if (!examples.some((ex) => { const items = itemsOf(ex.args[0]); return items !== null && items.some((item) => item === undefined); })) return null; // csum-guard:skip
+  if (!examples.some((ex) => { const items = itemsOf(ex.args[0]); return items !== null && items.some((item) => typeof item === "string"); })) return null; // csum-guard:text
+  return "  return (!a || !a.length) ? 0 : Array.from(a).reduce((result, current) => current === undefined ? result : result === undefined ? current : result + current, undefined);";
 }
 
 interface Tagged { t: string; v?: unknown }
@@ -2219,7 +2344,7 @@ function opaqueAgrees(body: string, calls: readonly CallFact[], bwrap?: string):
 }
 
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "drop", "dropright", "takeright", "capitalize", "upper", "lower", "undef", "words", "kebab", "snake", "camel", "pascal", "constant", "lcase", "ucase", "start", "sentence", "diff", "inter", "xor", "at", "lerp", "ilerp", "phex", "zobj", "mean", "bg", "chunk", "peer"] as const;
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "drop", "dropright", "takeright", "capitalize", "upper", "lower", "undef", "words", "kebab", "snake", "camel", "pascal", "constant", "lcase", "ucase", "start", "sentence", "diff", "inter", "xor", "at", "lerp", "ilerp", "phex", "zobj", "mean", "bg", "chunk", "combo", "pct", "toupr", "tolow", "csum", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
 function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string, bwrap?: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
@@ -2290,6 +2415,11 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   keep(meanBody(concrete), "number", "mean");
   keep(bgBody(concrete), "string", "bg");
   keep(chunkBody(concrete), resultType(concrete.map((ex) => ex.expected)), "chunk");
+  keep(comboBody(concrete), resultType(concrete.map((ex) => ex.expected)), "combo");
+  keep(pctBody(concrete), "number", "pct");
+  keep(touprBody(concrete), "string", "toupr");
+  keep(tolowBody(concrete), "string", "tolow");
+  keep(csumBody(concrete), resultType(concrete.map((ex) => ex.expected)), "csum");
   keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");
   keep(sumBody(concrete), "number", "sum");
   keep(splitBody(concrete), "string", "split");
