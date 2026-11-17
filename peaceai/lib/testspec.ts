@@ -1875,6 +1875,133 @@ function lerpBody(examples: Example[]): string | null {
   return "  return c === 1 ? b : a + (b - a) * c;";
 }
 
+/** Published `inverseLerp`. Equal ends are `0`, not the `NaN` from dividing by zero. */
+function ilerpAt(start: unknown, stop: unknown, value: unknown): unknown {
+  return start === stop ? 0 : ((value as number) - (start as number)) / ((stop as number) - (start as number));
+}
+
+/**
+ * `a === b ? 0 : (c - a) / (b - a)`. `0 === -0` is true, so both ends at zero
+ * return `0`. A spec that is also `lerp` has `start` `0` and `stop` `1`.
+ */
+function ilerpBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 3)) return null;
+  if (!examples.every((ex) => ex.args.every((arg) => typeof arg === "number"))) return null; // ilerp-guard:numbers
+  if (!examples.every((ex) => Object.is(ilerpAt(ex.args[0], ex.args[1], ex.args[2]), ex.expected))) return null; // ilerp-guard:line
+  if (!examples.some((ex) => ex.args[0] === ex.args[1] && !Object.is(((ex.args[2] as number) - (ex.args[0] as number)) / ((ex.args[1] as number) - (ex.args[0] as number)), ex.expected))) return null; // ilerp-guard:flat
+  if (!examples.some((ex) => !Object.is(lerpAt(ex.args[0], ex.args[1], ex.args[2]), ex.expected))) return null; // ilerp-guard:apart
+  return "  return a === b ? 0 : (c - a) / (b - a);";
+}
+
+const HEX_COLOR = /^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/;
+
+/** Published `parseHex`. A bad string is black. Three digits expand before the shift. */
+function parseHexText(value: unknown): [number, number, number] | null {
+  if (typeof value !== "string") return null;
+  const raw = value.startsWith("#") ? value.slice(1) : value;
+  if (!HEX_COLOR.test(raw)) return [0, 0, 0];
+  const full = raw.length === 3 ? raw[0]! + raw[0] + raw[1]! + raw[1] + raw[2]! + raw[2] : raw;
+  const n = parseInt(full, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/**
+ * Strip one `#`, reject anything that is not 3 or 6 hex digits, expand 3
+ * digits, then shift. An invalid string is `[0, 0, 0]`, so some example has
+ * to be invalid and some example has to be three digits.
+ */
+function phexBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => { const got = parseHexText(ex.args[0]); return got !== null && deepSame(got, ex.expected); })) return null; // phex-guard:rgb
+  if (!examples.some((ex) => { const raw = typeof ex.args[0] === "string" ? (ex.args[0].startsWith("#") ? ex.args[0].slice(1) : ex.args[0]) : null; return raw !== null && !HEX_COLOR.test(raw) && deepSame(ex.expected, [0, 0, 0]); })) return null; // phex-guard:blank
+  if (!examples.some((ex) => { const raw = typeof ex.args[0] === "string" ? (ex.args[0].startsWith("#") ? ex.args[0].slice(1) : ex.args[0]) : null; return raw !== null && raw.length === 3 && HEX_COLOR.test(raw); })) return null; // phex-guard:short
+  return "  return ((raw) => /^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/.test(raw) ? ((full) => ((n) => [(n >> 16) & 255, (n >> 8) & 255, n & 255])(parseInt(full, 16)))(raw.length === 3 ? raw[0] + raw[0] + raw[1] + raw[1] + raw[2] + raw[2] : raw) : [0, 0, 0])(a.startsWith(\"#\") ? a.slice(1) : a);";
+}
+
+/** Published `zipObject`. Assignment stores a missing value as `undefined`. */
+function zobjText(keys: unknown, values: unknown): Record<PropertyKey, unknown> | null {
+  if (typeof keys !== "string" && !Array.isArray(keys)) return null;
+  if (typeof values !== "string" && !Array.isArray(values)) return null;
+  return Array.from(keys as ArrayLike<PropertyKey>).reduce<Record<PropertyKey, unknown>>((o, k, i) => {
+    o[k] = (values as ArrayLike<unknown>)[i];
+    return o;
+  }, {});
+}
+
+/**
+ * `Array.from` so a hole is visited, then assign. `Object.fromEntries` would
+ * keep a `__proto__` key as its own property. Some value has to be missing.
+ */
+function zobjBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]) && Array.isArray(ex.args[1]))) return null; // zobj-guard:arrays
+  if (!examples.every((ex) => { const got = zobjText(ex.args[0], ex.args[1]); return got !== null && deepSame(got, ex.expected); })) return null; // zobj-guard:built
+  if (!examples.some((ex) => { const got = zobjText(ex.args[0], ex.args[1]); return got !== null && Object.keys(got).some((key) => got[key] === undefined); })) return null; // zobj-guard:missing
+  return "  return (a.length, Array.from(a).reduce((o, k, i) => (o[k] = b[i], o), {}));";
+}
+
+/** Published `mean`. `Array.from` turns a hole into `undefined`, so the sum is `NaN`. */
+function meanOf(value: unknown): number | null {
+  if (typeof value !== "string" && !Array.isArray(value)) return null;
+  const length = (value as { length: number }).length;
+  return Array.from(value as ArrayLike<number>).reduce((sum, item) => sum + item, 0) / length;
+}
+
+/**
+ * `Array.from(a).reduce((s, n) => s + n, 0) / a.length`. An empty list is
+ * `0 / 0`, which is `NaN`. A `reduce` that skips holes is a different function.
+ */
+function meanBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]))) return null; // mean-guard:arrays
+  if (!examples.every((ex) => { const got = meanOf(ex.args[0]); return got !== null && Object.is(got, ex.expected); })) return null; // mean-guard:avg
+  if (!examples.some((ex) => (ex.args[0] as { length: number }).length === 0)) return null; // mean-guard:empty
+  return "  return (a.length, Array.from(a).reduce((s, n) => s + n, 0) / a.length);";
+}
+
+const BG_OPEN = "\x1b[41m";
+const BG_CLOSE = "\x1b[49m";
+
+/** Published `bgRed`: re-open after a shared close, then around each newline. */
+function bgText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const nested = value.includes(BG_CLOSE) ? value.replaceAll(BG_CLOSE, BG_CLOSE + BG_OPEN) : value;
+  const lined = nested.includes("\n") ? nested.replaceAll(/\r?\n/g, (match) => BG_CLOSE + match + BG_OPEN) : nested;
+  return BG_OPEN + lined + BG_CLOSE;
+}
+
+/**
+ * The background wrap. A newline has to be present: `open + text + close`
+ * leaves the next line unstyled. The close is rewritten before the newline.
+ */
+function bgBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => { const got = bgText(ex.args[0]); return got !== null && Object.is(got, ex.expected); })) return null; // bg-guard:wrap
+  if (!examples.some((ex) => typeof ex.args[0] === "string" && ex.args[0].includes("\n"))) return null; // bg-guard:break
+  return "  return ((open, close, text) => open + ((t) => t.includes(\"\\n\") ? t.replaceAll(/\\r?\\n/g, (m) => close + m + open) : t)(text.includes(close) ? text.replaceAll(close, close + open) : text) + close)(\"\\x1b[41m\", \"\\x1b[49m\", a);";
+}
+
+/** Published `chunk`. A size that is not a positive integer throws. `slice` keeps a hole. */
+function chunkOf(value: unknown, size: unknown): unknown[] | null {
+  if (typeof size !== "number" || !Number.isInteger(size) || size <= 0) return null;
+  if (typeof value !== "string" && !Array.isArray(value)) return null;
+  const length = (value as { length: number }).length;
+  return Array.from({ length: Math.ceil(length / size) }, (_, i) => (value as { slice: (start: number, end: number) => unknown }).slice(i * size, i * size + size));
+}
+
+/**
+ * Positive integer sizes only. The last chunk is shorter when the length is
+ * not a multiple, so some size has to cut and some last chunk has to be short.
+ */
+function chunkBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]) && typeof ex.args[1] === "number")) return null; // chunk-guard:pair
+  if (!examples.every((ex) => { const got = chunkOf(ex.args[0], ex.args[1]); return got !== null && deepSame(got, ex.expected); })) return null; // chunk-guard:parts
+  if (!examples.some((ex) => typeof ex.args[1] === "number" && (ex.args[0] as { length: number }).length > (ex.args[1] as number))) return null; // chunk-guard:cut
+  if (!examples.some((ex) => { const got = chunkOf(ex.args[0], ex.args[1]); const last = got === null ? null : got[got.length - 1] as { length: number } | undefined; return last != null && last.length < (ex.args[1] as number); })) return null; // chunk-guard:rest
+  return "  return (!Number.isInteger(b) || b <= 0) ? (() => { throw new Error(\"Size must be an integer greater than zero.\"); })() : Array.from({ length: Math.ceil(a.length / b) }, (_, i) => a.slice(i * b, i * b + b));";
+}
+
 interface Tagged { t: string; v?: unknown }
 
 function deepSame(left: unknown, right: unknown): boolean {
@@ -2092,7 +2219,7 @@ function opaqueAgrees(body: string, calls: readonly CallFact[], bwrap?: string):
 }
 
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "drop", "dropright", "takeright", "capitalize", "upper", "lower", "undef", "words", "kebab", "snake", "camel", "pascal", "constant", "lcase", "ucase", "start", "sentence", "diff", "inter", "xor", "at", "lerp", "peer"] as const;
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "drop", "dropright", "takeright", "capitalize", "upper", "lower", "undef", "words", "kebab", "snake", "camel", "pascal", "constant", "lcase", "ucase", "start", "sentence", "diff", "inter", "xor", "at", "lerp", "ilerp", "phex", "zobj", "mean", "bg", "chunk", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
 function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string, bwrap?: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
@@ -2157,6 +2284,12 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   keep(xorBody(concrete), resultType(concrete.map((ex) => ex.expected)), "xor");
   keep(atBody(concrete), resultType(concrete.map((ex) => ex.expected)), "at");
   keep(lerpBody(concrete), "number", "lerp");
+  keep(ilerpBody(concrete), "number", "ilerp");
+  keep(phexBody(concrete), resultType(concrete.map((ex) => ex.expected)), "phex");
+  keep(zobjBody(concrete), resultType(concrete.map((ex) => ex.expected)), "zobj");
+  keep(meanBody(concrete), "number", "mean");
+  keep(bgBody(concrete), "string", "bg");
+  keep(chunkBody(concrete), resultType(concrete.map((ex) => ex.expected)), "chunk");
   keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");
   keep(sumBody(concrete), "number", "sum");
   keep(splitBody(concrete), "string", "split");

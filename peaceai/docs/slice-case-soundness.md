@@ -60,7 +60,7 @@ Each published test fails when the function throws and passes on the scaffold. A
 
 `flatten` stays out. The published calls use one argument and two. Mixed arity is `CANT_DO_YET_SIGNATURE`. One level and a deeper flatten are not one expression those calls share.
 
-`sum` stays out. The published expects assign `const result = sum(...)` and then assert `result`. That call is not the assertion subject, so no example is recorded. A callback sum and a bigint sum are not this shape. `mean` imports `./sum.ts`, so the published module is not one file.
+`sum` stays out. The published expects assign `const result = sum(...)` and then assert `result`. That call is not the assertion subject, so no example is recorded. A callback sum and a bigint sum are not this shape. `mean` divides that sum by the length. The next batch emits that division. See `peaceai/docs/next-families-soundness.md`.
 
 `clamp`, `inRange`, and `round` stay out. The published calls use more than one arity, and a recorded throw refuses the body.
 
