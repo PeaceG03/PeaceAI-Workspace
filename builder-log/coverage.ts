@@ -110,8 +110,12 @@ function addDaysYmd(ymd: string, deltaDays: number): string {
   return `${y}-${mo}-${day}`;
 }
 
+/** Peace approved the self-change lane on 2026-11-17 about 13:48 MT. Do not move this earlier. */
+export const SELF_CHANGE_APPROVED_AT = "2026-11-17 13:48";
+
 /** Skill approved at a MT "YYYY-MM-DD HH:MM" instant (APPROVED_SKILLS always; APPROVED_SINCE from its time). */
 export function approvedAt(skill: string, at: string): boolean {
+  if (skill === SELF_CHANGE_SKILL) return SELF_CHANGE_APPROVED_AT <= at; // lane-guard: PEACEAI_SELF_CHANGE is approved only at or after the approval time
   if ((APPROVED_SKILLS as readonly string[]).includes(skill)) return true;
   const since = (APPROVED_SINCE as Readonly<Record<string, string>>)[skill];
   return since !== undefined && since <= at;
@@ -121,7 +125,7 @@ const ISSUE_REF = /PeaceAI-Workspace#(\d+)/g;
 
 /** Auditor #216: may a retag of `task` to `skill` count? Never raises coverage without approval + evidence. */
 export function retagCountable(task: Entry, skill: string, entries: readonly Entry[]): boolean {
-  if (!approvedAt(skill, `${task.date} ${task.time}`)) return false;
+  if (!approvedAt(skill, `${task.date} ${task.time}`)) return false; // lane-guard: a self-change retag is judged at the original task time
   if (task.mark === "PeaceAI-able today") return true;
   const refs = [...task.changed.matchAll(ISSUE_REF)].map((m) => m[0]);
   if (!refs.length) return false;
@@ -134,8 +138,10 @@ export function retagCountable(task: Entry, skill: string, entries: readonly Ent
  * "PeaceAI-able today" when logged. A historical "missing skill X" entry stays uncounted even after X is
  * approved/proven (APPROVED_SINCE: history keeps the mark it had then); only an appended retag can change it.
  */
-export function countable(e: Pick<Entry, "skill" | "mark">, proven: ReadonlySet<string>): boolean {
-  return proven.has(e.skill) && !e.mark.startsWith("missing skill");
+export function countable(e: Pick<Entry, "skill" | "mark"> & Partial<Pick<Entry, "date" | "time">>, proven: ReadonlySet<string>): boolean {
+  if (!proven.has(e.skill) || e.mark.startsWith("missing skill")) return false;
+  if (e.skill === SELF_CHANGE_SKILL) return e.date !== undefined && e.time !== undefined && approvedAt(e.skill, `${e.date} ${e.time}`); // lane-guard: a self-change counts only after approval and only when live-proven
+  return true;
 }
 
 /** Extract the PeaceSTOCKS@sha from `changed`, if any. */
@@ -387,7 +393,7 @@ function windowStats(
   proven: ReadonlySet<string>,
   peaceRealSeqs: ReadonlySet<number>,
 ): WindowStats {
-  const able = tasks.filter((e) => (peaceRealSeqs.has(e.seq) ? true : countable(e, proven))).length;
+  const able = tasks.filter((e) => (e.skill === SELF_CHANGE_SKILL ? countable(e, proven) : peaceRealSeqs.has(e.seq) ? true : countable(e, proven))).length; // lane-guard: a self-change row counts only through countable, after approval and live-proven
   const n = tasks.length;
   return {
     builderTasks: n,

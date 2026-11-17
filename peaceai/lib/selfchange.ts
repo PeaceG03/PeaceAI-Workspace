@@ -87,6 +87,7 @@ export const PROTECTED_SELF: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/lib\/(loop|loopdeps|looprow|codesearch|editpropose|plan|plan[234]|planrun|plan[234]run|plandefault|plangrade|verifier|repair-retry)\.ts$/i, why: "the lib import closure of the M167 model-v1 bins and libs (closure test m96): the loop, its row and deps checks, the code search, repair-v1, the planners, and M202-M204 verifier-v1 / repair-retry-v1" },
   { pattern: /^peaceai\/lib\/verifier-(harness|judge)\.cjs$/i, why: "M204 verifier-v1 harness and third-uid judge (run by lib/verifier.ts on the trusted runner / as PEACEAI_VERIFIER_UID)" },
   { pattern: /^peaceai\/plan\/tasks-public-v1\.json$|^peaceai\/spec\/edit-proposer-model-v1\.md$/i, why: "the M167 model-v1 dev run's pinned public task file (model-v1-proposer.json taskFile) and the model-v1 spec (Auditor #664 PASS nits)" },
+  { pattern: /^peaceai\/bin\/lane-(baseline|drift)\.ts$/i, why: "the lane v1 baseline generator and the drift check (the self lane may not edit them)" },
 ];
 
 /** Strings a self-change may not ADD anywhere: they reach the protected set or the credentials by content. */
@@ -391,6 +392,7 @@ export const NEVER_ZONE: readonly { pattern: RegExp; why: string }[] = [
   { pattern: /^peaceai\/targets\.json$|^peaceai\/lib\/target\.ts$|^peaceai\/read-only-ops\.json$/, why: "enable flips and allowed-file config (targets.json selfZone, read-only-ops enabled)" },
   { pattern: /^peaceai\/lib\/lm\.ts$|^peaceai\/model\//, why: "the model and its job guard" },
   { pattern: /^builder-log\//, why: "the Builder task log and the coverage counter (check.ts, trace.ts, coverage.ts and their tests)" },
+  { pattern: /^peaceai\/bin\/lane-(baseline|drift)\.ts$/, why: "the lane v1 baseline generator and the drift check (the self lane may not edit them)" },
 ];
 
 /**
@@ -1221,4 +1223,300 @@ export function stage2Credit(rec: Stage2Record, landed: { paths: readonly string
   const got = [...new Set(landed.paths)].sort();
   const same = want.length === got.length && want.every((p, i) => p === got[i] && (landed.blobs[p] ?? null) === (rec.candidateBlobs[p] ?? null));
   return { credit: false, mark: same ? NO_GENERATOR_MARK : `${NO_GENERATOR_MARK} (and Builder-edited: landed change differs from the proposal)` };
+}
+
+// ---- Lane v1 (Peace, 2026-11-17 about 13:48 MT). One allowlist, one frozen baseline, one ratchet.
+// PeaceAI may propose a self-edit only to the four engine files below. The comparison is always the frozen
+// baseline, never the previous change. The baseline, this ratchet, and the drift status stay in the never-zone.
+
+export const LANE_V1_PATHS = ["peaceai/bin/generate.ts", "peaceai/bin/test-candidates.ts", "peaceai/lib/derive.ts", "peaceai/lib/editpropose.ts"] as const;
+export type LaneV1Path = (typeof LANE_V1_PATHS)[number];
+const LANE_V1_PATH_SET = new Set<string>(LANE_V1_PATHS);
+/** Files the lane must refuse even if the allowlist above were widened. The baseline and the ratchet live here. */
+export const LANE_V1_RATCHET_PATHS = [
+  "peaceai/lib/selfchange.ts", "peaceai/lib/selfpropose.ts", "peaceai/lib/self-zone.ts", "peaceai/bin/self-change.ts",
+  "peaceai/bin/lane-baseline.ts", "peaceai/bin/lane-drift.ts", "peaceai/self/lane-v1-baseline.json", "peaceai/self/lane-v1-drift.json",
+  "builder-log/coverage.ts",
+] as const;
+export const LANE_V1_BASELINE_PATH = "peaceai/self/lane-v1-baseline.json";
+export const LANE_V1_DRIFT_PATH = "peaceai/self/lane-v1-drift.json";
+export const LANE_V1_BASELINE_SCHEMA = "peaceai-lane-v1-baseline:v1";
+export const LANE_V1_MEASURE_SCHEMA = "peaceai-lane-v1-measure:v1";
+export const LANE_V1_DRIFT_SCHEMA = "peaceai-lane-v1-drift:v1";
+export const LANE_V1_SCORECARD_SCHEMA = "peaceai-lane-v1-scorecard:v1";
+export const LANE_V1_BASELINE_COMMAND = "tsx peaceai/bin/lane-baseline.ts --capability <capability-report.json> --practice <replay.json> --source-sha <40-hex> --out peaceai/self/lane-v1-baseline.json";
+export const LANE_V1_DRIFT_COMMAND = "tsx peaceai/bin/lane-drift.ts --baseline peaceai/self/lane-v1-baseline.json --capability <capability-report.json> --practice <replay.json> --source-sha <40-hex> --out peaceai/self/lane-v1-drift.json";
+const HEX40 = /^[0-9a-f]{40}$/;
+const PRACTICE_ID = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@[0-9a-f]{40}#(text|test-as-spec)$/;
+const FORMS = ["text", "test-as-spec"] as const;
+type PracticeForm = (typeof FORMS)[number];
+
+export interface LaneCounts { pass: number; fail: number; unmeasured: number }
+export interface LaneIdBucket { passing: string[]; counts: LaneCounts }
+export interface LaneMeasureBody {
+  builderLog: LaneIdBucket;
+  practiceDev: { text: LaneIdBucket; "test-as-spec": LaneIdBucket };
+  heldOut: { text: LaneCounts; "test-as-spec": LaneCounts };
+}
+export interface LaneBaseline extends LaneMeasureBody {
+  schema: typeof LANE_V1_BASELINE_SCHEMA;
+  locked: boolean;
+  sourceSha: string;
+  lastGoodSha: string;
+  generatedBy: string;
+}
+export interface LaneMeasurement extends LaneMeasureBody {
+  schema: typeof LANE_V1_MEASURE_SCHEMA;
+  sourceSha: string;
+}
+export interface LaneDrift {
+  schema: typeof LANE_V1_DRIFT_SCHEMA;
+  status: "clear" | "unresolved" | "unchecked";
+  sourceSha: string;
+  lines: string[];
+}
+export interface LaneScorecard {
+  schema: typeof LANE_V1_SCORECARD_SCHEMA;
+  against: "frozen-baseline";
+  ok: boolean;
+  refusals: string[];
+  parentSha: string;
+  headSha: string;
+  lastGoodSha: string;
+  commits: number;
+  revert: string;
+  paths: string[];
+  before: LaneMeasurement | null;
+  after: LaneMeasurement | null;
+  driftLines: string[];
+}
+export interface LaneV1Input {
+  diff: string;
+  baseline: unknown;
+  before: unknown;
+  after: unknown;
+  drift: unknown;
+  commits: number;
+  parentSha: string;
+  headSha: string;
+}
+export interface LaneV1Decision { ok: boolean; refusals: string[]; scorecard: LaneScorecard }
+
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+const sameKeys = (v: Record<string, unknown>, keys: readonly string[]): boolean => Object.keys(v).sort().join(",") === [...keys].sort().join(",");
+
+function readCounts(v: unknown, where: string, allowReasons: boolean): LaneCounts | string {
+  if (!isRecord(v)) return `${where} counts are missing`;
+  const allowed = allowReasons ? ["fail", "pass", "reasons", "unmeasured"] : ["fail", "pass", "unmeasured"];
+  if (!sameKeys(v, allowed) && !sameKeys(v, ["fail", "pass", "unmeasured"])) return `${where} counts must be pass, fail and unmeasured only`;
+  for (const k of ["pass", "fail", "unmeasured"] as const) {
+    const n = v[k];
+    if (typeof n !== "number" || !Number.isInteger(n) || n < 0) return `${where} ${k} must be a non-negative integer`;
+  }
+  return { pass: v.pass as number, fail: v.fail as number, unmeasured: v.unmeasured as number };
+}
+
+function readIdBucket(v: unknown, where: string, idOk: (id: string) => boolean): LaneIdBucket | string {
+  if (!isRecord(v) || !sameKeys(v, ["counts", "passing"])) return `${where} must be passing and counts only`;
+  if (!Array.isArray(v.passing)) return `${where} passing list is missing`;
+  const passing: string[] = [];
+  for (const id of v.passing) {
+    if (typeof id !== "string" || !idOk(id)) return `${where} passing id is not a frozen row id`;
+    passing.push(id);
+  }
+  if (new Set(passing).size !== passing.length) return `${where} passing list repeats a row`;
+  const counts = readCounts(v.counts, where, false);
+  if (typeof counts === "string") return counts;
+  if (counts.pass !== passing.length) return `${where} pass count does not match its passing list`; // fail closed when the two disagree
+  return { passing: [...passing].sort((a, b) => a.localeCompare(b, "en", { numeric: true })), counts };
+}
+
+function readMeasureBody(v: Record<string, unknown>): LaneMeasureBody | string {
+  const builderLog = readIdBucket(v.builderLog, "builder-log", (id) => /^[1-9]\d*$/.test(id));
+  if (typeof builderLog === "string") return builderLog;
+  if (!isRecord(v.practiceDev)) return "dev practice set is missing";
+  const practiceDev = {} as LaneMeasureBody["practiceDev"];
+  for (const form of FORMS) {
+    const bucket = readIdBucket(v.practiceDev[form], `dev practice ${form}`, (id) => PRACTICE_ID.test(id));
+    if (typeof bucket === "string") return bucket;
+    practiceDev[form] = bucket;
+  }
+  if (!isRecord(v.heldOut)) return "held-out counts are missing";
+  const heldOut = {} as LaneMeasureBody["heldOut"];
+  for (const form of FORMS) {
+    const counts = readCounts(v.heldOut[form], `held-out ${form}`, false);
+    if (typeof counts === "string") return counts;
+    heldOut[form] = counts; // held-out keeps the three counts and nothing else
+  }
+  return { builderLog, practiceDev, heldOut };
+}
+
+export function parseLaneBaseline(v: unknown): { ok: true; baseline: LaneBaseline } | { ok: false; reason: string } {
+  if (!isRecord(v) || !sameKeys(v, ["builderLog", "generatedBy", "heldOut", "lastGoodSha", "locked", "practiceDev", "schema", "sourceSha"])) return { ok: false, reason: "baseline shape is not the lane v1 baseline" };
+  if (v.schema !== LANE_V1_BASELINE_SCHEMA) return { ok: false, reason: "baseline schema is not lane v1" };
+  if (v.locked !== true && v.locked !== false) return { ok: false, reason: "baseline locked flag is missing" };
+  if (typeof v.sourceSha !== "string" || typeof v.lastGoodSha !== "string" || typeof v.generatedBy !== "string") return { ok: false, reason: "baseline identity fields are missing" };
+  const body = readMeasureBody(v);
+  if (typeof body === "string") return { ok: false, reason: body };
+  if (v.locked === true) {
+    if (!HEX40.test(v.sourceSha) || v.sourceSha !== v.lastGoodSha) return { ok: false, reason: "a locked baseline must name one 40-hex last-good commit" };
+    if (!v.generatedBy.includes("peaceai/bin/lane-baseline.ts")) return { ok: false, reason: "a locked baseline must name the generator command" };
+  }
+  return { ok: true, baseline: { schema: LANE_V1_BASELINE_SCHEMA, locked: v.locked, sourceSha: v.sourceSha, lastGoodSha: v.lastGoodSha, generatedBy: v.generatedBy, ...body } };
+}
+
+export function parseLaneMeasurement(v: unknown): { ok: true; measurement: LaneMeasurement } | { ok: false; reason: string } {
+  if (!isRecord(v) || !sameKeys(v, ["builderLog", "heldOut", "practiceDev", "schema", "sourceSha"])) return { ok: false, reason: "measurement shape is not a lane v1 measure" };
+  if (v.schema !== LANE_V1_MEASURE_SCHEMA || typeof v.sourceSha !== "string" || !HEX40.test(v.sourceSha)) return { ok: false, reason: "measurement must name a 40-hex source commit" };
+  const body = readMeasureBody(v);
+  if (typeof body === "string") return { ok: false, reason: body };
+  return { ok: true, measurement: { schema: LANE_V1_MEASURE_SCHEMA, sourceSha: v.sourceSha, ...body } };
+}
+
+export function parseLaneDrift(v: unknown): { ok: true; drift: LaneDrift } | { ok: false; reason: string } {
+  if (!isRecord(v) || !sameKeys(v, ["lines", "schema", "sourceSha", "status"])) return { ok: false, reason: "drift file shape is not lane v1" };
+  if (v.schema !== LANE_V1_DRIFT_SCHEMA) return { ok: false, reason: "drift schema is not lane v1" };
+  if (v.status !== "clear" && v.status !== "unresolved" && v.status !== "unchecked") return { ok: false, reason: "drift status is not clear, unresolved or unchecked" };
+  if (typeof v.sourceSha !== "string" || !Array.isArray(v.lines) || v.lines.some((l) => typeof l !== "string" || l.length === 0)) return { ok: false, reason: "drift file has no plain-language lines" };
+  if (v.status === "clear" && !HEX40.test(v.sourceSha)) return { ok: false, reason: "a clear drift file must name the measured commit" };
+  return { ok: true, drift: { schema: LANE_V1_DRIFT_SCHEMA, status: v.status, sourceSha: v.sourceSha, lines: v.lines as string[] } };
+}
+
+/** Path check only. Fail closed: anything that is not exactly one of the four engine files is refused. */
+export function checkLaneV1Diff(diff: string): { ok: boolean; refusals: { path: string; reason: string }[]; paths: string[] } {
+  const { files, problems } = parseGitDiff(diff);
+  const refusals: { path: string; reason: string }[] = [];
+  if (files.length === 0) refusals.push({ path: "-", reason: "diff is empty or not a git diff" });
+  for (const p of problems) refusals.push({ path: "-", reason: `malformed diff: ${p}` });
+  const paths = new Set<string>();
+  for (const f of files) {
+    for (const p of [f.oldPath, f.newPath]) {
+      if (p === null) continue;
+      paths.add(p);
+      if (p !== p.trim() || p.startsWith("/") || p.includes("\\") || p.split("/").some((s) => s === "" || s === "." || s === "..")) refusals.push({ path: p, reason: "uncertain path" }); // lane-guard: an uncertain path is refused
+      else if ((LANE_V1_RATCHET_PATHS as readonly string[]).includes(p)) refusals.push({ path: p, reason: "the self lane cannot edit the baseline or the ratchet" }); // lane-guard: the self lane cannot edit the baseline or the ratchet
+      else if (!LANE_V1_PATH_SET.has(p)) refusals.push({ path: p, reason: "not on the lane v1 allowlist" }); // lane-guard: an off-allowlist path is refused
+    }
+    const where = f.newPath ?? f.oldPath ?? "-";
+    if (f.binary) refusals.push({ path: where, reason: "binary change" });
+    for (const mode of [f.newMode, f.oldMode]) if (mode && mode !== "100644") refusals.push({ path: where, reason: `file mode ${mode}` });
+    if (f.status !== "A" && f.status !== "M") refusals.push({ path: where, reason: "only a create or an in-place edit of an allowlisted file is accepted" });
+  }
+  const seen = new Set<string>();
+  const uniq = refusals.filter((r) => { const k = `${r.path}\0${r.reason}`; if (seen.has(k)) return false; seen.add(k); return true; });
+  return { ok: uniq.length === 0 && paths.size > 0, refusals: uniq, paths: [...paths].sort() };
+}
+
+interface Loss { code: string; sentence: string }
+function countLosses(label: string, base: LaneCounts, got: LaneCounts): Loss[] {
+  const out: Loss[] = [];
+  if (got.pass < base.pass) out.push({ code: `COUNT_DROP ${label} pass ${base.pass} -> ${got.pass}`, sentence: `${label} pass count dropped from ${base.pass} to ${got.pass}.` }); // lane-guard: a dropped pass count is refused even when other rows are gained
+  if (got.fail > base.fail) out.push({ code: `MORE_REFUSALS ${label} fail ${base.fail} -> ${got.fail}`, sentence: `${label} fail count rose from ${base.fail} to ${got.fail} (more refusals).` }); // lane-guard: more refusals than the frozen baseline are refused
+  if (got.unmeasured > base.unmeasured) out.push({ code: `MORE_REFUSALS ${label} unmeasured ${base.unmeasured} -> ${got.unmeasured}`, sentence: `${label} unmeasured count rose from ${base.unmeasured} to ${got.unmeasured} (more refusals).` });
+  return out;
+}
+function rowLosses(label: string, base: readonly string[], got: readonly string[]): Loss[] {
+  const have = new Set(got);
+  return base.filter((id) => !have.has(id)).map((id) => ({ code: `ROW_LOST ${label} ${id}`, sentence: `${label} lost passing row ${id}.` })); // lane-guard: a baseline passing row that is no longer passing is refused
+}
+
+/** Losses against the frozen baseline only. A gain does not cancel a loss. */
+export function laneV1Losses(baseline: LaneBaseline, measured: LaneMeasurement): Loss[] {
+  const out: Loss[] = [];
+  out.push(...rowLosses("Builder-log replay", baseline.builderLog.passing, measured.builderLog.passing));
+  out.push(...countLosses("Builder-log replay", baseline.builderLog.counts, measured.builderLog.counts));
+  for (const form of FORMS) {
+    out.push(...rowLosses(`Dev practice ${form}`, baseline.practiceDev[form].passing, measured.practiceDev[form].passing));
+    out.push(...countLosses(`Dev practice ${form}`, baseline.practiceDev[form].counts, measured.practiceDev[form].counts));
+    out.push(...countLosses(`Held-out ${form}`, baseline.heldOut[form], measured.heldOut[form]));
+  }
+  return out;
+}
+
+export function assessLaneDrift(baseline: LaneBaseline, measured: LaneMeasurement | null): LaneDrift {
+  if (!baseline.locked) return { schema: LANE_V1_DRIFT_SCHEMA, status: "unresolved", sourceSha: measured?.sourceSha ?? "", lines: ["The baseline is not locked. The next self-change stays blocked until the box replay fills it."] };
+  if (!measured) return { schema: LANE_V1_DRIFT_SCHEMA, status: "unresolved", sourceSha: "", lines: ["Main was not measured against the baseline. The next self-change stays blocked."] };
+  const lines: string[] = [];
+  if (measured.sourceSha !== baseline.lastGoodSha) lines.push(`Main ${measured.sourceSha} is not the recorded last-good version ${baseline.lastGoodSha}. The next self-change stays blocked until the baseline is regenerated from this commit.`);
+  lines.push(...laneV1Losses(baseline, measured).map((l) => l.sentence)); // lane-guard: the comparison is the frozen baseline
+  if (lines.length === 0) lines.push("No drop against the frozen baseline.");
+  return { schema: LANE_V1_DRIFT_SCHEMA, status: lines.length === 1 && lines[0] === "No drop against the frozen baseline." ? "clear" : "unresolved", sourceSha: measured.sourceSha, lines };
+}
+
+export function decideLaneV1(input: LaneV1Input): LaneV1Decision {
+  const refusals: string[] = [];
+  const diff = checkLaneV1Diff(input.diff);
+  for (const r of diff.refusals) refusals.push(`${r.path}: ${r.reason}`);
+  const baseline = parseLaneBaseline(input.baseline);
+  const before = parseLaneMeasurement(input.before);
+  const after = parseLaneMeasurement(input.after);
+  const drift = parseLaneDrift(input.drift);
+  if (!baseline.ok) refusals.push(baseline.reason);
+  if (!before.ok) refusals.push(`before: ${before.reason}`);
+  if (!after.ok) refusals.push(`after: ${after.reason}`);
+  if (!drift.ok) refusals.push(`drift: ${drift.reason}`);
+  if (input.commits !== 1) refusals.push("not one self-change"); // lane-guard: one self-change per PR
+  if (!HEX40.test(input.parentSha) || !HEX40.test(input.headSha) || input.parentSha === input.headSha) refusals.push("parent and head must be two different 40-hex commits");
+  if (baseline.ok && baseline.baseline.locked !== true) refusals.push("baseline is not locked");
+  if (baseline.ok && before.ok && before.measurement.sourceSha !== input.parentSha) refusals.push("the before scorecard is not the parent commit");
+  if (after.ok && after.measurement.sourceSha !== input.headSha) refusals.push("the after scorecard is not the head commit");
+  if (drift.ok && drift.drift.status !== "clear") refusals.push(...drift.drift.lines); // lane-guard: unresolved drift blocks the next self-change
+  else if (drift.ok && drift.drift.sourceSha !== input.parentSha) refusals.push("the drift measurement is not the parent commit");
+  if (baseline.ok && input.parentSha !== baseline.baseline.lastGoodSha) refusals.push("the parent is not the recorded last-good version");
+  if (baseline.ok && after.ok && baseline.baseline.locked) for (const loss of laneV1Losses(baseline.baseline, after.measurement)) refusals.push(loss.sentence);
+  const uniq = [...new Set(refusals)];
+  const scorecard: LaneScorecard = {
+    schema: LANE_V1_SCORECARD_SCHEMA, against: "frozen-baseline", ok: uniq.length === 0, refusals: uniq,
+    parentSha: input.parentSha, headSha: input.headSha, lastGoodSha: baseline.ok ? baseline.baseline.lastGoodSha : "",
+    commits: input.commits, revert: HEX40.test(input.headSha) ? `git revert ${input.headSha}` : "",
+    paths: diff.paths, before: before.ok ? before.measurement : null, after: after.ok ? after.measurement : null,
+    driftLines: drift.ok ? drift.drift.lines : [],
+  };
+  return { ok: uniq.length === 0, refusals: uniq, scorecard };
+}
+
+const num = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null);
+
+/** Build a measure from a capability report and a practice replay. Held-out rows are not read. */
+export function measurementFromReports(capability: unknown, practice: unknown, sourceSha: string): { ok: true; measurement: LaneMeasurement } | { ok: false; reason: string } {
+  if (!HEX40.test(sourceSha)) return { ok: false, reason: "source sha must be 40 hex characters" };
+  if (!isRecord(capability) || capability.schema !== "peaceai-capability-report:v1" || !Array.isArray(capability.rows)) return { ok: false, reason: "capability report schema is not peaceai-capability-report:v1" };
+  const tally = { pass: 0, fail: 0, unmeasured: 0 };
+  const passing: string[] = [];
+  for (const row of capability.rows) {
+    if (!isRecord(row) || typeof row.seq !== "number" || !Number.isInteger(row.seq) || row.seq < 1) return { ok: false, reason: "capability row has no seq" };
+    if (row.inSet !== true) continue;
+    if (row.status !== "pass" && row.status !== "fail" && row.status !== "unmeasured") return { ok: false, reason: `capability row ${row.seq} has no status` };
+    tally[row.status] += 1;
+    if (row.status === "pass") passing.push(String(row.seq));
+  }
+  const headline = { pass: capability.passes, fail: capability.fails, unmeasured: capability.unmeasured };
+  for (const k of ["pass", "fail", "unmeasured"] as const) if (num(headline[k]) !== tally[k]) return { ok: false, reason: `capability ${k} count does not match its in-set rows` };
+  if (!isRecord(practice) || practice.schema !== "peaceai-practice-replay:v1" || !isRecord(practice.counts) || !Array.isArray(practice.rows)) return { ok: false, reason: "practice replay schema is not peaceai-practice-replay:v1" };
+  const devPassing: Record<PracticeForm, string[]> = { text: [], "test-as-spec": [] };
+  const devTally: Record<PracticeForm, LaneCounts> = { text: { pass: 0, fail: 0, unmeasured: 0 }, "test-as-spec": { pass: 0, fail: 0, unmeasured: 0 } };
+  for (const row of practice.rows) {
+    if (!isRecord(row)) return { ok: false, reason: "practice row is not an object" };
+    if (row.split !== "dev") continue; // lane-guard: held-out diffs and reasons are not read or stored
+    if (row.understanding !== "text" && row.understanding !== "test-as-spec") return { ok: false, reason: "dev practice row has no text or test-as-spec form" };
+    if (row.status !== "pass" && row.status !== "fail" && row.status !== "unmeasured") return { ok: false, reason: "dev practice row has no status" };
+    if (typeof row.repo !== "string" || typeof row.fixSha !== "string") return { ok: false, reason: "dev practice row has no repo or fix sha" };
+    const id = `${row.repo}@${row.fixSha}#${row.understanding}`;
+    if (!PRACTICE_ID.test(id)) return { ok: false, reason: `dev practice row id is not usable: ${id}` };
+    devTally[row.understanding][row.status] += 1;
+    if (row.status === "pass") devPassing[row.understanding].push(id);
+  }
+  const practiceDev = {} as LaneMeasurement["practiceDev"];
+  const heldOut = {} as LaneMeasurement["heldOut"];
+  for (const form of FORMS) {
+    if (!isRecord(practice.counts[form])) return { ok: false, reason: `practice counts have no ${form} form` };
+    const dev = readCounts((practice.counts[form] as Record<string, unknown>).dev, `practice ${form} dev`, true);
+    const held = readCounts((practice.counts[form] as Record<string, unknown>)["held-out"], `practice ${form} held-out`, true);
+    if (typeof dev === "string") return { ok: false, reason: dev };
+    if (typeof held === "string") return { ok: false, reason: held };
+    if (dev.pass !== devTally[form].pass || dev.fail !== devTally[form].fail || dev.unmeasured !== devTally[form].unmeasured) return { ok: false, reason: `practice ${form} dev counts do not match its dev rows` };
+    practiceDev[form] = { passing: devPassing[form].sort(), counts: { pass: dev.pass, fail: dev.fail, unmeasured: dev.unmeasured } };
+    heldOut[form] = { pass: held.pass, fail: held.fail, unmeasured: held.unmeasured };
+  }
+  return parseLaneMeasurement({ schema: LANE_V1_MEASURE_SCHEMA, sourceSha, builderLog: { passing, counts: tally }, practiceDev, heldOut });
 }
