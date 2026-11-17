@@ -23,6 +23,7 @@ import { MAX_CANDIDATES, repairProposer, type RepairFeedback } from "./editpropo
 import { MAX_ATTEMPTS } from "./loop.ts";
 import { applyPracticeTestLaunch, declaredTypeScriptLoader, poisonChanges, poisonStamp, practiceGit, practiceTestLaunch, releaseWorktree, runInPracticeSandbox, visibleNodeBin, type PracticeToolchain } from "./practicemine.ts";
 import { repairRuntimeFailure } from "./arrayfix.ts";
+import { repairBatch5 } from "./batch5.ts";
 import { parseTypeDiagnostics, repairTypedFailure } from "./sigfix.ts";
 
 export const SPEC_SCHEMA = "peaceai-test-spec:v1";
@@ -3030,6 +3031,18 @@ export function runTestSpec(input: SpecInput): SpecResult {
     return {
       status: "diff", diff: runtime.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
       fit: { shape: "array", examples: 0, targets: [{ symbol: "array", file: runtime.file, form: "named", exportName: "array", args: [] }] },
+    };
+  }
+  const batch5 = !parseTypeDiagnostics(output).length && input.toolchain.nodePath
+    ? repairBatch5({
+      root: input.root, output, sourcePattern: input.sourcePattern,
+      nodePath: input.toolchain.nodePath, nodeModules: input.nodeModules, testCommand: input.testCommand,
+    })
+    : null;
+  if (batch5) {
+    return {
+      status: "diff", diff: batch5.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
+      fit: { shape: "batch5", examples: 0, targets: [{ symbol: "batch5", file: batch5.file, form: "named", exportName: "batch5", args: [] }] },
     };
   }
   if (parseTypeDiagnostics(output).length) {
