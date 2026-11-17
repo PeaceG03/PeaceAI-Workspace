@@ -1,0 +1,21 @@
+import { sumBy } from './sumBy.ts';
+
+/**
+ * Computes the sum of the values that are returned by the `iteratee` function.
+ *
+ * It does not coerce values to `number`.
+ *
+ * @param array - The array to iterate over.
+ * @returns Returns the sum.
+ *
+ * @example
+ * sum([1, 2, 3]); // => 6
+ * sum([1n, 2n, 3n]); // => 6n
+ * sum(["1", "2"]); // => "12"
+ * sum([1, undefined, 2]); // => 3
+ * sum(null); // => 0
+ * sum(undefined); // => 0
+ */
+export function sum(array: ArrayLike<any> | null | undefined): number {
+  return sumBy(array);
+}

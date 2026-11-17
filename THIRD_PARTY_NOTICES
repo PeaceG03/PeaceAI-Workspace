@@ -8769,6 +8769,56 @@ fixtures (commit path):
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m248/es-toolkit-wrapAnsiBg.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m248/es-toolkit-zipObject.spec.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m248/es-toolkit-zipObject.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/_internal/globalThis.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/_internal/isUnsafeProperty.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/array/combinations.spec.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/array/combinations.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/_internal/GetFieldType.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/_internal/IsMatchWithCustomizer.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/_internal/Many.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/_internal/baseToString.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/_internal/empties.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/_internal/falsey.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/_internal/getSymbols.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/_internal/getTag.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/_internal/hasOwn.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/_internal/isDeepKey.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/_internal/isIndex.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/_internal/stubZero.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/_internal/tags.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/_internal/toKey.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/math/sum.spec.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/math/sum.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/math/sumBy.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/object/cloneDeep.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/object/cloneDeepWith.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/object/get.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/object/has.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/object/property.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/predicate/isArguments.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/predicate/isBuffer.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/predicate/isMatch.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/predicate/isMatchWith.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/predicate/isObject.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/predicate/isSymbol.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/predicate/isTypedArray.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/predicate/matches.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/predicate/matchesProperty.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/string/toLower.spec.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/string/toLower.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/string/toUpper.spec.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/string/toUpper.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/types/PropertyPath.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/util/eq.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/util/iteratee.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/util/toPath.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/compat/util/toString.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/function/identity.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/math/percentile.spec.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/math/percentile.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/predicate/isBuffer.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/predicate/isPrimitive.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m249/predicate/isTypedArray.ts.txt
   c64e27288ad98f369b918574a669b5636b98e626 peaceai/test/fixtures/m99-dfb/toss__es-toolkit-698de7aa942a.txt
 license URL: https://github.com/toss/es-toolkit/blob/24e7a7b8cb8035fae1ea2e7b507aab96698a38b9/LICENSE
 ---- license text ----
