@@ -1,0 +1,18 @@
+{
+  "schema": "peaceai-m254-es-toolkit-at:v1",
+  "note": "Pinned copies of toss/es-toolkit src/array/at.ts around the commit that widened indices from number[] to readonly number[]. License text is MIT. The bytes are unmodified.",
+  "examples": [
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "8aab1978414d50f46e3e1acad326ed9d95c65b5b",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m254/at-parent.ts.txt"
+    },
+    {
+      "repo": "toss/es-toolkit",
+      "commit": "bec4905d01af1381709921a9e205e3c7b2c1c77e",
+      "licenseSha256": "02f3b7dba54e1b4236395ae6d31d9abe56c264a30a9be5c82c8bf36f95cb1ccd",
+      "fixture": "peaceai/test/fixtures/m254/at-fix.ts.txt"
+    }
+  ]
+}

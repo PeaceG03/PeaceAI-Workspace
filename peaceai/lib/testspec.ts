@@ -22,6 +22,7 @@ import { isTestPath, openRepo } from "./codesearch.ts";
 import { MAX_CANDIDATES, repairProposer, type RepairFeedback } from "./editpropose.ts";
 import { MAX_ATTEMPTS } from "./loop.ts";
 import { applyPracticeTestLaunch, declaredTypeScriptLoader, poisonChanges, poisonStamp, practiceGit, practiceTestLaunch, releaseWorktree, runInPracticeSandbox, visibleNodeBin, type PracticeToolchain } from "./practicemine.ts";
+import { parseTypeDiagnostics, repairTypedFailure } from "./sigfix.ts";
 
 export const SPEC_SCHEMA = "peaceai-test-spec:v1";
 export const UNDERSTANDINGS = ["text", "test-as-spec"] as const;
@@ -2988,7 +2989,17 @@ export function runTestSpec(input: SpecInput): SpecResult {
   }
   const first = runSandboxed(input, input.testCommand);
   if (first.blocked) return { status: "blocked", reason: first.blocked, attempts: 0, diagnostic: diag(first.blocked === "SANDBOX_POISON" ? "sandbox_poison" : "unsafe", null, "") };
-  const output = first.stdout;
+  let output = first.stdout;
+  let code = first.code;
+  // A relaxed tsimp launch can hide a type error and then fail to exit. The type-checking
+  // launch is the one that prints TS2345. That diagnostic is the failure.
+  if (!parseTypeDiagnostics(output).length && /Failed to exit|Timed out while running tests/.test(output) && input.toolchain.nodePath) {
+    const checked = applyPracticeTestLaunch(input.root, input.testCommand, input.testFile, "typecheck");
+    const again = runInPracticeSandbox(input.root, checked.cmd, 60_000, {
+      capture: true, nodePath: input.toolchain.nodePath, nodeModules: input.nodeModules, extraEnv: checked.env,
+    });
+    if (!again.unsafe && parseTypeDiagnostics(again.stdout).length) { output = again.stdout; code = again.code; }
+  }
   const loaderName = declaredTypeScriptLoader(read(input.root, "package.json") ?? "", read(input.root, "tsconfig.json"))?.name ?? null;
   const missingLoader = first.code === 0 ? null : loaderMissingDetail(output, loaderName);
   if (missingLoader) {
@@ -2996,9 +3007,25 @@ export function runTestSpec(input: SpecInput): SpecResult {
     if (note.lines[0] !== missingLoader) note.lines = [missingLoader, ...note.lines].slice(0, 5);
     return { status: "cant", reason: "CANT_DO_YET_LOADER_MISSING", attempts: 0, diagnostic: note };
   }
-  const early = avaEarlyDetail(output, first.code, input.testTitle ?? soleTestTitle(read(input.root, input.testFile)));
+  const typed = input.toolchain.nodePath
+    ? repairTypedFailure({
+      root: input.root, output, sourcePattern: input.sourcePattern, denyPatterns: input.denyPatterns,
+      nodePath: input.toolchain.nodePath, nodeModules: input.nodeModules, testCommand: input.testCommand,
+    })
+    : null;
+  if (typed) {
+    return {
+      status: "diff", diff: typed.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
+      fit: { shape: "signature", examples: typed.args.length, targets: [{ symbol: typed.symbol, file: typed.file, form: "named", exportName: typed.symbol, args: typed.args }] },
+    };
+  }
+  if (parseTypeDiagnostics(output).length) {
+    const note = diag("ava_early_exit", code, output);
+    return { status: "cant", reason: "CANT_DO_YET_AVA_EARLY_EXIT", attempts: 0, diagnostic: note };
+  }
+  const early = avaEarlyDetail(output, code, input.testTitle ?? soleTestTitle(read(input.root, input.testFile)));
   if (early) {
-    const note = diag("ava_early_exit", first.code, `${early}\n${output}`);
+    const note = diag("ava_early_exit", code, `${early}\n${output}`);
     if (note.lines[0] !== early) note.lines = [early, ...note.lines].slice(0, 5);
     return { status: "cant", reason: "CANT_DO_YET_AVA_EARLY_EXIT", attempts: 0, diagnostic: note };
   }

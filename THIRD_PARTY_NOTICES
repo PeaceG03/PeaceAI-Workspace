@@ -8874,6 +8874,8 @@ fixtures (commit path):
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/util/gte.spec.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/util/gte.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/util/toNumber.ts.txt
+  8aab1978414d50f46e3e1acad326ed9d95c65b5b peaceai/test/fixtures/m254/at-parent.ts.txt
+  bec4905d01af1381709921a9e205e3c7b2c1c77e peaceai/test/fixtures/m254/at-fix.ts.txt
   c64e27288ad98f369b918574a669b5636b98e626 peaceai/test/fixtures/m99-dfb/toss__es-toolkit-698de7aa942a.txt
 license URL: https://github.com/toss/es-toolkit/blob/24e7a7b8cb8035fae1ea2e7b507aab96698a38b9/LICENSE
 ---- license text ----
