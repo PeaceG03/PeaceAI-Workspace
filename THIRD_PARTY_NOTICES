@@ -12041,3 +12041,166 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: unjs/pathe
+license: MIT (LICENSE, sha256 of trimmed text d785edfd5a8ff55734ddd8cf37c398a1e01b02dbb5069f1e01eba1a90523e6f4)
+fixtures (commit path):
+  55a21be8a14b70ec67098d3f68f54a34f3796fd4 peaceai/test/fixtures/m256/pathe-path.ts.txt
+  55a21be8a14b70ec67098d3f68f54a34f3796fd4 peaceai/test/fixtures/m256/pathe-internal.ts.txt
+  55a21be8a14b70ec67098d3f68f54a34f3796fd4 peaceai/test/fixtures/m256/pathe-glob.ts.txt
+  55a21be8a14b70ec67098d3f68f54a34f3796fd4 peaceai/test/fixtures/m256/pathe-index.ts.txt
+  55a21be8a14b70ec67098d3f68f54a34f3796fd4 peaceai/test/fixtures/m256/pathe-utils.ts.txt
+  b52fcacc59717a1e4a8783d4bbfae7fa81b4db07 peaceai/test/fixtures/m256/pathe-index.spec.ts.txt
+license URL: https://github.com/unjs/pathe/blob/55a21be8a14b70ec67098d3f68f54a34f3796fd4/LICENSE
+as written: sha256 5e6a21a7362112cfa6ff24e502be4cd51bef41cf1c98f6a303aae4bc47c621b8 (two email addresses omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above> - Daniel Roe <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+Copyright Joyent, Inc. and other Node contributors.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+---
+
+Bundled zeptomatch (https://github.com/fabiospampinato/zeptomatch)
+
+The MIT License (MIT)
+
+Copyright (c) 2023-present Fabio Spampinato
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: unjs/citty
+license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+fixtures (commit path):
+  ea428c76e46eb959a17cd62089fa28604fe22e0a peaceai/test/fixtures/m256/citty-parser.ts.txt
+  e6fa9ac717d5b175a67211311748df9825fe0ba0 peaceai/test/fixtures/m256/citty-parser.test.ts.txt
+license URL: https://github.com/unjs/citty/blob/ea428c76e46eb959a17cd62089fa28604fe22e0a/LICENSE
+as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: unjs/cookie-es
+license: MIT (LICENSE, sha256 of trimmed text 05ed7b4f22dcd03fd065486af0d863eed21a4e0041d05d1f0e4d76f33bb307e7)
+fixtures (commit path):
+  26ea164c10fb0ba347e47697ac282ff12fe00d0b peaceai/test/fixtures/m256/cookie-es-utils.ts.txt
+  26ea164c10fb0ba347e47697ac282ff12fe00d0b peaceai/test/fixtures/m256/cookie-es-index.ts.txt
+  26ea164c10fb0ba347e47697ac282ff12fe00d0b peaceai/test/fixtures/m256/cookie-es-parse.ts.txt
+  26ea164c10fb0ba347e47697ac282ff12fe00d0b peaceai/test/fixtures/m256/cookie-es-serialize.ts.txt
+  26ea164c10fb0ba347e47697ac282ff12fe00d0b peaceai/test/fixtures/m256/cookie-es-types.ts.txt
+  26ea164c10fb0ba347e47697ac282ff12fe00d0b peaceai/test/fixtures/m256/cookie-es-set-parse.ts.txt
+  26ea164c10fb0ba347e47697ac282ff12fe00d0b peaceai/test/fixtures/m256/cookie-es-set-split.ts.txt
+  26ea164c10fb0ba347e47697ac282ff12fe00d0b peaceai/test/fixtures/m256/cookie-es-set-types.ts.txt
+  55855c6ccef4370701268122dd817e382f9e14ca peaceai/test/fixtures/m256/cookie-es-serialize.test.ts.txt
+license URL: https://github.com/unjs/cookie-es/blob/26ea164c10fb0ba347e47697ac282ff12fe00d0b/LICENSE
+as written: sha256 5b0011d927882d305c69ba443d75db22c54273603bce59eb350fbffe8d4823fa (four email addresses omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Cookie-es copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Cookie parsing based on https://github.com/jshttp/cookie
+Copyright (c) 2012-2014 Roman Shtylman <email address omitted; see the license URL above>
+Copyright (c) 2015 Douglas Christopher Wilson <email address omitted; see the license URL above>
+
+Set-Cookie parsing based on https://github.com/nfriedly/set-cookie-parser
+Copyright (c) 2015 Nathan Friedly <email address omitted; see the license URL above> (http://nfriedly.com/)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----

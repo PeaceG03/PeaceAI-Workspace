@@ -1,0 +1,380 @@
+// Based on https://github.com/jshttp/cookie (MIT)
+// Copyright (c) 2012-2014 Roman Shtylman <email address omitted; see the license URL above>
+// Copyright (c) 2015 Douglas Christopher Wilson <email address omitted; see the license URL above>
+// Last sync: e264dfa
+
+import { describe, it, expect } from "vitest";
+import { serialize, stringifyCookie } from "../src";
+
+describe("serialize(name, value)", () => {
+  it("should serialize name and value", () => {
+    expect(serialize("foo", "bar")).toBe("foo=bar");
+  });
+
+  it("should URL-encode value", () => {
+    expect(serialize("foo", "bar +baz")).toBe("foo=bar%20%2Bbaz");
+  });
+
+  it("should serialize empty value", () => {
+    expect(serialize("foo", "")).toBe("foo=");
+  });
+
+  it("should coerce non-string values to string", () => {
+    expect(serialize("foo", 42)).toBe("foo=42");
+    expect(serialize("foo", true)).toBe("foo=true");
+    expect(serialize("foo", null)).toBe("foo=");
+    expect(serialize("foo", undefined)).toBe("foo=");
+    expect(serialize("foo", { bar: 1 })).toBe("foo=%5Bobject%20Object%5D");
+    expect(serialize("foo", 42, { encode: (v) => `prefix_${v}` })).toBe("foo=prefix_42");
+  });
+
+  it("should throw for invalid name", () => {
+    expect(() => serialize("foo\n", "bar")).toThrow(/argument name is invalid/);
+    expect(() => serialize("foo\u280A", "bar")).toThrow(/argument name is invalid/);
+  });
+});
+
+describe("serialize(name, value, options)", () => {
+  describe('with "domain" option', () => {
+    it("should serialize domain", () => {
+      expect(serialize("foo", "bar", { domain: "example.com" })).toBe(
+        "foo=bar; Domain=example.com",
+      );
+    });
+
+    it("should throw for invalid value", () => {
+      expect(() => serialize("foo", "bar", { domain: "example.com\n" })).toThrow(
+        /option domain is invalid/,
+      );
+    });
+  });
+
+  describe('with "encode" option', () => {
+    it("should specify alternative value encoder", () => {
+      expect(
+        serialize("foo", "bar", {
+          encode: (v) => {
+            return btoa(v);
+          },
+        }),
+      ).toBe("foo=YmFy");
+    });
+
+    it("should throw when returned value is invalid", () => {
+      expect(() =>
+        serialize("foo", "bar", {
+          encode: () => {
+            return "\n";
+          },
+        }),
+      ).toThrow(/argument val is invalid/);
+    });
+  });
+
+  describe('with "expires" option', () => {
+    it("should throw on non-Date value", () => {
+      // @ts-expect-error
+      expect(() => serialize("foo", "bar", { expires: 42 })).toThrow(/option expires is invalid/);
+    });
+
+    it("should throw on invalid date", () => {
+      expect(() => serialize("foo", "bar", { expires: new Date(Number.NaN) })).toThrow(
+        /option expires is invalid/,
+      );
+    });
+
+    it("should set expires to given date", () => {
+      expect(
+        serialize("foo", "bar", {
+          expires: new Date(Date.UTC(2000, 11, 24, 10, 30, 59, 900)),
+        }),
+      ).toBe("foo=bar; Expires=Sun, 24 Dec 2000 10:30:59 GMT");
+    });
+  });
+
+  describe('with "httpOnly" option', () => {
+    it("should include httpOnly flag when true", () => {
+      expect(serialize("foo", "bar", { httpOnly: true })).toBe("foo=bar; HttpOnly");
+    });
+
+    it("should not include httpOnly flag when false", () => {
+      expect(serialize("foo", "bar", { httpOnly: false })).toBe("foo=bar");
+    });
+  });
+
+  describe('with "maxAge" option', () => {
+    it("should throw when not a number", () => {
+      // @ts-expect-error
+      expect(() => serialize("foo", "bar", { maxAge: "buzz" })).toThrow(/option maxAge is invalid/);
+    });
+
+    it("should throw when Infinity", () => {
+      expect(() => serialize("foo", "bar", { maxAge: Number.POSITIVE_INFINITY })).toThrow(
+        /option maxAge is invalid/,
+      );
+    });
+
+    it("should throw when not integer", () => {
+      expect(() => serialize("foo", "bar", { maxAge: 3.14 })).toThrow(/option maxAge is invalid/);
+    });
+
+    it("should set max-age to value", () => {
+      expect(serialize("foo", "bar", { maxAge: 1000 })).toBe("foo=bar; Max-Age=1000");
+      expect(serialize("foo", "bar", { maxAge: 0 })).toBe("foo=bar; Max-Age=0");
+    });
+
+    it("should clamp negative Max-Age to 0", () => {
+      expect(serialize("foo", "bar", { maxAge: -1 })).toBe("foo=bar; Max-Age=0");
+      expect(serialize("foo", "bar", { maxAge: -1000 })).toBe("foo=bar; Max-Age=0");
+    });
+
+    it("should cap Max-Age to 400 days (34560000 seconds)", () => {
+      expect(serialize("foo", "bar", { maxAge: 99_999_999 })).toBe("foo=bar; Max-Age=34560000");
+    });
+
+    it("should not modify Max-Age within 400 days", () => {
+      expect(serialize("foo", "bar", { maxAge: 1000 })).toBe("foo=bar; Max-Age=1000");
+    });
+  });
+
+  describe('with "path" option', () => {
+    it("should serialize path", () => {
+      expect(serialize("foo", "bar", { path: "/foo" })).toBe("foo=bar; Path=/foo");
+    });
+
+    it("should throw for invalid value", () => {
+      expect(() => serialize("foo", "bar", { path: "/\n" })).toThrow(/option path is invalid/);
+    });
+
+    it("should accept '<' in path value (valid av-octet per RFC 6265bis)", () => {
+      expect(serialize("foo", "bar", { path: "/foo<bar" })).toBe("foo=bar; Path=/foo<bar");
+    });
+  });
+
+  describe('with "priority" option', () => {
+    it("should throw on invalid priority", () => {
+      // @ts-expect-error
+      expect(() => serialize("foo", "bar", { priority: "foo" })).toThrow(
+        /option priority is invalid/,
+      );
+    });
+
+    it("should throw on non-string", () => {
+      // @ts-expect-error
+      expect(() => serialize("foo", "bar", { priority: 42 })).toThrow(/option priority is invalid/);
+    });
+
+    it("should set priority low", () => {
+      expect(serialize("foo", "bar", { priority: "low" })).toBe("foo=bar; Priority=Low");
+      // @ts-expect-error
+      expect(serialize("foo", "bar", { priority: "loW" })).toBe("foo=bar; Priority=Low");
+    });
+
+    it("should set priority medium", () => {
+      // @ts-expect-error
+      expect(serialize("foo", "bar", { priority: "Medium" })).toBe("foo=bar; Priority=Medium");
+      expect(serialize("foo", "bar", { priority: "medium" })).toBe("foo=bar; Priority=Medium");
+    });
+
+    it("should set priority high", () => {
+      // @ts-expect-error
+      expect(serialize("foo", "bar", { priority: "higH" })).toBe("foo=bar; Priority=High");
+    });
+  });
+
+  describe('with "sameSite" option', () => {
+    it("should throw on invalid sameSite", () => {
+      // @ts-expect-error
+      expect(() => serialize("foo", "bar", { sameSite: 42 })).toThrow(/option sameSite is invalid/);
+    });
+
+    it("should set sameSite strict", () => {
+      // @ts-expect-error
+      expect(serialize("foo", "bar", { sameSite: "Strict" })).toBe("foo=bar; SameSite=Strict");
+      expect(serialize("foo", "bar", { sameSite: "strict" })).toBe("foo=bar; SameSite=Strict");
+    });
+
+    it("should set sameSite lax", () => {
+      expect(serialize("foo", "bar", { sameSite: "lax" })).toBe("foo=bar; SameSite=Lax");
+      // @ts-expect-error
+      expect(serialize("foo", "bar", { sameSite: "Lax" })).toBe("foo=bar; SameSite=Lax");
+    });
+
+    it("should set sameSite none", () => {
+      // @ts-expect-error
+      expect(serialize("foo", "bar", { sameSite: "None", secure: true })).toBe(
+        "foo=bar; Secure; SameSite=None",
+      );
+      expect(serialize("foo", "bar", { sameSite: "none", secure: true })).toBe(
+        "foo=bar; Secure; SameSite=None",
+      );
+    });
+
+    it("should throw sameSite none without secure", () => {
+      expect(() => serialize("foo", "bar", { sameSite: "none" })).toThrow(
+        /SameSite=None cookies must have the Secure attribute/,
+      );
+    });
+
+    it("should set sameSite strict when true", () => {
+      expect(serialize("foo", "bar", { sameSite: true })).toBe("foo=bar; SameSite=Strict");
+    });
+
+    it("should not set sameSite when false", () => {
+      expect(serialize("foo", "bar", { sameSite: false })).toBe("foo=bar");
+    });
+  });
+
+  describe('with "secure" option', () => {
+    it("should include secure flag when true", () => {
+      expect(serialize("foo", "bar", { secure: true })).toBe("foo=bar; Secure");
+    });
+
+    it("should not include secure flag when false", () => {
+      expect(serialize("foo", "bar", { secure: false })).toBe("foo=bar");
+    });
+  });
+
+  describe('with "partitioned" option', () => {
+    it("should include partitioned flag when true", () => {
+      expect(serialize("foo", "bar", { partitioned: true, secure: true })).toBe(
+        "foo=bar; Secure; Partitioned",
+      );
+    });
+
+    it("should throw partitioned without secure", () => {
+      expect(() => serialize("foo", "bar", { partitioned: true })).toThrow(
+        /Partitioned cookies must have the Secure attribute/,
+      );
+    });
+
+    it("should not include partitioned flag when false", () => {
+      expect(serialize("foo", "bar", { partitioned: false })).toBe("foo=bar");
+    });
+  });
+
+  describe("__Secure- prefix validation (RFC 6265bis)", () => {
+    it("should throw when serializing __Secure- cookie without Secure flag", () => {
+      expect(() => serialize("__Secure-SID", "abc123")).toThrow();
+    });
+
+    it("should allow __Secure- cookie with Secure flag", () => {
+      expect(() => serialize("__Secure-SID", "abc123", { secure: true })).not.toThrow();
+    });
+
+    it("should validate __Secure- prefix case-insensitively", () => {
+      expect(() => serialize("__secure-SID", "abc123")).toThrow();
+    });
+  });
+
+  describe("__Host- prefix validation (RFC 6265bis)", () => {
+    it("should throw when serializing __Host- cookie without Secure flag", () => {
+      expect(() => serialize("__Host-SID", "abc123", { path: "/" })).toThrow();
+    });
+
+    it("should throw when serializing __Host- cookie without Path=/", () => {
+      expect(() => serialize("__Host-SID", "abc123", { secure: true })).toThrow();
+    });
+
+    it("should throw when serializing __Host- cookie with Domain", () => {
+      expect(() =>
+        serialize("__Host-SID", "abc123", {
+          secure: true,
+          path: "/",
+          domain: "example.com",
+        }),
+      ).toThrow();
+    });
+
+    it("should allow valid __Host- cookie", () => {
+      expect(() => serialize("__Host-SID", "abc123", { secure: true, path: "/" })).not.toThrow();
+    });
+
+    it("should validate __Host- prefix case-insensitively", () => {
+      expect(() => serialize("__host-SID", "abc123")).toThrow();
+    });
+  });
+});
+
+describe("stringifyCookie(cookies)", () => {
+  it("should stringify a single cookie", () => {
+    expect(stringifyCookie({ foo: "bar" })).toBe("foo=bar");
+  });
+
+  it("should stringify multiple cookies", () => {
+    expect(stringifyCookie({ foo: "bar", baz: "qux" })).toBe("foo=bar; baz=qux");
+  });
+
+  it("should URL-encode values", () => {
+    expect(stringifyCookie({ foo: "bar baz" })).toBe("foo=bar%20baz");
+  });
+
+  it("should skip undefined values", () => {
+    expect(stringifyCookie({ foo: "bar", baz: undefined as unknown as string })).toBe("foo=bar");
+  });
+
+  it("should return empty string for empty object", () => {
+    expect(stringifyCookie({})).toBe("");
+  });
+
+  it("should throw for invalid cookie name", () => {
+    expect(() => stringifyCookie({ "foo\n": "bar" })).toThrow(/cookie name is invalid/);
+  });
+
+  it("should throw for invalid cookie value", () => {
+    expect(() => stringifyCookie({ foo: "bar" }, { encode: () => "\n" })).toThrow(
+      /cookie val is invalid/,
+    );
+  });
+
+  it("should use custom encode function", () => {
+    expect(stringifyCookie({ foo: "bar" }, { encode: (v) => btoa(v) })).toBe("foo=YmFy");
+  });
+});
+
+describe("serialize(setCookie)", () => {
+  it("should serialize from a SetCookie object", () => {
+    expect(serialize({ name: "foo", value: "bar" })).toBe("foo=bar");
+  });
+
+  it("should serialize SetCookie with options", () => {
+    expect(serialize({ name: "foo", value: "bar", httpOnly: true, secure: true })).toBe(
+      "foo=bar; HttpOnly; Secure",
+    );
+  });
+
+  it("should serialize SetCookie with encode option", () => {
+    expect(serialize({ name: "foo", value: "bar baz" }, { encode: (v) => btoa(v) })).toBe(
+      "foo=YmFyIGJheg==",
+    );
+  });
+
+  it("should serialize SetCookie with all attributes", () => {
+    expect(
+      serialize({
+        name: "foo",
+        value: "bar",
+        domain: "example.com",
+        path: "/",
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        maxAge: 3600,
+        partitioned: true,
+        priority: "high",
+      }),
+    ).toBe(
+      "foo=bar; Max-Age=3600; Domain=example.com; Path=/; HttpOnly; Secure; Partitioned; Priority=High; SameSite=Lax",
+    );
+  });
+
+  it("should serialize SetCookie with custom encoder", () => {
+    expect(serialize({ name: "foo", value: "42" }, { encode: (v) => `prefix_${v}` })).toBe(
+      "foo=prefix_42",
+    );
+  });
+
+  it("should not confuse options object with SetCookie object", () => {
+    expect(serialize("foo", "bar", { httpOnly: true })).toBe("foo=bar; HttpOnly");
+  });
+});
