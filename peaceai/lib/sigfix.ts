@@ -1,8 +1,9 @@
 // A TypeScript diagnostic is a failing test when it is the runner's only result.
-// TS2345 and TS2554 at one call of a source function can widen that parameter, add an
-// optional parameter, or add an overload. The project must still type-check, and the
-// test must pass at runtime. An `any` widening is refused. Third-party code runs only
-// in the practice sandbox.
+// TS2345 at one call of a source function can widen a mutable array parameter to
+// `readonly`. A union, and an extra optional parameter, are not edits: a union still
+// type-checks bodies that do not handle the new member, and an optional parameter
+// changes Function.length. The project must still type-check, and the test must pass.
+// An `any` widening is refused. Third-party code runs only in the practice sandbox.
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import ts from "typescript";
@@ -70,23 +71,24 @@ function safeType(text: string): boolean {
   return stripped.length === 0;
 }
 
-/** The wider parameter type. A readonly array or tuple replaces a mutable array of that element. Anything else is a union. */
-export function widenParam(param: string, arg: string): string {
+/**
+ * `T[]` becomes `readonly T[]` when the argument is already that readonly array,
+ * or a readonly tuple whose elements are that element type. Every other pair is
+ * refused, including a union such as `string | number`.
+ */
+export function widenParam(param: string, arg: string): string | null {
   const p = param.trim();
   const a = arg.trim();
   const mut = /^(.+)\[\]$/.exec(p);
-  if (mut) {
-    const elem = mut[1]!;
-    if (a === `readonly ${elem}[]`) return a;
-    const tuple = /^readonly \[([^\]]*)\]$/.exec(a);
-    if (tuple) {
-      const parts = tuple[1]!.split(",").map((s) => s.trim()).filter(Boolean);
-      const element = (part: string) => part === elem || (elem === "number" && /^-?\d+(?:\.\d+)?$/.test(part)) || (elem === "string" && /^"(?:[^"\\]|\\.)*"$/.test(part));
-      if (parts.length > 0 && parts.every(element)) return `readonly ${elem}[]`;
-    }
-  }
-  if (p.split("|").map((s) => s.trim()).includes(a)) return p;
-  return `${p} | ${a}`;
+  if (!mut) return null;
+  const elem = mut[1]!;
+  if (a === `readonly ${elem}[]`) return a;
+  const tuple = /^readonly \[([^\]]*)\]$/.exec(a);
+  if (!tuple) return null;
+  const parts = tuple[1]!.split(",").map((s) => s.trim()).filter(Boolean);
+  const element = (part: string) => part === elem || (elem === "number" && /^-?\d+(?:\.\d+)?$/.test(part)) || (elem === "string" && /^"(?:[^"\\]|\\.)*"$/.test(part));
+  if (parts.length > 0 && parts.every(element)) return `readonly ${elem}[]`;
+  return null;
 }
 
 interface Plan {
@@ -94,6 +96,16 @@ interface Plan {
   content: string;
   symbol: string;
   args: unknown[][];
+}
+
+interface Span {
+  path: string;
+  start: number;
+  end: number;
+  insert: string;
+  symbol: string;
+  args: unknown[][];
+  text: string;
 }
 
 function offsetAt(sf: ts.SourceFile, line: number, col: number): number {
@@ -140,21 +152,11 @@ function literalArg(node: ts.Expression): unknown {
   return undefined;
 }
 
-function argTypeOf(node: ts.Expression): string | null {
-  const v = literalArg(node);
-  if (typeof v === "string") return "string";
-  if (typeof v === "number") return "number";
-  if (typeof v === "boolean") return "boolean";
-  if (v === null) return "null";
-  if (Array.isArray(v) && v.every((x) => typeof x === "number")) return "readonly number[]";
-  if (Array.isArray(v) && v.every((x) => typeof x === "string")) return "readonly string[]";
-  return null;
-}
-
 function relImport(fromFile: string, spec: string): string | null {
   if (!spec.startsWith(".")) return null;
   const base = normalize(join(dirname(fromFile), spec)).replace(/\\/g, "/");
   if (base.endsWith(".ts")) return base;
+  if (base.endsWith(".js")) return `${base.slice(0, -3)}.ts`;
   return `${base}.ts`;
 }
 
@@ -207,13 +209,6 @@ function resolveFns(root: string, from: string, text: string, local: string, imp
   return hits;
 }
 
-function signatureBeforeBody(hit: FnHit): { start: number; end: number } | null {
-  const node = hit.node;
-  if (!ts.isFunctionDeclaration(node) && !ts.isMethodDeclaration(node)) return null;
-  if (!node.body) return null;
-  return { start: node.getStart(hit.sf), end: node.body.getStart(hit.sf) };
-}
-
 function listed(root: string, diag: TypeDiagnostic, local: string, sourceOk: (path: string) => boolean): FnHit[] {
   const text = readLocal(root, diag.file);
   if (text === null) return [];
@@ -235,7 +230,7 @@ function rejectedType(types: readonly (string | null | undefined)[]): boolean {
   return false;
 }
 
-function planCall(root: string, diag: TypeDiagnostic, sourceOk: (path: string) => boolean): Plan | null {
+function planCall(root: string, diag: TypeDiagnostic, sourceOk: (path: string) => boolean): Span | null {
   if (HELPER.test(diag.file)) return null; // sig-guard:helper
   const text = readLocal(root, diag.file);
   if (text === null) return null;
@@ -258,31 +253,16 @@ function planCall(root: string, diag: TypeDiagnostic, sourceOk: (path: string) =
     const current = param.type.getText(hit.sf);
     if (current.replace(/\s+/g, "") !== diag.parameter!.replace(/\s+/g, "")) return null;
     const next = widenParam(current, diag.argument!);
-    if (next === current) return null;
-    const content = hit.text.slice(0, param.type.getStart(hit.sf)) + next + hit.text.slice(param.type.getEnd());
-    return { path: hit.path, content, symbol: hit.name, args: concrete };
-  }
-  if (diag.code === "TS2554" && diag.expected !== undefined && diag.got !== undefined && diag.got > diag.expected) {
-    const extra = call.arguments.slice(diag.expected);
-    if (extra.length !== diag.got - diag.expected) return null;
-    const types = extra.map(argTypeOf);
-    if (rejectedType(types)) return null;
-    if (hit.node.parameters.some((p) => p.dotDotDotToken)) return null;
-    if ((!ts.isFunctionDeclaration(hit.node) && !ts.isMethodDeclaration(hit.node)) || !hit.node.body) return null;
-    const from = hit.node.parameters.length ? hit.node.parameters[hit.node.parameters.length - 1]!.getEnd() : hit.node.getStart(hit.sf);
-    const paren = hit.text.indexOf(")", from);
-    if (paren < 0) return null;
-    const names = new Set(hit.node.parameters.map((p) => p.name.getText(hit.sf)));
-    const added = types.map((t, i) => { let n = `extra${i + 1}`; while (names.has(n)) n += "_"; names.add(n); return `${n}?: ${t}`; }).join(", ");
-    const joiner = hit.node.parameters.length ? ", " : "";
-    const content = hit.text.slice(0, paren) + joiner + added + hit.text.slice(paren);
-    const span = signatureBeforeBody(hit);
-    if (!span) return { path: hit.path, content, symbol: hit.name, args: concrete };
-    const head = hit.text.slice(span.start, span.end).trimEnd() + ";";
-    const withOver = content.slice(0, span.start) + head + "\n" + content.slice(span.start);
-    return { path: hit.path, content: withOver, symbol: hit.name, args: concrete };
+    if (!next || next === current) return null;
+    return { path: hit.path, start: param.type.getStart(hit.sf), end: param.type.getEnd(), insert: next, symbol: hit.name, args: concrete, text: hit.text };
   }
   return null;
+}
+
+function applySpans(text: string, spans: readonly Span[]): string {
+  let out = text;
+  for (const span of [...spans].sort((a, b) => b.start - a.start)) out = out.slice(0, span.start) + span.insert + out.slice(span.end);
+  return out;
 }
 
 export interface RepairInput {
@@ -321,35 +301,51 @@ export function typecheckRejected(input: RepairInput): boolean {
  * One signature edit for a type-diagnostic failure, then `tsc` and the test, both in the sandbox.
  * Null when the diagnostic is not a single safe widening, the project no longer type-checks, or the test still fails.
  */
-export function proposedSignature(root: string, output: string, sourcePattern?: string, denyPatterns?: readonly string[]): Plan | null {
-  const diags = parseTypeDiagnostics(output).filter((d) => d.code === "TS2345" || d.code === "TS2554");
-  const plans: Plan[] = [];
-  for (const d of diags) {
-    const plan = planCall(root, d, (path) => sourceOk(path, sourcePattern, denyPatterns));
-    if (plan) plans.push(plan);
+function readonlySpans(root: string, output: string, sourcePattern?: string, denyPatterns?: readonly string[]): Span[] | null {
+  const diags = parseTypeDiagnostics(output).filter((d) => d.code === "TS2345");
+  if (!diags.length) return null;
+  const spans: Span[] = [];
+  for (const diag of diags) {
+    const span = planCall(root, diag, (path) => sourceOk(path, sourcePattern, denyPatterns));
+    if (!span) return null;
+    spans.push(span);
   }
-  const unique = new Map<string, Plan>();
-  for (const p of plans) unique.set(`${p.path}\0${p.symbol}\0${p.content}`, p);
-  if (unique.size !== 1) return null;
-  return [...unique.values()][0]!;
+  return spans;
+}
+
+export function proposedSignature(root: string, output: string, sourcePattern?: string, denyPatterns?: readonly string[]): Plan | null {
+  const spans = readonlySpans(root, output, sourcePattern, denyPatterns);
+  if (!spans || spans.length !== 1) return null;
+  const span = spans[0]!;
+  return { path: span.path, content: applySpans(span.text, spans), symbol: span.symbol, args: span.args };
 }
 
 export function repairTypedFailure(input: RepairInput): { diff: string; symbol: string; file: string; args: unknown[][] } | null {
-  const plan = proposedSignature(input.root, input.output, input.sourcePattern, input.denyPatterns);
-  if (!plan) return null;
-  const original = readLocal(input.root, plan.path);
-  if (original === null || original === plan.content) return null;
-  writeFileSync(join(input.root, plan.path), plan.content);
+  const spans = readonlySpans(input.root, input.output, input.sourcePattern, input.denyPatterns);
+  if (!spans) return null;
+  const byPath = new Map<string, Span[]>();
+  for (const span of spans) byPath.set(span.path, [...(byPath.get(span.path) ?? []), span]);
+  const originals = new Map<string, string>();
   try {
+    for (const [path, group] of byPath) {
+      const original = readLocal(input.root, path);
+      if (original === null) return null;
+      originals.set(path, original);
+      const content = applySpans(group[0]!.text, group);
+      if (content === original) return null;
+      writeFileSync(join(input.root, path), content);
+    }
     if (typecheckRejected(input)) return null;
     const again = runInPracticeSandbox(input.root, input.testCommand, 60_000, {
       capture: true, nodePath: input.nodePath, nodeModules: input.nodeModules, ...(input.bwrap ? { bwrap: input.bwrap } : {}),
     });
     if (again.unsafe || again.code !== 0) return null;
-    const diff = practiceGit(input.root, ["diff", "--no-color", "--no-ext-diff", "--no-renames", "--", plan.path]);
+    const paths = [...byPath.keys()];
+    const diff = practiceGit(input.root, ["diff", "--no-color", "--no-ext-diff", "--no-renames", "--", ...paths]);
     if (!diff.ok || !diff.out.trim()) return null;
-    return { diff: diff.out, symbol: plan.symbol, file: plan.path, args: plan.args };
+    const first = spans[0]!;
+    return { diff: diff.out, symbol: first.symbol, file: first.path, args: first.args };
   } finally {
-    writeFileSync(join(input.root, plan.path), original);
+    for (const [path, original] of originals) writeFileSync(join(input.root, path), original);
   }
 }

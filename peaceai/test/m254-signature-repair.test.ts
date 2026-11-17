@@ -1,5 +1,5 @@
-// Signature repair. The sentences and the small modules are made up.
-// The pinned at() file is the published parent, copied unmodified.
+// Signature repair. The small modules are made up.
+// The oaverify files are the published parent and the published test, copied unmodified.
 // Third-party bytes run only inside the practice sandbox.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -15,10 +15,15 @@ import { gradeBehavior } from "../lib/specgrade.ts";
 import { practiceSandboxReady, runInPracticeSandbox, visibleNodeBin } from "../lib/practicemine.ts";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
-const parent = readFileSync(resolve(import.meta.dirname, "fixtures/m254/at-parent.ts.txt"), "utf8");
-const fixed = readFileSync(resolve(import.meta.dirname, "fixtures/m254/at-fix.ts.txt"), "utf8");
-const PARENT = "8aab1978414d50f46e3e1acad326ed9d95c65b5b";
+const errorsSrc = readFileSync(resolve(import.meta.dirname, "fixtures/m254/errors.ts.txt"), "utf8");
+const errorsTest = readFileSync(resolve(import.meta.dirname, "fixtures/m254/errors.test.ts.txt"), "utf8");
+const SOURCE_PIN = "44511f2b9daa20e9850c5a156c306f14a2180083";
+const TEST_PIN = "888eb66ea0a386f01e507c48d1930fe9d2422121";
+const SOURCE_SHA = "bea54ccb6d3c16c588747f5f43ef297b9538ab72acb5a3f73ab796d0ab97b901";
+const TEST_SHA = "95758b2f21f3dbdd927a6d518026b157545aa39a799e994571c60fdaa8c76054";
 const modules = resolve(repoRoot, "node_modules");
+const VITEST_TYPES = `export function describe(name: string, fn: () => void): void;\nexport function it(name: string, fn: () => void | Promise<void>): void;\nexport namespace describe { function each<T>(cases: readonly T[]): (name: string, fn: (arg: T) => void) => void; }\nexport namespace it { function each<T>(cases: readonly T[]): (name: string, fn: (arg: T) => void) => void; }\nexport const expect: any;\nexport interface ExpectTypeOf<T> { toEqualTypeOf<U>(): void; toExtend<U>(): void; not: { toEqualTypeOf<U>(): void; toExtend<U>(): void }; }\nexport function expectTypeOf<T>(): ExpectTypeOf<T>;\n`;
+const atSrc = `export function at<T>(arr: readonly T[], indices: number[]): T[] {\n  const result = new Array<T>(indices.length);\n  for (let i = 0; i < indices.length; i++) {\n    const index = indices[i]!;\n    result[i] = arr[index < 0 ? arr.length + index : index];\n  }\n  return result;\n}\n`;
 
 function place(root: string, files: Record<string, string>) {
   for (const [path, content] of Object.entries(files)) {
@@ -60,11 +65,13 @@ test("a type diagnostic records the file, the code, and the two types", () => {
 
 test("a readonly array widens the parameter, and the near misses refuse", () => {
   assert.equal(widenParam("number[]", "readonly number[]"), "readonly number[]");
-  assert.equal(widenParam('"a"', '"b"'), '"a" | "b"');
+  assert.equal(widenParam("PathSegment[]", "readonly PathSegment[]"), "readonly PathSegment[]");
+  assert.equal(widenParam("string", "number"), null);
+  assert.equal(widenParam('"a"', '"b"'), null);
   const root = mkdtempSync(join(tmpdir(), "sig-plan-"));
   const call = atCall();
   place(root, {
-    "src/array/at.ts": parent,
+    "src/array/at.ts": atSrc,
     "test/call.ts": call,
     "src/keep.ts": `import { at } from "./array/at.ts";\nexport const kept = at(["a", "b"], [1]);\n`,
   });
@@ -91,20 +98,36 @@ test("a readonly array widens the parameter, and the near misses refuse", () => 
   rmSync(root, { recursive: true, force: true });
 });
 
-test("an extra literal argument adds an optional parameter and an overload", () => {
-  const root = mkdtempSync(join(tmpdir(), "sig-extra-"));
-  const src = `export function label(kind: string): number {\n  return kind.length;\n}\n`;
-  const call = `import { label } from "../src/label.ts";\nexport const n = label("ab", 1);\n`;
-  place(root, { "src/label.ts": src, "test/call.ts": call });
-  const at = call.indexOf("1");
-  const pre = call.slice(0, at);
-  const output = `test/call.ts(${pre.split("\n").length},${at - pre.lastIndexOf("\n")}): error TS2554: Expected 1 arguments, but got 2.`;
-  const plan = proposedSignature(root, output, "^src/.+\\.ts$");
-  assert.ok(plan);
-  assert.match(plan!.content, /export function label\(kind: string\): number;/);
-  assert.match(plan!.content, /extra1\?: number/);
+test("a union is refused when the body only stringifies, concatenates, json-encodes, or ignores the value", () => {
+  const cases = [
+    ["show-string.ts", `export function show(x: string): string { return String(x); }\n`, "number", "string"],
+    ["show-plus.ts", `export function show(x: string): string { return "x:" + x; }\n`, "number", "string"],
+    ["show-json.ts", `export function show(x: string): string { return JSON.stringify(x); }\n`, "number", "string"],
+    ["show-unused.ts", `export function show(x: string): number { return 1; }\n`, "number", "string"],
+  ] as const;
+  const root = mkdtempSync(join(tmpdir(), "sig-union-"));
+  for (const [file, src, arg, param] of cases) {
+    const call = `import { show } from "../src/${file}";\nexport const out = show(1);\n`;
+    place(root, { [`src/${file}`]: src, "test/call.ts": call });
+    const output = diag("test/call.ts", call, "1)", `Argument of type '${arg}' is not assignable to parameter of type '${param}'.`);
+    assert.equal(proposedSignature(root, output, "^src/.+\\.ts$"), null, file);
+  }
   rmSync(root, { recursive: true, force: true });
 });
+
+function typecheckModules(): string {
+  const dir = mkdtempSync(join(tmpdir(), "sig-mods-"));
+  const nm = join(dir, "node_modules");
+  mkdirSync(join(nm, "@types"), { recursive: true });
+  mkdirSync(join(nm, "vitest"), { recursive: true });
+  for (const [from, to] of [[join(modules, "typescript"), join(nm, "typescript")], [join(modules, "@types/node"), join(nm, "@types/node")]] as const) {
+    const copied = spawnSync("cp", ["-a", from, to], { stdio: "ignore" });
+    assert.equal(copied.status, 0, from);
+  }
+  writeFileSync(join(nm, "vitest/package.json"), `{"name":"vitest","types":"index.d.ts"}\n`);
+  writeFileSync(join(nm, "vitest/index.d.ts"), VITEST_TYPES);
+  return nm;
+}
 
 function gitInit(root: string) {
   const git = (args: string[]) => spawnSync("git", ["-C", root, ...args], { stdio: "ignore" });
@@ -113,51 +136,47 @@ function gitInit(root: string) {
   git(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "base"]);
 }
 
-test("the published at() parent fails the readonly call and the widening passes, inside the sandbox", (t) => {
+test("the published oaverify errors test is TS2345 before the readonly widening and clean after, inside the sandbox", (t) => {
   if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
   const node = visibleNodeBin();
   assert.ok(node);
-  assert.equal(createHash("sha256").update(parent).digest("hex"), createHash("sha256").update(readFileSync(resolve(import.meta.dirname, "fixtures/m254/at-parent.ts.txt"))).digest("hex"));
-  assert.equal(PARENT.length, 40);
-  const root = mkdtempSync(join(tmpdir(), "sig-at-"));
-  const call = `import assert from "node:assert/strict";\nimport { at } from "../src/array/at.ts";\nconst indices = [0, 2] as const;\nassert.deepEqual(at(["a", "b", "c"], indices), ["a", "c"]);\n`;
+  assert.equal(SOURCE_PIN.length, 40);
+  assert.equal(TEST_PIN.length, 40);
+  assert.equal(createHash("sha256").update(errorsSrc).digest("hex"), SOURCE_SHA);
+  assert.equal(createHash("sha256").update(errorsTest).digest("hex"), TEST_SHA);
+  const root = mkdtempSync(join(tmpdir(), "sig-oav-"));
+  const typeModules = typecheckModules();
+  const tsconfig = {
+    compilerOptions: {
+      target: "ES2022", module: "ESNext", moduleResolution: "Bundler", lib: ["ES2022"], types: ["node"],
+      strict: true, noUncheckedIndexedAccess: true, skipLibCheck: true, noEmit: true, moduleDetection: "force",
+    },
+    include: ["packages/core/src/errors.ts", "packages/core/test/errors.test.ts"],
+  };
   place(root, {
-    "src/array/at.ts": parent,
-    "src/keep.ts": `import { at } from "./array/at.ts";\nexport const kept = at(["a", "b"], [1]);\n`,
-    "test/call.ts": call,
-    "tsconfig.json": `${JSON.stringify({ compilerOptions: { strict: true, target: "es2022", module: "nodenext", moduleResolution: "nodenext", noEmit: true, allowImportingTsExtensions: true }, include: ["src", "test"] })}\n`,
+    "packages/core/src/errors.ts": errorsSrc,
+    "packages/core/test/errors.test.ts": errorsTest,
+    "tsconfig.json": JSON.stringify(tsconfig) + "\n",
     "package.json": `{ "type": "module" }\n`,
-    "run.mjs": `import { spawnSync } from "node:child_process";\nconst tsc = spawnSync(process.execPath, ["node_modules/typescript/lib/tsc.js", "--noEmit", "--pretty", "false", "--strict", "-p", "tsconfig.json"], { encoding: "utf8" });\nprocess.stdout.write(tsc.stdout); process.stderr.write(tsc.stderr);\nif (tsc.status) process.exit(tsc.status);\nconst run = spawnSync(process.execPath, ["--experimental-strip-types", "test/call.ts"], { encoding: "utf8" });\nprocess.stdout.write(run.stdout); process.stderr.write(run.stderr);\nprocess.exit(run.status ?? 1);\n`,
+    "run.mjs": `import { spawnSync } from "node:child_process";\nconst tsc = spawnSync(process.execPath, ["node_modules/typescript/lib/tsc.js", "--noEmit", "--pretty", "false", "-p", "tsconfig.json"], { encoding: "utf8" });\nprocess.stdout.write(tsc.stdout); process.stderr.write(tsc.stderr);\nprocess.exit(tsc.status ?? 1);\n`,
   });
   gitInit(root);
   const cmd = [node!, "run.mjs"];
-  const before = runInPracticeSandbox(root, cmd, 60_000, { capture: true, nodePath: node, nodeModules: modules });
+  const before = runInPracticeSandbox(root, cmd, 60_000, { capture: true, nodePath: node, nodeModules: typeModules });
   assert.equal(before.unsafe, false);
   assert.notEqual(before.code, 0);
-  assert.match(before.stdout, /error TS2345/);
-  const repaired = repairTypedFailure({ root, output: before.stdout, sourcePattern: "^src/.+\\.ts$", nodePath: node!, nodeModules: modules, testCommand: cmd });
-  assert.ok(repaired, before.stdout);
-  assert.match(repaired!.diff, /readonly number\[\]/);
-  assert.match(fixed, /indices: readonly number\[\]/);
-  writeFileSync(join(root, "src/array/at.ts"), parent.replace("indices: number[]", "indices: readonly number[]"));
-  const after = runInPracticeSandbox(root, cmd, 60_000, { capture: true, nodePath: node, nodeModules: modules });
-  assert.equal(after.code, 0, after.stdout);
-  const wrong = mkdtempSync(join(tmpdir(), "sig-wrong-"));
-  const wrongSrc = `export function label(kind: "a"): string {\n  return "yes";\n}\n`;
-  const wrongCall = `import assert from "node:assert/strict";\nimport { label } from "../src/label.ts";\nassert.equal(label("b" as "b"), "B");\n`;
-  place(wrong, {
-    "src/label.ts": wrongSrc,
-    "test/call.ts": wrongCall,
-    "tsconfig.json": `${JSON.stringify({ compilerOptions: { strict: true, target: "es2022", module: "nodenext", moduleResolution: "nodenext", noEmit: true, allowImportingTsExtensions: true }, include: ["src", "test"] })}\n`,
-    "package.json": `{ "type": "module" }\n`,
-    "run.mjs": readFileSync(join(root, "run.mjs"), "utf8"),
+  assert.match(before.stdout, /packages\/core\/test\/errors\.test\.ts\(\d+,\d+\): error TS2345/);
+  const repaired = repairTypedFailure({
+    root, output: before.stdout, sourcePattern: "^packages/core/src/.+\\.ts$", nodePath: node!, nodeModules: typeModules, testCommand: cmd,
   });
-  gitInit(wrong);
-  const failed = runInPracticeSandbox(wrong, cmd, 60_000, { capture: true, nodePath: node, nodeModules: modules });
-  assert.match(failed.stdout, /error TS2345/);
-  assert.equal(repairTypedFailure({ root: wrong, output: failed.stdout, sourcePattern: "^src/.+\\.ts$", nodePath: node!, nodeModules: modules, testCommand: cmd }), null);
+  assert.ok(repaired, before.stdout);
+  assert.match(repaired!.diff, /readonly PathSegment\[\]/);
+  assert.equal(repaired!.file, "packages/core/src/errors.ts");
+  writeFileSync(join(root, "packages/core/src/errors.ts"), errorsSrc.replaceAll("  path: PathSegment[],\n  message: string,\n", "  path: readonly PathSegment[],\n  message: string,\n"));
+  const after = runInPracticeSandbox(root, cmd, 60_000, { capture: true, nodePath: node, nodeModules: typeModules });
+  assert.equal(after.code, 0, after.stdout);
   rmSync(root, { recursive: true, force: true });
-  rmSync(wrong, { recursive: true, force: true });
+  rmSync(resolve(typeModules, ".."), { recursive: true, force: true });
 });
 
 test("an any-cast that only matches the recorded call is test-only", (t) => {
@@ -207,12 +226,14 @@ test("deleting the signature guards admits the near miss, with the sandbox and w
   assert.ok(node);
   const root = mkdtempSync(join(tmpdir(), "sig-mut-"));
   const call = atCall();
-  place(root, { "src/array/at.ts": parent, "test/call.ts": call });
-  const output = diag("test/call.ts", call, "indices", "Argument of type 'any' is not assignable to parameter of type 'number[]'.");
+  const anySrc = `export function ids(xs: any[]): number { return xs.length; }\n`;
+  const anyCall = `import { ids } from "../src/ids.ts";\nexport const out = ids(flag);\n`;
+  place(root, { "src/array/at.ts": atSrc, "src/ids.ts": anySrc, "test/call.ts": call, "test/any.ts": anyCall });
+  const output = diag("test/any.ts", anyCall, "flag", "Argument of type 'readonly any[]' is not assignable to parameter of type 'any[]'.");
   assert.equal(proposedSignature(root, output, "^src/.+\\.ts$"), null);
   const opened = await mutant("sig-guard:any") as { proposedSignature: typeof proposedSignature };
   const lied = opened.proposedSignature(root, output, "^src/.+\\.ts$");
-  assert.match(lied?.content ?? "", /any/);
+  assert.match(lied?.content ?? "", /readonly any\[\]/);
   const helper = `import { at } from "../src/array/at.ts";\nconst indices = [0] as const;\nexport const out = at([1], indices);\n`;
   place(root, { "test/helpers.ts": helper });
   const helperOut = diag("test/helpers.ts", helper, "indices", "Argument of type 'readonly [0]' is not assignable to parameter of type 'number[]'.");

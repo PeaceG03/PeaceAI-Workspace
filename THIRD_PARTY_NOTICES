@@ -8874,8 +8874,6 @@ fixtures (commit path):
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/util/gte.spec.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/util/gte.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m251/compat/util/toNumber.ts.txt
-  8aab1978414d50f46e3e1acad326ed9d95c65b5b peaceai/test/fixtures/m254/at-parent.ts.txt
-  bec4905d01af1381709921a9e205e3c7b2c1c77e peaceai/test/fixtures/m254/at-fix.ts.txt
   c64e27288ad98f369b918574a669b5636b98e626 peaceai/test/fixtures/m99-dfb/toss__es-toolkit-698de7aa942a.txt
 license URL: https://github.com/toss/es-toolkit/blob/24e7a7b8cb8035fae1ea2e7b507aab96698a38b9/LICENSE
 ---- license text ----
@@ -11985,6 +11983,37 @@ license URL: https://github.com/colinhacks/zod/blob/90bf57b8e96a3729d766fff3185d
 MIT License
 
 Copyright (c) 2025 Colin McDonnell
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: oaverify/oaverify
+license: MIT (LICENSE, sha256 of trimmed text fef34339f28940bcab1d22ad32435f2efd3d18e545a3938149d1fa0c74fb6b2d)
+fixtures (commit path):
+  44511f2b9daa20e9850c5a156c306f14a2180083 peaceai/test/fixtures/m254/errors.ts.txt
+  888eb66ea0a386f01e507c48d1930fe9d2422121 peaceai/test/fixtures/m254/errors.test.ts.txt
+license URL: https://github.com/oaverify/oaverify/blob/44511f2b9daa20e9850c5a156c306f14a2180083/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2026 Andrew Houghton
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
