@@ -1,0 +1,12 @@
+{
+  "schema": "peaceai-m253-zod-fixture:v1",
+  "note": "Pinned copy of colinhacks/zod packages/bench/compile-matrix.ts used as a real env-fix flag admission. License text is MIT at the named commit. The bytes are unmodified.",
+  "examples": [
+    {
+      "repo": "colinhacks/zod",
+      "commit": "90bf57b8e96a3729d766fff3185d39b2ab3ba016",
+      "licenseSha256": "f61cacc2acb8b71aa79a128b3e732bf25e02aab40747bbbd5bf00c97c9cda28d",
+      "fixture": "peaceai/test/fixtures/m253/compile-matrix.ts.txt"
+    }
+  ]
+}

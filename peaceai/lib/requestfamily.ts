@@ -4,7 +4,7 @@
 // is dropped. Zero cues or two cues refuse. A request that names PeaceAI's own tooling, and
 // no edit family, refuses as a self-change. A hash of seq and asked text holds rows out.
 import { createHash } from "node:crypto";
-import { envLine, importLine, testLine, tsconfigLine, type SlotRepo } from "./slotfill.ts";
+import { envFixLine, importLine, testLine, tsconfigLine, type SlotRepo } from "./slotfill.ts";
 
 export const REQUEST_FAMILY_SCHEMA = "peaceai-request-family:v1";
 export const NONE_FAMILY = "none";
@@ -214,7 +214,7 @@ export function canonicalRequest(family: string, asked: string, repo?: SlotRepo 
     const max = /\bas (?:an )?integer 1\.\.(\d{1,9})\b/i.exec(asked);
     if (file && flag) return `make env ${name} strict in ${file[1]} as a flag`;
     if (file && max) return `make env ${name} strict in ${file[1]} as integer 1..${max[1]}`;
-    return repo ? envLine(name, repo) : null;
+    return repo ? envFixLine(name, asked, repo) : null;
   }
   if (family === "TSCONFIG_SCRIPT") return repo ? tsconfigLine(asked, repo) : null;
   if (family === "IMPORT_EDIT") return repo ? importLine(asked, repo) : null;
