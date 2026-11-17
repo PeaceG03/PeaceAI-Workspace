@@ -148,18 +148,14 @@ const KILLS = [
   { guard: "zde-guard:nest", file: "src/znest.spec.ts", spec: "import { znest } from './znest';\nexpect(znest('ab', [1])).toEqual({ a: 1, b: undefined });\nexpect(znest(['c'], [3])).toEqual({ c: 3 });\n", body: "like(keys)" },
   { guard: "zde-guard:miss", file: "src/zmiss2.spec.ts", spec: "import { zmiss2 } from './zmiss2';\nexpect(zmiss2(['a.b', 'c'], [1, 2])).toEqual({ a: { b: 1 }, c: 2 });\nexpect(zmiss2(['d.e'], [3])).toEqual({ d: { e: 3 } });\n", body: "like(keys)" },
   { guard: "idn-guard:fit", file: "src/ifit.spec.ts", spec: "import { ifit } from './ifit';\nexpect(ifit(5)).toBe(6);\nexpect(ifit('hello')).toBe('hello');\nexpect(ifit(true)).toBe(true);\nexpect(ifit(false)).toBe(false);\n", body: "return a;" },
-  { guard: "idn-guard:num", file: "src/inum.spec.ts", spec: "import { inum } from './inum';\nexpect(inum('ab')).toBe('ab');\nexpect(inum(true)).toBe(true);\nexpect(inum(false)).toBe(false);\n", body: "return a;" },
-  { guard: "idn-guard:str", file: "src/istr.spec.ts", spec: "import { istr } from './istr';\nexpect(istr(1)).toBe(1);\nexpect(istr(2)).toBe(2);\nexpect(istr(true)).toBe(true);\nexpect(istr(false)).toBe(false);\n", body: "return a;" },
-  { guard: "idn-guard:bool", file: "src/ibool.spec.ts", spec: "import { ibool } from './ibool';\nexpect(ibool(1)).toBe(1);\nexpect(ibool(2)).toBe(2);\nexpect(ibool('a')).toBe('a');\n", body: "return a;" },
   { guard: "idn-guard:value", file: "src/ival.spec.ts", spec: "import { ival } from './ival';\nexpect(ival(1)).toBe(1);\nexpect(ival('a')).toBe('a');\nexpect(ival(true)).toBe(true);\nexpect(ival(null)).toBe(null);\n", body: "return a;" },
-  { guard: "uesc-guard:fit", file: "src/ufit.spec.ts", spec: "import { ufit } from './ufit';\nexpect(ufit('&amp;')).toBe('NO');\nexpect(ufit('abc')).toBe('abc');\n", body: "&amp;" },
-  { guard: "uesc-guard:amp", file: "src/uamp.spec.ts", spec: "import { uamp } from './uamp';\nexpect(uamp('&#39;')).toBe(\"'\");\nexpect(uamp('&lt;')).toBe('<');\n", body: "&amp;" },
+  { guard: "uesc-guard:fit", file: "src/ufit.spec.ts", spec: "import { ufit } from './ufit';\nexpect(ufit('&amp;')).toBe('NO');\nexpect(ufit('&lt;')).toBe('<');\n", body: "&amp;" },
   { guard: "dden-guard:fit", file: "src/dfit.spec.ts", spec: "import { dfit } from './dfit';\nexpect(dfit('  hello')).toBe('HELLO');\nexpect(dfit('  a\\n  b')).toBe('a\\nb');\n", body: "Invalid opening line" },
   { guard: "dden-guard:line", file: "src/dline.spec.ts", spec: "import { dline } from './dline';\nexpect(dline('  hello')).toBe('hello');\nexpect(dline('   x')).toBe('x');\n", body: "Invalid opening line" },
   { guard: "gt-guard:fit", file: "src/gfit.spec.ts", spec: "import { gfit } from './gfit';\nexpect(gfit(3, 1)).toBe(true);\nexpect(gfit(1, 3)).toBe(false);\nexpect(gfit('def', 'abc')).toBe(false);\n", body: "a > b" },
-  { guard: "gt-guard:text", file: "src/gtext.spec.ts", spec: "import { gtext } from './gtext';\nexpect(gtext(3, 1)).toBe(true);\nexpect(gtext(1, 3)).toBe(false);\nexpect(gtext(3, 3)).toBe(false);\n", body: "a > b" },
+  { guard: "gt-guard:text", file: "src/gtext.spec.ts", spec: "import { gtext } from './gtext';\nexpect(gtext(3, 1)).toBe(true);\nexpect(gtext(1, 3)).toBe(false);\nexpect(gtext(true, false)).toBe(true);\n", body: "a > b" },
   { guard: "lt-guard:fit", file: "src/lfit.spec.ts", spec: "import { lfit } from './lfit';\nexpect(lfit(1, 3)).toBe(true);\nexpect(lfit(3, 1)).toBe(false);\nexpect(lfit('abc', 'def')).toBe(false);\n", body: "a < b" },
-  { guard: "lt-guard:text", file: "src/ltext.spec.ts", spec: "import { ltext } from './ltext';\nexpect(ltext(1, 3)).toBe(true);\nexpect(ltext(3, 1)).toBe(false);\nexpect(ltext(3, 3)).toBe(false);\n", body: "a < b" },
+  { guard: "lt-guard:text", file: "src/ltext.spec.ts", spec: "import { ltext } from './ltext';\nexpect(ltext(1, 3)).toBe(true);\nexpect(ltext(3, 1)).toBe(false);\nexpect(ltext(false, true)).toBe(true);\n", body: "a < b" },
 ];
 
 test("a near-miss each length-index guard names is refused", () => {
@@ -236,6 +232,98 @@ test("zip and mean agree with the published index loop on sets and generators", 
     "",
   ].join("\n");
   const ran = runBoxed({ ...dirFiles, "grid.mjs": script }, "grid.mjs");
+  assert.equal(ran.code, 0, ran.stdout);
+});
+
+test("unescape admits every published entity, and a string with none of them is not that family", () => {
+  const entities = [
+    ["&amp;", "&"],
+    ["&lt;", "<"],
+    ["&gt;", ">"],
+    ["&quot;", "\""],
+    ["&#39;", "'"],
+    ["&#039;", "'"],
+    ["&#000039;", "'"],
+  ];
+  for (const [raw, decoded] of entities) {
+    const spec = `import { ent } from './ent';\nexpect(ent(${JSON.stringify(raw)})).toBe(${JSON.stringify(decoded)});\nexpect(ent('abc')).toBe('abc');\n`;
+    const plan = admit("src/ent.spec.ts", spec, "src/ent.ts");
+    assert.equal(plan?.ok, true, raw);
+    if (plan?.ok) assert.equal(plan.fit.shape, "uesc", raw);
+  }
+  const plain = admit("src/plain.spec.ts", "import { plain } from './plain';\nexpect(plain('abc')).toBe('abc');\nexpect(plain('&#96;')).toBe('&#96;');\n", "src/plain.ts");
+  assert.notEqual(plain?.ok && plain.fit.shape, "uesc");
+});
+
+test("gt, lt, toLength, zipObjectDeep, and dedent match the published pin outside the recorded calls", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed on this host"); return; }
+  const sources = {
+    gt: admit("src/compat/util/gt.spec.ts", pinned("compat/util/gt.spec.ts"), "src/compat/util/gt.ts"),
+    lt: admit("src/compat/util/lt.spec.ts", pinned("compat/util/lt.spec.ts"), "src/compat/util/lt.ts"),
+    toLength: admit("src/compat/util/toLength.spec.ts", pinned("compat/util/toLength.spec.ts"), "src/compat/util/toLength.ts"),
+    zipObjectDeep: admit("src/compat/array/zipObjectDeep.spec.ts", pinned("compat/array/zipObjectDeep.spec.ts"), "src/compat/array/zipObjectDeep.ts"),
+    dedent: admit("src/string/dedent.spec.ts", pinned("string/dedent.spec.ts"), "src/string/dedent.ts"),
+  };
+  for (const [name, plan] of Object.entries(sources)) assert.equal(plan?.ok, true, name);
+  const files = tree();
+  for (const [name, plan] of Object.entries(sources)) {
+    if (!plan?.ok) continue;
+    files[`scaffold/${name}.mjs`] = transpile(`${name}.ts`, plan.files[0]!.content);
+  }
+  const script = [
+    "import { gt } from './compat/util/gt.mjs';",
+    "import { lt } from './compat/util/lt.mjs';",
+    "import { toLength } from './compat/util/toLength.mjs';",
+    "import { zipObjectDeep } from './compat/array/zipObjectDeep.mjs';",
+    "import { dedent } from './string/dedent.mjs';",
+    "import { gt as sgt } from './scaffold/gt.mjs';",
+    "import { lt as slt } from './scaffold/lt.mjs';",
+    "import { toLength as slen } from './scaffold/toLength.mjs';",
+    "import { zipObjectDeep as szip } from './scaffold/zipObjectDeep.mjs';",
+    "import { dedent as sdedent } from './scaffold/dedent.mjs';",
+    "let bad = 0;",
+    "const say = (name, pub, got) => { bad++; console.log('FAIL', name, pub, got); };",
+    "const same = (l, r) => { if (Object.is(l, r)) return true; if (Array.isArray(l) && Array.isArray(r) && l.length === r.length) return l.every((item, i) => same(item, r[i])); if (l && r && typeof l === 'object' && !Array.isArray(l) && !Array.isArray(r)) { const keys = Reflect.ownKeys(l); return keys.length === Reflect.ownKeys(r).length && keys.every((key) => same(l[key], r[key])); } return false; };",
+    "const check = (name, pub, ours) => { let pe, oe, pv, ov; try { pv = pub(); } catch (e) { pe = e; } try { ov = ours(); } catch (e) { oe = e; } if (pe || oe) { if (!pe || !oe || pe.name !== oe.name) say(name, pe && pe.name, oe && oe.name); return; } if (!same(pv, ov)) say(name, pv, ov); };",
+    "const sym = Symbol('x');",
+    "const boxed = Object(Symbol('x'));",
+    "const vo = { valueOf() { return 5; } };",
+    "const ts = { toString() { return '8'; } };",
+    "const both = { valueOf() { return 2; }, toString() { return '9'; } };",
+    "for (const [n, a, b] of [['num', 3, 1], ['lex', '10', '9'], ['words', 'def', 'abc'], ['mix', '6', 4], ['junk', 'x', 1], ['vo', vo, 2], ['ts', ts, 3], ['both', both, 1], ['sym', sym, 1], ['boxed', boxed, 0], ['null', null, 0], ['und', undefined, 1], ['bool', true, false], ['bi', 1n, 1], ['bi0', 0n, 1]]) {",
+    "  check('gt ' + n, () => gt(a, b), () => sgt(a, b));",
+    "  check('lt ' + n, () => lt(a, b), () => slt(a, b));",
+    "}",
+    "for (const [n, v] of [['sym', sym], ['boxed', boxed], ['bi', 1n], ['null', null], ['und', undefined], ['true', true], ['false', false], ['empty', ''], ['px', '12px'], ['s42', '42'], ['obj', {}], ['vo', vo], ['ts', ts], ['arr', [1, 2]], ['nan', NaN], ['inf', Infinity], ['ninf', -Infinity]]) {",
+    "  check('len ' + n, () => toLength(v), () => slen(v));",
+    "}",
+    "const marker = 'm250pollute';",
+    "const own = () => Object.prototype[marker];",
+    "const before = own();",
+    "const paths = [",
+    "  [['__proto__'], [{ [marker]: true }]],",
+    "  [['constructor'], [{ [marker]: true }]],",
+    "  [['prototype'], [{ [marker]: true }]],",
+    "  [['a.__proto__.b'], [1]],",
+    "  [['constructor.prototype.' + marker], [1]],",
+    "  [['a', 'b.c'], [1, 2]],",
+    "];",
+    "for (const [keys, values] of paths) {",
+    "  check('zip ' + JSON.stringify(keys), () => zipObjectDeep(keys, values), () => szip(keys, values));",
+    "  if (own() !== before) { say('proto', own(), before); delete Object.prototype[marker]; }",
+    "}",
+    "function see(fn) {",
+    "  let raw, cooked;",
+    "  const tag = fn((strings) => { raw = strings.raw && strings.raw[0]; cooked = strings[0]; return strings[0]; });",
+    "  const out = tag`\\n    hi\\n  `;",
+    "  return { out, raw, cooked, rawSame: raw === cooked };",
+    "}",
+    "check('dedent raw', () => see(dedent), () => see(sdedent));",
+    "if (bad) process.exit(1);",
+    "console.log('repair grid ok');",
+    "",
+  ].join("\n");
+  const ran = runBoxed({ ...files, "repair.mjs": script }, "repair.mjs");
   assert.equal(ran.code, 0, ran.stdout);
 });
 

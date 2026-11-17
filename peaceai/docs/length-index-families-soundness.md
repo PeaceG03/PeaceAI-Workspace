@@ -6,7 +6,7 @@ On `null`, both sides throw a `TypeError` from reading `.length`.
 
 ## toLength
 
-An integer clamped to `0..4294967295`. `null` and `undefined` are `0`. A negative number is `0`. `'12px'` is `0`, not `12`, because `Number('12px')` is `NaN`. `1.1` is `1`. `-0` becomes `0`. A value above `2^32 - 1` is that cap.
+An integer clamped to `0..4294967295`. `null` and `undefined` are `0`. A negative number is `0`. `'12px'` is `0`, not `12`, because `Number('12px')` is `NaN`. `1.1` is `1`. `-0` becomes `0`. A value above `2^32 - 1` is that cap. A symbol, including a boxed symbol, is `NaN` inside `toFinite`, and `toFinite` turns that `NaN` into `0`. `Number(1n)` is `1` here, so a bigint follows that conversion.
 
 `tlen-guard:fit` refuses a different number. `tlen-guard:neg` refuses a case with no negative input. `tlen-guard:junk` refuses a case with no non-numeric string. `tlen-guard:cut` refuses a case with no fractional number.
 
@@ -18,31 +18,31 @@ A string or a symbol is returned as itself. `-0` is `'-0'`. `String(-0)` is `'0'
 
 ## zipObjectDeep
 
-Array-like keys and values, then each key is a path. `'a.b[0].c'` builds nested objects and arrays. A missing value is stored as `undefined`. `null` keys produce `{}`. A string of digits is array-like, so `'12'` sets keys `'1'` and `'2'`. A flat zip would keep `'a.b'` as one key.
+Array-like keys and values, then each key is a path. `'a.b[0].c'` builds nested objects and arrays. A missing value is stored as `undefined`. `null` keys produce `{}`. A string of digits is array-like, so `'12'` sets keys `'1'` and `'2'`. A flat zip would keep `'a.b'` as one key. A path segment `__proto__`, `constructor`, or `prototype` aborts that write, matching `updateWith`: the segment is not assigned, and `Object.prototype` stays unchanged. Parents created before the unsafe segment remain.
 
 `zde-guard:built` refuses a different object. `zde-guard:nest` refuses a case with no `.` or `[` in a key. `zde-guard:miss` refuses a case where every value is present.
 
 ## identity
 
-The argument comes back unchanged. A number, a string, and a boolean all have to be recorded, and `null` or `undefined` must not be. `clone` and `deepFreeze` return those nullish values unchanged, and `return a` would not freeze or copy. A string-only identity stays the string concatenation.
+Every recorded call returns its argument with `Object.is` and no transform. Two results have to differ, so one repeated value stays the literal. Some argument is not a string, so `'aba'` stays the string concatenation `return a`. `null` and `undefined` must not appear: `clone` and `deepFreeze` return them unchanged, and `return a` would not copy or freeze.
 
-`idn-guard:fit` refuses a different result. `idn-guard:num`, `idn-guard:str`, and `idn-guard:bool` each refuse a case missing that kind. `idn-guard:value` refuses a case that passes `null`.
+`idn-guard:fit` refuses a transformed result, a single repeated value, or a string-only case. `idn-guard:value` refuses a case that passes `null`.
 
 ## unescape
 
-`&amp;`, `&lt;`, `&gt;`, `&quot;`, and `&#39;` become the characters. Zeros before `39`, as in `&#039;`, are still an apostrophe. `&amp;lt;` becomes `&lt;` because `&amp;` is replaced first. Some argument has to contain `&amp;`. `&#39;` alone is this function, and that argument is not a piece of the result, so it is not the string concatenation.
+`&amp;`, `&lt;`, `&gt;`, `&quot;`, and `&#39;` become the characters. Zeros before `39`, as in `&#039;`, are still an apostrophe. `&amp;lt;` becomes `&lt;` because `&amp;` is replaced first. Some argument has to contain one of those entities, not `&amp;` alone. `&#96;` is not in the set, so it stays. An entity argument is not a piece of the result, so it is not string concatenation. A string with none of the entities is that concatenation, and deleting the entity guard does not make a second body for it.
 
-`uesc-guard:fit` refuses a different string. `uesc-guard:amp` refuses a case with no `&amp;`.
+`uesc-guard:fit` refuses a different string. `uesc-guard:entity` refuses a case with none of the published entities.
 
 ## dedent
 
-A blank first line and a blank last line are dropped, then the shared run of spaces or tabs is removed. `\r\n` becomes `\n`. A newline has to appear. One line of indent is this function too, and the indented argument is not a piece of the result. Called as a template tag, the opening and closing lines may hold only whitespace; otherwise the call throws `TypeError`. A function argument returns a tag that dedents the static parts first.
+A blank first line and a blank last line are dropped, then the shared run of spaces or tabs is removed. `\r\n` becomes `\n`. A newline has to appear. One line of indent is this function too, and the indented argument is not a piece of the result. Called as a template tag, the opening and closing lines may hold only whitespace; otherwise the call throws `TypeError`. A function argument returns a tag that dedents the static parts first and passes them on with `.raw` set to that same array, matching the published composed tag.
 
 `dden-guard:fit` refuses a different string. `dden-guard:line` refuses a case with no newline.
 
 ## gt and lt
 
-`a > b` and `a < b`. A string argument has to appear. On numbers alone, `>` and `<` are the comparison already emitted, and the two bodies are the same text. The published functions coerce through `toNumber` unless both arguments are strings. The recorded calls are numbers and strings, and `>` / `<` match those calls.
+Both strings compare with `>` or `<`. Every other pair uses `toNumber`, which returns `NaN` for a symbol instead of throwing, then the comparison is false. An object uses `valueOf`, then `toString`. `null` is `0`. `undefined` is `NaN`. `true` is `1` and `false` is `0`. A string argument has to appear, so a number-only comparison stays the comparison family. The recorded calls are numbers and strings; the scaffold was also checked against the pin on mixed types, `valueOf` / `toString` objects, symbols, bigints, `null`, `undefined`, and booleans.
 
 `gt-guard:fit` and `lt-guard:fit` refuse a different boolean. `gt-guard:text` and `lt-guard:text` refuse a case with no string.
 

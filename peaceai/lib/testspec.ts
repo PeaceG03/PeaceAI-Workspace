@@ -2135,10 +2135,10 @@ function csumBody(examples: Example[]): string | null {
 
 const MAX_ARRAY_LENGTH = 4294967295;
 
-/** Published `toFinite`, then drop the fraction toward zero. Symbols become `NaN`. */
+/** Published `toFinite`, then drop the fraction toward zero. A symbol is `NaN`, which `toFinite` turns into `0`. */
 function toIntegerOf(value: unknown): number {
+  if (typeof value === "symbol" || (typeof value === "object" && value instanceof Symbol)) value = Number.NaN;
   if (!value) return Object.is(value, 0) || value === 0 ? (value as number) : 0;
-  if (typeof value === "symbol") return Number.NaN;
   let n = Number(value);
   if (n === Infinity || n === -Infinity) n = (n < 0 ? -1 : 1) * Number.MAX_VALUE;
   else if (n !== n) return 0;
@@ -2162,7 +2162,7 @@ function tlenBody(examples: Example[]): string | null {
   if (!examples.some((ex) => typeof ex.args[0] === "number" && ex.args[0] < 0 && ex.expected === 0)) return null; // tlen-guard:neg
   if (!examples.some((ex) => typeof ex.args[0] === "string" && Number.isNaN(Number(ex.args[0])) && ex.expected === 0)) return null; // tlen-guard:junk
   if (!examples.some((ex) => typeof ex.args[0] === "number" && !Number.isInteger(ex.args[0]) && ex.expected !== ex.args[0])) return null; // tlen-guard:cut
-  return "  return a == null ? 0 : Math.min(Math.max((finite => { const n = !finite ? (finite === 0 ? finite : 0) : (typeof finite === \"symbol\" ? NaN : ((x => x !== x ? 0 : x === Infinity || x === -Infinity ? (x < 0 ? -1 : 1) * Number.MAX_VALUE : x)(Number(finite)))); const r = n % 1; return r ? n - r : n; })(a), 0), 4294967295);";
+  return "  return a == null ? 0 : Math.min(Math.max((value => { if (typeof value === \"symbol\" || (typeof value === \"object\" && value instanceof Symbol)) value = NaN; const finite = !value ? (value === 0 ? value : 0) : Number(value); const n = finite !== finite ? 0 : (finite === Infinity || finite === -Infinity ? (finite < 0 ? -1 : 1) * Number.MAX_VALUE : finite); const r = n % 1; return r ? n - r : n; })(a), 0), 4294967295);";
 }
 
 /** Published `toKey`. `-0` is the string `'-0'`, not `'0'`. */
@@ -2184,16 +2184,14 @@ function tkeyBody(examples: Example[]): string | null {
 }
 
 /**
- * The argument itself. A number, a string, and a boolean all have to appear,
- * and null or undefined must not: those two are also `return a` on the
- * clone and deep-freeze calls.
+ * Every recorded call returns its argument with `Object.is` and no transform.
+ * Two results have to differ, so one repeated value stays the literal.
+ * Some argument is not a string, so a palindrome stays the string concatenation.
+ * `null` and `undefined` stay out: `clone` and `deepFreeze` return them unchanged.
  */
 function idnBody(examples: Example[]): string | null {
   if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
-  if (!examples.every((ex) => Object.is(ex.args[0], ex.expected))) return null; // idn-guard:fit
-  if (!examples.some((ex) => typeof ex.args[0] === "number")) return null; // idn-guard:num
-  if (!examples.some((ex) => typeof ex.args[0] === "string")) return null; // idn-guard:str
-  if (!examples.some((ex) => typeof ex.args[0] === "boolean")) return null; // idn-guard:bool
+  if (!examples.every((ex) => Object.is(ex.args[0], ex.expected)) || !examples.some((ex, i) => examples.slice(i + 1).some((other) => !Object.is(ex.expected, other.expected))) || !examples.some((ex) => typeof ex.args[0] !== "string")) return null; // idn-guard:fit
   if (examples.some((ex) => ex.args[0] == null)) return null; // idn-guard:value
   return "  return a;";
 }
@@ -2206,14 +2204,17 @@ function unescapeText(value: unknown): string | null {
   return value.replace(/&(?:amp|lt|gt|quot|#(0+)?39);/g, (match) => UNESCAPE_MAP[match] ?? "'");
 }
 
+const UNESCAPE_ENTITY = /&(?:amp|lt|gt|quot|#(?:0+)?39);/;
+
 /**
- * HTML unescape. Some argument has to contain `&amp;`. `&#39;` alone is
- * also this function, and it is not a string concatenation of the argument.
+ * HTML unescape. Some argument has to contain one published entity:
+ * `&amp;`, `&lt;`, `&gt;`, `&quot;`, or `&#39;` with optional leading zeros.
+ * That argument is not a piece of the result, so it is not string concatenation.
  */
 function uescBody(examples: Example[]): string | null {
   if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
   if (!examples.every((ex) => { const got = unescapeText(ex.args[0]); return got !== null && got === ex.expected; })) return null; // uesc-guard:fit
-  if (!examples.some((ex) => typeof ex.args[0] === "string" && ex.args[0].includes("&amp;"))) return null; // uesc-guard:amp
+  if (!examples.some((ex) => typeof ex.args[0] === "string" && UNESCAPE_ENTITY.test(ex.args[0]))) return null; // uesc-guard:entity
   return "  return a.replace(/&(?:amp|lt|gt|quot|#(0+)?39);/g, (match) => ({ \"&amp;\": \"&\", \"&lt;\": \"<\", \"&gt;\": \">\", \"&quot;\": \"\\\"\", \"&#39;\": \"'\" })[match] || \"'\");";
 }
 
@@ -2242,26 +2243,38 @@ function ddenBody(examples: Example[]): string | null {
   if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
   if (!examples.every((ex) => { const got = dedentText(ex.args[0]); return got !== null && got === ex.expected; })) return null; // dden-guard:fit
   if (!examples.some((ex) => typeof ex.args[0] === "string" && ex.args[0].includes("\n"))) return null; // dden-guard:line
-  return "  const value = a; const rest = Array.prototype.slice.call(arguments, 1); const impl = (text) => { const lines = String(text).replace(/\\r\\n/g, \"\\n\").split(\"\\n\"); if (lines.length > 0 && lines[0].trim() === \"\") lines.shift(); if (lines.length > 0 && lines[lines.length - 1].trim() === \"\") lines.pop(); let common = Infinity; for (const line of lines) { if (line.trim() === \"\") continue; let indent = 0; while (indent < line.length && (line[indent] === \" \" || line[indent] === \"\\t\")) indent++; if (indent < common) common = indent; } if (common === Infinity) return \"\"; return lines.map((line) => line.trim() === \"\" ? \"\" : line.slice(common)).join(\"\\n\"); }; const shape = (strings) => { const first = strings[0]; const open = first.indexOf(\"\\n\"); if (open === -1 || first.slice(0, open).trim() !== \"\") throw new TypeError(\"Invalid opening line.\"); const last = strings[strings.length - 1]; const close = last.lastIndexOf(\"\\n\"); if (close === -1 || last.slice(close + 1).trim() !== \"\") throw new TypeError(\"Invalid closing line.\"); }; const partsOf = (strings) => { shape(strings); const parts = Array.from(strings); if (parts.length === 1) return [impl(parts[0])]; let mark = \"\\0\"; const joined = parts.join(\"\"); while (joined.includes(mark)) mark += \"\\0\"; return impl(parts.join(mark)).split(mark); }; if (typeof value === \"function\") return (strings, ...args) => value(partsOf(strings), ...args); if (typeof value === \"string\") return impl(value); const parts = partsOf(value); let text = parts[0]; for (let i = 0; i < rest.length; i++) text += String(rest[i]) + parts[i + 1]; return text;";
+  return "  const value = a; const rest = Array.prototype.slice.call(arguments, 1); const impl = (text) => { const lines = String(text).replace(/\\r\\n/g, \"\\n\").split(\"\\n\"); if (lines.length > 0 && lines[0].trim() === \"\") lines.shift(); if (lines.length > 0 && lines[lines.length - 1].trim() === \"\") lines.pop(); let common = Infinity; for (const line of lines) { if (line.trim() === \"\") continue; let indent = 0; while (indent < line.length && (line[indent] === \" \" || line[indent] === \"\\t\")) indent++; if (indent < common) common = indent; } if (common === Infinity) return \"\"; return lines.map((line) => line.trim() === \"\" ? \"\" : line.slice(common)).join(\"\\n\"); }; const shape = (strings) => { const first = strings[0]; const open = first.indexOf(\"\\n\"); if (open === -1 || first.slice(0, open).trim() !== \"\") throw new TypeError(\"Invalid opening line.\"); const last = strings[strings.length - 1]; const close = last.lastIndexOf(\"\\n\"); if (close === -1 || last.slice(close + 1).trim() !== \"\") throw new TypeError(\"Invalid closing line.\"); }; const partsOf = (strings) => { shape(strings); const parts = Array.from(strings); if (parts.length === 1) return [impl(parts[0])]; let mark = \"\\0\"; const joined = parts.join(\"\"); while (joined.includes(mark)) mark += \"\\0\"; return impl(parts.join(mark)).split(mark); }; const asRaw = (parts) => Object.assign(parts, { raw: parts }); if (typeof value === \"function\") return (strings, ...args) => value(asRaw(partsOf(strings)), ...args); if (typeof value === \"string\") return impl(value); const parts = partsOf(value); let text = parts[0]; for (let i = 0; i < rest.length; i++) text += String(rest[i]) + parts[i + 1]; return text;";
+}
+
+/** Published `toNumber`: a symbol is `NaN` instead of throwing. */
+function plainNumber(value: unknown): number {
+  if (typeof value === "symbol" || (typeof value === "object" && value instanceof Symbol)) return Number.NaN;
+  return Number(value);
 }
 
 /**
- * `a > b` when a string is one of the arguments. A number-only `>` is the
- * comparison already emitted, and the two bodies are the same text.
+ * Published `gt` / `lt`. Both strings compare as strings. Anything else uses
+ * `toNumber`, so a symbol is false and an object uses `valueOf` then `toString`.
  */
-function gtBody(examples: Example[]): string | null {
-  if (!examples.length || examples.some((ex) => ex.args.length !== 2 || typeof ex.expected !== "boolean")) return null;
-  if (!examples.every((ex) => (ex.args[0] as number) > (ex.args[1] as number) === ex.expected)) return null; // gt-guard:fit
-  if (!examples.some((ex) => typeof ex.args[0] === "string" || typeof ex.args[1] === "string")) return null; // gt-guard:text
-  return "  return a > b;";
+function ordered(left: unknown, right: unknown, greater: boolean): boolean {
+  if (typeof left === "string" && typeof right === "string") return greater ? left > right : left < right;
+  return greater ? plainNumber(left) > plainNumber(right) : plainNumber(left) < plainNumber(right);
 }
 
-/** `a < b` when a string is one of the arguments. */
+/** `a > b` for two strings, otherwise `toNumber(a) > toNumber(b)`. A string argument has to appear. */
+function gtBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2 || typeof ex.expected !== "boolean")) return null;
+  if (!examples.every((ex) => ordered(ex.args[0], ex.args[1], true) === ex.expected)) return null; // gt-guard:fit
+  if (!examples.some((ex) => typeof ex.args[0] === "string" || typeof ex.args[1] === "string")) return null; // gt-guard:text
+  return "  return ((num) => typeof a === \"string\" && typeof b === \"string\" ? a > b : num(a) > num(b))((n) => typeof n === \"symbol\" || (typeof n === \"object\" && n instanceof Symbol) ? NaN : Number(n));";
+}
+
+/** `a < b` for two strings, otherwise `toNumber(a) < toNumber(b)`. A string argument has to appear. */
 function ltBody(examples: Example[]): string | null {
   if (!examples.length || examples.some((ex) => ex.args.length !== 2 || typeof ex.expected !== "boolean")) return null;
-  if (!examples.every((ex) => (ex.args[0] as number) < (ex.args[1] as number) === ex.expected)) return null; // lt-guard:fit
+  if (!examples.every((ex) => ordered(ex.args[0], ex.args[1], false) === ex.expected)) return null; // lt-guard:fit
   if (!examples.some((ex) => typeof ex.args[0] === "string" || typeof ex.args[1] === "string")) return null; // lt-guard:text
-  return "  return a < b;";
+  return "  return ((num) => typeof a === \"string\" && typeof b === \"string\" ? a < b : num(a) < num(b))((n) => typeof n === \"symbol\" || (typeof n === \"object\" && n instanceof Symbol) ? NaN : Number(n));";
 }
 
 function arrayLike(value: unknown): value is ArrayLike<unknown> {
@@ -2321,15 +2334,18 @@ function zdeOf(keys: unknown, values: unknown): Record<PropertyKey, unknown> | n
     const path = Array.isArray(key) || typeof key === "symbol" || (typeof key === "string" && (key.includes(".") || key.includes("["))) ? deepKeyOf(key) : [toKeyOf(key)];
     if (!path.length) continue;
     let cur: Record<PropertyKey, unknown> = result;
-    for (let j = 0; j < path.length - 1; j++) {
+    let blocked = false;
+    for (let j = 0; j < path.length; j++) {
       const step = path[j]!;
+      if (step === "__proto__" || step === "constructor" || step === "prototype") { blocked = true; break; }
+      if (j === path.length - 1) { cur[step] = vals[i]; break; }
       const next = path[j + 1]!;
       const index = typeof next === "string" && /^(?:0|[1-9]\d*)$/.test(next);
       const slot = cur[step];
       if (slot == null || typeof slot !== "object") cur[step] = index ? [] : {};
       cur = cur[step] as Record<PropertyKey, unknown>;
     }
-    cur[path[path.length - 1]!] = vals[i];
+    if (blocked) continue;
   }
   return result;
 }
@@ -2343,7 +2359,7 @@ function zdeBody(examples: Example[]): string | null {
   if (!examples.every((ex) => { const got = zdeOf(ex.args[0], ex.args[1]); return got !== null && deepSame(got, ex.expected); })) return null; // zde-guard:built
   if (!examples.some((ex) => Array.isArray(ex.args[0]) && (ex.args[0] as unknown[]).some((key) => typeof key === "string" && (key.includes(".") || key.includes("["))))) return null; // zde-guard:nest
   if (!examples.some((ex) => { const got = zdeOf(ex.args[0], ex.args[1]); const hole = (v: unknown): boolean => v != null && typeof v === "object" && (Array.isArray(v) ? v.some((item) => item === undefined || hole(item)) : Object.keys(v).some((key) => (v as Record<string, unknown>)[key] === undefined || hole((v as Record<string, unknown>)[key]))); return got !== null && hole(got); })) return null; // zde-guard:miss
-  return "  return ((keys, values) => { const like = (v) => v != null && typeof v !== \"function\" && Number.isSafeInteger(v.length) && v.length >= 0; const result = {}; if (!like(keys)) return result; const vals = like(values) ? values : []; const keyOf = (v) => typeof v === \"string\" || typeof v === \"symbol\" ? v : (v != null && typeof v.valueOf === \"function\" && Object.is(v.valueOf(), -0) ? \"-0\" : String(v)); const pathOf = (v) => { if (Array.isArray(v)) return v.map(keyOf); if (typeof v === \"symbol\") return [v]; if (typeof v !== \"string\" || (!v.includes(\".\") && !v.includes(\"[\"))) return [keyOf(v)]; const out = []; let i = 0, key = \"\", quote = \"\", bracket = false, quoted = false; if (v.charCodeAt(0) === 46) out.push(\"\"); while (i < v.length) { const ch = v[i]; if (quote) { if (ch === \"\\\\\" && i + 1 < v.length) { i++; key += v[i]; } else if (ch === quote) quote = \"\"; else key += ch; } else if (bracket) { if (ch === \"\\\"\" || ch === \"'\") { quote = ch; quoted = true; } else if (ch === \"]\") { bracket = false; if (!quoted && key.includes(\".\") && !/^-?\\d+(?:\\.\\d+)?$/.test(key)) { for (const seg of key.split(\".\")) if (seg !== \"\") out.push(seg); } else out.push(key); key = \"\"; } else key += ch; } else if (ch === \"[\") { bracket = true; quoted = false; if (key) { out.push(key); key = \"\"; } } else if (ch === \".\") { if (key) { out.push(key); key = \"\"; } const next = v[i + 1]; if (next === undefined || next === \".\") out.push(\"\"); } else key += ch; i++; } if (key) out.push(key); return out; }; for (let i = 0; i < keys.length; i++) { const raw = keys[i]; if (raw == null) continue; const path = pathOf(raw); let cur = result; for (let j = 0; j < path.length - 1; j++) { const step = path[j], next = path[j + 1]; if (cur[step] == null || typeof cur[step] !== \"object\") cur[step] = typeof next === \"string\" && /^(?:0|[1-9]\\d*)$/.test(next) ? [] : {}; cur = cur[step]; } cur[path[path.length - 1]] = vals[i]; } return result; })(a, b);";
+  return "  return ((keys, values) => { const like = (v) => v != null && typeof v !== \"function\" && Number.isSafeInteger(v.length) && v.length >= 0; const result = {}; if (!like(keys)) return result; const vals = like(values) ? values : []; const keyOf = (v) => typeof v === \"string\" || typeof v === \"symbol\" ? v : (v != null && typeof v.valueOf === \"function\" && Object.is(v.valueOf(), -0) ? \"-0\" : String(v)); const pathOf = (v) => { if (Array.isArray(v)) return v.map(keyOf); if (typeof v === \"symbol\") return [v]; if (typeof v !== \"string\" || (!v.includes(\".\") && !v.includes(\"[\"))) return [keyOf(v)]; const out = []; let i = 0, key = \"\", quote = \"\", bracket = false, quoted = false; if (v.charCodeAt(0) === 46) out.push(\"\"); while (i < v.length) { const ch = v[i]; if (quote) { if (ch === \"\\\\\" && i + 1 < v.length) { i++; key += v[i]; } else if (ch === quote) quote = \"\"; else key += ch; } else if (bracket) { if (ch === \"\\\"\" || ch === \"'\") { quote = ch; quoted = true; } else if (ch === \"]\") { bracket = false; if (!quoted && key.includes(\".\") && !/^-?\\d+(?:\\.\\d+)?$/.test(key)) { for (const seg of key.split(\".\")) if (seg !== \"\") out.push(seg); } else out.push(key); key = \"\"; } else key += ch; } else if (ch === \"[\") { bracket = true; quoted = false; if (key) { out.push(key); key = \"\"; } } else if (ch === \".\") { if (key) { out.push(key); key = \"\"; } const next = v[i + 1]; if (next === undefined || next === \".\") out.push(\"\"); } else key += ch; i++; } if (key) out.push(key); return out; }; const unsafe = (key) => key === \"__proto__\" || key === \"constructor\" || key === \"prototype\"; for (let i = 0; i < keys.length; i++) { const raw = keys[i]; if (raw == null) continue; const path = pathOf(raw); let cur = result; for (let j = 0; j < path.length; j++) { const step = path[j]; if (unsafe(step)) break; if (j === path.length - 1) { cur[step] = vals[i]; break; } const next = path[j + 1]; if (cur[step] == null || typeof cur[step] !== \"object\") cur[step] = typeof next === \"string\" && /^(?:0|[1-9]\\d*)$/.test(next) ? [] : {}; cur = cur[step]; } } return result; })(a, b);";
 }
 
 interface Tagged { t: string; v?: unknown }
