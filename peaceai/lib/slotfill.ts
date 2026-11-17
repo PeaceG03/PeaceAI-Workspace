@@ -4,7 +4,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { relative, sep } from "node:path";
 import ts from "typescript";
-import { ENV_FIX_TRIGGER, parseEnvFixTask } from "./env-fix.ts";
+import { ENV_FIX_TRIGGER, envSourcePath, parseEnvFixTask } from "./env-fix.ts";
 import { IMPORT_EDIT_V2_TRIGGER, parseImportEditV2Task } from "./import-edit-v2.ts";
 import { TEST_EXISTING_TRIGGER } from "./learned-test-existing.ts";
 import { parseTsconfigScriptTask, TSCONFIG_SCRIPT_TRIGGER } from "./tsconfig-script.ts";
@@ -246,12 +246,13 @@ function envReadKind(content: string, name: string): "none" | "flag" | "other" {
 }
 
 /**
- * The env-fix flag line when exactly one non-test source file reads NAME, and every read is
- * `=== "1"` or `!== "1"`. A second file, a test file, or any other read shape refuses.
+ * The env-fix flag line when exactly one source file reads NAME, and every read is
+ * `=== "1"` or `!== "1"`. A second file, a test, a fixture, generated output, a vendored path,
+ * or any other read shape refuses. The file keeps its real path.
  */
 export function envLine(name: string, repo: SlotRepo): string | null {
   if (!/^[A-Z][A-Z0-9_]{1,80}$/.test(name)) return null;
-  const files = repo.files.filter((f) => f.path.startsWith("src/") && SOURCE.test(f.path) && !TEST_FILE.test(f.path) && !f.path.endsWith(".d.ts"));
+  const files = repo.files.filter((f) => envSourcePath(f.path));
   const flags: string[] = [];
   for (const f of files) {
     const kind = envReadKind(f.content, name);
@@ -263,115 +264,6 @@ export function envLine(name: string, repo: SlotRepo): string | null {
   const line = `make env ${name} strict in ${flags[0]} as a flag`;
   if (!parseEnvFixTask(ENV_FIX_TRIGGER, line)) return null; // slot-guard:env-trigger
   return line;
-}
-
-function numberCall(e: ts.Node, name: string): boolean {
-  return ts.isCallExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === "Number" && e.arguments.length === 1 && isEnvRead(e.arguments[0]!, name);
-}
-
-function plainIntDefault(e: ts.Expression): boolean {
-  if (ts.isIdentifier(e)) return e.text !== "undefined" && e.text !== "NaN" && e.text !== "Infinity";
-  return ts.isNumericLiteral(e) && /^\d+$/.test(e.text);
-}
-
-/** The v1 integer read: `Number(NAME) > 0 ? Number(NAME) : DEFAULT`. */
-function isV1Int(n: ts.Node, name: string): n is ts.ConditionalExpression {
-  return ts.isConditionalExpression(n)
-    && ts.isBinaryExpression(n.condition)
-    && n.condition.operatorToken.kind === ts.SyntaxKind.GreaterThanToken
-    && numberCall(n.condition.left, name)
-    && ts.isNumericLiteral(n.condition.right)
-    && n.condition.right.text === "0"
-    && numberCall(n.whenTrue, name)
-    && plainIntDefault(n.whenFalse);
-}
-
-/** `ok` is one v1 ternary and no other read. `bad` is any other read. `none` is absent. */
-function intKind(content: string, name: string): "none" | "ok" | "bad" {
-  const sf = ts.createSourceFile("m.ts", content, ts.ScriptTarget.Latest, true);
-  const reads: ts.Node[] = [];
-  const ternaries: ts.ConditionalExpression[] = [];
-  const visit = (n: ts.Node): void => {
-    if (isEnvRead(n, name)) reads.push(n);
-    if (isV1Int(n, name)) ternaries.push(n);
-    ts.forEachChild(n, visit);
-  };
-  visit(sf);
-  if (reads.length === 0) return "none";
-  if (ternaries.length !== 1) return "bad";
-  const t = ternaries[0]!;
-  if (!ts.isBinaryExpression(t.condition)) return "bad";
-  const covered = new Set<ts.Node>();
-  const mark = (e: ts.Node) => { if (numberCall(e, name) && ts.isCallExpression(e)) covered.add(e.arguments[0]!); };
-  mark(t.condition.left);
-  mark(t.whenTrue);
-  return reads.every((r) => covered.has(r)) ? "ok" : "bad";
-}
-
-const DUR_UNIT = String.raw`milliseconds?|ms|seconds?|secs?|minutes?|mins?|hours?|hrs?|h|s|m`;
-const DUR_TOKEN = new RegExp(String.raw`(\d{1,9})\s*(${DUR_UNIT})\b`, "gi");
-
-function nameScale(name: string): "ms" | "s" | null {
-  if (name.endsWith("_MS")) return "ms";
-  if (name.endsWith("_SEC") || name.endsWith("_SECS") || name.endsWith("_S")) return "s";
-  return null;
-}
-
-function toScale(n: number, unit: string, scale: "ms" | "s"): number | null {
-  const u = unit.toLowerCase();
-  let ms: number | null = null;
-  if (u === "ms" || u.startsWith("millisecond")) ms = n;
-  else if (u === "s" || u.startsWith("sec")) ms = n * 1000;
-  else if (u === "m" || u.startsWith("min")) ms = n * 60_000;
-  else if (u === "h" || u.startsWith("hr") || u.startsWith("hour")) ms = n * 3_600_000;
-  if (ms === null || !Number.isSafeInteger(ms)) return null;
-  if (scale === "ms") return ms;
-  if (ms % 1000 !== 0) return null;
-  return ms / 1000;
-}
-
-/**
- * The integer ceiling when the sentence says `N <unit> to M <unit>` and the name's suffix is the unit.
- * The floor must be 1 in that unit. The rule's minimum is 1, so a higher floor would be a different bound.
- * A second duration, a missing range, or a ceiling outside 1..999999999 refuses. No ceiling is invented.
- */
-export function durationMax(name: string, asked: string): number | null {
-  const scale = nameScale(name);
-  if (!scale) return null;
-  const all = [...asked.matchAll(new RegExp(DUR_TOKEN.source, "gi"))];
-  const range = new RegExp(`${DUR_TOKEN.source}\\s+to\\s+${DUR_TOKEN.source}`, "i").exec(asked);
-  const floor = range ? toScale(Number(range[1]), range[2]!, scale) : null;
-  const ceil = range ? toScale(Number(range[3]), range[4]!, scale) : null;
-  if (floor !== 1) return null; // slot-guard:int-bound
-  if (!range || all.length !== 2 || ceil === null || ceil < 1 || ceil > 999_999_999) return null;
-  return ceil;
-}
-
-/**
- * The env-fix integer line when exactly one source file has the v1 ternary and the sentence states
- * one duration range whose floor is 1. Any other read shape refuses.
- */
-export function intEnvLine(name: string, asked: string, repo: SlotRepo): string | null {
-  if (!/^[A-Z][A-Z0-9_]{1,80}$/.test(name)) return null;
-  const files = repo.files.filter((f) => f.path.startsWith("src/") && SOURCE.test(f.path) && !TEST_FILE.test(f.path) && !f.path.endsWith(".d.ts"));
-  const hits: string[] = [];
-  for (const f of files) {
-    const kind = intKind(f.content, name);
-    if (kind === "none") continue;
-    if (kind !== "ok") return null; // slot-guard:int-shape
-    hits.push(f.path);
-  }
-  if (hits.length !== 1) return null; // slot-guard:one-int
-  const max = durationMax(name, asked);
-  if (max === null) return null;
-  const line = `make env ${name} strict in ${hits[0]} as integer 1..${max}`;
-  if (!parseEnvFixTask(ENV_FIX_TRIGGER, line)) return null; // slot-guard:int-trigger
-  return line;
-}
-
-/** Flag line, or the integer line when the read is the v1 ternary and the sentence states the bound. */
-export function envFixLine(name: string, asked: string, repo: SlotRepo): string | null {
-  return envLine(name, repo) ?? intEnvLine(name, asked, repo);
 }
 
 /** `fix the import of SPEC in FILE to: import ...` when the type checker names exactly one. */

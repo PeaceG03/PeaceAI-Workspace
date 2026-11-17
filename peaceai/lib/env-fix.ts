@@ -38,6 +38,20 @@ const FILE = String.raw`[\w./-]+\.ts`;
 export const ENV_FIX_TRIGGER = String.raw`^make (?:the )?env(?:ironment variable)? \x60?(?<name>${ENVNAME})\x60? strict in \x60?(?<file>${FILE})\x60? as (?:a |an )?(?:(?<flag>flag)|integer 1\.\.(?<max>\d{1,9}))\.?$`;
 export interface EnvFixTask { name: string; file: string; mode: "flag" | "int"; max: number }
 const plainPath = (p: string) => !p.startsWith("/") && !p.split("/").some((x) => x === "" || x === "." || x === ".." || x.startsWith("."));
+/**
+ * A test, a fixture, generated output, or a vendored tree. `src/` is not required: a nested package
+ * keeps its real path (`packages/<name>/file.ts`).
+ */
+const NOT_SOURCE = /(?:^|\/)(?:__tests__|tests?|specs?|__fixtures__|fixtures?|testdata|__testdata__|dist|build|coverage|generated|__generated__|node_modules|vendor|vendored|third_party|third-party)(?:\/|$)|(?:\.(?:test|spec|fixture|generated|gen))\.ts$/i;
+/**
+ * A plain relative `.ts` source file. Declarations are not source. The directory prefix is the file's
+ * real path, including a nested package that does not use `src/`.
+ */
+export function envSourcePath(p: string): boolean {
+  if (!plainPath(p) || !/\.ts$/.test(p) || p.endsWith(".d.ts")) return false;
+  if (NOT_SOURCE.test(p)) return false; // path-guard:source
+  return true;
+}
 const isProtected = (p: string) => PROTECTED_SELF.some((x) => x.pattern.test(p));
 
 export function parseEnvFixTask(trigger: string, objective: string): EnvFixTask | null {
@@ -68,7 +82,7 @@ function intDefault(e: ts.Expression): boolean {
 
 export function buildEnvFix(task: EnvFixTask, files: readonly { path: string; content: string }[], why?: { reason?: string }, wide = false): { path: string; content: string; extra: { path: string; content: string; create: true }[]; selfGrade: true } | null {
   const no = (r: string) => { if (why) why.reason = r; return null; };
-  if (!plainPath(task.file) || !task.file.startsWith("src/") || /\.test\.ts$/.test(task.file)) return no("path_not_plain");
+  if (!envSourcePath(task.file)) return no("path_not_plain");
   if (isProtected(task.file)) return no("protected_path");
   const cur = files.find((f) => f.path === task.file);
   if (!cur) return no("target_missing");
