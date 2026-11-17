@@ -56,15 +56,15 @@ Each published test fails when the function throws and passes on the scaffold. T
 
 `isSubset` stays out. The published calls bind the arrays to consts and use `toBeTruthy` and `toBeFalsy`. Those calls are not literal examples.
 
-`mean` stays out. The published function divides `sum` by the length, and `sum` is another module. `sum` reads every index, so a hole becomes `NaN`. A `reduce` skips that hole.
+`mean` is emitted by the next batch. `Array.from` visits a hole, so the division matches `sum`. See `peaceai/docs/next-families-soundness.md`.
 
-`median` stays out. The published function sorts, then branches on the length. That is not one expression.
+`median` stays out. A sort and a length branch can be one expression, and that expression matches the published function, including a hole. Every published call is also the mean, so the two bodies would both fit and neither spec would admit.
 
 `range` and `rangeRight` stay out. The published calls use more than one arity, and a step of zero throws.
 
 `deburr` stays out. The published function is a character map and a normalize pass. That is not one expression.
 
-`zipObject` stays out. The published assignment of a missing value is `undefined`, and a `__proto__` key sets the prototype. The published calls are not one expression that agrees on that key.
+`zipObject` is emitted by the next batch. The body assigns each key, so a missing value is `undefined` and a `__proto__` key sets the prototype. See `peaceai/docs/next-families-soundness.md`.
 
 `unzip` stays out. The published function is two loops, and a short row reads `undefined`.
 
