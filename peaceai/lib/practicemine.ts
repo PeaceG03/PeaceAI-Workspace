@@ -3,7 +3,7 @@
 // Third-party source is never written here.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statfsSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statfsSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { classifyLicense, type Spdx } from "./lmcorpus.ts";
@@ -523,11 +523,34 @@ export function sandboxExtraEnv(src: Readonly<Record<string, string>> | undefine
   return out;
 }
 
+/**
+ * A bare command name is resolved on the caller's PATH. The sandbox's own PATH always
+ * includes `/usr/bin`, so it is not the lookup that decides whether bwrap is installed.
+ */
+function commandOnCallerPath(bin: string): string | null {
+  if (bin.includes("/") || isAbsolute(bin)) return null;
+  for (const dir of (process.env.PATH ?? "").split(":")) {
+    if (!dir) continue;
+    const candidate = join(dir, bin);
+    try {
+      const st = statSync(candidate);
+      if (st.isFile() && (st.mode & 0o111) !== 0) return candidate;
+    } catch { /* the next directory */ }
+  }
+  return null;
+}
+
 /** Run `cmd` inside the practice sandbox. `unsafe` means bwrap is missing or the sandbox could not be created. */
 export function runInPracticeSandbox(workDir: string, cmd: readonly string[], timeoutMs: number, opts: SandboxOpts = {}): SandboxRun {
   const prefix = practiceSandboxArgv(workDir, { nodePath: opts.nodePath, nodeModules: opts.nodeModules });
   if (!prefix) return { unsafe: true, code: null, stdout: "" };
-  if (opts.bwrap) prefix[0] = opts.bwrap;
+  const requested = opts.bwrap ?? prefix[0]!;
+  if (isAbsolute(requested)) prefix[0] = requested;
+  else {
+    const found = commandOnCallerPath(requested);
+    if (!found) return { unsafe: true, code: null, stdout: "" };
+    prefix[0] = found;
+  }
   const home = sandboxHome(workDir);
   mkdirSync(home, { recursive: true });
   writeFileSync(join(workDir, SANDBOX_RAN), "1\n");
@@ -549,7 +572,7 @@ export function runInPracticeSandbox(workDir: string, cmd: readonly string[], ti
   return { unsafe: false, code: err?.code === "ETIMEDOUT" ? null : ran.status, stdout };
 }
 
-/** True when bwrap can build the sandbox and run a command. Cached for the process. */
+/** True when bwrap is on the caller's PATH and can build the sandbox. Cached for the process. */
 let sandboxReady: boolean | null = null;
 export function practiceSandboxReady(force = false): boolean {
   if (sandboxReady !== null && !force) return sandboxReady;
