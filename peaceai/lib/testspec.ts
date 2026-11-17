@@ -1632,6 +1632,131 @@ function camelBody(examples: Example[]): string | null {
   return `  return ((words) => words.length === 0 ? "" : words[0].toLowerCase() + words.slice(1).map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(""))(${WORDS_EXPR});`;
 }
 
+function capWord(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+}
+
+function casedJoin(value: unknown, sep: string, map: (word: string) => string): string | null {
+  const parts = splitWords(value);
+  if (!parts) return null;
+  return parts.map(map).join(sep);
+}
+
+function pascalText(value: unknown): string | null {
+  return casedJoin(value, "", capWord);
+}
+
+function upperText(value: unknown): string | null {
+  return casedJoin(value, " ", (word) => word.toUpperCase());
+}
+
+function constantText(value: unknown): string | null {
+  return casedJoin(value, "_", (word) => word.toUpperCase());
+}
+
+function startText(value: unknown): string | null {
+  return casedJoin(value, " ", capWord);
+}
+
+function sentenceText(value: unknown): string | null {
+  const parts = splitWords(value);
+  if (!parts) return null;
+  return parts.map((word, i) => i === 0 ? capWord(word) : word.toLowerCase()).join(" ");
+}
+
+function asciiJoin(value: string, sep: string, map: (word: string, index: number) => string): string {
+  return asciiWords(value).map(map).join(sep);
+}
+
+function manyWords(value: unknown): boolean {
+  const parts = splitWords(value);
+  return parts !== null && parts.length > 1;
+}
+
+/**
+ * Each word capitalized, joined with nothing. One word is capitalize, so
+ * some example has two words. A first word with no cased letter is camel.
+ */
+function pascalBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => typeof ex.args[0] === "string")) return null; // pascal-guard:strings
+  if (!examples.every((ex) => pascalText(ex.args[0]) === ex.expected)) return null; // pascal-guard:joined
+  if (!examples.some((ex) => manyWords(ex.args[0]))) return null; // pascal-guard:hump
+  if (!examples.some((ex) => camelText(ex.args[0]) !== ex.expected)) return null; // pascal-guard:camel
+  return `  return ((words) => words.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(""))(${WORDS_EXPR});`;
+}
+
+/**
+ * Words uppercased and joined with `_`. One word is the space join, and a
+ * word with no cased letter is snake.
+ */
+function constantBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => typeof ex.args[0] === "string")) return null; // constant-guard:strings
+  if (!examples.every((ex) => constantText(ex.args[0]) === ex.expected)) return null; // constant-guard:joined
+  if (!examples.some((ex) => upperText(ex.args[0]) !== ex.expected)) return null; // constant-guard:space
+  if (!examples.some((ex) => lowerJoin(ex.args[0], "_") !== ex.expected)) return null; // constant-guard:snake
+  return `  return ${WORDS_EXPR}.map((word) => word.toUpperCase()).join("_");`;
+}
+
+/**
+ * Words lowercased and joined with a space. One word is kebab, snake, and
+ * camel. A first word with no cased letter is sentence case.
+ */
+function lowerCaseBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => typeof ex.args[0] === "string")) return null; // lcase-guard:strings
+  if (!examples.every((ex) => lowerJoin(ex.args[0], " ") === ex.expected)) return null; // lcase-guard:joined
+  if (!examples.some((ex) => lowerJoin(ex.args[0], "-") !== ex.expected)) return null; // lcase-guard:hyphen
+  if (!examples.some((ex) => sentenceText(ex.args[0]) !== ex.expected)) return null; // lcase-guard:sentence
+  if (examples.some((ex) => typeof ex.args[0] === "string") && !examples.some((ex) => typeof ex.args[0] === "string" && asciiJoin(ex.args[0] as string, " ", (word) => word.toLowerCase()) !== ex.expected)) return null; // lcase-guard:boundary
+  return `  return ${WORDS_EXPR}.map((word) => word.toLowerCase()).join(" ");`;
+}
+
+/**
+ * Words uppercased and joined with a space. The loop in the published
+ * function is this join, including on `""`. One word is constant case. A
+ * word with no cased letter is the space join of the lower words.
+ */
+function upperCaseBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => typeof ex.args[0] === "string")) return null; // ucase-guard:strings
+  if (!examples.every((ex) => upperText(ex.args[0]) === ex.expected)) return null; // ucase-guard:joined
+  if (!examples.some((ex) => constantText(ex.args[0]) !== ex.expected)) return null; // ucase-guard:score
+  if (!examples.some((ex) => lowerJoin(ex.args[0], " ") !== ex.expected)) return null; // ucase-guard:lower
+  if (examples.some((ex) => typeof ex.args[0] === "string") && !examples.some((ex) => typeof ex.args[0] === "string" && asciiJoin(ex.args[0] as string, " ", (word) => word.toUpperCase()) !== ex.expected)) return null; // ucase-guard:boundary
+  return `  return ${WORDS_EXPR}.map((word) => word.toUpperCase()).join(" ");`;
+}
+
+/**
+ * Each word capitalized, joined with a space. `trim` does not change the
+ * split. A later word with no cased letter is sentence case, and one word is
+ * that same string.
+ */
+function startBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => typeof ex.args[0] === "string")) return null; // start-guard:strings
+  if (!examples.every((ex) => startText(ex.args[0]) === ex.expected)) return null; // start-guard:joined
+  if (!examples.some((ex) => sentenceText(ex.args[0]) !== ex.expected)) return null; // start-guard:sentence
+  if (examples.some((ex) => typeof ex.args[0] === "string") && !examples.some((ex) => typeof ex.args[0] === "string" && asciiJoin(ex.args[0] as string, " ", capWord) !== ex.expected)) return null; // start-guard:boundary
+  return `  return ${WORDS_EXPR}.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(" ");`;
+}
+
+/**
+ * The first word capitalized, later words lowercased, joined with a space.
+ * `trim` does not change the split. A later word with a cased letter is start
+ * case. A first word with no cased letter is lower case.
+ */
+function sentenceBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 1)) return null;
+  if (!examples.every((ex) => typeof ex.args[0] === "string")) return null; // sentence-guard:strings
+  if (!examples.every((ex) => sentenceText(ex.args[0]) === ex.expected)) return null; // sentence-guard:joined
+  if (!examples.some((ex) => startText(ex.args[0]) !== ex.expected)) return null; // sentence-guard:start
+  if (!examples.some((ex) => lowerJoin(ex.args[0], " ") !== ex.expected)) return null; // sentence-guard:lower
+  if (examples.some((ex) => typeof ex.args[0] === "string") && !examples.some((ex) => typeof ex.args[0] === "string" && asciiJoin(ex.args[0] as string, " ", (word, i) => i === 0 ? capWord(word) : word.toLowerCase()) !== ex.expected)) return null; // sentence-guard:boundary
+  return `  return ((words) => words.map((word, i) => i === 0 ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : word.toLowerCase()).join(" "))(${WORDS_EXPR});`;
+}
+
 /** Array elements, or the characters of a string for the array guard's mutant. */
 function asItems(value: unknown): unknown[] | null {
   if (Array.isArray(value)) return value;
@@ -1677,6 +1802,32 @@ function intersectionBody(examples: Example[]): string | null {
   if (!examples.every((ex) => { const got = filteredIn(ex.args[0], ex.args[1]); return got !== null && deepSame(got, ex.expected); })) return null; // inter-guard:rest
   if (examples.every((ex) => Array.isArray(ex.args[0])) && !examples.some((ex) => Array.isArray(ex.args[0]) && Array.isArray(ex.expected) && (ex.expected as unknown[]).length < (ex.args[0] as unknown[]).length)) return null; // inter-guard:drops
   return "  return a.filter((item) => b.includes(item));";
+}
+
+/**
+ * Published symmetric difference: unique items of the concatenation, without
+ * the items `filter` keeps from the first array. `filter` skips a hole and
+ * `includes` reads it as `undefined`, so one `includes` test is a different
+ * function. `NaN` and `-0` follow `Set` and `includes`.
+ */
+function xorText(left: unknown, right: unknown): unknown[] | null {
+  const a = asItems(left);
+  const b = asItems(right);
+  if (!a || !b) return null;
+  const both = a.filter((item) => b.includes(item));
+  return [...new Set(a.concat(b))].filter((item) => !both.includes(item));
+}
+
+/**
+ * `difference(union(a, b), intersection(a, b))`. A disjoint pair is also the
+ * union, so some shared item has to be removed.
+ */
+function xorBody(examples: Example[]): string | null {
+  if (!examples.length || examples.some((ex) => ex.args.length !== 2)) return null;
+  if (!examples.every((ex) => Array.isArray(ex.args[0]) && Array.isArray(ex.args[1]))) return null; // xor-guard:arrays
+  if (!examples.every((ex) => { const got = xorText(ex.args[0], ex.args[1]); return got !== null && deepSame(got, ex.expected); })) return null; // xor-guard:rest
+  if (!examples.some((ex) => { const got = xorText(ex.args[0], ex.args[1]); const left = asItems(ex.args[0]); const right = asItems(ex.args[1]); return got !== null && left !== null && right !== null && !deepSame([...new Set(left.concat(right))], got); })) return null; // xor-guard:shared
+  return "  return ((u, both) => u.filter((item) => !both.includes(item)))([...new Set(a.concat(b))], a.filter((item) => b.includes(item)));";
 }
 
 /**
@@ -1941,7 +2092,7 @@ function opaqueAgrees(body: string, calls: readonly CallFact[], bwrap?: string):
 }
 
 /** One body, or a refusal. A body is kept only when every reduced call agrees with that one form. */
-export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "drop", "dropright", "takeright", "capitalize", "upper", "lower", "undef", "words", "kebab", "snake", "camel", "diff", "inter", "at", "lerp", "peer"] as const;
+export const BODY_SHAPES = ["literal", "boolean", "typeof", "string", "comparison", "integer", "project", "sum", "split", "tag", "nil", "head", "reverse", "last", "null", "notnil", "initial", "tail", "take", "drop", "dropright", "takeright", "capitalize", "upper", "lower", "undef", "words", "kebab", "snake", "camel", "pascal", "constant", "lcase", "ucase", "start", "sentence", "diff", "inter", "xor", "at", "lerp", "peer"] as const;
 export type BodyShape = (typeof BODY_SHAPES)[number];
 
 function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], symbol: string, bwrap?: string): { body: string; types: string[]; ret: string; shape: BodyShape } | "signature" | "no-body" {
@@ -1995,8 +2146,15 @@ function bodyFor(calls: CallFact[], peers: { name: string; arity: number }[], sy
   keep(kebabBody(concrete), "string", "kebab");
   keep(snakeBody(concrete), "string", "snake");
   keep(camelBody(concrete), "string", "camel");
+  keep(pascalBody(concrete), "string", "pascal");
+  keep(constantBody(concrete), "string", "constant");
+  keep(lowerCaseBody(concrete), "string", "lcase");
+  keep(upperCaseBody(concrete), "string", "ucase");
+  keep(startBody(concrete), "string", "start");
+  keep(sentenceBody(concrete), "string", "sentence");
   keep(differenceBody(concrete), resultType(concrete.map((ex) => ex.expected)), "diff");
   keep(intersectionBody(concrete), resultType(concrete.map((ex) => ex.expected)), "inter");
+  keep(xorBody(concrete), resultType(concrete.map((ex) => ex.expected)), "xor");
   keep(atBody(concrete), resultType(concrete.map((ex) => ex.expected)), "at");
   keep(lerpBody(concrete), "number", "lerp");
   keep(projectBody(concrete), resultType(concrete.map((ex) => ex.expected)), "project");

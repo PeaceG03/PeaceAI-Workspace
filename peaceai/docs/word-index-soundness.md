@@ -57,9 +57,7 @@ Each published test fails when the function throws and passes on the scaffold. T
 
 ## Not emitted
 
-`pascalCase`, `constantCase`, `lowerCase`, `upperCase`, `startCase`, and `sentenceCase` are the same word split with another join. `upperCase` writes the join in a loop; `join(" ")` agrees, including on `""`. `startCase` and `sentenceCase` call `trim` first. Whitespace is not a word, and `trim` does not change the split on the strings that were compared. They are the same split this batch already emits. Eight families is the batch.
-
-`xor` is `[...new Set(a.concat(b))].filter((item) => !(a.includes(item) && b.includes(item)))`. That agrees with `difference(union(arr1, arr2), intersection(arr1, arr2))` on the published calls. It is the same `includes` and `Set` pair as difference and intersection, so it stays out of this batch.
+`pascalCase`, `constantCase`, `lowerCase`, `upperCase`, `startCase`, `sentenceCase`, and `xor` are emitted by the case-join batch. See `peaceai/docs/case-join-soundness.md`.
 
 ## Dropped
 

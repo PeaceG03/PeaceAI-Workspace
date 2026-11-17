@@ -8739,6 +8739,22 @@ fixtures (commit path):
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m246/es-toolkit-snakeCase.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m246/es-toolkit-words.spec.ts.txt
   24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m246/es-toolkit-words.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-constantCase.spec.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-constantCase.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-lowerCase.spec.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-lowerCase.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-pascalCase.spec.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-pascalCase.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-sentenceCase.spec.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-sentenceCase.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-startCase.spec.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-startCase.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-union.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-uniq.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-upperCase.spec.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-upperCase.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-xor.spec.ts.txt
+  24e7a7b8cb8035fae1ea2e7b507aab96698a38b9 peaceai/test/fixtures/m247/es-toolkit-xor.ts.txt
   c64e27288ad98f369b918574a669b5636b98e626 peaceai/test/fixtures/m99-dfb/toss__es-toolkit-698de7aa942a.txt
 license URL: https://github.com/toss/es-toolkit/blob/24e7a7b8cb8035fae1ea2e7b507aab96698a38b9/LICENSE
 ---- license text ----
