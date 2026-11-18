@@ -1,0 +1,218 @@
+{
+  "vue": [
+    {
+      "fixture": "ve-src-codeframe.ts.txt",
+      "dest": "packages/shared/src/codeframe.ts"
+    },
+    {
+      "fixture": "ve-src-cssVars.ts.txt",
+      "dest": "packages/shared/src/cssVars.ts"
+    },
+    {
+      "fixture": "ve-src-domAttrConfig.ts.txt",
+      "dest": "packages/shared/src/domAttrConfig.ts"
+    },
+    {
+      "fixture": "ve-src-domTagConfig.ts.txt",
+      "dest": "packages/shared/src/domTagConfig.ts"
+    },
+    {
+      "fixture": "ve-src-escapeHtml.ts.txt",
+      "dest": "packages/shared/src/escapeHtml.ts"
+    },
+    {
+      "fixture": "ve-src-general.ts.txt",
+      "dest": "packages/shared/src/general.ts"
+    },
+    {
+      "fixture": "ve-src-globalsAllowList.ts.txt",
+      "dest": "packages/shared/src/globalsAllowList.ts"
+    },
+    {
+      "fixture": "ve-src-index.ts.txt",
+      "dest": "packages/shared/src/index.ts"
+    },
+    {
+      "fixture": "ve-src-looseEqual.ts.txt",
+      "dest": "packages/shared/src/looseEqual.ts"
+    },
+    {
+      "fixture": "ve-src-makeMap.ts.txt",
+      "dest": "packages/shared/src/makeMap.ts"
+    },
+    {
+      "fixture": "ve-src-normalizeProp.ts.txt",
+      "dest": "packages/shared/src/normalizeProp.ts"
+    },
+    {
+      "fixture": "ve-src-patchFlags.ts.txt",
+      "dest": "packages/shared/src/patchFlags.ts"
+    },
+    {
+      "fixture": "ve-src-shapeFlags.ts.txt",
+      "dest": "packages/shared/src/shapeFlags.ts"
+    },
+    {
+      "fixture": "ve-src-slotFlags.ts.txt",
+      "dest": "packages/shared/src/slotFlags.ts"
+    },
+    {
+      "fixture": "ve-src-toDisplayString.ts.txt",
+      "dest": "packages/shared/src/toDisplayString.ts"
+    },
+    {
+      "fixture": "ve-src-typeUtils.ts.txt",
+      "dest": "packages/shared/src/typeUtils.ts"
+    },
+    {
+      "fixture": "ve-looseEqual.spec.ts.txt",
+      "dest": "packages/shared/__tests__/looseEqual.spec.ts"
+    }
+  ],
+  "us": [
+    {
+      "fixture": "us-src-index.ts.txt",
+      "dest": "src/index.ts"
+    },
+    {
+      "fixture": "us-src-storage.ts.txt",
+      "dest": "src/storage.ts"
+    },
+    {
+      "fixture": "us-src-types.ts.txt",
+      "dest": "src/types.ts"
+    },
+    {
+      "fixture": "us-src-utils.ts.txt",
+      "dest": "src/utils.ts"
+    },
+    {
+      "fixture": "us-src-_utils.ts.txt",
+      "dest": "src/_utils.ts"
+    },
+    {
+      "fixture": "us-src-_drivers.ts.txt",
+      "dest": "src/_drivers.ts"
+    },
+    {
+      "fixture": "us-src-drivers-memory.ts.txt",
+      "dest": "src/drivers/memory.ts"
+    },
+    {
+      "fixture": "us-test-memory.test.ts.txt",
+      "dest": "test/drivers/memory.test.ts"
+    },
+    {
+      "fixture": "us-test-utils.ts.txt",
+      "dest": "test/drivers/utils.ts"
+    }
+  ],
+  "im": [
+    {
+      "fixture": "im-src-core-current.ts.txt",
+      "dest": "src/core/current.ts"
+    },
+    {
+      "fixture": "im-src-core-finalize.ts.txt",
+      "dest": "src/core/finalize.ts"
+    },
+    {
+      "fixture": "im-src-core-immerClass.ts.txt",
+      "dest": "src/core/immerClass.ts"
+    },
+    {
+      "fixture": "im-src-core-proxy.ts.txt",
+      "dest": "src/core/proxy.ts"
+    },
+    {
+      "fixture": "im-src-core-scope.ts.txt",
+      "dest": "src/core/scope.ts"
+    },
+    {
+      "fixture": "im-src-immer.ts.txt",
+      "dest": "src/immer.ts"
+    },
+    {
+      "fixture": "im-src-internal.ts.txt",
+      "dest": "src/internal.ts"
+    },
+    {
+      "fixture": "im-src-plugins-arrayMethods.ts.txt",
+      "dest": "src/plugins/arrayMethods.ts"
+    },
+    {
+      "fixture": "im-src-plugins-mapset.ts.txt",
+      "dest": "src/plugins/mapset.ts"
+    },
+    {
+      "fixture": "im-src-plugins-patches.ts.txt",
+      "dest": "src/plugins/patches.ts"
+    },
+    {
+      "fixture": "im-src-types-types-external.ts.txt",
+      "dest": "src/types/types-external.ts"
+    },
+    {
+      "fixture": "im-src-types-types-internal.ts.txt",
+      "dest": "src/types/types-internal.ts"
+    },
+    {
+      "fixture": "im-src-utils-common.ts.txt",
+      "dest": "src/utils/common.ts"
+    },
+    {
+      "fixture": "im-src-utils-env.ts.txt",
+      "dest": "src/utils/env.ts"
+    },
+    {
+      "fixture": "im-src-utils-errors.ts.txt",
+      "dest": "src/utils/errors.ts"
+    },
+    {
+      "fixture": "im-src-utils-plugins.ts.txt",
+      "dest": "src/utils/plugins.ts"
+    },
+    {
+      "fixture": "im-not-strict-copy.ts.txt",
+      "dest": "__tests__/not-strict-copy.ts"
+    }
+  ],
+  "jr": [
+    {
+      "fixture": "jr-src-index.ts.txt",
+      "dest": "src/index.ts"
+    },
+    {
+      "fixture": "jr-src-regular-jsonrepair.ts.txt",
+      "dest": "src/regular/jsonrepair.ts"
+    },
+    {
+      "fixture": "jr-src-streaming-buffer-InputBuffer.ts.txt",
+      "dest": "src/streaming/buffer/InputBuffer.ts"
+    },
+    {
+      "fixture": "jr-src-streaming-buffer-OutputBuffer.ts.txt",
+      "dest": "src/streaming/buffer/OutputBuffer.ts"
+    },
+    {
+      "fixture": "jr-src-streaming-core.ts.txt",
+      "dest": "src/streaming/core.ts"
+    },
+    {
+      "fixture": "jr-src-streaming-stack.ts.txt",
+      "dest": "src/streaming/stack.ts"
+    },
+    {
+      "fixture": "jr-src-utils-JSONRepairError.ts.txt",
+      "dest": "src/utils/JSONRepairError.ts"
+    },
+    {
+      "fixture": "jr-src-utils-stringUtils.ts.txt",
+      "dest": "src/utils/stringUtils.ts"
+    },
+    {
+      "fixture": "jr-index.test.ts.txt",
+      "dest": "src/index.test.ts"
+    }
+  ]
+}
