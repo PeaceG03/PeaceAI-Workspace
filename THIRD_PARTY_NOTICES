@@ -12818,3 +12818,116 @@ Redistributions in binary form must reproduce the above copyright notice, this l
 THIS IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS,
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ---- end ----
+==============================================================================
+repo: omgovich/colord
+license: MIT (LICENSE.md, sha256 of trimmed text a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee)
+fixtures (commit path):
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-colorModels-hex.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-colorModels-hsl.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-colorModels-hslString.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-colorModels-hsv.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-colorModels-rgb.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-colorModels-rgbString.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-colord.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-constants.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-extend.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-get-getBrightness.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-helpers.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-index.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-manipulate-changeAlpha.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-manipulate-invert.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-manipulate-lighten.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-manipulate-saturate.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-parse.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-random.ts.txt
+  0d5902befb533c55e33adce760821556252bca63 peaceai/test/fixtures/m264/co-src-types.ts.txt
+  f05d4520ebbeb7541f7cfeb552b16e3dd644d556 peaceai/test/fixtures/m264/co-colord.test.ts.txt
+  f05d4520ebbeb7541f7cfeb552b16e3dd644d556 peaceai/test/fixtures/m264/co-fixtures.ts.txt
+license URL: https://github.com/omgovich/colord/blob/0d5902befb533c55e33adce760821556252bca63/LICENSE.md
+as written: sha256 77e69e9fb4c23a6714fbab77ceab0b0a046cbb469d70cb8c68cd78f4e43f72fa (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) 2020 Vlad Shilov <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: natemoo-re/ultrahtml
+license: MIT (LICENSE, sha256 of trimmed text 0aa325d52101aa9e41ebdcca2fcee62ed301998621c1559262cd6a6d98e5170a)
+fixtures (commit path):
+  7db9a1d1ae560e25c1aae3937401210d27f5ae2b peaceai/test/fixtures/m264/uh-index.ts.txt
+  7db9a1d1ae560e25c1aae3937401210d27f5ae2b peaceai/test/fixtures/m264/uh-sanitize.ts.txt
+  5715bc35588c4e3533ba82eb030a60d660f687ea peaceai/test/fixtures/m264/uh-sanitize.test.ts.txt
+license URL: https://github.com/natemoo-re/ultrahtml/blob/7db9a1d1ae560e25c1aae3937401210d27f5ae2b/LICENSE
+---- license text ----
+MIT License Copyright (c) 2022 Nate Moore
+
+Permission is hereby granted, free of
+charge, to any person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice
+(including the next paragraph) shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+---
+
+Portions of this code were borrowed from https://github.com/developit/htmlParser
+
+The MIT License (MIT)
+
+Copyright (c) 2013 Jason Miller
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+---- end ----
+==============================================================================
+repo: josdejong/lossless-json
+license: MIT (LICENSE.md, sha256 of trimmed text b6996c93c6e883646ac7222951ad8372899d8ef4bd580747a088941808e9e53b)
+fixtures (commit path):
+  b8c3a8465ff422a9011dd0cef04002134cf80367 peaceai/test/fixtures/m264/ll-utils.ts.txt
+  82bd9e33c2189a8a7399050eb77e1251883b5adf peaceai/test/fixtures/m264/ll-utils.test.ts.txt
+license URL: https://github.com/josdejong/lossless-json/blob/b8c3a8465ff422a9011dd0cef04002134cf80367/LICENSE.md
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2016-2026 Jos de Jong
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+---- end ----

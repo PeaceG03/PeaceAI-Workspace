@@ -1,0 +1,162 @@
+{
+  "schema": "peaceai-m264-batch13:v1",
+  "note": "Pinned copies of omgovich/colord, natemoo-re/ultrahtml, and josdejong/lossless-json at the parent of a published bug fix, plus the test that fix changed. A notice omits an email address when the license text contains one and records the hash of that redacted text. The code bytes are unmodified.",
+  "examples": [
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-colorModels-hex.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-colorModels-hsl.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-colorModels-hslString.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-colorModels-hsv.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-colorModels-rgb.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-colorModels-rgbString.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-colord.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-constants.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-extend.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-get-getBrightness.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-helpers.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-index.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-manipulate-changeAlpha.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-manipulate-invert.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-manipulate-lighten.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-manipulate-saturate.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-parse.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-random.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "0d5902befb533c55e33adce760821556252bca63",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-src-types.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "f05d4520ebbeb7541f7cfeb552b16e3dd644d556",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-colord.test.ts.txt"
+    },
+    {
+      "repo": "omgovich/colord",
+      "commit": "f05d4520ebbeb7541f7cfeb552b16e3dd644d556",
+      "licenseSha256": "a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee",
+      "fixture": "peaceai/test/fixtures/m264/co-fixtures.ts.txt"
+    },
+    {
+      "repo": "natemoo-re/ultrahtml",
+      "commit": "7db9a1d1ae560e25c1aae3937401210d27f5ae2b",
+      "licenseSha256": "0aa325d52101aa9e41ebdcca2fcee62ed301998621c1559262cd6a6d98e5170a",
+      "fixture": "peaceai/test/fixtures/m264/uh-index.ts.txt"
+    },
+    {
+      "repo": "natemoo-re/ultrahtml",
+      "commit": "7db9a1d1ae560e25c1aae3937401210d27f5ae2b",
+      "licenseSha256": "0aa325d52101aa9e41ebdcca2fcee62ed301998621c1559262cd6a6d98e5170a",
+      "fixture": "peaceai/test/fixtures/m264/uh-sanitize.ts.txt"
+    },
+    {
+      "repo": "natemoo-re/ultrahtml",
+      "commit": "5715bc35588c4e3533ba82eb030a60d660f687ea",
+      "licenseSha256": "0aa325d52101aa9e41ebdcca2fcee62ed301998621c1559262cd6a6d98e5170a",
+      "fixture": "peaceai/test/fixtures/m264/uh-sanitize.test.ts.txt"
+    },
+    {
+      "repo": "josdejong/lossless-json",
+      "commit": "b8c3a8465ff422a9011dd0cef04002134cf80367",
+      "licenseSha256": "b6996c93c6e883646ac7222951ad8372899d8ef4bd580747a088941808e9e53b",
+      "fixture": "peaceai/test/fixtures/m264/ll-utils.ts.txt"
+    },
+    {
+      "repo": "josdejong/lossless-json",
+      "commit": "82bd9e33c2189a8a7399050eb77e1251883b5adf",
+      "licenseSha256": "b6996c93c6e883646ac7222951ad8372899d8ef4bd580747a088941808e9e53b",
+      "fixture": "peaceai/test/fixtures/m264/ll-utils.test.ts.txt"
+    }
+  ]
+}
