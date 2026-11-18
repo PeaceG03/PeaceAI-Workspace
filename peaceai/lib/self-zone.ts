@@ -110,6 +110,7 @@ export const MUST_BE_PROTECTED = [
   // Auditor #331: safe-zone shapes that a PROTECTED_SELF entry still covers (the public-origin allowlist).
   "peaceai/self-tests/public-origin.test.ts", "peaceai/self-tests/helpers/public-origin.test.ts", "peaceai/docs/peaceai-public-origin.md",
   "src/public-origin.ts", "src/x/peaceai-public-origin.json",
+  "peaceai/self/lane-v1-baseline.json", "peaceai/self/lane-v1-drift.json", "peaceai/bin/lane-baseline.ts", "peaceai/bin/lane-drift.ts", // lane-guard: the baseline, the drift status and the lane bins stay protected
 ] as const;
 export function selfZoneSelfCheck(): string[] {
   const problems: string[] = [];
