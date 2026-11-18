@@ -20,7 +20,7 @@ The `Immer` constructor ignored `useStrictShallowCopy: "class_only"`, so a class
 
 ## Soundness
 
-Each edit is one shape. An object that has `hasOwnProperty` is still compared key by key, and `String` is still used when the value can be converted. A TTL that fits in a 32-bit delay is still one timer, and a non-finite TTL still does not expire. A boolean shallow-copy mode is still applied, and `"class_only"` now is too. A redundant comma after a real value is still removed; only the comma that belongs to the parent stays. Deleting each guard admits the near miss, with the sandbox and without it. An `any` parameter that returns the recorded answer for every input is `verified_test_only` for `looseEqual`, `driver`, `Immer`, and `jsonrepair`. A review note that names no function, and `Add <name>` with no value, stay refusals.
+Each edit is one shape. An object that has `hasOwnProperty` is still compared key by key, and `String` is still used when the value can be converted. A TTL that fits in a 32-bit delay is still one timer, and a non-finite TTL still does not expire. A boolean shallow-copy mode is still applied, and `"class_only"` now is too. A redundant comma after a real value is still removed; only the comma that belongs to the parent stays. Deleting the new line from the repaired file makes the published check fail, in-process and inside the sandbox, so that mutant is rejected. An `any` parameter that returns the recorded answer for every input is `verified_test_only` for `looseEqual`, `driver`, `Immer`, and `jsonrepair`. A review note that names no function, and `Add <name>` with no value, stay refusals.
 
 ## Dropped
 

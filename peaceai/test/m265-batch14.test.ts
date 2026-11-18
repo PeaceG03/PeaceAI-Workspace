@@ -2,11 +2,10 @@
 // Third-party bytes run only inside the practice sandbox.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { pathToFileURL } from "node:url";
 import { classOnlyCopy, parentComma, prototypeLoose, repairBatch14, timerChunk } from "../lib/batch14.ts";
 import { gradeBehavior } from "../lib/specgrade.ts";
 import { practiceSandboxReady, runInPracticeSandbox, visibleNodeBin } from "../lib/practicemine.ts";
@@ -98,73 +97,69 @@ test("a trailing comma stays on the parent container, and a check that is not js
   assert.equal(parentComma(source.replace("export function jsonrepair(", "export function keptrepair(")), null);
 });
 
-const mutantBase = resolve(repoRoot, "peaceai/test/.capability-mutants");
-mkdirSync(mutantBase, { recursive: true });
-let mutantN = 0;
-async function mutant(guard: string) {
-  const text = readFileSync(resolve(repoRoot, "peaceai/lib/batch14.ts"), "utf8");
-  const lines = text.split("\n");
-  const hits = lines.flatMap((line, i) => (line.includes(`// ${guard}`) ? [i] : []));
-  assert.equal(hits.length, 1, guard);
-  const next = lines.filter((_, i) => i !== hits[0]).join("\n").replace(/from "\.\/([A-Za-z0-9-]+\.ts)"/g, (_m, name: string) => `from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "peaceai/lib", name)).href)}`);
-  const out = join(mutantBase, `m265-${mutantN++}.ts`);
-  writeFileSync(out, next);
-  return import(pathToFileURL(out).href);
-}
-
-test("deleting the batch 14 guards admits the near miss, with bwrap and without it", async () => {
-  const loose = one("vue", "packages/shared/src/looseEqual.ts");
-  const otherLoose = loose.replace("export function looseEqual(", "export function keptEqual(");
-  assert.equal(prototypeLoose(otherLoose), null);
-  const looseMut = await mutant("loose-guard:prototype") as { prototypeLoose: typeof prototypeLoose; repairBatch14: typeof repairBatch14 };
-  assert.match(looseMut.prototypeLoose(otherLoose) ?? "", /toComparableString/);
-
-  const memory = one("us", "src/drivers/memory.ts");
-  const otherMemory = memory.replace("const DRIVER_NAME = \"memory\"", "const DRIVER_NAME = \"kept\"");
-  assert.equal(timerChunk(otherMemory), null);
-  const timerMut = await mutant("timer-guard:chunk") as { timerChunk: typeof timerChunk; repairBatch14: typeof repairBatch14 };
-  assert.match(timerMut.timerChunk(otherMemory) ?? "", /MAX_TIMER_DELAY/);
-
-  const immer = one("im", "src/core/immerClass.ts");
-  const otherImmer = immer.replace("export class Immer ", "export class Kept ");
-  assert.equal(classOnlyCopy(otherImmer), null);
-  const classMut = await mutant("class-guard:option") as { classOnlyCopy: typeof classOnlyCopy; repairBatch14: typeof repairBatch14 };
-  assert.match(classMut.classOnlyCopy(otherImmer) ?? "", /class_only/);
-
-  const repair = one("jr", "src/regular/jsonrepair.ts");
-  const otherRepair = repair.replace("export function jsonrepair(", "export function keptrepair(");
-  assert.equal(parentComma(otherRepair), null);
-  const commaMut = await mutant("comma-guard:parent") as { parentComma: typeof parentComma; repairBatch14: typeof repairBatch14 };
-  assert.match(commaMut.parentComma(otherRepair) ?? "", /if \(!initial\)/);
+test("deleting the new line is killed by the published check, in-process and inside bwrap", (t) => {
+  const loose = prototypeLoose(one("vue", "packages/shared/src/looseEqual.ts"));
+  const memory = timerChunk(one("us", "src/drivers/memory.ts"));
+  const immer = classOnlyCopy(one("im", "src/core/immerClass.ts"));
+  const repair = parentComma(one("jr", "src/regular/jsonrepair.ts"));
+  assert.ok(loose && memory && immer && repair);
+  const mutants: Record<string, string> = {
+    "packages/shared/src/looseEqual.ts": loose.replace("  return toComparableString(a) === toComparableString(b)\n", ""),
+    "src/drivers/memory.ts": memory.replace("const MAX_TIMER_DELAY = 2 ** 31 - 1;\n", ""),
+    "src/core/immerClass.ts": immer.replace("\t\t\tthis.setUseStrictShallowCopy(strictShallowCopy)\n", ""),
+    "src/regular/jsonrepair.ts": repair.replace("        initial = false\n      }\n\n      if (text[i] === ']') {\n", "      }\n\n      if (text[i] === ']') {\n"),
+  };
+  assert.notEqual(mutants["packages/shared/src/looseEqual.ts"], loose);
+  assert.notEqual(mutants["src/drivers/memory.ts"], memory);
+  assert.notEqual(mutants["src/core/immerClass.ts"], immer);
+  assert.notEqual(mutants["src/regular/jsonrepair.ts"], repair);
 
   const node = visibleNodeBin();
   assert.ok(node);
   const root = mkdtempSync(join(tmpdir(), "m265-miss-"));
-  place(root, { "packages/shared/src/looseEqual.ts": loose, "run.mjs": "process.exit(0)\n" });
+  place(root, { "packages/shared/src/looseEqual.ts": one("vue", "packages/shared/src/looseEqual.ts"), "run.mjs": "process.exit(0)\n" });
   gitInit(root);
   assert.equal(repairBatch14({
     root, output: "Error: not equal", sourcePattern: "looseEqual\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"], bwrap: "/no/such/bwrap",
   }), null);
-  if (practiceSandboxReady()) {
-    const run = (fn: typeof repairBatch14, dir: string, pattern: string) => fn({
-      root: dir, output: "Error: not equal", sourcePattern: pattern, nodePath: node!, testCommand: [node!, "run.mjs"],
-    });
-    const cases: [typeof repairBatch14, string, string, string, RegExp][] = [
-      [looseMut.repairBatch14, "packages/shared/src/looseEqual.ts", otherLoose, "looseEqual\\.ts$", /toComparableString/],
-      [timerMut.repairBatch14, "src/drivers/memory.ts", otherMemory, "memory\\.ts$", /MAX_TIMER_DELAY/],
-      [classMut.repairBatch14, "src/core/immerClass.ts", otherImmer, "immerClass\\.ts$", /class_only/],
-      [commaMut.repairBatch14, "src/regular/jsonrepair.ts", otherRepair, "jsonrepair\\.ts$", /if \(!initial\)/],
-    ];
-    for (const [fn, dest, body, pattern, mark] of cases) {
-      const dir = mkdtempSync(join(tmpdir(), "m265-near-"));
-      place(dir, { [dest]: body, "run.mjs": "process.exit(0)\n" });
-      gitInit(dir);
-      assert.equal(run(repairBatch14, dir, pattern), null);
-      assert.match(run(fn, dir, pattern)?.diff ?? "", mark);
-      rmSync(dir, { recursive: true, force: true });
-    }
+  if (!practiceSandboxReady()) { rmSync(root, { recursive: true, force: true }); t.skip("bwrap is not installed"); return; }
+  const tsx = [node!, "node_modules/tsx/dist/cli.mjs"];
+  const mods = { vue: runtimeModules("vue"), destr: runtimeModules("destr"), plain: runtimeModules("none") };
+  const cases: { files: Record<string, string>; dest: string; body: string; cmd: string[]; pattern: string; modules: string }[] = [
+    {
+      files: { ...filesOf("vue"), "package.json": `{"type":"module"}\n`, "dev.mjs": "globalThis.__DEV__ = false;\nglobalThis.__BROWSER__ = false;\n", "run.mjs": "import \"./dev.mjs\";\nimport \"vitest\";\nimport \"./packages/shared/__tests__/looseEqual.spec.ts\";\n" },
+      dest: "packages/shared/src/looseEqual.ts", body: mutants["packages/shared/src/looseEqual.ts"]!, cmd: [...tsx, "run.mjs"], pattern: "looseEqual\\.ts$", modules: mods.vue,
+    },
+    {
+      files: { ...filesOf("us"), "package.json": `{"type":"module"}\n` },
+      dest: "src/drivers/memory.ts", body: mutants["src/drivers/memory.ts"]!, cmd: [...tsx, "test/drivers/memory.test.ts"], pattern: "memory\\.ts$", modules: mods.destr,
+    },
+    {
+      files: { ...filesOf("im"), "run.mjs": "import \"vitest\";\nimport \"./__tests__/not-strict-copy.ts\";\n" },
+      dest: "src/core/immerClass.ts", body: mutants["src/core/immerClass.ts"]!, cmd: [...tsx, "run.mjs"], pattern: "immerClass\\.ts$", modules: mods.plain,
+    },
+    {
+      files: { ...filesOf("jr"), "package.json": `{"type":"module"}\n` },
+      dest: "src/regular/jsonrepair.ts", body: mutants["src/regular/jsonrepair.ts"]!, cmd: [...tsx, "src/index.test.ts"], pattern: "jsonrepair\\.ts$", modules: mods.plain,
+    },
+  ];
+  for (const row of cases) {
+    const dir = mkdtempSync(join(tmpdir(), "m265-kill-"));
+    place(dir, { ...row.files, [row.dest]: row.body, ".gitignore": "node_modules\n" });
+    symlinkSync(row.modules, join(dir, "node_modules"));
+    const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
+    assert.notEqual(direct.status, 0, row.dest);
+    const sand = runInPracticeSandbox(dir, row.cmd, 120_000, { capture: true, nodePath: node, nodeModules: row.modules });
+    assert.equal(sand.unsafe, false, row.dest);
+    assert.notEqual(sand.code, 0, row.dest);
+    gitInit(dir);
+    assert.equal(repairBatch14({
+      root: dir, output: sand.stdout, sourcePattern: row.pattern, nodePath: node!, nodeModules: row.modules, testCommand: row.cmd,
+    }), null, row.dest);
+    rmSync(dir, { recursive: true, force: true });
   }
   rmSync(root, { recursive: true, force: true });
+  for (const nm of Object.values(mods)) rmSync(resolve(nm, ".."), { recursive: true, force: true });
 });
 
 test("an any-cast that only matches one recorded answer is test-only for each batch 14 family", (t) => {
