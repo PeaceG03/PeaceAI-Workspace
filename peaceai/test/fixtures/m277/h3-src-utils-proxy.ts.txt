@@ -1,0 +1,591 @@
+import type { H3Event } from "../event.ts";
+
+import { HTTPError } from "../error.ts";
+import {
+  abortable,
+  applyXForwardedHeaders,
+  connectionTokens,
+  framingHeaders,
+  ignoredHeaders,
+  ignoredResponseHeaders,
+  mergeHeaders,
+  rewriteCookieProperty,
+  rewriteLocationHeaders,
+} from "./internal/proxy.ts";
+import { EmptyObject } from "./internal/obj.ts";
+import type { ServerRequest } from "srvx";
+import { HTTPResponse } from "../response.ts";
+
+export interface ProxyOptions {
+  headers?: HeadersInit;
+  /**
+   * Header names allowed to bypass the built-in denylist. Matched
+   * case-insensitively.
+   *
+   * This is **not** an exclusive allowlist: all ordinary request headers are
+   * still forwarded regardless. It only lists exceptions that force-forward a
+   * header the proxy would otherwise drop — e.g. `forwardHeaders: ["host"]`
+   * forwards the client's `host` verbatim. `filterHeaders` still wins over it.
+   *
+   * Only the "soft" drops (`host`, `accept-encoding`, `expect`) can be
+   * overridden this way. It can **never** force-forward a true hop-by-hop framing header
+   * (`connection`, `keep-alive`, `transfer-encoding`, `te`, `trailer`,
+   * `upgrade`, `proxy-authorization`, `proxy-connection`) or a field the
+   * incoming `Connection` header nominates — forwarding those could desync
+   * request framing or leak the inbound proxy's credentials upstream, so they
+   * are always dropped.
+   */
+  forwardHeaders?: string[];
+  /**
+   * Denylist of incoming request header names to drop before proxying.
+   * Header names are matched case-insensitively.
+   */
+  filterHeaders?: string[];
+  /**
+   * Options forwarded to the underlying `fetch()` call.
+   *
+   * Upstream 3xx responses are passed through to the client by default
+   * (`redirect: "manual"`) rather than followed. Set
+   * `fetchOptions: { redirect: "follow" }` to restore following redirects — but
+   * note that following a redirect for a request with a streamed body can fail,
+   * since the body cannot be replayed once it has been consumed.
+   */
+  fetchOptions?: RequestInit & { duplex?: "half" | "full" };
+  cookieDomainRewrite?: string | Record<string, string>;
+  cookiePathRewrite?: string | Record<string, string>;
+  /**
+   * Rewrite `location` and `refresh` response headers, like nginx
+   * `proxy_redirect`:
+   *
+   * - `true` (default): a URL whose origin matches the proxy `target` is
+   *   rewritten to the proxy's own origin (path and query preserved), so
+   *   client-side redirects keep flowing through the proxy instead of
+   *   exposing the upstream host. Relative and third-party URLs are left
+   *   untouched, as are internal (`/`-prefixed) targets, which already share
+   *   the proxy origin.
+   * - A record maps URL prefixes to replacements (nginx
+   *   `proxy_redirect <from> <to>`); the first matching prefix is replaced,
+   *   e.g. `{ "https://upstream.example/two/": "/one/" }`. Only the explicit
+   *   mappings apply in this mode (including for internal targets).
+   * - `false`: forward these headers verbatim.
+   *
+   * @default true
+   */
+  locationRewrite?: boolean | Record<string, string>;
+  onResponse?: (event: H3Event, response: Response) => void | Promise<void>;
+  /**
+   * Control how a client disconnect is handled.
+   *
+   * The incoming request's abort signal (`event.req.signal`) is always forwarded
+   * to the proxied request, so a client disconnect aborts the upstream request
+   * and releases its connection. By default the resulting abort is handled
+   * quietly with a `499 Client Closed Request` response (never delivered, since
+   * the client is already gone) rather than logged as a `502` gateway error.
+   *
+   * Set this to `true` to instead let the `AbortError` propagate to your handler
+   * (e.g. to run cleanup). This also applies to a custom `fetchOptions.signal`,
+   * except when it aborts with a `TimeoutError` — timeouts always map to `504`
+   * (see `timeout`).
+   */
+  propagateAbortError?: boolean;
+
+  /**
+   * Milliseconds to wait for the upstream response (headers) before giving up.
+   * On timeout the proxy responds with `504 Gateway Timeout`. The deadline is
+   * cleared once the upstream responds — it never cuts off a long-running
+   * response body stream.
+   *
+   * Because a fired timeout aborts with a `TimeoutError`, a caller-supplied
+   * `fetchOptions.signal` that is itself an `AbortSignal.timeout` is also
+   * mapped to `504` (rather than the `499` used for client disconnects) — note
+   * that such a signal stays armed during body streaming and can truncate it;
+   * prefer this option.
+   */
+  timeout?: number;
+
+  /**
+   * When `true`, add `x-forwarded-*` request headers derived from the incoming
+   * request so the upstream learns the client and original request info:
+   *
+   * - `x-forwarded-for`: the client IP (`event.req.ip`, when available),
+   *   **appended** to any inbound chain (like nginx
+   *   `$proxy_add_x_forwarded_for`) so each hop is preserved.
+   * - `x-forwarded-proto`: the incoming request protocol.
+   * - `x-forwarded-host`: the original host (incl. port).
+   * - `x-forwarded-port`: the original port (or the protocol default — `443` for
+   *   https, `80` for http).
+   *
+   * An inbound value from the client never wins: the last three are replaced
+   * with the server-resolved values from `event.url`, and the client's
+   * `x-forwarded-for` becomes only the left of the chain. Otherwise a client
+   * could hand the upstream — which trusts these headers precisely because a
+   * proxy sits in front of it — an arbitrary origin address, protocol, and host,
+   * defeating IP allowlists, rate limiting, and audit logs.
+   *
+   * These values reflect the server's own view of the request, which by default
+   * comes from the real transport and the on-the-wire `Host`. They follow an
+   * inbound `x-forwarded-*` header only when the server is explicitly configured
+   * to trust an upstream proxy (e.g. srvx's `trustProxy`) — the correct setup
+   * when a proxy you control sits in front, and the case where replacing them
+   * here is a no-op.
+   *
+   * Headers passed explicitly via `headers` or `fetchOptions.headers` still win
+   * over all of the above, since they are merged in afterwards.
+   *
+   * Only applied by `proxyRequest` (which forwards the incoming request);
+   * the lower-level `proxy` ignores this option.
+   *
+   * @default false
+   */
+  xfwd?: boolean;
+}
+
+/**
+ * Proxy the incoming request to a target URL.
+ *
+ * If the `target` starts with `/`, the request is handled internally by the app router
+ * via `event.app.fetch()` instead of making an external HTTP request. Such a target
+ * always resolves against the app's own origin: a leading separator run
+ * (`//host/x`, `/\host/x`, and C0-interleaved forms like `/\thost/x` that the
+ * URL parser strips down to one) is collapsed to a single `/` rather than read
+ * as an authority.
+ *
+ * The request body is streamed to the target without buffering. Per the Fetch
+ * standard, a request body can only be consumed once, so reading it beforehand
+ * (e.g. via `readBody()`, `readFormData()`, or body-reading middleware) locks
+ * the stream and proxying fails. If you need to inspect the body and still
+ * proxy it, read from a clone and leave the original event untouched.
+ *
+ * Upstream 3xx responses are passed through to the client by default rather than
+ * followed. Set `fetchOptions: { redirect: "follow" }` to follow them instead —
+ * but following a redirect with a streamed request body can fail, since the body
+ * cannot be replayed once consumed.
+ *
+ * **Security:** Never pass unsanitized user input as the `target`. Callers are
+ * responsible for validating and restricting the target URL (e.g. allowlisting
+ * hosts, blocking internal paths, enforcing protocol). Consider using
+ * `bodyLimit()` middleware to prevent large request bodies from consuming
+ * excessive resources when proxying untrusted input.
+ *
+ * **Credential forwarding:** the incoming request's `Cookie` and `Authorization`
+ * headers are forwarded to the `target` verbatim. This is the correct behavior
+ * for a same-trust reverse proxy, but leaks the client's credentials to any
+ * upstream you do not fully trust. When proxying to a not-fully-trusted upstream,
+ * strip them with `filterHeaders: ["cookie", "authorization"]`. (This differs
+ * from `fetchWithEvent`, which never forwards the event's headers to an external
+ * URL.)
+ *
+ * @example
+ * app.all("/proxy", async (event) => {
+ *   const body = await event.req.clone().json(); // read from the clone
+ *   // ...inspect body...
+ *   return proxyRequest(event, "/target"); // original stream still intact
+ * });
+ */
+export async function proxyRequest(
+  event: H3Event,
+  target: string,
+  opts: ProxyOptions = {},
+): Promise<HTTPResponse> {
+  // Request Body
+  // Forward the body based on presence, not a method allowlist, so bodies on
+  // WebDAV-style (PROPFIND/REPORT/SEARCH) and custom methods are not dropped.
+  // GET/HEAD are excluded — keyed off the OUTGOING method (a caller can
+  // override it via `fetchOptions.method`) because fetch rejects a body on
+  // those methods.
+  const method = opts.fetchOptions?.method || event.req.method;
+  const methodUpper = method.toUpperCase();
+  const incomingBody = event.req.body;
+  const requestBody =
+    incomingBody != null && methodUpper !== "GET" && methodUpper !== "HEAD"
+      ? incomingBody
+      : undefined;
+
+  // Headers
+  // `x-forwarded-*` is applied to the forwarded request headers *before* the
+  // caller's header options are merged in, so an inbound (client-controlled)
+  // value cannot survive while an explicit `opts.headers` value still wins.
+  const proxyHeaders = getProxyRequestHeaders(event, {
+    host: target.startsWith("/"),
+    forwardHeaders: opts.forwardHeaders,
+    filterHeaders: opts.filterHeaders,
+  });
+  const fetchHeaders = mergeHeaders(
+    opts.xfwd ? applyXForwardedHeaders(proxyHeaders, event) : proxyHeaders,
+    opts.fetchOptions?.headers,
+    opts.headers,
+  );
+
+  // When the forwarded body is not the incoming request's own stream, the
+  // incoming `content-length` no longer describes it — and fetch trusts a
+  // caller-supplied `content-length` verbatim, mis-framing the upstream
+  // request. Drop it and let fetch derive the framing from the actual body.
+  if ((opts.fetchOptions && "body" in opts.fetchOptions) || (incomingBody && !requestBody)) {
+    if (fetchHeaders instanceof Headers) {
+      fetchHeaders.delete("content-length");
+    } else if (!Array.isArray(fetchHeaders)) {
+      delete (fetchHeaders as Record<string, string>)["content-length"];
+    }
+  }
+
+  // Derive `duplex` from the FINAL body (a caller may override it via
+  // `opts.fetchOptions.body`), so a streamed override on a body-less incoming
+  // request still sets `duplex` and fetch does not throw. An explicit
+  // `opts.fetchOptions.duplex` still wins.
+  const fetchBody = opts.fetchOptions?.body ?? requestBody;
+
+  return proxy(event, target, {
+    ...opts,
+    fetchOptions: {
+      method,
+      body: requestBody,
+      ...opts.fetchOptions,
+      duplex: opts.fetchOptions?.duplex ?? (fetchBody != null ? "half" : undefined),
+      headers: fetchHeaders,
+    },
+  });
+}
+
+/**
+ * Make a proxy request to a target URL and send the response back to the client.
+ *
+ * If the `target` starts with `/`, the request is dispatched internally via
+ * `event.app.fetch()` (sub-request) and never leaves the process. This bypasses
+ * any external security layer (reverse proxy auth, IP allowlisting, mTLS).
+ *
+ * Upstream 3xx responses are passed through to the client by default rather than
+ * followed. Set `fetchOptions: { redirect: "follow" }` to follow them instead —
+ * but following a redirect with a streamed request body can fail, since the body
+ * cannot be replayed once consumed. (Internal sub-requests via `event.app.fetch()`
+ * never follow redirects.)
+ *
+ * **Limitations** (inherited from `fetch`): upstream response bodies are always
+ * decompressed (compression is not preserved end-to-end), the `host` header is
+ * rewritten to the target (preserving it via `forwardHeaders: ["host"]` works on
+ * Node.js but may be ignored on other runtimes), and unix sockets, TLS options,
+ * or connection agents require a runtime-specific escape hatch (e.g. undici's
+ * `dispatcher` in `fetchOptions` on Node.js). On browser and service-worker
+ * runtimes, `redirect: "manual"` produces an unrelayable opaque-redirect for
+ * external targets (a `502` is returned) — set
+ * `fetchOptions: { redirect: "follow" }` there.
+ *
+ * **Security:** Never pass unsanitized user input as the `target`. Callers are
+ * responsible for validating and restricting the target URL (e.g. allowlisting
+ * hosts, blocking internal paths, enforcing protocol).
+ *
+ * **Credential forwarding:** `proxy` does not forward the incoming request's
+ * headers automatically — only headers the caller explicitly passes via
+ * `opts.headers` (or `fetchOptions.headers`) are sent, verbatim. Do not pass the
+ * client's `Cookie` or `Authorization` headers through to an upstream you do not
+ * fully trust. Note that `opts.filterHeaders` has no effect here — it is only
+ * applied by `proxyRequest` (which does forward the incoming headers and offers
+ * `filterHeaders: ["cookie", "authorization"]` as the mitigation).
+ */
+export async function proxy(
+  event: H3Event,
+  target: string,
+  opts: ProxyOptions = {},
+): Promise<HTTPResponse> {
+  // Always forward the client's abort signal so a disconnect aborts the
+  // upstream request and releases its connection. If the caller also supplied
+  // `fetchOptions.signal`, honor both (either aborting aborts the request)
+  // instead of letting the spread silently drop `event.req.signal`.
+  // Optionally add a timeout signal so a slow upstream maps to `504` instead of
+  // hanging. Combine every applicable signal (client, caller, timeout) so any of
+  // them aborting aborts the request, without dropping `event.req.signal`.
+  const signals: AbortSignal[] = [event.req.signal];
+  if (opts.fetchOptions?.signal) {
+    signals.push(opts.fetchOptions.signal);
+  }
+  // A cancelable timer (not `AbortSignal.timeout`) so the deadline only covers
+  // waiting for the response: it is cleared as soon as the upstream responds
+  // and can never abort a long-running body stream mid-flight.
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  if (opts.timeout! > 0 && Number.isFinite(opts.timeout)) {
+    const timeoutController = new AbortController();
+    timeoutId = setTimeout(
+      () => timeoutController.abort(new DOMException("Proxy request timed out", "TimeoutError")),
+      // setTimeout clamps anything above its int32 limit down to 1ms — treat
+      // larger deadlines as "practically no timeout" instead. Clamp up to 1ms
+      // too, so a sub-millisecond deadline doesn't `Math.trunc` to `0` and fire
+      // immediately, aborting every request before the upstream can respond.
+      Math.min(Math.max(Math.trunc(opts.timeout!), 1), 2_147_483_647),
+    );
+    signals.push(timeoutController.signal);
+  }
+  const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0]!;
+  const fetchOptions: RequestInit = {
+    headers: opts.headers as HeadersInit,
+    ...opts.fetchOptions,
+    // Default to passing upstream 3xx responses through to the client instead
+    // of silently following them. `?? "manual"` (instead of a default before
+    // the spread) so even an explicit `redirect: undefined` cannot silently
+    // restore fetch's follow behavior.
+    redirect: opts.fetchOptions?.redirect ?? "manual",
+    signal,
+  };
+
+  let response: Response | undefined;
+  try {
+    // `H3.fetch()` does not observe the request signal, so race internal
+    // sub-requests against it explicitly — otherwise `timeout` and client
+    // disconnects would be silent no-ops for internal (`/`) targets.
+    // Note: because `abortable` short-circuits an already-aborted signal, an
+    // internal sub-request whose client disconnected *before* the proxy call is
+    // never dispatched — its handler side effects (writes, logging) do not run.
+    response =
+      target[0] === "/"
+        ? await abortable(
+            () => event.app!.fetch(createSubRequest(event, target, fetchOptions)),
+            signal,
+          )
+        : await fetch(target, fetchOptions);
+  } catch (error) {
+    // Classify by the composed signal's abort reason, not just the thrown
+    // error's `name`: some runtimes abort with the raw cause rather than an
+    // `AbortError`. srvx on Node, for instance, aborts a client disconnect with
+    // the socket error (`ECONNRESET`), whose name is `"Error"` — keying only off
+    // `name === "AbortError"` would misreport that disconnect as a `502`.
+    const reason = signal.aborted ? (signal.reason as Error | undefined) : undefined;
+
+    // A fired timeout signal aborts with a `TimeoutError`. Map it (including a
+    // caller-supplied `AbortSignal.timeout`) to `504 Gateway Timeout`, never the
+    // `499`/propagation path used for client disconnects.
+    if (reason?.name === "TimeoutError" || (error as Error)?.name === "TimeoutError") {
+      throw new HTTPError({ status: 504, statusText: "Gateway Timeout", cause: error });
+    }
+
+    // Treat the failure as an abort when our composed signal fired, or (for a
+    // custom `fetchOptions.signal` on runtimes that surface it that way) when
+    // the thrown error is itself an `AbortError`. A genuine upstream failure —
+    // where no signal aborted — is never mistaken for an abort.
+    if (signal.aborted || (error as Error)?.name === "AbortError") {
+      // Opted in: surface the abort as-is so the caller can handle it.
+      if (opts.propagateAbortError) {
+        throw error;
+      }
+      // Default: a client disconnect is not a gateway failure. Respond quietly
+      // instead of throwing a 502 for every dropped connection (the response is
+      // never delivered — the client is already gone). A caller-signal abort
+      // (client still connected) falls through to the 502 below.
+      if (event.req.signal.aborted) {
+        return new HTTPResponse(null, { status: 499, statusText: "Client Closed Request" });
+      }
+    }
+    // Set an explicit message: without one, `HTTPError` falls back to
+    // `cause.message` and serializes it into the response body. Runtimes put the
+    // target URL, port and OS connect error there (Deno/Bun/workerd), handing
+    // clients an oracle about internal reachability. `statusText` alone is not
+    // enough — `cause.message` outranks it in the constructor's fallback chain.
+    throw new HTTPError("Bad Gateway", { status: 502, statusText: "Bad Gateway", cause: error });
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  // Browser/service-worker fetch filters `redirect: "manual"` 3xx responses
+  // into an opaque-redirect (status 0, no headers) that cannot be relayed.
+  // Fail loudly instead of returning an empty response.
+  if (response.type === "opaqueredirect") {
+    throw new HTTPError({
+      status: 502,
+      message:
+        'Cannot relay an opaque redirect response on this runtime. Set `fetchOptions: { redirect: "follow" }` to follow upstream redirects instead.',
+    });
+  }
+
+  // A `no-cors` (`opaque`) or network-`error` filtered response — and any other
+  // status-0 response — exposes no readable status, headers, or body. Relaying
+  // it would surface an empty `200 OK` (`HTTPResponse`'s `status || 200`),
+  // falsely reporting success. Fail loudly instead.
+  if (response.type === "opaque" || response.type === "error" || response.status === 0) {
+    throw new HTTPError({
+      status: 502,
+      message:
+        "Cannot relay an opaque or errored upstream response (status 0), typically caused by a `no-cors` request mode on browser/service-worker runtimes.",
+    });
+  }
+
+  const headers = new Headers();
+
+  // Also strip response headers the upstream marked hop-by-hop via its
+  // `Connection` header (RFC 9110 §7.6.1), on top of the static denylist.
+  const connectionNominated = connectionTokens(response.headers.get("connection"));
+
+  for (const [key, value] of response.headers.entries()) {
+    if (ignoredResponseHeaders.has(key) || connectionNominated.has(key) || key === "set-cookie") {
+      continue;
+    }
+    headers.append(key, value);
+  }
+
+  // `getSetCookie()` is the only spec-guaranteed way to get each `set-cookie`
+  // value separately (cookie attributes may contain commas).
+  const cookies = response.headers.getSetCookie();
+  if (cookies.length > 0) {
+    const _cookies = cookies.map((cookie) => {
+      if (opts.cookieDomainRewrite) {
+        cookie = rewriteCookieProperty(cookie, opts.cookieDomainRewrite, "domain");
+      }
+      if (opts.cookiePathRewrite) {
+        cookie = rewriteCookieProperty(cookie, opts.cookiePathRewrite, "path");
+      }
+      return cookie;
+    });
+    for (const cookie of _cookies) {
+      headers.append("set-cookie", cookie);
+    }
+  }
+
+  // Rewrite redirect-ish headers pointing at the target back to the proxy's
+  // own origin, or per explicit prefix mappings (like nginx `proxy_redirect`),
+  // so the client keeps talking to the proxy. In default mode internal (`/`)
+  // targets are skipped: they already share the request origin.
+  const locationRewrite = opts.locationRewrite ?? true;
+  if (locationRewrite !== false && (locationRewrite !== true || target[0] !== "/")) {
+    rewriteLocationHeaders(
+      headers,
+      locationRewrite,
+      target[0] === "/" ? undefined : new URL(target).origin,
+      event.url.origin,
+    );
+  }
+
+  if (opts.onResponse) {
+    await opts.onResponse(event, response);
+  }
+
+  // Stream the upstream body through natively so the common case has zero
+  // overhead. A client disconnect during streaming aborts the forwarded
+  // `event.req.signal`, which errors the upstream body; that error is delivered
+  // to whoever consumes the stream — the server runtime, which is already
+  // tearing down the now-closed connection — so it needs no special handling
+  // here and never becomes a gateway (502) error.
+  return new HTTPResponse(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+/**
+ * Get the request headers object without headers known to cause issues when proxying.
+ */
+export function getProxyRequestHeaders(
+  event: H3Event,
+  opts?: {
+    host?: boolean;
+    forwardHeaders?: string[];
+    filterHeaders?: string[];
+  },
+): Record<string, string> {
+  const headers = new EmptyObject();
+  // `Headers.entries()` yields lowercased names, so lowercase the option arrays
+  // once up front to keep the allow/deny matching case-insensitive.
+  const filterHeaders = opts?.filterHeaders?.map((h) => h.toLowerCase());
+  const forwardHeaders = opts?.forwardHeaders?.map((h) => h.toLowerCase());
+  // RFC 9110 §7.6.1: fields the incoming `Connection` header nominates are
+  // hop-by-hop and must not be forwarded upstream (mirrors the response path).
+  const connectionNominated = connectionTokens(event.req.headers.get("connection"));
+  for (const [name, value] of event.req.headers.entries()) {
+    if (filterHeaders?.includes(name)) {
+      continue;
+    }
+
+    // An explicit `forwardHeaders` entry is a deliberate escape hatch over the
+    // "soft" denylist drops (e.g. `host`, `accept-encoding`). It must never
+    // force-forward a true hop-by-hop framing header (`connection`,
+    // `transfer-encoding`, ...) or a field the incoming `Connection` header
+    // nominates — doing so could desync request framing or leak the inbound
+    // proxy's credentials upstream.
+    if (
+      forwardHeaders?.includes(name) &&
+      !framingHeaders.has(name) &&
+      !connectionNominated.has(name)
+    ) {
+      headers[name] = value;
+      continue;
+    }
+
+    if (connectionNominated.has(name)) {
+      continue;
+    }
+
+    if (!ignoredHeaders.has(name) || (name === "host" && opts?.host)) {
+      headers[name] = value;
+      continue;
+    }
+  }
+  return headers;
+}
+
+/**
+ * Make a fetch request carrying the event's context.
+ *
+ * Behavior depends on the target:
+ *
+ * An **internal** `url` (starting with `/`) is dispatched via
+ * `event.app.fetch()` (sub-request) and never leaves the process. It inherits
+ * the incoming request's filtered headers (via `getProxyRequestHeaders`) and
+ * runtime metadata (`ip`, `waitUntil`, ...). It always resolves against the
+ * app's own origin: a leading separator run (`//host/x`, `/\host/x`, and
+ * C0-interleaved forms like `/\thost/x` that the URL parser strips down to
+ * one) is collapsed to a single `/` rather than read as an authority.
+ *
+ * An **external** `url` is sent with native `fetch(url, init)` **unchanged** —
+ * the event's headers and context are *not* inherited (forwarding cookies or
+ * authorization to arbitrary hosts would be unsafe). A streamed `init.body`
+ * is given `duplex: "half"` when unset, which Node's `fetch` requires.
+ *
+ * **Security:** Never pass unsanitized user input as the `url`. Callers are
+ * responsible for validating and restricting the URL.
+ */
+export async function fetchWithEvent(
+  event: H3Event,
+  url: string,
+  init?: RequestInit & { duplex?: "half" | "full" },
+): Promise<Response> {
+  if (url[0] !== "/") {
+    // A `ReadableStream` body requires `duplex: "half"` or Node's `fetch`
+    // throws; default it when a body is present and no duplex is set.
+    if (init?.body != null && init.duplex === undefined) {
+      init = { ...init, duplex: "half" };
+    }
+    return fetch(url, init);
+  }
+  return event.app!.fetch(
+    createSubRequest(event, url, {
+      ...init,
+      headers: mergeHeaders(getProxyRequestHeaders(event, { host: true }), init?.headers),
+    }),
+  );
+}
+
+function createSubRequest(event: H3Event, path: string, init: RequestInit): ServerRequest {
+  // Collapse the leading separator run before resolving. Callers classify a
+  // target as internal with `path[0] === "/"`, but the URL parser reads a
+  // longer run as an *authority* (`//evil.com/x`, and `/\evil.com/x` too since
+  // `\` is a separator for special schemes), which would hand the sub-event a
+  // foreign `event.url.origin`. The run also covers the C0 characters the
+  // parser strips first (`/\t/evil.com/x` parses as `//evil.com/x`), so an
+  // internal target always stays on the app's own origin.
+  const url = new URL(path.replace(LEADING_SEPARATOR_RUN_RE, "/"), event.url);
+  // A ReadableStream body requires `duplex: "half"` or the Request constructor
+  // throws on Node. Default it when a body is present and no duplex is set (e.g.
+  // the `fetchWithEvent` path, which never sets it).
+  if (init.body != null && (init as { duplex?: string }).duplex === undefined) {
+    init = { ...init, duplex: "half" } as RequestInit;
+  }
+  const req = new Request(url, init) as ServerRequest;
+  req.runtime = event.req.runtime;
+  req.waitUntil = event.req.waitUntil;
+  req.ip = event.req.ip;
+  return req;
+}
+
+// Matches a leading run of anything the URL parser can read as part of an
+// authority-introducing `//`: the separators themselves (`\` counts as one for
+// special schemes) and the C0 characters it *removes* before parsing, which
+// would otherwise let `/\t/evil.com` slip through as `//evil.com`.
+const LEADING_SEPARATOR_RUN_RE = /^(?:[/\\]|[\t\n\r])+/;
