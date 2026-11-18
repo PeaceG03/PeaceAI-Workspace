@@ -28,6 +28,7 @@ import { repairBatch6 } from "./batch6.ts";
 import { repairBatch7 } from "./batch7.ts";
 import { repairBatch8 } from "./batch8.ts";
 import { repairBatch9 } from "./batch9.ts";
+import { repairBatch10 } from "./batch10.ts";
 import { repairBatch11 } from "./batch11.ts";
 import { parseTypeDiagnostics, repairTypedFailure } from "./sigfix.ts";
 
@@ -3096,6 +3097,18 @@ export function runTestSpec(input: SpecInput): SpecResult {
     return {
       status: "diff", diff: batch9.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
       fit: { shape: "batch9", examples: 0, targets: [{ symbol: "batch9", file: batch9.file, form: "named", exportName: "batch9", args: [] }] },
+    };
+  }
+  const batch10 = !parseTypeDiagnostics(output).length && input.toolchain.nodePath
+    ? repairBatch10({
+      root: input.root, output, sourcePattern: input.sourcePattern,
+      nodePath: input.toolchain.nodePath, nodeModules: input.nodeModules, testCommand: input.testCommand,
+    })
+    : null;
+  if (batch10) {
+    return {
+      status: "diff", diff: batch10.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
+      fit: { shape: "batch10", examples: 0, targets: [{ symbol: "batch10", file: batch10.file, form: "named", exportName: "batch10", args: [] }] },
     };
   }
   const batch11 = !parseTypeDiagnostics(output).length && input.toolchain.nodePath

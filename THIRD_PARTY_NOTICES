@@ -12596,6 +12596,161 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ---- end ----
 ==============================================================================
+repo: jridgewell/resolve-uri
+license: MIT (LICENSE, sha256 of trimmed text b8778b155bfde5a28b023a558753c0fa058a52bb9de35c343c250be1bbcdedab)
+fixtures (commit path):
+  730a61ad423359a972b7935a4304db04983a3251 peaceai/test/fixtures/m261/resolve-uri.ts.txt
+  1123e444e27f68df245b224be6fa614c255155bc peaceai/test/fixtures/m261/resolve-ipv6.test.js.txt
+license URL: https://github.com/jridgewell/resolve-uri/blob/730a61ad423359a972b7935a4304db04983a3251/LICENSE
+as written: sha256 86721e9f573615bce9a66944ccfcefb55d7814301c9f4475973b2ef04c01a2a1 (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+Copyright 2019 Justin Ridgewell <<email address omitted; see the license URL above>>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: eemeli/yaml
+license: ISC (LICENSE, sha256 of trimmed text cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c)
+fixtures (commit path):
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--cli.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--compose-collection.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--compose-doc.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--compose-node.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--compose-scalar.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--composer.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--resolve-block-map.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--resolve-block-scalar.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--resolve-block-seq.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--resolve-end.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--resolve-flow-collection.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--resolve-flow-scalar.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--resolve-props.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--util-contains-newline.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--util-empty-scalar-position.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--compose--util-flow-indent-check.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--doc--Document.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--doc--NodeCreator.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--doc--anchors.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--doc--applyReviver.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--doc--directives.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--errors.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--index.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--log.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--nodes--Alias.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--nodes--Pair.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--nodes--Scalar.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--nodes--YAMLMap.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--nodes--YAMLSeq.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--nodes--YAMLSet.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--nodes--addPairToJSMap.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--nodes--identity.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--nodes--toJS.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--nodes--types.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--nodes--util-clone-map-or-set.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--options.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--parse--cst-scalar.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--parse--cst-stringify.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--parse--cst-visit.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--parse--cst.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--parse--lexer.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--parse--line-counter.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--parse--parser.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--public-api.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--Schema.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--common--map.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--common--null.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--common--seq.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--common--string.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--core--bool.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--core--float.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--core--int.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--core--schema.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--json--schema.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--json-schema.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--tags.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--types.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--util-primitive-key.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--binary.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--bool.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--float.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--int.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--merge.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--omap.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--pairs.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--schema.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--set.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--timestamp.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--stringify--foldFlowLines.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--stringify--stringify.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--stringify--stringifyComment.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--stringify--stringifyDocument.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--stringify--stringifyNumber.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--stringify--stringifyPair.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--stringify--stringifyString.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--test-events.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--util.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--src--visit.ts.txt
+  6c13734af8dac735644d9c137c6d1c79987d97db peaceai/test/fixtures/m261/yaml--tests--_utils.ts.txt
+  9fa8098fa40e318b260884f3e7b853ddb3b9f023 peaceai/test/fixtures/m261/yaml--tests--doc--anchors.ts.txt
+license URL: https://github.com/eemeli/yaml/blob/6c13734af8dac735644d9c137c6d1c79987d97db/LICENSE
+as written: sha256 8cdabc0add54f520411e82fc3c099b0b39153f632d9f180f8e196e7904777530 (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+Copyright Eemeli Aro <<email address omitted; see the license URL above>>
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+---- end ----
+==============================================================================
+repo: fb55/css-what
+license: BSD-2-Clause (LICENSE, sha256 of trimmed text 0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6)
+fixtures (commit path):
+  24c3a50fe98a25cb56ed170955b097d4dd1971f6 peaceai/test/fixtures/m261/css-index.ts.txt
+  24c3a50fe98a25cb56ed170955b097d4dd1971f6 peaceai/test/fixtures/m261/css-out.json.txt
+  24c3a50fe98a25cb56ed170955b097d4dd1971f6 peaceai/test/fixtures/m261/css-parse.ts.txt
+  b8420ca444cc569d8ec3950bfa1b5a53945d255d peaceai/test/fixtures/m261/css-stringify.spec.ts.txt
+  24c3a50fe98a25cb56ed170955b097d4dd1971f6 peaceai/test/fixtures/m261/css-stringify.ts.txt
+  24c3a50fe98a25cb56ed170955b097d4dd1971f6 peaceai/test/fixtures/m261/css-tests.ts.txt
+  24c3a50fe98a25cb56ed170955b097d4dd1971f6 peaceai/test/fixtures/m261/css-types.ts.txt
+license URL: https://github.com/fb55/css-what/blob/24c3a50fe98a25cb56ed170955b097d4dd1971f6/LICENSE
+---- license text ----
+Copyright (c) Felix Böhm
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+THIS IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS,
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+---- end ----
+==============================================================================
 repo: open-draft/outvariant
 license: MIT (LICENSE, sha256 of trimmed text af3fd32e4c3aff77fd476b5e9448a981d35634363b36e131579b6ec1c10e891d)
 fixtures (commit path):

@@ -1,6 +1,8 @@
 {
  "schema": "peaceai-lane-v1-drift:v1",
- "status": "unchecked",
- "sourceSha": "",
- "lines": ["Main was not measured against the baseline. The next self-change stays blocked."]
+ "status": "clear",
+ "sourceSha": "d24dfb66da62bf8c12c24b81c448715284d41f8c",
+ "lines": [
+  "No drop against the frozen baseline."
+ ]
 }
