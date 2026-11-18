@@ -13525,3 +13525,134 @@ Redistribution and use in source and binary forms, with or without modification,
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ---- end ----
+==============================================================================
+repo: unjs/ohash
+license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+fixtures (commit path):
+  a5004f7175236d7d44864e77bc7ce20a93b77130 peaceai/test/fixtures/m274/oh-src-crypto-js-index.ts.txt
+  a5004f7175236d7d44864e77bc7ce20a93b77130 peaceai/test/fixtures/m274/oh-src-crypto-node-index.ts.txt
+  a5004f7175236d7d44864e77bc7ce20a93b77130 peaceai/test/fixtures/m274/oh-src-hash.ts.txt
+  a5004f7175236d7d44864e77bc7ce20a93b77130 peaceai/test/fixtures/m274/oh-src-index.ts.txt
+  a5004f7175236d7d44864e77bc7ce20a93b77130 peaceai/test/fixtures/m274/oh-src-serialize.ts.txt
+  1d9402ecaa40b2e20ab1fd58bd67de9b2d5a46b9 peaceai/test/fixtures/m274/oh-src-utils-diff.ts.txt
+  a5004f7175236d7d44864e77bc7ce20a93b77130 peaceai/test/fixtures/m274/oh-src-utils-index.ts.txt
+  a5004f7175236d7d44864e77bc7ce20a93b77130 peaceai/test/fixtures/m274/oh-src-utils-is-equal.ts.txt
+  a5004f7175236d7d44864e77bc7ce20a93b77130 peaceai/test/fixtures/m274/oh-test-utils.test.ts.txt
+license URL: https://github.com/unjs/ohash/blob/1d9402ecaa40b2e20ab1fd58bd67de9b2d5a46b9/LICENSE
+as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: unjs/ocache
+license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+fixtures (commit path):
+  c295b13a3c4345f324e7559115614f13d67be0b4 peaceai/test/fixtures/m274/oc-lib-digest.mjs.txt
+  c295b13a3c4345f324e7559115614f13d67be0b4 peaceai/test/fixtures/m274/oc-lib-digest.node.mjs.txt
+  c295b13a3c4345f324e7559115614f13d67be0b4 peaceai/test/fixtures/m274/oc-package.json.txt
+  c295b13a3c4345f324e7559115614f13d67be0b4 peaceai/test/fixtures/m274/oc-src-base64.ts.txt
+  ec49ef68747bd2bc68762198d0d9932b0f4b3bc4 peaceai/test/fixtures/m274/oc-src-cache.ts.txt
+  c295b13a3c4345f324e7559115614f13d67be0b4 peaceai/test/fixtures/m274/oc-src-error.ts.txt
+  c295b13a3c4345f324e7559115614f13d67be0b4 peaceai/test/fixtures/m274/oc-src-hash.ts.txt
+  c295b13a3c4345f324e7559115614f13d67be0b4 peaceai/test/fixtures/m274/oc-src-index.ts.txt
+  c295b13a3c4345f324e7559115614f13d67be0b4 peaceai/test/fixtures/m274/oc-src-storage.ts.txt
+  c295b13a3c4345f324e7559115614f13d67be0b4 peaceai/test/fixtures/m274/oc-src-types.ts.txt
+  c295b13a3c4345f324e7559115614f13d67be0b4 peaceai/test/fixtures/m274/oc-test-holduntil.test.ts.txt
+license URL: https://github.com/unjs/ocache/blob/ec49ef68747bd2bc68762198d0d9932b0f4b3bc4/LICENSE
+as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: unjs/radix3
+license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+fixtures (commit path):
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-_escape.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-_group-delimiters.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-_group-names.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m274/rx-src-_overlap.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-_regexp-scan.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-_segment-wildcards.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-_subsume.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-_trailing-slash.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-compiler.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-context.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-index.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-object.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-operations-_suffix.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-operations-_utils.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-operations-add.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-operations-find-all.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-operations-find.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m274/rx-src-operations-overlap.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-operations-remove.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-regexp-to-route.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-regexp.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-route-node-keys.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-src-types.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m274/rx-test-overlap.test.ts.txt
+license URL: https://github.com/unjs/radix3/blob/68fc0173a9f4148988db83fb820e906c805a2ab2/LICENSE
+as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
