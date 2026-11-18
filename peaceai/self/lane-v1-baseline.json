@@ -1,16 +1,138 @@
 {
  "schema": "peaceai-lane-v1-baseline:v1",
- "locked": false,
- "sourceSha": "",
- "lastGoodSha": "",
+ "locked": true,
+ "sourceSha": "d24dfb66da62bf8c12c24b81c448715284d41f8c",
+ "lastGoodSha": "d24dfb66da62bf8c12c24b81c448715284d41f8c",
  "generatedBy": "tsx peaceai/bin/lane-baseline.ts --capability <capability-report.json> --practice <replay.json> --source-sha <40-hex> --out peaceai/self/lane-v1-baseline.json",
- "builderLog": { "passing": [], "counts": { "pass": 0, "fail": 0, "unmeasured": 0 } },
+ "builderLog": {
+  "passing": [
+   "39",
+   "98",
+   "100",
+   "102",
+   "103",
+   "104",
+   "105",
+   "106",
+   "107",
+   "108",
+   "109",
+   "110",
+   "111",
+   "112",
+   "113",
+   "114",
+   "115",
+   "118",
+   "122",
+   "126",
+   "127",
+   "128",
+   "129",
+   "130",
+   "131",
+   "132",
+   "134",
+   "135",
+   "136",
+   "137",
+   "138",
+   "139",
+   "140",
+   "141",
+   "142",
+   "143",
+   "144",
+   "145",
+   "213",
+   "218",
+   "226",
+   "227",
+   "229",
+   "230",
+   "231",
+   "232",
+   "233",
+   "234",
+   "235",
+   "236",
+   "237",
+   "238",
+   "239",
+   "240",
+   "241",
+   "242",
+   "244",
+   "245",
+   "247",
+   "248",
+   "249",
+   "250",
+   "251",
+   "252",
+   "253",
+   "254",
+   "256",
+   "257",
+   "258",
+   "259",
+   "260",
+   "261",
+   "262",
+   "263",
+   "264",
+   "265",
+   "266",
+   "267",
+   "268",
+   "269",
+   "270",
+   "271",
+   "272",
+   "273",
+   "274",
+   "275",
+   "276",
+   "277"
+  ],
+  "counts": {
+   "pass": 88,
+   "fail": 163,
+   "unmeasured": 25
+  }
+ },
  "practiceDev": {
-  "text": { "passing": [], "counts": { "pass": 0, "fail": 0, "unmeasured": 0 } },
-  "test-as-spec": { "passing": [], "counts": { "pass": 0, "fail": 0, "unmeasured": 0 } }
+  "text": {
+   "passing": [],
+   "counts": {
+    "pass": 0,
+    "fail": 40,
+    "unmeasured": 7
+   }
+  },
+  "test-as-spec": {
+   "passing": [
+    "PeaceG03/PeaceSTOCKS@0bf45cbf81499a591c7e36a1f3d913f577cbf921#test-as-spec",
+    "PeaceG03/PeaceSTOCKS@102f6274cc292cea1bc9a9c8a578845e5fcccb43#test-as-spec",
+    "PeaceG03/PeaceSTOCKS@d36648920c13ae96cd02f6547d31e95735263540#test-as-spec"
+   ],
+   "counts": {
+    "pass": 3,
+    "fail": 37,
+    "unmeasured": 7
+   }
+  }
  },
  "heldOut": {
-  "text": { "pass": 0, "fail": 0, "unmeasured": 0 },
-  "test-as-spec": { "pass": 0, "fail": 0, "unmeasured": 0 }
+  "text": {
+   "pass": 0,
+   "fail": 59,
+   "unmeasured": 0
+  },
+  "test-as-spec": {
+   "pass": 0,
+   "fail": 59,
+   "unmeasured": 0
+  }
  }
 }

@@ -141,30 +141,66 @@ test("the comparison is the frozen baseline, not the previous scorecard", () => 
 
 test("one self-change per PR, and an unresolved or planted drop on main blocks the next one", () => {
   assert.equal(decideLaneV1(input({ commits: 2 })).ok, false);
-  const planted = measure(A, ["2"]);
-  const drift = assessLaneDrift(baselineOf(measure(A)), planted);
-  assert.equal(drift.status, "unresolved");
-  assert.ok(drift.lines.some((l) => l === "Builder-log replay lost passing row 1."));
-  assert.equal(decideLaneV1(input({ drift })).ok, false);
-  const moved = assessLaneDrift(baselineOf(measure(A)), measure(B));
-  assert.equal(moved.status, "unresolved");
-  assert.ok(moved.lines.some((l) => l.includes("not the recorded last-good")));
-  const unchecked = parseLaneDrift(JSON.parse(readFileSync(join(repo, LANE_V1_DRIFT_PATH), "utf8")));
-  assert.equal(unchecked.ok && unchecked.drift.status, "unchecked");
-  assert.equal(decideLaneV1(input({ drift: unchecked.ok ? unchecked.drift : null })).ok, false);
+  const dir = mkdtempSync(join(tmpdir(), "lane-drift-gate-"));
+  const put = (name: string, value: unknown) => {
+    const file = join(dir, name);
+    writeFileSync(file, JSON.stringify(value));
+    const parsed = parseLaneDrift(JSON.parse(readFileSync(file, "utf8")));
+    assert.equal(parsed.ok, true, parsed.ok ? name : parsed.reason);
+    return parsed.ok ? parsed.drift : null;
+  };
+  const unchecked = put("unchecked.json", { schema: "peaceai-lane-v1-drift:v1", status: "unchecked", sourceSha: "", lines: ["Main was not measured against the baseline. The next self-change stays blocked."] });
+  assert.equal(decideLaneV1(input({ drift: unchecked })).ok, false);
+  const planted = put("planted.json", assessLaneDrift(baselineOf(measure(A)), measure(A, ["2"])));
+  assert.equal(planted?.status, "unresolved");
+  assert.ok(planted?.lines.some((l) => l === "Builder-log replay lost passing row 1."));
+  assert.equal(decideLaneV1(input({ drift: planted })).ok, false);
+  const C = "d".repeat(40);
+  const other = put("other-sha.json", { schema: "peaceai-lane-v1-drift:v1", status: "clear", sourceSha: B, lines: ["No drop against the frozen baseline."] });
+  const otherDecision = decideLaneV1(input({ drift: other, parentSha: B, headSha: C, before: measure(B), after: measure(C) }));
+  assert.equal(otherDecision.ok, false);
+  assert.ok(otherDecision.refusals.some((r) => r === "the parent is not the recorded last-good version"), otherDecision.refusals.join("\n"));
+  const clear = put("clear.json", clearDrift(measure(A)));
+  assert.equal(clear?.status, "clear");
+  assert.equal(clear?.sourceSha, A);
+  const passed = decideLaneV1(input({ drift: clear }));
+  assert.equal(passed.ok, true, passed.refusals.join("\n"));
+  const committedBase = parseLaneBaseline(JSON.parse(readFileSync(join(repo, LANE_V1_BASELINE_PATH), "utf8")));
+  const committedDrift = parseLaneDrift(JSON.parse(readFileSync(join(repo, LANE_V1_DRIFT_PATH), "utf8")));
+  assert.equal(committedBase.ok, true);
+  assert.equal(committedDrift.ok, true);
+  if (committedBase.ok && committedDrift.ok) {
+    assert.equal(committedDrift.drift.status, "clear");
+    assert.equal(committedDrift.drift.sourceSha, committedBase.baseline.lastGoodSha);
+  }
 });
 
-test("the committed baseline is unlocked until the documented command fills it", () => {
+test("the committed baseline is locked at one last-good commit", () => {
   const raw = JSON.parse(readFileSync(join(repo, LANE_V1_BASELINE_PATH), "utf8"));
   const parsed = parseLaneBaseline(raw);
   assert.equal(parsed.ok, true);
-  if (parsed.ok) {
-    assert.equal(parsed.baseline.locked, false);
-    assert.equal(parsed.baseline.generatedBy, LANE_V1_BASELINE_COMMAND);
-    assert.deepEqual(parsed.baseline.builderLog.passing, []);
-    assert.deepEqual(parsed.baseline.heldOut, { text: counts(0), "test-as-spec": counts(0) });
-  }
-  assert.equal(decideLaneV1(input({ baseline: raw })).ok, false);
+  if (!parsed.ok) return;
+  assert.equal(parsed.baseline.schema, "peaceai-lane-v1-baseline:v1");
+  assert.equal(parsed.baseline.locked, true);
+  assert.match(parsed.baseline.sourceSha, /^[0-9a-f]{40}$/);
+  assert.equal(parsed.baseline.sourceSha, parsed.baseline.lastGoodSha);
+  assert.equal(parsed.baseline.builderLog.passing.length, parsed.baseline.builderLog.counts.pass);
+  for (const form of ["text", "test-as-spec"] as const) assert.equal(parsed.baseline.practiceDev[form].passing.length, parsed.baseline.practiceDev[form].counts.pass, form);
+});
+
+test("an unlocked baseline fixture makes lane1 refuse", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lane1-unlocked-"));
+  const before = measure(A);
+  writeFileSync(join(dir, "base.json"), JSON.stringify({ ...baselineOf(before), locked: false }));
+  writeFileSync(join(dir, "before.json"), JSON.stringify(before));
+  writeFileSync(join(dir, "after.json"), JSON.stringify(measure(B)));
+  writeFileSync(join(dir, "drift.json"), JSON.stringify(clearDrift(before)));
+  writeFileSync(join(dir, "edit.diff"), modify("peaceai/lib/derive.ts", "a", "b"));
+  const offActions: NodeJS.ProcessEnv = { ...process.env };
+  delete offActions.GITHUB_ACTIONS;
+  const run = spawnSync(tsx, [join(repo, "peaceai/bin/self-change.ts"), "lane1", "--patch", join(dir, "edit.diff"), "--baseline", join(dir, "base.json"), "--before", join(dir, "before.json"), "--after", join(dir, "after.json"), "--drift", join(dir, "drift.json"), "--parent", A, "--head", B, "--commits", "1", "--out", join(dir, "scorecard.json")], { cwd: repo, encoding: "utf8", env: offActions });
+  assert.equal(run.status, 2, run.stdout + run.stderr);
+  assert.match(run.stdout ?? "", /baseline is not locked/);
 });
 
 test("the generator stores passing rows and held-out counts, never held-out diffs or reasons", () => {
