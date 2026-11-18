@@ -1,0 +1,1393 @@
+import { describe, it, expect } from "vitest";
+
+import * as webPasses from "../../src/middleware/web-incoming.ts";
+import * as httpProxy from "../../src/index.ts";
+import concat from "concat-stream";
+import http from "node:http";
+import net from "node:net";
+import {
+  stubIncomingMessage,
+  stubServerResponse,
+  stubMiddlewareOptions,
+  stubProxyServer,
+} from "../_stubs.ts";
+import { listenOn, proxyListen } from "../_utils.ts";
+
+// Source: https://github.com/http-party/node-http-proxy/blob/master/test/lib-http-proxy-passes-web-incoming-test.js
+
+describe("middleware:web-incoming", () => {
+  describe("#deleteLength", () => {
+    it("should change `content-length` for DELETE requests", () => {
+      const stubRequest = stubIncomingMessage({
+        method: "DELETE",
+        headers: {},
+      });
+      webPasses.deleteLength(
+        stubRequest,
+        stubServerResponse(),
+        stubMiddlewareOptions(),
+        stubProxyServer(),
+      );
+      expect(stubRequest.headers["content-length"]).to.eql("0");
+    });
+
+    it("should change `content-length` for OPTIONS requests", () => {
+      const stubRequest = stubIncomingMessage({
+        method: "OPTIONS",
+        headers: {},
+      });
+      webPasses.deleteLength(
+        stubRequest,
+        stubServerResponse(),
+        stubMiddlewareOptions(),
+        stubProxyServer(),
+      );
+      expect(stubRequest.headers["content-length"]).to.eql("0");
+    });
+
+    it("should preserve `transfer-encoding` on chunked DELETE requests", () => {
+      const stubRequest = stubIncomingMessage({
+        method: "DELETE",
+        headers: {
+          "transfer-encoding": "chunked",
+        },
+      });
+      webPasses.deleteLength(
+        stubRequest,
+        stubServerResponse(),
+        stubMiddlewareOptions(),
+        stubProxyServer(),
+      );
+      expect(stubRequest.headers["transfer-encoding"]).to.eql("chunked");
+      expect(stubRequest.headers).to.not.have.key("content-length");
+    });
+  });
+
+  describe("#timeout", () => {
+    it("should set timeout on the socket", () => {
+      let done = false;
+      const stubRequest = stubIncomingMessage({
+        socket: {
+          setTimeout: function (value: any) {
+            done = value;
+          },
+        },
+      });
+
+      webPasses.timeout(
+        stubRequest,
+        stubServerResponse(),
+        stubMiddlewareOptions({ timeout: 5000 }),
+        stubProxyServer(),
+      );
+      expect(done).to.eql(5000);
+    });
+  });
+
+  describe("#XHeaders", () => {
+    const req = stubIncomingMessage({
+      connection: {
+        remoteAddress: "192.168.1.2",
+        remotePort: "8080",
+      },
+      headers: {
+        host: "192.168.1.2:8080",
+      },
+    });
+
+    it("set the correct x-forwarded-* headers", () => {
+      webPasses.XHeaders(
+        req,
+        stubServerResponse(),
+        stubMiddlewareOptions({ xfwd: true }),
+        stubProxyServer(),
+      );
+      expect(req.headers["x-forwarded-for"]).toBe("192.168.1.2");
+      expect(req.headers["x-forwarded-port"]).toBe("8080");
+      expect(req.headers["x-forwarded-proto"]).toBe("http");
+    });
+
+    it("should not overwrite existing x-forwarded-* headers", () => {
+      const stubRequest = stubIncomingMessage({
+        connection: {
+          remoteAddress: "192.168.1.2",
+          remotePort: "8080",
+        },
+        headers: {
+          host: "192.168.1.2:8080",
+          "x-forwarded-host": "192.168.1.3:8081",
+          "x-forwarded-for": "192.168.1.3",
+          "x-forwarded-port": "8081",
+          "x-forwarded-proto": "https",
+        },
+      });
+      webPasses.XHeaders(
+        stubRequest,
+        stubServerResponse(),
+        stubMiddlewareOptions({ xfwd: true }),
+        stubProxyServer(),
+      );
+      expect(stubRequest.headers["x-forwarded-for"]).toBe("192.168.1.3");
+      expect(stubRequest.headers["x-forwarded-port"]).toBe("8081");
+      expect(stubRequest.headers["x-forwarded-proto"]).toBe("https");
+      expect(stubRequest.headers["x-forwarded-host"]).toBe("192.168.1.3:8081");
+    });
+  });
+});
+
+describe("#stream middleware direct tests", () => {
+  it("should emit error on server when callback is not provided", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    const EventEmitter = (await import("node:events")).EventEmitter;
+    const server = Object.assign(new EventEmitter(), {
+      _webPasses: [],
+      _wsPasses: [],
+    }) as any;
+
+    server.on("error", (err: Error) => {
+      expect(err).toBeInstanceOf(Error);
+      resolve();
+    });
+
+    // Call stream directly without callback (6th arg)
+    const stubReq = Object.assign(new (await import("node:stream")).PassThrough(), {
+      method: "GET",
+      url: "/",
+      headers: { host: "127.0.0.1" },
+      connection: { remoteAddress: "127.0.0.1" },
+      socket: { remoteAddress: "127.0.0.1", destroyed: false },
+    });
+    const stubRes = Object.assign(new (await import("node:stream")).PassThrough(), {
+      headersSent: false,
+      finished: false,
+      setHeader: () => {},
+      writeHead: () => {},
+      statusCode: 200,
+    });
+
+    webPasses.stream(
+      stubReq as any,
+      stubRes as any,
+      { target: new URL(`http://127.0.0.1:54322`), forward: undefined as any } as any,
+      server as any,
+      undefined,
+      // No callback - this will trigger line 131
+      undefined,
+    );
+
+    await promise;
+  });
+
+  it("should emit end event when res.finished is true", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+    const source = http.createServer((_req, res) => {
+      res.end("done");
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+      selfHandleResponse: true,
+    });
+
+    const proxyServer = http.createServer((req, res) => {
+      proxy.once("proxyRes", (_proxyRes, _pReq, pRes) => {
+        // End the response before proxyRes piping would happen
+        pRes.end("early-end");
+      });
+
+      proxy.once("end", () => {
+        source.close();
+        proxyServer.close();
+        resolve();
+      });
+
+      proxy.web(req, res);
+    });
+
+    const proxyPort = await listenOn(proxyServer);
+    http.request(`http://127.0.0.1:${proxyPort}/`, () => {}).end();
+    await promise;
+  });
+});
+
+describe("#stream POST body piping", () => {
+  it("should deliver the full POST body to the target server", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    const postBody = "x".repeat(8192); // large enough to test chunked piping
+
+    const source = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk: Buffer) => (body += chunk));
+      req.on("end", () => {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end(body);
+      });
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+    });
+
+    const proxyServer = http.createServer((req, res) => {
+      proxy.web(req, res);
+    });
+    const proxyPort = await listenOn(proxyServer);
+
+    http
+      .request(`http://127.0.0.1:${proxyPort}`, { method: "POST" }, function (res) {
+        let body = "";
+        res.on("data", (chunk: Buffer) => (body += chunk));
+        res.on("end", () => {
+          source.close();
+          proxyServer.close();
+          expect(body).to.eql(postBody);
+          resolve();
+        });
+      })
+      .end(postBody);
+    await promise;
+  });
+});
+
+describe("#createProxyServer.web() using own http server", () => {
+  it("should proxy the request using the web proxy handler", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    const source = http.createServer(function (req: any, res: any) {
+      source.close();
+      proxyServer.close();
+      expect(req.method).to.eql("GET");
+      expect(Number.parseInt(req.headers.host!.split(":")[1])).to.eql(proxyPort);
+      resolve();
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+    });
+
+    function requestHandler(req: any, res: any) {
+      proxy.web(req, res);
+    }
+
+    const proxyServer = http.createServer(requestHandler);
+    const proxyPort = await listenOn(proxyServer);
+
+    http.request(`http://127.0.0.1:${proxyPort}`, () => {}).end();
+
+    await promise;
+  });
+
+  it("should detect a proxyReq event and modify headers", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    const source = http.createServer(function (req: any, res: any) {
+      source.close();
+      proxyServer.close();
+      expect(req.headers["x-special-proxy-header"]).to.eql("foobar");
+      resolve();
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+    });
+
+    proxy.on("proxyReq", function (proxyReq, req, res, options) {
+      proxyReq.setHeader("X-Special-Proxy-Header", "foobar");
+    });
+
+    function requestHandler(req: any, res: any) {
+      proxy.web(req, res);
+    }
+
+    const proxyServer = http.createServer(requestHandler);
+    const proxyPort = await listenOn(proxyServer);
+
+    http.request(`http://127.0.0.1:${proxyPort}`, () => {}).end();
+    await promise;
+  });
+
+  it('should skip proxyReq event when handling a request with header "expect: 100-continue" [https://www.npmjs.com/advisories/1486]', async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    const source = http.createServer(function (req: any, res: any) {
+      source.close();
+      proxyServer.close();
+      expect(req.headers["x-special-proxy-header"]).to.not.eql("foobar");
+      resolve();
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+    });
+
+    proxy.on("proxyReq", function (proxyReq, req, res, options) {
+      proxyReq.setHeader("X-Special-Proxy-Header", "foobar");
+    });
+
+    function requestHandler(req: any, res: any) {
+      proxy.web(req, res);
+    }
+
+    const proxyServer = http.createServer(requestHandler);
+    const proxyPort = await listenOn(proxyServer);
+
+    const postData = "".padStart(1025, "x");
+
+    const postOptions = {
+      hostname: "127.0.0.1",
+      port: proxyPort,
+      path: "/",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": Buffer.byteLength(postData),
+        expect: "100-continue",
+      },
+    };
+
+    const req = http.request(postOptions, () => {});
+    req.write(postData);
+    req.end();
+
+    await promise;
+  });
+
+  it("should proxy the request and handle error via callback", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+    const proxy = httpProxy.createProxyServer({
+      target: "http://127.0.0.1:1",
+    });
+
+    const proxyServer = http.createServer(requestHandler);
+
+    async function requestHandler(req: any, res: any) {
+      const proxyRes = await proxy.web(req, res).catch((error_) => error_);
+      proxyServer.close();
+      resolve();
+      expect(proxyRes).toBeInstanceOf(Error);
+      expect((proxyRes as any).code).toBe("ECONNREFUSED");
+    }
+
+    const proxyPort = await listenOn(proxyServer);
+
+    http
+      .request(
+        {
+          hostname: "127.0.0.1",
+          port: proxyPort,
+          method: "GET",
+        },
+        () => {},
+      )
+      .end();
+    await promise;
+  });
+
+  it("should proxy the request and handle error via event listener", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+    const proxy = httpProxy.createProxyServer({
+      target: "http://127.0.0.1:54320",
+    });
+
+    const proxyServer = http.createServer(requestHandler);
+
+    function requestHandler(req: any, res: any) {
+      proxy.once("error", function (err, errReq, errRes) {
+        proxyServer.close();
+        expect(err).toBeInstanceOf(Error);
+        expect(errReq).toBe(req);
+        expect(errRes).toBe(res);
+        expect((err as any).code).toBe("ECONNREFUSED");
+        res.end();
+        resolve();
+      });
+
+      proxy.web(req, res);
+    }
+
+    const proxyPort = await listenOn(proxyServer);
+    http.request({ hostname: "127.0.0.1", port: proxyPort, method: "GET" }, () => {}).end();
+    await promise;
+  });
+
+  it("should forward the request and handle error via event listener", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+    const proxy = httpProxy.createProxyServer({
+      forward: "http://127.0.0.1:54321",
+    });
+
+    const proxyServer = http.createServer(requestHandler);
+
+    function requestHandler(req: any, res: any) {
+      proxy.once("error", function (err, errReq, errRes) {
+        proxyServer.close();
+        expect(err).toBeInstanceOf(Error);
+        expect((err as any).code).toBe("ECONNREFUSED");
+        res.end();
+        resolve();
+      });
+
+      proxy.web(req, res);
+    }
+
+    const proxyPort = await listenOn(proxyServer);
+    http.request({ hostname: "127.0.0.1", port: proxyPort, method: "GET" }, () => {}).end();
+    await promise;
+  });
+
+  it("should proxy the request and handle timeout error (proxyTimeout)", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+    const net = await import("node:net");
+
+    // Create a TCP server that accepts but never responds
+    const blackhole = net.createServer((_socket) => {});
+
+    await new Promise<void>((r) => blackhole.listen(0, "127.0.0.1", r));
+    const blackholePort = (blackhole.address() as any).port;
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${blackholePort}`,
+      proxyTimeout: 100,
+    });
+
+    const proxyServer = http.createServer(requestHandler);
+
+    const started = Date.now();
+    function requestHandler(req: any, res: any) {
+      proxy.once("error", function (err, errReq, errRes) {
+        proxyServer.close();
+        blackhole.close();
+        expect(err).toBeInstanceOf(Error);
+        expect(errReq).toBe(req);
+        expect(errRes).toBe(res);
+        expect(Date.now() - started).toBeGreaterThan(99);
+        expect((err as any).code).toBe("ECONNRESET");
+        res.end();
+        resolve();
+      });
+
+      proxy.web(req, res);
+    }
+
+    const proxyPort = await listenOn(proxyServer);
+    http.request({ hostname: "127.0.0.1", port: proxyPort, method: "GET" }, () => {}).end();
+    await promise;
+  });
+
+  // Note: req.on("aborted") no longer fires reliably on Node.js v18+
+  it.todo("should proxy the request and handle timeout error");
+
+  it("should proxy the request and provide a proxyRes event with the request and response parameters", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    const source = http.createServer(function (req: any, res: any) {
+      res.end("Response");
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+    });
+
+    function requestHandler(req: any, res: any) {
+      proxy.once("proxyRes", function (proxyRes, pReq, pRes) {
+        source.close();
+        proxyServer.close();
+        expect(pReq).toBe(req);
+        expect(pRes).toBe(res);
+        resolve();
+      });
+
+      proxy.web(req, res);
+    }
+
+    const proxyServer = http.createServer(requestHandler);
+    const proxyPort = await listenOn(proxyServer);
+
+    http.request(`http://127.0.0.1:${proxyPort}`, () => {}).end();
+    await promise;
+  });
+
+  it("should proxy the request and provide and respond to manual user response when using modifyResponse", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    const source = http.createServer(function (req: any, res: any) {
+      res.end("Response");
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+      selfHandleResponse: true,
+    });
+
+    function requestHandler(req: any, res: any) {
+      proxy.once("proxyRes", function (proxyRes, pReq, pRes) {
+        proxyRes.pipe(
+          concat(function (body) {
+            expect(body.toString("utf8")).eql("Response");
+            pRes.end(Buffer.from("my-custom-response"));
+          }),
+        );
+      });
+
+      proxy.web(req, res);
+    }
+
+    const proxyServer = http.createServer(requestHandler);
+    const proxyPort = await listenOn(proxyServer);
+
+    http
+      .get(`http://127.0.0.1:${proxyPort}`, function (res) {
+        res.pipe(
+          concat(function (body) {
+            expect(body.toString("utf8")).eql("my-custom-response");
+            source.close();
+            proxyServer.close();
+            resolve();
+          }),
+        );
+      })
+      .once("error", resolve);
+    await promise;
+  });
+
+  it("should proxy the request and handle changeOrigin option", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    const source = http.createServer(function (req: any, res: any) {
+      source.close();
+      proxyServer.close();
+      expect(req.method).to.eql("GET");
+      expect(Number.parseInt(req.headers.host!.split(":")[1])).to.eql(sourcePort);
+      resolve();
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+      changeOrigin: true,
+    });
+
+    function requestHandler(req: any, res: any) {
+      proxy.web(req, res);
+    }
+
+    const proxyServer = http.createServer(requestHandler);
+    const proxyPort = await listenOn(proxyServer);
+
+    http.request(`http://127.0.0.1:${proxyPort}`, () => {}).end();
+    await promise;
+  });
+
+  it("should proxy the request with the Authorization header set", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    const source = http.createServer(function (req: any, res: any) {
+      source.close();
+      proxyServer.close();
+      const auth = Buffer.from(req.headers.authorization.split(" ")[1], "base64");
+      expect(req.method).to.eql("GET");
+      expect(auth.toString()).to.eql("user:pass");
+      resolve();
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+      auth: "user:pass",
+    });
+
+    function requestHandler(req: any, res: any) {
+      proxy.web(req, res);
+    }
+
+    const proxyServer = http.createServer(requestHandler);
+    const proxyPort = await listenOn(proxyServer);
+
+    http.request(`http://127.0.0.1:${proxyPort}`, () => {}).end();
+    await promise;
+  });
+
+  it("should proxy requests to multiple servers with different options", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    const source1 = http.createServer(function (req: any, res: any) {
+      expect(req.method).to.eql("GET");
+      expect(Number.parseInt(req.headers.host!.split(":")[1])).to.eql(proxyPort);
+      expect(req.url).to.eql("/test1");
+    });
+
+    const source2 = http.createServer(function (req: any, res: any) {
+      source1.close();
+      source2.close();
+      proxyServer.close();
+      expect(req.method).to.eql("GET");
+      expect(Number.parseInt(req.headers.host!.split(":")[1])).to.eql(proxyPort);
+      expect(req.url).to.eql("/test2");
+      resolve();
+    });
+
+    const [source1Port, source2Port] = await Promise.all([listenOn(source1), listenOn(source2)]);
+
+    const proxy = httpProxy.createProxyServer();
+
+    // proxies to two servers depending on url, rewriting the url as well
+    function requestHandler(req: any, res: any) {
+      if (req.url.indexOf("/s1/") === 0) {
+        proxy.web(req, res, {
+          ignorePath: true,
+          target: `http://127.0.0.1:${source1Port}` + req.url.slice(3),
+        });
+      } else {
+        proxy.web(req, res, {
+          target: `http://127.0.0.1:${source2Port}`,
+        });
+      }
+    }
+
+    const proxyServer = http.createServer(requestHandler);
+    const proxyPort = await listenOn(proxyServer);
+
+    http.request(`http://127.0.0.1:${proxyPort}/s1/test1`, () => {}).end();
+    http.request(`http://127.0.0.1:${proxyPort}/test2`, () => {}).end();
+    await promise;
+  });
+});
+
+describe("#client abort propagation", () => {
+  it("should abort proxy request when client disconnects", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    // Target server that waits long enough for client to abort
+    const source = http.createServer((req, _res) => {
+      req.on("close", () => {
+        source.close();
+        proxyServer.close();
+        resolve();
+      });
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+    });
+
+    const proxyServer = http.createServer((req, res) => {
+      proxy.web(req, res);
+    });
+    const proxyPort = await listenOn(proxyServer);
+
+    // Make a request and abort it immediately
+    const req = http.request(`http://127.0.0.1:${proxyPort}`, () => {});
+    req.on("error", () => {}); // Ignore client-side errors from destroy
+    req.end();
+    req.on("socket", () => {
+      // Destroy after connection is established
+      setTimeout(() => req.destroy(), 50);
+    });
+
+    await promise;
+  });
+});
+
+// Regression: upstream http-party/node-http-proxy#1634
+// When req.socket is undefined, the error handler in stream middleware
+// would throw TypeError: Cannot read properties of undefined (reading 'destroyed')
+describe("#req.socket undefined", () => {
+  it("should not crash when req.socket is undefined and error occurs", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    // Use a port that refuses connections to trigger the error handler
+    const proxy = httpProxy.createProxyServer({
+      target: "http://127.0.0.1:1",
+    });
+
+    const proxyServer = http.createServer((req, res) => {
+      // Set req.socket to undefined after proxyReq is emitted but before
+      // the error handler fires (simulates HTTP/2 or edge-case teardown)
+      proxy.once("proxyReq", () => {
+        Object.defineProperty(req, "socket", {
+          value: undefined,
+          writable: true,
+          configurable: true,
+        });
+      });
+      proxy.web(req, res);
+    });
+    const proxyPort = await listenOn(proxyServer);
+
+    proxy.once("error", () => {
+      // Should reach here without TypeError crash
+      proxyServer.close();
+      resolve();
+    });
+
+    const req = http.request(`http://127.0.0.1:${proxyPort}`, () => {});
+    req.on("error", () => {}); // Ignore client-side errors
+    req.end();
+
+    await promise;
+  });
+});
+
+describe("#followRedirects", () => {
+  it("should follow 301 redirect", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    const source = http.createServer(function (req: any, res: any) {
+      if (new URL(req.url, "http://localhost").pathname === "/redirect") {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("ok");
+        return;
+      }
+      res.writeHead(301, { Location: "/redirect" });
+      res.end();
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+      followRedirects: true,
+    });
+
+    const proxyServer = http.createServer((req, res) => proxy.web(req, res));
+    const proxyPort = await listenOn(proxyServer);
+
+    http
+      .request(`http://127.0.0.1:${proxyPort}`, function (res) {
+        source.close();
+        proxyServer.close();
+        expect(res.statusCode).to.eql(200);
+        resolve();
+      })
+      .end();
+    await promise;
+  });
+
+  it("should follow 302 and change method to GET", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    const source = http.createServer(function (req: any, res: any) {
+      if (new URL(req.url, "http://localhost").pathname === "/dest") {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end(req.method);
+        return;
+      }
+      res.writeHead(302, { Location: "/dest" });
+      res.end();
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+      followRedirects: true,
+    });
+
+    const proxyServer = http.createServer((req, res) => proxy.web(req, res));
+    const proxyPort = await listenOn(proxyServer);
+
+    http
+      .request(`http://127.0.0.1:${proxyPort}`, { method: "POST" }, function (res) {
+        let body = "";
+        res.on("data", (chunk: Buffer) => (body += chunk));
+        res.on("end", () => {
+          source.close();
+          proxyServer.close();
+          expect(res.statusCode).to.eql(200);
+          expect(body).to.eql("GET");
+          resolve();
+        });
+      })
+      .end("post body");
+    await promise;
+  });
+
+  it("should follow 307 preserving method and body", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+    const postBody = "test-body-content";
+
+    const source = http.createServer(function (req: any, res: any) {
+      if (new URL(req.url, "http://localhost").pathname === "/dest") {
+        let body = "";
+        req.on("data", (chunk: Buffer) => (body += chunk));
+        req.on("end", () => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end(`${req.method}:${body}`);
+        });
+        return;
+      }
+      res.writeHead(307, { Location: "/dest" });
+      res.end();
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+      followRedirects: true,
+    });
+
+    const proxyServer = http.createServer((req, res) => proxy.web(req, res));
+    const proxyPort = await listenOn(proxyServer);
+
+    const proxyReq = http.request(
+      `http://127.0.0.1:${proxyPort}`,
+      { method: "POST" },
+      function (res) {
+        let body = "";
+        res.on("data", (chunk: Buffer) => (body += chunk));
+        res.on("end", () => {
+          source.close();
+          proxyServer.close();
+          expect(res.statusCode).to.eql(200);
+          expect(body).to.eql(`POST:${postBody}`);
+          resolve();
+        });
+      },
+    );
+    proxyReq.end(postBody);
+    await promise;
+  });
+
+  it("should respect numeric max redirects limit", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+    let redirectCount = 0;
+
+    const source = http.createServer(function (_req: any, res: any) {
+      redirectCount++;
+      res.writeHead(301, { Location: `/hop-${redirectCount}` });
+      res.end();
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+      followRedirects: 2,
+    });
+
+    const proxyServer = http.createServer((req, res) => proxy.web(req, res));
+    const proxyPort = await listenOn(proxyServer);
+
+    http
+      .request(`http://127.0.0.1:${proxyPort}`, function (res) {
+        source.close();
+        proxyServer.close();
+        // After 2 redirects followed, the 3rd 301 is returned to client
+        expect(res.statusCode).to.eql(301);
+        expect(redirectCount).to.eql(3);
+        resolve();
+      })
+      .end();
+    await promise;
+  });
+
+  it("should handle relative Location headers", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+
+    const source = http.createServer(function (req: any, res: any) {
+      if (new URL(req.url, "http://localhost").pathname === "/sub/dest") {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("ok");
+        return;
+      }
+      res.writeHead(302, { Location: "/sub/dest" });
+      res.end();
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+      followRedirects: true,
+    });
+
+    const proxyServer = http.createServer((req, res) => proxy.web(req, res));
+    const proxyPort = await listenOn(proxyServer);
+
+    http
+      .request(`http://127.0.0.1:${proxyPort}/sub/start`, function (res) {
+        source.close();
+        proxyServer.close();
+        expect(res.statusCode).to.eql(200);
+        resolve();
+      })
+      .end();
+    await promise;
+  });
+
+  it("should emit proxyRes only for the final response", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+    let proxyResCount = 0;
+
+    const source = http.createServer(function (req: any, res: any) {
+      if (new URL(req.url, "http://localhost").pathname === "/final") {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("done");
+        return;
+      }
+      res.writeHead(302, { Location: "/final" });
+      res.end();
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+      followRedirects: true,
+    });
+    proxy.on("proxyRes", () => proxyResCount++);
+
+    const proxyServer = http.createServer((req, res) => proxy.web(req, res));
+    const proxyPort = await listenOn(proxyServer);
+
+    http
+      .request(`http://127.0.0.1:${proxyPort}`, function (res) {
+        let body = "";
+        res.on("data", (chunk: Buffer) => (body += chunk));
+        res.on("end", () => {
+          source.close();
+          proxyServer.close();
+          expect(res.statusCode).to.eql(200);
+          expect(body).to.eql("done");
+          expect(proxyResCount).to.eql(1);
+          resolve();
+        });
+      })
+      .end();
+    await promise;
+  });
+
+  // Regression: GHSA-ggv3-7p47-pfv8. The 307/308 replay bypasses setupOutgoing, so
+  // it must independently force `connection: close` on a chunked request — otherwise a
+  // caller-supplied keep-alive agent could reuse the upstream socket after a desync.
+  it("forces connection: close on the 307 replay of a chunked request", async () => {
+    const { resolve, promise } = Promise.withResolvers<void>();
+    const keepAliveAgent = new http.Agent({ keepAlive: true });
+
+    let replayConnection: string | undefined;
+    const source = http.createServer(function (req: any, res: any) {
+      if (new URL(req.url, "http://localhost").pathname === "/dest") {
+        replayConnection = req.headers.connection;
+        let body = "";
+        req.on("data", (chunk: Buffer) => (body += chunk));
+        req.on("end", () => {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end(body);
+        });
+        return;
+      }
+      res.writeHead(307, { Location: "/dest" });
+      res.end();
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+      followRedirects: true,
+      agent: keepAliveAgent,
+    });
+
+    const proxyServer = http.createServer((req, res) => proxy.web(req, res));
+    const proxyPort = await listenOn(proxyServer);
+
+    const proxyReq = http.request(
+      `http://127.0.0.1:${proxyPort}`,
+      // `connection: keep-alive` + no content-length → Node frames the body as
+      // `transfer-encoding: chunked`; without the fix the replay would inherit
+      // `connection: keep-alive` from the original request headers.
+      { method: "POST", headers: { connection: "keep-alive" } },
+      function (res) {
+        let body = "";
+        res.on("data", (chunk: Buffer) => (body += chunk));
+        res.on("end", () => {
+          source.close();
+          proxyServer.close();
+          keepAliveAgent.destroy();
+          expect(res.statusCode).to.eql(200);
+          expect(body).to.eql("chunk-body");
+          expect(replayConnection).to.eql("close");
+          resolve();
+        });
+      },
+    );
+    proxyReq.write("chunk-body");
+    proxyReq.end();
+    await promise;
+  });
+});
+
+// Regression: upstream http-party/node-http-proxy#1559
+// req.on('aborted') stopped firing on Node 15.5+ and was later removed,
+// causing a memory leak from accumulated listeners that never get cleaned up.
+describe("#req-aborted-memory-leak", () => {
+  it("should not attach deprecated 'aborted' listener on req", async () => {
+    const { promise, resolve } = Promise.withResolvers<void>();
+
+    const source = http.createServer((_req, res) => {
+      res.writeHead(200);
+      res.end("ok");
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxyServer = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+    });
+
+    // Intercept the incoming request to inspect its listeners
+    const server = http.createServer((req, res) => {
+      const abortedBefore = req.listenerCount("aborted");
+      proxyServer.web(req, res).then(() => {
+        const abortedAfter = req.listenerCount("aborted");
+        const addedAbortedListeners = abortedAfter - abortedBefore;
+
+        expect(addedAbortedListeners).to.eql(0);
+
+        source.close();
+        server.close();
+        proxyServer.close();
+        resolve();
+      });
+    });
+    const port = await listenOn(server);
+
+    http.get(`http://127.0.0.1:${port}/test`);
+    await promise;
+  });
+
+  it("should abort upstream request when client disconnects via res close", async () => {
+    const { promise, resolve } = Promise.withResolvers<void>();
+
+    let upstreamAborted = false;
+    const source = http.createServer((req, res) => {
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.write("start");
+      req.on("close", () => {
+        upstreamAborted = true;
+      });
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+    });
+    const proxyPort = await proxyListen(proxy);
+
+    const clientReq = http.get(`http://127.0.0.1:${proxyPort}/stream`, (res) => {
+      res.once("data", () => {
+        // Client received first chunk; now abort
+        clientReq.destroy();
+
+        setTimeout(() => {
+          expect(upstreamAborted).to.eql(true);
+          source.close();
+          proxy.close(resolve);
+        }, 100);
+      });
+    });
+
+    await promise;
+  });
+});
+
+// A chunked OPTIONS/DELETE request must be forwarded with its body intact
+// instead of being rewritten to `content-length: 0`.
+//
+// A raw socket is required because Node's own http client silently drops the body of an OPTIONS request,
+// so it cannot send the chunked payload the exploit relies on.
+describe("#chunked-body-smuggling", () => {
+  it("should forward a chunked OPTIONS body intact instead of desyncing to content-length: 0", async () => {
+    const net = await import("node:net");
+    const { resolve, reject, promise } = Promise.withResolvers<void>();
+
+    const smuggled = "GET /smuggling HTTP/1.1\r\nX-Ignore: ";
+    // 0x23 = 35 = smuggled.length, framed as a single HTTP/1.1 chunk.
+    const chunkSize = smuggled.length.toString(16);
+
+    // Record every request the backend actually parses. With the bug, the
+    // backend sees an empty `content-length: 0` OPTIONS and then re-parses the
+    // forwarded body as a second, smuggled `GET /smuggling` request.
+    const received: Array<{
+      method?: string;
+      url?: string;
+      te?: string;
+      cl?: string;
+      body: string;
+    }> = [];
+
+    const source = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk: Buffer) => (body += chunk));
+      req.on("end", () => {
+        received.push({
+          method: req.method,
+          url: req.url,
+          te: req.headers["transfer-encoding"] as string | undefined,
+          cl: req.headers["content-length"] as string | undefined,
+          body,
+        });
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("ok");
+      });
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+    });
+    const proxyServer = http.createServer((req, res) => proxy.web(req, res));
+    const proxyPort = await listenOn(proxyServer);
+
+    const rawRequest =
+      "OPTIONS / HTTP/1.1\r\n" +
+      `Host: 127.0.0.1:${proxyPort}\r\n` +
+      "Connection: keep-alive\r\n" +
+      "Content-Type: application/x-www-form-urlencoded\r\n" +
+      "Transfer-Encoding: chunked\r\n" +
+      "\r\n" +
+      `${chunkSize}\r\n` +
+      `${smuggled}\r\n` +
+      "0\r\n" +
+      "\r\n";
+
+    const socket = net.connect(proxyPort, "127.0.0.1", () => {
+      socket.write(rawRequest);
+    });
+
+    const finish = (fn: () => void) => {
+      socket.destroy();
+      source.close();
+      proxyServer.close();
+      fn();
+    };
+
+    socket.once("data", () => {
+      // First (legitimate) response received. Allow a grace window for any
+      // smuggled request to reach the backend, then assert what it parsed.
+      setTimeout(() => {
+        try {
+          // Exactly one request must reach the backend: the OPTIONS carrying
+          // the chunked body. No empty CL:0 request, no smuggled GET.
+          expect(received).to.have.length(1);
+          const first = received[0]!;
+          expect(first.method).to.eql("OPTIONS");
+          expect(first.url).to.eql("/");
+          expect(first.te).to.eql("chunked");
+          expect(first.cl).to.eql(undefined);
+          expect(first.body).to.eql(smuggled);
+          expect(received.some((r) => r.url === "/smuggling")).to.eql(false);
+          finish(resolve);
+        } catch (error) {
+          finish(() => reject(error as Error));
+        }
+      }, 200);
+    });
+    socket.on("error", (error) => finish(() => reject(error)));
+
+    await promise;
+  });
+});
+
+// Request smuggling hardening (GHSA-ggv3-7p47-pfv8): even though the proxy no
+// longer creates a desync, a chunked request must not reuse an upstream
+// keep-alive socket. If a lenient upstream ever desynced, socket reuse is what
+// makes it exploitable (leftover bytes read as another user's request). The
+// proxy therefore sends `Connection: close` upstream for any chunked request,
+// so the socket is torn down after use even though httpxy defaults to
+// keep-alive agents.
+describe("#chunked-connection-teardown", () => {
+  it("should send `connection: close` upstream for a chunked request despite default keep-alive agents", async () => {
+    const net = await import("node:net");
+    const { resolve, reject, promise } = Promise.withResolvers<void>();
+
+    let upstreamConnection: string | undefined;
+    const source = http.createServer((req, res) => {
+      upstreamConnection = req.headers.connection as string | undefined;
+      req.resume();
+      req.on("end", () => {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("ok");
+      });
+    });
+    const sourcePort = await listenOn(source);
+
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+    });
+    const proxyServer = http.createServer((req, res) => proxy.web(req, res));
+    const proxyPort = await listenOn(proxyServer);
+
+    const rawRequest =
+      "OPTIONS / HTTP/1.1\r\n" +
+      `Host: 127.0.0.1:${proxyPort}\r\n` +
+      "Connection: keep-alive\r\n" +
+      "Transfer-Encoding: chunked\r\n" +
+      "\r\n" +
+      "0\r\n" +
+      "\r\n";
+
+    const socket = net.connect(proxyPort, "127.0.0.1", () => socket.write(rawRequest));
+
+    const finish = (fn: () => void) => {
+      socket.destroy();
+      source.close();
+      proxyServer.close();
+      fn();
+    };
+
+    socket.once("data", () => {
+      setTimeout(() => {
+        try {
+          expect(upstreamConnection).to.eql("close");
+          finish(resolve);
+        } catch (error) {
+          finish(() => reject(error as Error));
+        }
+      }, 100);
+    });
+    socket.on("error", (error) => finish(() => reject(error)));
+
+    await promise;
+  });
+});
+
+// https://github.com/unjs/httpxy/issues/166
+describe("#stream with mocked sockets", () => {
+  /**
+   * Mimics the socket used by request interceptors such as msw
+   * (`@mswjs/interceptors`) and nock: it stays `pending` and only emits
+   * "connect" *after* the outgoing request has been fully written, since that is
+   * when the interceptor decides how to respond.
+   */
+  class MockSocket extends net.Socket {
+    #received = "";
+
+    override connect() {
+      return this; // never connects on its own
+    }
+
+    override write(chunk: any, encoding?: any, callback?: any) {
+      this.#received += chunk.toString();
+      const [head = "", body = ""] = this.#received.split("\r\n\r\n");
+      const contentLength = Number(/content-length: (\d+)/i.exec(head)?.[1] ?? 0);
+      if (this.#received.includes("\r\n\r\n") && body.length >= contentLength) {
+        // Request fully received: only now the interceptor "connects" and replies
+        queueMicrotask(() => {
+          (this as { connecting: boolean }).connecting = false;
+          this.emit("connect");
+          this.push(`HTTP/1.1 200 OK\r\ncontent-length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+        });
+      }
+      if (typeof encoding === "function") {
+        encoding();
+      } else if (typeof callback === "function") {
+        callback();
+      }
+      return true;
+    }
+
+    override _read() {}
+
+    override end() {
+      return this;
+    }
+  }
+
+  class MockAgent extends http.Agent {
+    override createConnection() {
+      return new MockSocket();
+    }
+  }
+
+  async function proxyThroughMockSocket(method: string, body?: string) {
+    const proxy = httpProxy.createProxyServer({
+      target: "http://upstream.test",
+      agent: new MockAgent(),
+    });
+    const proxyServer = http.createServer((req, res) => {
+      proxy.web(req, res);
+    });
+    const proxyPort = await listenOn(proxyServer);
+
+    const { resolve, reject, promise } = Promise.withResolvers<string>();
+    const req = http.request(`http://127.0.0.1:${proxyPort}/ping`, { method }, (res) => {
+      let received = "";
+      res.on("data", (chunk: Buffer) => (received += chunk));
+      res.on("end", () => resolve(received));
+    });
+    req.on("error", reject);
+    req.end(body);
+
+    try {
+      return await promise;
+    } finally {
+      proxyServer.close();
+    }
+  }
+
+  it("should not hang when the socket connects only after the request is sent", async () => {
+    expect(await proxyThroughMockSocket("GET")).to.eql("");
+  });
+
+  it("should deliver the request body to a socket that connects late", async () => {
+    expect(await proxyThroughMockSocket("POST", "x".repeat(8192))).to.eql("x".repeat(8192));
+  });
+});
+
+// https://github.com/chimurai/http-proxy-middleware/issues/472
+describe("#stream proxyReq header mutation under socket contention", () => {
+  async function run(followRedirects?: boolean) {
+    const received: (string | string[] | undefined)[] = [];
+    const source = http.createServer((req, res) => {
+      received.push(req.headers["x-added"]);
+      setTimeout(() => res.end("OK"), 10);
+    });
+    const sourcePort = await listenOn(source);
+
+    const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+    const proxy = httpProxy.createProxyServer({
+      target: `http://127.0.0.1:${sourcePort}`,
+      agent,
+      followRedirects,
+    });
+    const errors: Error[] = [];
+    proxy.on("error", (err, _req, res) => {
+      errors.push(err);
+      (res as http.ServerResponse).destroy();
+    });
+    proxy.on("proxyReq", (proxyReq) => {
+      proxyReq.setHeader("x-added", "yes");
+    });
+    const proxyServer = http.createServer((req, res) => {
+      proxy.web(req, res);
+    });
+    const proxyPort = await listenOn(proxyServer);
+
+    try {
+      const bodies = await Promise.all(
+        Array.from({ length: 10 }, () =>
+          fetch(`http://127.0.0.1:${proxyPort}/`).then((r) => r.text()),
+        ),
+      );
+      expect(errors).to.eql([]);
+      expect(bodies).to.eql(Array.from({ length: 10 }, () => "OK"));
+      expect(received).to.eql(Array.from({ length: 10 }, () => "yes"));
+    } finally {
+      agent.destroy();
+      source.close();
+      proxyServer.close();
+    }
+  }
+
+  it("should allow setHeader in proxyReq when requests queue for a socket", async () => {
+    await run();
+  });
+
+  it("should allow setHeader in proxyReq when requests queue for a socket (followRedirects)", async () => {
+    await run(true);
+  });
+});

@@ -1,0 +1,82 @@
+import type {
+  NodeHttpHandler,
+  NodeHTTPMiddleware,
+  NodeServerRequest,
+  NodeServerResponse,
+  ServerRequest,
+} from "../../types.ts";
+
+import { NodeResponse } from "./response.ts";
+
+export function callNodeHandler(
+  handler: NodeHttpHandler | NodeHTTPMiddleware,
+  req: ServerRequest,
+): Promise<Response> {
+  const isMiddleware = handler.length > 2;
+
+  const nodeCtx = req.runtime?.node as {
+    req: NodeServerRequest;
+    res: NodeServerResponse;
+  };
+  if (!nodeCtx || !nodeCtx.req || !nodeCtx.res) {
+    throw new Error("Node.js runtime context is not available.");
+  }
+  const { req: nodeReq, res: nodeRes } = nodeCtx;
+
+  let _headers: Headers | undefined;
+  const webRes = new NodeResponse(undefined, {
+    get status() {
+      return nodeRes.statusCode;
+    },
+    get statusText() {
+      return nodeRes.statusMessage;
+    },
+    get headers() {
+      if (!_headers) {
+        const headerEntries: [string, string][] = [];
+        const rawHeaders = nodeRes.getHeaders();
+        for (const [name, value] of Object.entries(rawHeaders)) {
+          if (Array.isArray(value)) {
+            for (const v of value) {
+              headerEntries.push([name, v]);
+            }
+          } else if (value) {
+            headerEntries.push([name, String(value)]);
+          }
+        }
+        _headers = new Headers(headerEntries);
+      }
+      return _headers;
+    },
+  });
+
+  return new Promise((resolve, reject) => {
+    nodeRes.once("close", () => resolve(webRes));
+    nodeRes.once("finish", () => resolve(webRes));
+    nodeRes.once("error", (error) => reject(error));
+
+    let streamPromise: Promise<Response> | undefined;
+    nodeRes.once("pipe", (stream) => {
+      streamPromise = new Promise((resolve) => {
+        stream.once("end", () => resolve(webRes));
+        stream.once("error", (error: Error) => reject(error));
+      });
+    });
+
+    try {
+      if (isMiddleware) {
+        Promise.resolve(
+          handler(nodeReq as any, nodeRes as any, (error) =>
+            error ? reject(error) : streamPromise || resolve(webRes),
+          ),
+        ).catch((error) => reject(error));
+      } else {
+        Promise.resolve((handler as NodeHttpHandler)(nodeReq as any, nodeRes as any))
+          .then(() => streamPromise || webRes)
+          .catch((error) => reject(error));
+      }
+    } catch (error: unknown) {
+      reject(error);
+    }
+  });
+}

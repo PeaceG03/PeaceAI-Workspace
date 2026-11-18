@@ -1,0 +1,313 @@
+import type { NodeHttpHandler, Server, ServerHandler, ServerRequest } from "srvx";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import * as nodeHTTP from "node:http";
+import { resolve } from "node:path";
+import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
+
+export const defaultExts: string[] = [".mjs", ".js", ".mts", ".ts"];
+
+export const defaultEntries: string[] = ["server", "server/index", "src/server", "server/server"];
+
+/**
+ * Options for loading a server entry module.
+ */
+export type LoadOptions = {
+  /**
+   * Path or URL to the server entry file.
+   *
+   * If not provided, common entry points will be searched automatically.
+   */
+  entry?: string;
+
+  /**
+   * Base directory for resolving relative paths.
+   *
+   * @default "."
+   */
+  dir?: string;
+
+  /**
+   * Set to `false` to disable interception of `http.Server.listen` to detect legacy handlers.
+   *
+   * @default true
+   */
+  interceptHttpListen?: boolean;
+
+  /**
+   * Set to `false` to disable Node.js handler (req, res) compatibility.
+   */
+  nodeCompat?: boolean;
+
+  /**
+   * Node.js server instance to return when intercepting `http.Server.listen`.
+   */
+  nodeServer?: NodeServer;
+
+  /**
+   * srvx server instance to return when intercepting `http.Server.listen`.
+   */
+  srvxServer?: Server;
+
+  /**
+   * Hook called after the module is loaded to allow for custom processing.
+   *
+   * You can return a modified version of the module if needed.
+   */
+  onLoad?: (module: unknown) => any;
+};
+
+/**
+ * Result of loading a server entry module.
+ */
+export type LoadedServerEntry = {
+  /**
+   * The web fetch handler extracted from the loaded module.
+   *
+   * This is resolved from `module.fetch`, `module.default.fetch`,
+   * or upgraded from a legacy Node.js handler.
+   *
+   * A bare `export default function` is disambiguated by its declared parameter
+   * count (arity): `< 2` params is treated as a web `fetch` handler, `>= 2` as a
+   * legacy Node `(req, res)` handler. See the note at the resolution site for
+   * the edge cases this heuristic gets wrong and how to opt out.
+   */
+  fetch?: ServerHandler;
+
+  /**
+   * The raw loaded module.
+   */
+  module?: any;
+
+  /**
+   * Whether the handler was upgraded from a legacy Node.js HTTP handler.
+   *
+   * When `true`, the original module exported a Node.js-style `(req, res)` handler
+   * that has been wrapped for web fetch compatibility.
+   */
+  nodeCompat?: boolean;
+
+  /**
+   * The resolved `file://` URL of the loaded entry module.
+   */
+  url?: string;
+
+  /**
+   * Whether the specified entry file was not found.
+   *
+   * When `true`, no valid entry point could be located.
+   */
+  notFound?: boolean;
+
+  /**
+   * The original srvx server instance if the module used the loader API to export a server directly.
+   */
+  srvxServer?: Server;
+};
+
+export async function loadServerEntry(opts: LoadOptions): Promise<LoadedServerEntry> {
+  // Guess entry if not provided
+  let entry: string | undefined = opts.entry;
+  if (entry) {
+    // `file://` URLs are already absolute — resolving them as plain paths would
+    // mangle them into `$cwd/file:/...`. Only resolve plain filesystem paths.
+    if (entry.startsWith("file://")) {
+      if (!existsSync(fileURLToPath(entry))) {
+        return { notFound: true };
+      }
+    } else {
+      entry = resolve(opts.dir || ".", entry);
+      if (!existsSync(entry)) {
+        return { notFound: true };
+      }
+    }
+  } else {
+    for (const defEntry of defaultEntries) {
+      for (const defExt of defaultExts) {
+        const entryPath = resolve(opts.dir || ".", `${defEntry}${defExt}`);
+        if (existsSync(entryPath)) {
+          entry = entryPath;
+          break;
+        }
+      }
+      if (entry) break;
+    }
+    if (!entry) {
+      return { notFound: true };
+    }
+  }
+
+  // Convert to file:// URL for consistent imports
+  const url = entry.startsWith("file://") ? entry : pathToFileURL(resolve(entry)).href;
+
+  // Import the user file
+  let mod: any;
+  let interceptedNodeHandler: NodeHttpHandler | undefined;
+  let interceptedServer: Server | undefined;
+  try {
+    if (opts.interceptHttpListen !== false) {
+      const loaded = await interceptListen(() => import(url), opts);
+      mod = loaded.res;
+      interceptedNodeHandler = loaded.listenHandler;
+      interceptedServer = loaded.server;
+    } else {
+      mod = await import(url);
+    }
+  } catch (error) {
+    if ((error as { code?: string })?.code === "ERR_UNKNOWN_FILE_EXTENSION") {
+      const message = String(error);
+      if (/"\.(m|c)?ts"/g.test(message)) {
+        throw new Error(
+          `Make sure you're using Node.js v22.18+ or v24+ for TypeScript support (current version: ${process.versions.node})`,
+          { cause: error },
+        );
+      } else if (/"\.(m|c)?tsx"/g.test(message)) {
+        throw new Error(
+          `You need a compatible loader for JSX support (Deno, Bun or srvx --import jiti/register)`,
+          { cause: error },
+        );
+      }
+    }
+    throw error;
+  }
+
+  mod = (await opts?.onLoad?.(mod)) || mod;
+
+  let fetchHandler =
+    mod?.fetch || mod?.default?.fetch || mod?.default?.default?.fetch || interceptedServer?.fetch;
+  // Arity heuristic: a bare `export default function` could be either a web
+  // `fetch` handler `(request) => Response` or a legacy Node handler
+  // `(req, res) => void`. There is no runtime marker distinguishing them, so we
+  // fall back to the declared parameter count: `< 2` params → treat as a web
+  // `fetch` handler, `>= 2` → fall through to the Node-compat path below.
+  //
+  // This is a best-effort guess with two known edge cases it gets wrong:
+  //   - a Node handler that only declares `(req)` (1 param) is misread as fetch;
+  //   - a web handler that declares a second `(request, context)`-style param
+  //     (2 params) is misread as Node-compat.
+  // Handlers using rest/default params (`...args`, `req = x`) report a `length`
+  // of `0`, so they are always treated as fetch. Export an explicit
+  // `{ fetch }` (or `default: { fetch }`) to opt out of the heuristic entirely.
+  if (!fetchHandler && typeof mod?.default === "function" && mod.default.length < 2) {
+    fetchHandler = mod.default;
+  }
+
+  // Upgrade legacy Node.js handler
+  let nodeCompat = false;
+  if (!fetchHandler && opts.nodeCompat !== false) {
+    const nodeHandler =
+      interceptedNodeHandler || (typeof mod?.default === "function" ? mod.default : undefined);
+    if (nodeHandler) {
+      nodeCompat = true;
+      const { fetchNodeHandler } = await import("srvx/node");
+      fetchHandler = (webReq: ServerRequest) => fetchNodeHandler(nodeHandler, webReq);
+    }
+  }
+
+  return {
+    module: mod,
+    nodeCompat,
+    url,
+    fetch: fetchHandler,
+    srvxServer: interceptedServer,
+  };
+}
+
+// Concurrency lock to prevent parallel interceptions
+let _interceptQueue: Promise<unknown> = Promise.resolve();
+
+type NodeServer = NonNullable<Server["node"]>["server"];
+
+async function interceptListen<T = unknown>(
+  cb: () => T | Promise<T>,
+  opts: { nodeServer?: NodeServer; srvxServer?: Server } = {},
+): Promise<{
+  res?: T;
+  listenHandler?: NodeHttpHandler;
+  server?: Server;
+}> {
+  // Chain onto the queue to ensure sequential execution
+  const result = _interceptQueue.then(async () => {
+    const originalListen = nodeHTTP.Server.prototype.listen;
+    let res: T;
+    let listenHandler: NodeHttpHandler | undefined;
+    let server: Server | undefined;
+
+    const nodeServerStub =
+      opts.nodeServer ||
+      opts.srvxServer?.node?.server ||
+      (new StubNodeServer(() => opts.srvxServer?.node?.server) as unknown as NodeServer);
+
+    (globalThis as any).__srvxLoader__ = (obj: { server?: Server }) => {
+      server = obj.server;
+      if (server && server.node) {
+        server.node.server ||= nodeServerStub as any;
+      }
+    };
+
+    try {
+      // @ts-expect-error
+      nodeHTTP.Server.prototype.listen = function (this: Server, arg1, arg2) {
+        // https://github.com/nodejs/node/blob/af77e4bf2f8bee0bc23f6ee129d6ca97511d34b9/lib/_http_server.js#L557
+        // @ts-expect-error
+        listenHandler = this._events.request;
+        if (Array.isArray(listenHandler)) {
+          listenHandler = listenHandler[0]; // Bun compatibility
+        }
+
+        // Restore original listen method
+        nodeHTTP.Server.prototype.listen = originalListen;
+
+        // Defer callback execution
+        const listenCallback = [arg1, arg2].find((arg) => typeof arg === "function");
+        setImmediate(() => {
+          listenCallback?.();
+        });
+
+        return nodeServerStub;
+      };
+      res = await cb();
+    } finally {
+      nodeHTTP.Server.prototype.listen = originalListen;
+      delete (globalThis as any).__srvxLoader__;
+    }
+    return { res, listenHandler, server };
+  });
+
+  // Update queue to point to this operation (swallow errors for queue chaining)
+  _interceptQueue = result.catch(() => {});
+
+  return result;
+}
+
+class StubNodeServer
+  extends EventEmitter
+  implements Pick<nodeHTTP.Server, "address" | "listen" | "close">
+{
+  constructor(getServer: () => NodeServer) {
+    super();
+    return new Proxy(this, {
+      get(target, prop, receiver) {
+        const server = getServer();
+        if (!server) {
+          return Reflect.get(target, prop, receiver);
+        }
+        const value = (server as any)[prop];
+        if (typeof value === "function") {
+          return value.bind(server);
+        }
+        return value;
+      },
+    });
+  }
+  address() {
+    return { address: "", family: "", port: 0 };
+  }
+  listen() {
+    return this as any;
+  }
+  close(callback?: ((err?: Error) => void) | undefined) {
+    callback?.();
+    return this as any;
+  }
+}
