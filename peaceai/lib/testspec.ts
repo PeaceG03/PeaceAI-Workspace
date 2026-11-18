@@ -3164,28 +3164,28 @@ export function runTestSpec(input: SpecInput): SpecResult {
       fit: { shape: "batch14", examples: 0, targets: [{ symbol: "batch14", file: batch14.file, form: "named", exportName: "batch14", args: [] }] },
     };
   }
-<<<<<<< HEAD
-  const batch17 = !parseTypeDiagnostics(output).length && input.toolchain.nodePath
-    ? repairBatch17({
-=======
   const batch15 = !parseTypeDiagnostics(output).length && input.toolchain.nodePath
     ? repairBatch15({
->>>>>>> origin/main
       root: input.root, output, sourcePattern: input.sourcePattern,
       nodePath: input.toolchain.nodePath, nodeModules: input.nodeModules, testCommand: input.testCommand,
     })
     : null;
-<<<<<<< HEAD
-  if (batch17) {
-    return {
-      status: "diff", diff: batch17.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
-      fit: { shape: "batch17", examples: 0, targets: [{ symbol: "batch17", file: batch17.file, form: "named", exportName: "batch17", args: [] }] },
-=======
   if (batch15) {
     return {
       status: "diff", diff: batch15.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
       fit: { shape: "batch15", examples: 0, targets: [{ symbol: "batch15", file: batch15.file, form: "named", exportName: "batch15", args: [] }] },
->>>>>>> origin/main
+    };
+  }
+  const batch17 = !parseTypeDiagnostics(output).length && input.toolchain.nodePath
+    ? repairBatch17({
+      root: input.root, output, sourcePattern: input.sourcePattern,
+      nodePath: input.toolchain.nodePath, nodeModules: input.nodeModules, testCommand: input.testCommand,
+    })
+    : null;
+  if (batch17) {
+    return {
+      status: "diff", diff: batch17.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
+      fit: { shape: "batch17", examples: 0, targets: [{ symbol: "batch17", file: batch17.file, form: "named", exportName: "batch17", args: [] }] },
     };
   }
   if (parseTypeDiagnostics(output).length) {
