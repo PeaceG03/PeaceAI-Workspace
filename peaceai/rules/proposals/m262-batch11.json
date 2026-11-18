@@ -1,0 +1,48 @@
+{
+  "schema": "peaceai-m262-batch11:v1",
+  "note": "Pinned copies of open-draft/outvariant, jridgewell/trace-mapping, and fb55/domutils at the parent of a published bug fix, plus the test that fix changed. The trace-mapping notice omits one email address. The outvariant and domutils licenses have no email, so their pinned hashes are the text as written. The code bytes are unmodified.",
+  "examples": [
+    {
+      "repo": "open-draft/outvariant",
+      "commit": "acc313435c973a09e3aba3fc6512407a4b8f0ad9",
+      "licenseSha256": "af3fd32e4c3aff77fd476b5e9448a981d35634363b36e131579b6ec1c10e891d",
+      "fixture": "peaceai/test/fixtures/m262/out-format.ts.txt"
+    },
+    {
+      "repo": "open-draft/outvariant",
+      "commit": "d165cdbe1cc02408ab2cbe7e929b7e28fedc0ccf",
+      "licenseSha256": "af3fd32e4c3aff77fd476b5e9448a981d35634363b36e131579b6ec1c10e891d",
+      "fixture": "peaceai/test/fixtures/m262/out-format.test.ts.txt"
+    },
+    {
+      "repo": "jridgewell/trace-mapping",
+      "commit": "f8a42ebfcb57c1f2769ae784ef7135532447d1c0",
+      "licenseSha256": "c216320ffa9b0705e284d4a2e3f5bcca3cefc79fa917b58c9892a443f8187f95",
+      "fixture": "peaceai/test/fixtures/m262/trace-resolve.ts.txt"
+    },
+    {
+      "repo": "jridgewell/trace-mapping",
+      "commit": "f8a42ebfcb57c1f2769ae784ef7135532447d1c0",
+      "licenseSha256": "c216320ffa9b0705e284d4a2e3f5bcca3cefc79fa917b58c9892a443f8187f95",
+      "fixture": "peaceai/test/fixtures/m262/trace-strip-filename.ts.txt"
+    },
+    {
+      "repo": "jridgewell/trace-mapping",
+      "commit": "99b6a471b8ceeb9e5afda30cb40437b21f5621a4",
+      "licenseSha256": "c216320ffa9b0705e284d4a2e3f5bcca3cefc79fa917b58c9892a443f8187f95",
+      "fixture": "peaceai/test/fixtures/m262/trace-resolve.test.ts.txt"
+    },
+    {
+      "repo": "fb55/domutils",
+      "commit": "595fe52c210e3533af61d20b6904f0924e0f1634",
+      "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+      "fixture": "peaceai/test/fixtures/m262/dom-querying.ts.txt"
+    },
+    {
+      "repo": "fb55/domutils",
+      "commit": "78d0f55277df7a1d1e80bc5a3986bca72ef3936f",
+      "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+      "fixture": "peaceai/test/fixtures/m262/dom-querying.spec.ts.txt"
+    }
+  ]
+}
