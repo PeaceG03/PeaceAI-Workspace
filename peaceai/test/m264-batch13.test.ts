@@ -97,35 +97,39 @@ test("an unsafe integer written as a float is rejected, and a check that is not 
   assert.equal(unsafeFloat(readFix("ll-utils.ts.txt").replace("export function isSafeNumber(", "export function kept(")), null);
 });
 
-test("deleting the new line is killed by the published check, in-process and inside bwrap", (t) => {
+test("undoing the new token fails the published check, in-process and inside bwrap", (t) => {
   const rgb = mixedRgb(readFix("co-src-colorModels-rgbString.ts.txt"));
   const allowed = allowList(readFix("uh-sanitize.ts.txt"));
   const safe = unsafeFloat(readFix("ll-utils.ts.txt"));
   assert.ok(rgb && allowed && safe);
-  const rgbFile = rgb.replace("  const commaMatch = commaRgbaMatcher.exec(input);\n", "");
-  const allowFile = allowed.replace("  return (sanitize.allowElements?.length > 0) ? 'drop' : 'allow';\n", "");
+  const rgbFile = readFix("co-src-colorModels-rgbString.ts.txt");
+  const allowFile = allowed.replace("  return (sanitize.allowElements?.length > 0) ? 'drop' : 'allow';\n", "  return \"allow\";\n");
   const safeFile = safe.replace("  if (Number.isInteger(num) && !Number.isSafeInteger(num)) {\n    return false\n  }\n", "");
+  assert.equal(rgbFile, readFix("co-src-colorModels-rgbString.ts.txt"));
   assert.notEqual(rgbFile, rgb);
+  assert.equal(rgbFile.includes("const commaMatch"), false);
   assert.notEqual(allowFile, allowed);
+  assert.equal(allowFile.includes("? 'drop' : 'allow'"), false);
   assert.notEqual(safeFile, safe);
+  assert.equal(safeFile.includes("!Number.isSafeInteger(num)"), false);
   const node = visibleNodeBin();
   assert.ok(node);
   if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
   const tsx = [node!, "node_modules/tsx/dist/cli.mjs"];
   const vitestModules = runtimeModules([]);
   const typedModules = runtimeModules(["typescript"]);
-  const cases: { prepare: (dir: string) => void; dest: string; cmd: string[]; pattern: string; modules: string }[] = [
+  const cases: { prepare: (dir: string) => void; dest: string; cmd: string[]; pattern: string; modules: string; why: RegExp; restores: RegExp | null }[] = [
     {
       prepare: (dir) => { placeMapped(dir, COLOR); writeFileSync(join(dir, "src/colorModels/rgbString.ts"), rgbFile); writeFileSync(join(dir, "run.cjs"), readFileSync(join(import.meta.dirname, "m264-colord-run.cjs"))); },
-      dest: "src/colorModels/rgbString.ts", cmd: [node!, "run.cjs"], pattern: "^src/colorModels/rgbString\\.ts$", modules: typedModules,
+      dest: "src/colorModels/rgbString.ts", cmd: [node!, "run.cjs"], pattern: "^src/colorModels/rgbString\\.ts$", modules: typedModules, why: /undefined !== rgb|10% 20/, restores: /commaMatch/,
     },
     {
       prepare: (dir) => { placeMapped(dir, ULTRA); writeFileSync(join(dir, "src/transformers/sanitize.ts"), allowFile); writeFileSync(join(dir, "package.json"), `{"type":"module"}\n`); },
-      dest: "src/transformers/sanitize.ts", cmd: [...tsx, "test/transformers/sanitize.test.ts"], pattern: "^src/transformers/sanitize\\.ts$", modules: vitestModules,
+      dest: "src/transformers/sanitize.ts", cmd: [...tsx, "test/transformers/sanitize.test.ts"], pattern: "^src/transformers/sanitize\\.ts$", modules: vitestModules, why: /script|h1|toBe|Expected/, restores: null,
     },
     {
       prepare: (dir) => { placeMapped(dir, LOSS); writeFileSync(join(dir, "src/utils.ts"), safeFile); writeFileSync(join(dir, "package.json"), `{"type":"module"}\n`); },
-      dest: "src/utils.ts", cmd: [...tsx, "src/utils.test.ts"], pattern: "^src/utils\\.ts$", modules: vitestModules,
+      dest: "src/utils.ts", cmd: [...tsx, "src/utils.test.ts"], pattern: "^src/utils\\.ts$", modules: vitestModules, why: /expected throw/, restores: null,
     },
   ];
   for (const row of cases) {
@@ -134,14 +138,24 @@ test("deleting the new line is killed by the published check, in-process and ins
     writeFileSync(join(dir, ".gitignore"), "node_modules\n");
     symlinkSync(row.modules, join(dir, "node_modules"));
     const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
-    assert.notEqual(direct.status, 0, row.dest);
+    const directOut = `${direct.stdout}\n${direct.stderr}`;
+    assert.notEqual(direct.status, 0, directOut.slice(-800));
+    assert.match(directOut, row.why, row.dest);
+    assert.doesNotMatch(directOut, /ReferenceError|TransformError|SyntaxError/, row.dest);
     const sand = runInPracticeSandbox(dir, row.cmd, 120_000, { capture: true, nodePath: node, nodeModules: row.modules });
     assert.equal(sand.unsafe, false, row.dest);
-    assert.notEqual(sand.code, 0, row.dest);
+    assert.notEqual(sand.code, 0, sand.stdout.slice(-800));
+    assert.match(sand.stdout, row.why, row.dest);
     gitInit(dir);
-    assert.equal(repairBatch13({
+    const repaired = repairBatch13({
       root: dir, output: sand.stdout, sourcePattern: row.pattern, nodePath: node!, nodeModules: row.modules, testCommand: row.cmd,
-    }), null, row.dest);
+    });
+    if (row.restores) {
+      assert.ok(repaired, row.dest);
+      assert.match(repaired!.diff, row.restores, row.dest);
+    } else {
+      assert.equal(repaired, null, row.dest);
+    }
     rmSync(dir, { recursive: true, force: true });
   }
   rmSync(resolve(vitestModules, ".."), { recursive: true, force: true });

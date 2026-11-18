@@ -77,14 +77,19 @@ test("a plain value is replaced by an incoming object, and a check that is not d
   assert.equal(plainMerge(readFix("au-object.ts.txt").replace("export function deepMerge<", "export function kept<")), null);
 });
 
-test("deleting the new line is killed by the published check, in-process and inside bwrap", (t) => {
+test("undoing the new token fails the published check, in-process and inside bwrap", (t) => {
   const dollars = literalDollar(readFix("re-utils.ts.txt"));
   const named = constructorName(readFix("ex-errors.ts.txt"));
   const merged = plainMerge(readFix("au-object.ts.txt"));
   assert.ok(dollars && named && merged);
-  const dollarFile = dollars.replace("() => value", "() => \"\"");
-  const nameFile = named.replace("      const name: unknown = value.constructor?.name;\n", "");
+  const dollarFile = dollars.replace("() => value", "value");
+  const nameFile = named.replace(
+    "const name: unknown = value.constructor?.name;\n      if (typeof name === \"string\" && name !== \"\") {\n        return `an instance of ${name}`;\n      }",
+    "if (value.constructor && value.constructor.name) {\n        return `an instance of ${value.constructor.name}`;\n      }",
+  );
   const mergeFile = merged.replace("          target[key] = source[key]\n", "");
+  assert.equal(dollarFile, readFix("re-utils.ts.txt"));
+  assert.equal(nameFile, readFix("ex-errors.ts.txt"));
   assert.notEqual(dollarFile, dollars);
   assert.notEqual(nameFile, named);
   assert.notEqual(mergeFile, merged);
@@ -94,18 +99,18 @@ test("deleting the new line is killed by the published check, in-process and ins
   const tsx = [node!, "node_modules/tsx/dist/cli.mjs"];
   const uvuModules = runtimeModules("uvu");
   const vitestModules = runtimeModules("vitest");
-  const cases: { files: Record<string, string>; dest: string; cmd: string[]; pattern: string; modules: string }[] = [
+  const cases: { files: Record<string, string>; dest: string; cmd: string[]; pattern: string; modules: string; why: RegExp; restores: RegExp | null }[] = [
     {
       files: {
         "src/utils.ts": dollarFile, "src/index.ts": readFix("re-index.ts.txt"), "src/legacy.ts": readFix("re-legacy.ts.txt"),
         "test/utils.ts": readFix("re-test-utils.ts.txt"), "test/index.ts": readFix("re-test-index.ts.txt"), "test/legacy.ts": readFix("re-test-legacy.ts.txt"),
         "package.json": `{"type":"module"}\n`, "run.mjs": RESOLVE_RUN,
       },
-      dest: "src/utils.ts", cmd: [...tsx, "run.mjs"], pattern: "^src/utils\\.ts$", modules: uvuModules,
+      dest: "src/utils.ts", cmd: [...tsx, "run.mjs"], pattern: "^src/utils\\.ts$", modules: uvuModules, why: /test\$\$\.js|\$&/, restores: /\(\) => value/,
     },
     {
       files: { "src/internal/errors.ts": nameFile, "test/internal-errors.test.ts": readFix("ex-errors.test.ts.txt"), "package.json": `{"type":"module"}\n` },
-      dest: "src/internal/errors.ts", cmd: [...tsx, "test/internal-errors.test.ts"], pattern: "^src/internal/errors\\.ts$", modules: vitestModules,
+      dest: "src/internal/errors.ts", cmd: [...tsx, "test/internal-errors.test.ts"], pattern: "^src/internal/errors\\.ts$", modules: vitestModules, why: /constructor|instance of|Received/, restores: /typeof name === "string"/,
     },
     {
       files: {
@@ -113,7 +118,7 @@ test("deleting the new line is killed by the published check, in-process and ins
         "src/base.ts": readFix("au-base.ts.txt"), "src/types.ts": readFix("au-types.ts.txt"), "src/object.test.ts": readFix("au-object.test.ts.txt"),
         "package.json": `{"type":"module"}\n`,
       },
-      dest: "src/object.ts", cmd: [...tsx, "src/object.test.ts"], pattern: "^src/object\\.ts$", modules: vitestModules,
+      dest: "src/object.ts", cmd: [...tsx, "src/object.test.ts"], pattern: "^src/object\\.ts$", modules: vitestModules, why: /toEqual|Expected/, restores: null,
     },
   ];
   for (const row of cases) {
@@ -121,14 +126,24 @@ test("deleting the new line is killed by the published check, in-process and ins
     place(dir, { ...row.files, ".gitignore": "node_modules\n" });
     symlinkSync(row.modules, join(dir, "node_modules"));
     const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
-    assert.notEqual(direct.status, 0, row.dest);
+    const directOut = `${direct.stdout}\n${direct.stderr}`;
+    assert.notEqual(direct.status, 0, directOut.slice(-800));
+    assert.match(directOut, row.why, row.dest);
+    assert.doesNotMatch(directOut, /ReferenceError|TransformError|SyntaxError/, row.dest);
     const sand = runInPracticeSandbox(dir, row.cmd, 120_000, { capture: true, nodePath: node, nodeModules: row.modules });
     assert.equal(sand.unsafe, false, row.dest);
-    assert.notEqual(sand.code, 0, row.dest);
+    assert.notEqual(sand.code, 0, sand.stdout.slice(-800));
+    assert.match(sand.stdout, row.why, row.dest);
     gitInit(dir);
-    assert.equal(repairBatch12({
+    const repaired = repairBatch12({
       root: dir, output: sand.stdout, sourcePattern: row.pattern, nodePath: node!, nodeModules: row.modules, testCommand: row.cmd,
-    }), null, row.dest);
+    });
+    if (row.restores) {
+      assert.ok(repaired, row.dest);
+      assert.match(repaired!.diff, row.restores, row.dest);
+    } else {
+      assert.equal(repaired, null, row.dest);
+    }
     rmSync(dir, { recursive: true, force: true });
   }
   rmSync(resolve(uvuModules, ".."), { recursive: true, force: true });

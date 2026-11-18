@@ -91,34 +91,37 @@ test("a zero query limit returns nothing, and a check that is not find is refuse
   assert.equal(zeroLimit(readFix("dom-querying.ts.txt").replace("export function find(", "export function kept(")), null);
 });
 
-test("deleting the new line is killed by the published check, in-process and inside bwrap", (t) => {
+test("undoing the new token fails the published check, in-process and inside bwrap", (t) => {
   const digits = digitToken(readFix("out-format.ts.txt"));
   const rooted = prefixSourceRoot(readFix("trace-resolve.ts.txt"));
   const limited = zeroLimit(readFix("dom-querying.ts.txt"));
   assert.ok(digits && rooted && limited);
-  const digitFile = digits.replace("[sdijo]", "[sdij]");
-  const rootFile = rooted.replace("  const prefix = sourceRoot ? sourceRoot + '/' : '';\n", "");
-  const limitFile = limited.replace("    if (limit <= 0) return result;\n", "    if (limit < 0) return result;\n    const result: AnyNode[] = [];\n");
-  assert.notEqual(digitFile, digits);
+  const digitFile = digits.replace("[sdijo]", "[sdjo]");
+  const rootFile = rooted
+    .replace("  const prefix = sourceRoot ? sourceRoot + '/' : '';\n\n", "")
+    .replace("resolveUri(prefix + (source || ''), from)", "resolveUri(source || '', from)");
+  const limitFile = limited.replace("    if (limit <= 0) return result;\n", "");
+  assert.equal(digitFile, readFix("out-format.ts.txt"));
+  assert.equal(limitFile, readFix("dom-querying.ts.txt"));
+  assert.equal(rootFile.includes("prefix"), false);
   assert.notEqual(rootFile, rooted);
-  assert.notEqual(limitFile, limited);
   const node = visibleNodeBin();
   assert.ok(node);
   if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
   const nm = runtimeModules();
   const tsx = [node!, "node_modules/tsx/dist/cli.mjs"];
-  const cases: { files: Record<string, string>; dest: string; cmd: string[]; pattern: string }[] = [
+  const cases: { files: Record<string, string>; dest: string; cmd: string[]; pattern: string; why: RegExp; restores: RegExp | null }[] = [
     {
       files: { "src/format.ts": digitFile, "src/format.test.ts": readFix("out-format.test.ts.txt"), "package.json": `{"type":"module"}\n`, "run.mjs": OUT_RUN },
-      dest: "src/format.ts", cmd: [...tsx, "run.mjs"], pattern: "^src/format\\.ts$",
+      dest: "src/format.ts", cmd: [...tsx, "run.mjs"], pattern: "^src/format\\.ts$", why: /%i/, restores: /\[sdijo\]/,
     },
     {
       files: { "src/resolve.ts": rootFile, "src/strip-filename.ts": readFix("trace-strip-filename.ts.txt"), "test/resolve.test.ts": readFix("trace-resolve.test.ts.txt"), "package.json": `{"type":"module"}\n`, "run.mjs": TRACE_RUN },
-      dest: "src/resolve.ts", cmd: [...tsx, "run.mjs"], pattern: "^src/resolve\\.ts$",
+      dest: "src/resolve.ts", cmd: [...tsx, "run.mjs"], pattern: "^src/resolve\\.ts$", why: /foo\/input\.js/, restores: null,
     },
     {
       files: { "src/querying.ts": limitFile, "src/querying.spec.ts": readFix("dom-querying.spec.ts.txt"), "package.json": `{"type":"module"}\n` },
-      dest: "src/querying.ts", cmd: [...tsx, "src/querying.spec.ts"], pattern: "^src/querying\\.ts$",
+      dest: "src/querying.ts", cmd: [...tsx, "src/querying.spec.ts"], pattern: "^src/querying\\.ts$", why: /predicateCalls|toEqual|Expected/, restores: /limit <= 0/,
     },
   ];
   for (const row of cases) {
@@ -126,14 +129,24 @@ test("deleting the new line is killed by the published check, in-process and ins
     place(dir, { ...row.files, ".gitignore": "node_modules\n" });
     symlinkSync(nm, join(dir, "node_modules"));
     const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
-    assert.notEqual(direct.status, 0, row.dest);
+    const directOut = `${direct.stdout}\n${direct.stderr}`;
+    assert.notEqual(direct.status, 0, directOut.slice(-800));
+    assert.match(directOut, row.why, row.dest);
+    assert.doesNotMatch(directOut, /ReferenceError|TransformError|SyntaxError/, row.dest);
     const sand = runInPracticeSandbox(dir, row.cmd, 120_000, { capture: true, nodePath: node, nodeModules: nm });
     assert.equal(sand.unsafe, false, row.dest);
-    assert.notEqual(sand.code, 0, row.dest);
+    assert.notEqual(sand.code, 0, sand.stdout.slice(-800));
+    assert.match(sand.stdout, row.why, row.dest);
     gitInit(dir);
-    assert.equal(repairBatch11({
+    const repaired = repairBatch11({
       root: dir, output: sand.stdout, sourcePattern: row.pattern, nodePath: node!, nodeModules: nm, testCommand: row.cmd,
-    }), null, row.dest);
+    });
+    if (row.restores) {
+      assert.ok(repaired, row.dest);
+      assert.match(repaired!.diff, row.restores, row.dest);
+    } else {
+      assert.equal(repaired, null, row.dest);
+    }
     rmSync(dir, { recursive: true, force: true });
   }
   rmSync(resolve(nm, ".."), { recursive: true, force: true });
