@@ -1,0 +1,72 @@
+{
+  "schema": "peaceai-m259-batch8:v1",
+  "note": "Pinned copies of pillarjs/path-to-regexp, vueuse/vueuse, and TanStack/virtual at the parent of a published bug fix, plus the test that fix changed. License text is MIT. The path-to-regexp notice omits one email address. The code bytes are unmodified.",
+  "examples": [
+    {
+      "repo": "pillarjs/path-to-regexp",
+      "commit": "bd12a33e7e18c994e9cf0f7e6175fcd0ba41db22",
+      "licenseSha256": "e257f36bcf5eed0516fea6522eb52e185f044a035538240f9e504e9239de11c0",
+      "fixture": "peaceai/test/fixtures/m259/p2r-index.ts.txt"
+    },
+    {
+      "repo": "pillarjs/path-to-regexp",
+      "commit": "8877f41873e37a30258d3935feaf1d2679321735",
+      "licenseSha256": "e257f36bcf5eed0516fea6522eb52e185f044a035538240f9e504e9239de11c0",
+      "fixture": "peaceai/test/fixtures/m259/p2r-cases.spec.ts.txt"
+    },
+    {
+      "repo": "pillarjs/path-to-regexp",
+      "commit": "8877f41873e37a30258d3935feaf1d2679321735",
+      "licenseSha256": "e257f36bcf5eed0516fea6522eb52e185f044a035538240f9e504e9239de11c0",
+      "fixture": "peaceai/test/fixtures/m259/p2r-index.spec.ts.txt"
+    },
+    {
+      "repo": "vueuse/vueuse",
+      "commit": "043da374d683e5193fc684b0b2bcae7dd9340314",
+      "licenseSha256": "59c8d7b4ea957d43738c0a1704d3acccdda5d0a04fc801ac9fd0cce8da719c2c",
+      "fixture": "peaceai/test/fixtures/m259/vueuse-array-difference.ts.txt"
+    },
+    {
+      "repo": "vueuse/vueuse",
+      "commit": "8d5cb9ea9bab7e816187d89f5ac0541ebe1b41e4",
+      "licenseSha256": "59c8d7b4ea957d43738c0a1704d3acccdda5d0a04fc801ac9fd0cce8da719c2c",
+      "fixture": "peaceai/test/fixtures/m259/vueuse-array-difference.test.ts.txt"
+    },
+    {
+      "repo": "TanStack/virtual",
+      "commit": "0a368c76950610227af7a5d3695e53877f9ad914",
+      "licenseSha256": "277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee",
+      "fixture": "peaceai/test/fixtures/m259/virtual-core-index.ts.txt"
+    },
+    {
+      "repo": "TanStack/virtual",
+      "commit": "0a368c76950610227af7a5d3695e53877f9ad914",
+      "licenseSha256": "277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee",
+      "fixture": "peaceai/test/fixtures/m259/virtual-core-utils.ts.txt"
+    },
+    {
+      "repo": "TanStack/virtual",
+      "commit": "0a368c76950610227af7a5d3695e53877f9ad914",
+      "licenseSha256": "277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee",
+      "fixture": "peaceai/test/fixtures/m259/virtual-core-ios-gesture.ts.txt"
+    },
+    {
+      "repo": "TanStack/virtual",
+      "commit": "0a368c76950610227af7a5d3695e53877f9ad914",
+      "licenseSha256": "277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee",
+      "fixture": "peaceai/test/fixtures/m259/virtual-core-scroll-classifier.ts.txt"
+    },
+    {
+      "repo": "TanStack/virtual",
+      "commit": "0a368c76950610227af7a5d3695e53877f9ad914",
+      "licenseSha256": "277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee",
+      "fixture": "peaceai/test/fixtures/m259/virtual-core-lazy-measurements.ts.txt"
+    },
+    {
+      "repo": "TanStack/virtual",
+      "commit": "acaef5ef7fc2ed86f10fad660b2e21c9285027b5",
+      "licenseSha256": "277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee",
+      "fixture": "peaceai/test/fixtures/m259/virtual-core-measurement.test.ts.txt"
+    }
+  ]
+}
