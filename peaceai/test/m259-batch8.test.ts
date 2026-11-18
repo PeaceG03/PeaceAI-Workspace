@@ -2,11 +2,10 @@
 // Third-party bytes run only inside the practice sandbox.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { pathToFileURL } from "node:url";
 import { compareAnyKey, freshMeasurements, quoteAstralName, repairBatch8 } from "../lib/batch8.ts";
 import { gradeBehavior } from "../lib/specgrade.ts";
 import { practiceSandboxReady, runInPracticeSandbox, visibleNodeBin } from "../lib/practicemine.ts";
@@ -198,65 +197,73 @@ test("an offset reads fresh measurements, and a cache read that is not getOffset
   assert.equal(freshMeasurements(readFix("virtual-core-index.ts.txt").replace("getOffsetForIndex =", "kept =")), null);
 });
 
-const mutantBase = resolve(repoRoot, "peaceai/test/.capability-mutants");
-mkdirSync(mutantBase, { recursive: true });
-let mutantN = 0;
-async function mutant(guard: string) {
-  const text = readFileSync(resolve(repoRoot, "peaceai/lib/batch8.ts"), "utf8");
-  const lines = text.split("\n");
-  const hits = lines.flatMap((line, i) => (line.includes(`// ${guard}`) ? [i] : []));
-  assert.equal(hits.length, 1, guard);
-  const next = lines.filter((_, i) => i !== hits[0]).join("\n").replace(/from "\.\/([A-Za-z0-9-]+\.ts)"/g, (_m, name: string) => `from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "peaceai/lib", name)).href)}`);
-  const out = join(mutantBase, `m259-${mutantN++}.ts`);
-  writeFileSync(out, next);
-  return import(pathToFileURL(out).href);
-}
-
-test("deleting the batch 8 guards admits the near miss, with bwrap and without it", async () => {
-  const otherName = readFix("p2r-index.ts.txt").replace("function stringifyName(", "function kept(");
-  assert.equal(quoteAstralName(otherName), null);
-  const opened = await mutant("name-guard:astral") as { quoteAstralName: typeof quoteAstralName; repairBatch8: typeof repairBatch8 };
-  assert.match(opened.quoteAstralName(otherName) ?? "", /const \[first/);
-  const otherKey = readFix("vueuse-array-difference.ts.txt").replaceAll("useArrayDifference", "kept");
-  assert.equal(compareAnyKey(otherKey), null);
-  const key = await mutant("key-guard:function") as { compareAnyKey: typeof compareAnyKey; repairBatch8: typeof repairBatch8 };
-  assert.match(key.compareAnyKey(otherKey) ?? "", /!== 'function'/);
-  const otherOffset = readFix("virtual-core-index.ts.txt").replace("getOffsetForIndex =", "kept =");
-  assert.equal(freshMeasurements(otherOffset), null);
-  const offset = await mutant("offset-guard:fresh") as { freshMeasurements: typeof freshMeasurements; repairBatch8: typeof repairBatch8 };
-  assert.match(offset.freshMeasurements(otherOffset) ?? "", /getMeasurements\(\)\[index\]/);
+test("the parent file fails the published check because the repair is absent, in-process and inside bwrap", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
   const node = visibleNodeBin();
   assert.ok(node);
-  const root = mkdtempSync(join(tmpdir(), "m259-miss-"));
-  place(root, { "src/index.ts": readFix("p2r-index.ts.txt"), "run.mjs": "process.exit(0)\n" });
-  gitInit(root);
-  assert.equal(repairBatch8({
-    root, output: "Error: not equal", sourcePattern: "^src/.+\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"], bwrap: "/no/such/bwrap",
-  }), null);
-  if (practiceSandboxReady()) {
-    const run = (fn: typeof repairBatch8, dir: string) => fn({
-      root: dir, output: "Error: not equal", sourcePattern: "^src/.+\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"],
+  const nm = runtimeModules();
+  const rows: { dest: string; files: Record<string, string>; pattern: string; cmd: string[]; why: RegExp; restores: RegExp; absent: string }[] = [
+    {
+      dest: "src/index.ts",
+      files: {
+        "src/index.ts": readFix("p2r-index.ts.txt"),
+        "src/cases.spec.ts": readFix("p2r-cases.spec.ts.txt"),
+        "src/index.spec.ts": readFix("p2r-index.spec.ts.txt"),
+        "package.json": `{ "type": "module" }\n`,
+      },
+      pattern: "^src/.+\\.ts$",
+      cmd: [node!, "node_modules/tsx/dist/cli.mjs", "src/index.spec.ts"],
+      why: /\/:test/, restores: /const \[first/, absent: 'const [first = ""',
+    },
+    {
+      dest: "index.ts",
+      files: {
+        "index.ts": readFix("vueuse-array-difference.ts.txt"),
+        "index.test.ts": readFix("vueuse-array-difference.test.ts.txt"),
+        "package.json": `{ "type": "module" }\n`,
+      },
+      pattern: "index\\.ts$",
+      cmd: [node!, "node_modules/tsx/dist/cli.mjs", "index.test.ts"],
+      why: /compareFn is not a function/, restores: /!== 'function'/, absent: "!== 'function'",
+    },
+    {
+      dest: "packages/virtual-core/src/index.ts",
+      files: {
+        "packages/virtual-core/src/index.ts": readFix("virtual-core-index.ts.txt"),
+        "packages/virtual-core/src/utils.ts": readFix("virtual-core-utils.ts.txt"),
+        "packages/virtual-core/src/ios-gesture.ts": readFix("virtual-core-ios-gesture.ts.txt"),
+        "packages/virtual-core/src/scroll-classifier.ts": readFix("virtual-core-scroll-classifier.ts.txt"),
+        "packages/virtual-core/src/lazy-measurements.ts": readFix("virtual-core-lazy-measurements.ts.txt"),
+        "packages/virtual-core/tests/measurement.test.ts": readFix("virtual-core-measurement.test.ts.txt"),
+        "package.json": `{ "type": "module" }\n`,
+      },
+      pattern: "^packages/virtual-core/src/.+\\.ts$",
+      cmd: [node!, "node_modules/tsx/dist/cli.mjs", "packages/virtual-core/tests/measurement.test.ts"],
+      why: /550 !== 700/, restores: /getMeasurements\(\)/, absent: "this.getMeasurements()[index]",
+    },
+  ];
+  for (const row of rows) {
+    assert.equal(row.files[row.dest]!.includes(row.absent), false, row.dest);
+    const dir = mkdtempSync(join(tmpdir(), "m259-kill-"));
+    place(dir, { ...row.files, ".gitignore": "node_modules\n" });
+    symlinkSync(nm, join(dir, "node_modules"));
+    gitInit(dir);
+    const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
+    const directOut = `${direct.stdout}\n${direct.stderr}`;
+    assert.notEqual(direct.status, 0, directOut.slice(-700));
+    assert.match(directOut, row.why, directOut.slice(-700));
+    assert.doesNotMatch(directOut, /ReferenceError|SyntaxError|TransformError/, row.dest);
+    const sand = runInPracticeSandbox(dir, row.cmd, 120_000, { capture: true, nodePath: node, nodeModules: nm });
+    assert.notEqual(sand.code, 0, sand.stdout.slice(-700));
+    assert.match(sand.stdout, row.why, sand.stdout.slice(-700));
+    const repaired = repairBatch8({
+      root: dir, output: directOut, sourcePattern: row.pattern, nodePath: node!, nodeModules: nm, testCommand: row.cmd,
     });
-    const nameDir = mkdtempSync(join(tmpdir(), "m259-name-"));
-    place(nameDir, { "src/index.ts": otherName, "run.mjs": "process.exit(0)\n" });
-    gitInit(nameDir);
-    assert.equal(run(repairBatch8, nameDir), null);
-    assert.match(run(opened.repairBatch8, nameDir)?.diff ?? "", /const \[first/);
-    const keyDir = mkdtempSync(join(tmpdir(), "m259-key-"));
-    place(keyDir, { "src/index.ts": otherKey, "run.mjs": "process.exit(0)\n" });
-    gitInit(keyDir);
-    assert.equal(run(repairBatch8, keyDir), null);
-    assert.match(run(key.repairBatch8, keyDir)?.diff ?? "", /!== 'function'/);
-    const offDir = mkdtempSync(join(tmpdir(), "m259-off-"));
-    place(offDir, { "src/index.ts": otherOffset, "run.mjs": "process.exit(0)\n" });
-    gitInit(offDir);
-    assert.equal(run(repairBatch8, offDir), null);
-    assert.match(run(offset.repairBatch8, offDir)?.diff ?? "", /getMeasurements\(\)/);
-    rmSync(nameDir, { recursive: true, force: true });
-    rmSync(keyDir, { recursive: true, force: true });
-    rmSync(offDir, { recursive: true, force: true });
+    assert.ok(repaired, row.dest);
+    assert.match(repaired!.diff, row.restores, row.dest);
+    rmSync(dir, { recursive: true, force: true });
   }
-  rmSync(root, { recursive: true, force: true });
+  rmSync(resolve(nm, ".."), { recursive: true, force: true });
 });
 
 test("an any-cast that only matches one recorded answer is test-only for each batch 8 family", (t) => {

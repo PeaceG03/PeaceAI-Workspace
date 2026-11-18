@@ -2,11 +2,10 @@
 // Third-party bytes run only inside the practice sandbox.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { pathToFileURL } from "node:url";
 import { allowList, mixedRgb, repairBatch13, unsafeFloat } from "../lib/batch13.ts";
 import { gradeBehavior } from "../lib/specgrade.ts";
 import { practiceSandboxReady, runInPracticeSandbox, visibleNodeBin } from "../lib/practicemine.ts";
@@ -98,73 +97,69 @@ test("an unsafe integer written as a float is rejected, and a check that is not 
   assert.equal(unsafeFloat(readFix("ll-utils.ts.txt").replace("export function isSafeNumber(", "export function kept(")), null);
 });
 
-const mutantBase = resolve(repoRoot, "peaceai/test/.capability-mutants");
-mkdirSync(mutantBase, { recursive: true });
-let mutantN = 0;
-async function mutant(guard: string) {
-  const text = readFileSync(resolve(repoRoot, "peaceai/lib/batch13.ts"), "utf8");
-  const lines = text.split("\n");
-  const hits = lines.flatMap((line, i) => (line.includes(`// ${guard}`) ? [i] : []));
-  assert.equal(hits.length, 1, guard);
-  const next = lines.filter((_, i) => i !== hits[0]).join("\n").replace(/from "\.\/([A-Za-z0-9-]+\.ts)"/g, (_m, name: string) => `from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "peaceai/lib", name)).href)}`);
-  const out = join(mutantBase, `m264-${mutantN++}.ts`);
-  writeFileSync(out, next);
-  return import(pathToFileURL(out).href);
-}
-
-test("deleting the batch 13 guards admits the near miss, with bwrap and without it", async () => {
-  const otherRgb = readFix("co-src-colorModels-rgbString.ts.txt").replace("export const parseRgbaString", "export const kept");
-  assert.equal(mixedRgb(otherRgb), null);
-  const rgb = await mutant("rgb-guard:space") as { mixedRgb: typeof mixedRgb; repairBatch13: typeof repairBatch13 };
-  assert.match(rgb.mixedRgb(otherRgb) ?? "", /commaMatch/);
-  const otherAllow = readFix("uh-sanitize.ts.txt").replace("function getAction(", "function kept(");
-  assert.equal(allowList(otherAllow), null);
-  const allowed = await mutant("allow-guard:list") as { allowList: typeof allowList; repairBatch13: typeof repairBatch13 };
-  assert.match(allowed.allowList(otherAllow) ?? "", /'drop' : 'allow'/);
-  const otherSafe = readFix("ll-utils.ts.txt").replace("export function isSafeNumber(", "export function kept(");
-  assert.equal(unsafeFloat(otherSafe), null);
-  const safe = await mutant("safe-guard:float") as { unsafeFloat: typeof unsafeFloat; repairBatch13: typeof repairBatch13 };
-  assert.match(safe.unsafeFloat(otherSafe) ?? "", /isSafeInteger/);
+test("undoing the new token fails the published check, in-process and inside bwrap", (t) => {
+  const rgb = mixedRgb(readFix("co-src-colorModels-rgbString.ts.txt"));
+  const allowed = allowList(readFix("uh-sanitize.ts.txt"));
+  const safe = unsafeFloat(readFix("ll-utils.ts.txt"));
+  assert.ok(rgb && allowed && safe);
+  const rgbFile = readFix("co-src-colorModels-rgbString.ts.txt");
+  const allowFile = allowed.replace("  return (sanitize.allowElements?.length > 0) ? 'drop' : 'allow';\n", "  return \"allow\";\n");
+  const safeFile = safe.replace("  if (Number.isInteger(num) && !Number.isSafeInteger(num)) {\n    return false\n  }\n", "");
+  assert.equal(rgbFile, readFix("co-src-colorModels-rgbString.ts.txt"));
+  assert.notEqual(rgbFile, rgb);
+  assert.equal(rgbFile.includes("const commaMatch"), false);
+  assert.notEqual(allowFile, allowed);
+  assert.equal(allowFile.includes("? 'drop' : 'allow'"), false);
+  assert.notEqual(safeFile, safe);
+  assert.equal(safeFile.includes("!Number.isSafeInteger(num)"), false);
   const node = visibleNodeBin();
   assert.ok(node);
-  const root = mkdtempSync(join(tmpdir(), "m264-miss-"));
-  mkdirSync(join(root, "src/colorModels"), { recursive: true });
-  writeFileSync(join(root, "src/colorModels/rgbString.ts"), readFix("co-src-colorModels-rgbString.ts.txt"));
-  writeFileSync(join(root, "run.mjs"), "process.exit(0)\n");
-  gitInit(root);
-  assert.equal(repairBatch13({
-    root, output: "Error: not equal", sourcePattern: "^src/colorModels/rgbString\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"], bwrap: "/no/such/bwrap",
-  }), null);
-  if (practiceSandboxReady()) {
-    const run = (fn: typeof repairBatch13, dir: string, pattern: string) => fn({
-      root: dir, output: "Error: not equal", sourcePattern: pattern, nodePath: node!, testCommand: [node!, "run.mjs"],
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
+  const tsx = [node!, "node_modules/tsx/dist/cli.mjs"];
+  const vitestModules = runtimeModules([]);
+  const typedModules = runtimeModules(["typescript"]);
+  const cases: { prepare: (dir: string) => void; dest: string; cmd: string[]; pattern: string; modules: string; why: RegExp; restores: RegExp | null }[] = [
+    {
+      prepare: (dir) => { placeMapped(dir, COLOR); writeFileSync(join(dir, "src/colorModels/rgbString.ts"), rgbFile); writeFileSync(join(dir, "run.cjs"), readFileSync(join(import.meta.dirname, "m264-colord-run.cjs"))); },
+      dest: "src/colorModels/rgbString.ts", cmd: [node!, "run.cjs"], pattern: "^src/colorModels/rgbString\\.ts$", modules: typedModules, why: /undefined !== rgb|10% 20/, restores: /commaMatch/,
+    },
+    {
+      prepare: (dir) => { placeMapped(dir, ULTRA); writeFileSync(join(dir, "src/transformers/sanitize.ts"), allowFile); writeFileSync(join(dir, "package.json"), `{"type":"module"}\n`); },
+      dest: "src/transformers/sanitize.ts", cmd: [...tsx, "test/transformers/sanitize.test.ts"], pattern: "^src/transformers/sanitize\\.ts$", modules: vitestModules, why: /script|h1|toBe|Expected/, restores: null,
+    },
+    {
+      prepare: (dir) => { placeMapped(dir, LOSS); writeFileSync(join(dir, "src/utils.ts"), safeFile); writeFileSync(join(dir, "package.json"), `{"type":"module"}\n`); },
+      dest: "src/utils.ts", cmd: [...tsx, "src/utils.test.ts"], pattern: "^src/utils\\.ts$", modules: vitestModules, why: /expected throw/, restores: null,
+    },
+  ];
+  for (const row of cases) {
+    const dir = mkdtempSync(join(tmpdir(), "m264-kill-"));
+    row.prepare(dir);
+    writeFileSync(join(dir, ".gitignore"), "node_modules\n");
+    symlinkSync(row.modules, join(dir, "node_modules"));
+    const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
+    const directOut = `${direct.stdout}\n${direct.stderr}`;
+    assert.notEqual(direct.status, 0, directOut.slice(-800));
+    assert.match(directOut, row.why, row.dest);
+    assert.doesNotMatch(directOut, /ReferenceError|TransformError|SyntaxError/, row.dest);
+    const sand = runInPracticeSandbox(dir, row.cmd, 120_000, { capture: true, nodePath: node, nodeModules: row.modules });
+    assert.equal(sand.unsafe, false, row.dest);
+    assert.notEqual(sand.code, 0, sand.stdout.slice(-800));
+    assert.match(sand.stdout, row.why, row.dest);
+    gitInit(dir);
+    const repaired = repairBatch13({
+      root: dir, output: sand.stdout, sourcePattern: row.pattern, nodePath: node!, nodeModules: row.modules, testCommand: row.cmd,
     });
-    const rgbDir = mkdtempSync(join(tmpdir(), "m264-rgb-"));
-    mkdirSync(join(rgbDir, "src/colorModels"), { recursive: true });
-    writeFileSync(join(rgbDir, "src/colorModels/rgbString.ts"), otherRgb);
-    writeFileSync(join(rgbDir, "run.mjs"), "process.exit(0)\n");
-    gitInit(rgbDir);
-    assert.equal(run(repairBatch13, rgbDir, "^src/colorModels/rgbString\\.ts$"), null);
-    assert.match(run(rgb.repairBatch13, rgbDir, "^src/colorModels/rgbString\\.ts$")?.diff ?? "", /commaMatch/);
-    const allowDir = mkdtempSync(join(tmpdir(), "m264-allow-"));
-    mkdirSync(join(allowDir, "src/transformers"), { recursive: true });
-    writeFileSync(join(allowDir, "src/transformers/sanitize.ts"), otherAllow);
-    writeFileSync(join(allowDir, "run.mjs"), "process.exit(0)\n");
-    gitInit(allowDir);
-    assert.equal(run(repairBatch13, allowDir, "^src/transformers/sanitize\\.ts$"), null);
-    assert.match(run(allowed.repairBatch13, allowDir, "^src/transformers/sanitize\\.ts$")?.diff ?? "", /drop/);
-    const safeDir = mkdtempSync(join(tmpdir(), "m264-safe-"));
-    mkdirSync(join(safeDir, "src"), { recursive: true });
-    writeFileSync(join(safeDir, "src/utils.ts"), otherSafe);
-    writeFileSync(join(safeDir, "run.mjs"), "process.exit(0)\n");
-    gitInit(safeDir);
-    assert.equal(run(repairBatch13, safeDir, "^src/utils\\.ts$"), null);
-    assert.match(run(safe.repairBatch13, safeDir, "^src/utils\\.ts$")?.diff ?? "", /isSafeInteger/);
-    rmSync(rgbDir, { recursive: true, force: true });
-    rmSync(allowDir, { recursive: true, force: true });
-    rmSync(safeDir, { recursive: true, force: true });
+    if (row.restores) {
+      assert.ok(repaired, row.dest);
+      assert.match(repaired!.diff, row.restores, row.dest);
+    } else {
+      assert.equal(repaired, null, row.dest);
+    }
+    rmSync(dir, { recursive: true, force: true });
   }
-  rmSync(root, { recursive: true, force: true });
+  rmSync(resolve(vitestModules, ".."), { recursive: true, force: true });
+  rmSync(resolve(typedModules, ".."), { recursive: true, force: true });
 });
 
 test("an any-cast that only matches one recorded answer is test-only for each batch 13 family", (t) => {
