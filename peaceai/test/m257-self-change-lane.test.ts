@@ -209,8 +209,15 @@ test("lane1 writes a before/after scorecard and refuses a one-row drop", () => {
   write("drift.json", drift);
   writeFileSync(join(dir, "edit.diff"), modify("peaceai/bin/generate.ts", "a", "b"));
   const cli = join(repo, "peaceai/bin/self-change.ts");
-  const run = spawnSync(tsx, [cli, "lane1", "--patch", join(dir, "edit.diff"), "--baseline", join(dir, "base.json"), "--before", join(dir, "before.json"), "--after", join(dir, "after.json"), "--drift", join(dir, "drift.json"), "--parent", A, "--head", B, "--commits", "1", "--out", join(dir, "scorecard.json")], { cwd: repo, encoding: "utf8" });
+  const args = [cli, "lane1", "--patch", join(dir, "edit.diff"), "--baseline", join(dir, "base.json"), "--before", join(dir, "before.json"), "--after", join(dir, "after.json"), "--drift", join(dir, "drift.json"), "--parent", A, "--head", B, "--commits", "1", "--out", join(dir, "scorecard.json")];
+  // m108: GITHUB_ACTIONS is never copied into the child. The CLI refuses every mode on a public Actions runner before lane1 runs.
+  const offActions: NodeJS.ProcessEnv = { ...process.env };
+  delete offActions.GITHUB_ACTIONS;
+  const run = spawnSync(tsx, args, { cwd: repo, encoding: "utf8", env: offActions });
   assert.equal(run.status, 2, run.stdout + run.stderr);
+  const pub = spawnSync(tsx, args, { cwd: repo, encoding: "utf8", env: { ...offActions, GITHUB_ACTIONS: "true", GITHUB_REPOSITORY: "PeaceG03/PeaceAI-Workspace", CI: "true" } });
+  assert.equal(pub.status, 3, pub.stdout + pub.stderr);
+  assert.match(pub.stdout ?? "", /self-change refused reason=PUBLIC_RUNNER_REFUSED/);
   const card = JSON.parse(readFileSync(join(dir, "scorecard.json"), "utf8"));
   assert.equal(card.schema, "peaceai-lane-v1-scorecard:v1");
   assert.equal(card.ok, false);
