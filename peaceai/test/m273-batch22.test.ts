@@ -16,8 +16,9 @@ const modules = resolve(import.meta.dirname, "../../node_modules");
 
 function placeFiles(root: string, files: Record<string, string | Buffer>) {
   for (const [path, content] of Object.entries(files)) {
-    mkdirSync(join(root, path, ".."), { recursive: true });
-    writeFileSync(join(root, path), content);
+    const dest = path.replaceAll("__SCOPE__", "@");
+    mkdirSync(join(root, dest, ".."), { recursive: true });
+    writeFileSync(join(root, dest), content);
   }
 }
 
