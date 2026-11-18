@@ -12521,3 +12521,77 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+==============================================================================
+repo: fb55/nth-check
+license: BSD-2-Clause (LICENSE, sha256 of trimmed text 0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6)
+fixtures (commit path):
+  1df5171127f56e0274e6b22ab6387b5b8a7ae52c peaceai/test/fixtures/m260/nth-parse.ts.txt
+  ecbb7ebf4f421d63fdc90342f9204e21a3cf9186 peaceai/test/fixtures/m260/nth-rules.ts.txt
+  ecbb7ebf4f421d63fdc90342f9204e21a3cf9186 peaceai/test/fixtures/m260/nth-parse.spec.ts.txt
+license URL: https://github.com/fb55/nth-check/blob/1df5171127f56e0274e6b22ab6387b5b8a7ae52c/LICENSE
+---- license text ----
+Copyright (c) Felix Böhm
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+THIS IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS,
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+---- end ----
+==============================================================================
+repo: uuidjs/uuid
+license: MIT (LICENSE.md, sha256 of trimmed text 19f9e00b8c981751ab9b00c64c5d573976c192cbfba0937d8ab48777d38bbf9b)
+fixtures (commit path):
+  ea83515d6a4de13a8f9d253fe772752c9dd7bbbe peaceai/test/fixtures/m260/uuid-v1.ts.txt
+  ea83515d6a4de13a8f9d253fe772752c9dd7bbbe peaceai/test/fixtures/m260/uuid-rng.ts.txt
+  ea83515d6a4de13a8f9d253fe772752c9dd7bbbe peaceai/test/fixtures/m260/uuid-stringify.ts.txt
+  ea83515d6a4de13a8f9d253fe772752c9dd7bbbe peaceai/test/fixtures/m260/uuid-parse.ts.txt
+  ea83515d6a4de13a8f9d253fe772752c9dd7bbbe peaceai/test/fixtures/m260/uuid-validate.ts.txt
+  ea83515d6a4de13a8f9d253fe772752c9dd7bbbe peaceai/test/fixtures/m260/uuid-regex.ts.txt
+  6adcc1d81bfaeb653c49d9b7ca7b0579244ae60c peaceai/test/fixtures/m260/uuid-v1.test.ts.txt
+license URL: https://github.com/uuidjs/uuid/blob/ea83515d6a4de13a8f9d253fe772752c9dd7bbbe/LICENSE.md
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2010-2020 Robert Kieffer and other contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+---- end ----
+==============================================================================
+repo: Rich-Harris/magic-string
+license: MIT (LICENSE, sha256 of trimmed text cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f)
+fixtures (commit path):
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-BitSet.ts.txt
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-Bundle.ts.txt
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-Chunk.ts.txt
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-MagicString.ts.txt
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-MagicStringError.ts.txt
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-SourceMap.ts.txt
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-index.ts.txt
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-Mappings.ts.txt
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-MappingsEncoder.ts.txt
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-Stats.ts.txt
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-getLocator.ts.txt
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-getRelativePath.ts.txt
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-guessIndent.ts.txt
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-isObject.ts.txt
+  b28c233b7b6ee67a96c6eeb9322d5c86e71a9385 peaceai/test/fixtures/m260/magic-IntegrityCheckingMagicString.ts.txt
+  f815ec4e2fd010fc47f09ebb2d1c2935cda0be8c peaceai/test/fixtures/m260/magic-update.test.ts.txt
+license URL: https://github.com/Rich-Harris/magic-string/blob/b28c233b7b6ee67a96c6eeb9322d5c86e71a9385/LICENSE
+---- license text ----
+Copyright 2018 Rich Harris
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+---- end ----
