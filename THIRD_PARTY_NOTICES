@@ -13122,6 +13122,157 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ---- end ----
 ==============================================================================
+repo: vuejs/core
+license: MIT (LICENSE, sha256 of trimmed text e3031e6aa44870ed9ca66a7d4037c5c878053715ba3346167de3d024de99bdfa)
+fixtures (commit path):
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-codeframe.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-cssVars.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-domAttrConfig.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-domTagConfig.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-escapeHtml.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-general.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-globalsAllowList.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-index.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-looseEqual.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-makeMap.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-normalizeProp.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-patchFlags.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-shapeFlags.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-slotFlags.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-toDisplayString.ts.txt
+  e5a217390d1b3be17a76253bbc32f06df2d9b1a7 peaceai/test/fixtures/m265/ve-src-typeUtils.ts.txt
+  6782586546cfe580ef7b5c18d692199d52f13e77 peaceai/test/fixtures/m265/ve-looseEqual.spec.ts.txt
+license URL: https://github.com/vuejs/core/blob/e5a217390d1b3be17a76253bbc32f06df2d9b1a7/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2018-present, Yuxi (Evan) You and Vue contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+==============================================================================
+repo: unjs/unstorage
+license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+fixtures (commit path):
+  2ce0e2323c14db2ff4953fd3d456be2dfb56df69 peaceai/test/fixtures/m265/us-src-index.ts.txt
+  2ce0e2323c14db2ff4953fd3d456be2dfb56df69 peaceai/test/fixtures/m265/us-src-storage.ts.txt
+  2ce0e2323c14db2ff4953fd3d456be2dfb56df69 peaceai/test/fixtures/m265/us-src-types.ts.txt
+  2ce0e2323c14db2ff4953fd3d456be2dfb56df69 peaceai/test/fixtures/m265/us-src-utils.ts.txt
+  2ce0e2323c14db2ff4953fd3d456be2dfb56df69 peaceai/test/fixtures/m265/us-src-_utils.ts.txt
+  2ce0e2323c14db2ff4953fd3d456be2dfb56df69 peaceai/test/fixtures/m265/us-src-_drivers.ts.txt
+  2ce0e2323c14db2ff4953fd3d456be2dfb56df69 peaceai/test/fixtures/m265/us-src-drivers-memory.ts.txt
+  a69b4d39cf72c888b389e68712df71a1af56f59d peaceai/test/fixtures/m265/us-test-memory.test.ts.txt
+  a69b4d39cf72c888b389e68712df71a1af56f59d peaceai/test/fixtures/m265/us-test-utils.ts.txt
+license URL: https://github.com/unjs/unstorage/blob/2ce0e2323c14db2ff4953fd3d456be2dfb56df69/LICENSE
+as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: immerjs/immer
+license: MIT (LICENSE, sha256 of trimmed text 6768b01a4a41e5a49b80a34e0a52e25a00d69a1e4e99c457e579daccb3b4fecc)
+fixtures (commit path):
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-core-current.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-core-finalize.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-core-immerClass.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-core-proxy.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-core-scope.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-immer.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-internal.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-plugins-arrayMethods.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-plugins-mapset.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-plugins-patches.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-types-types-external.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-types-types-internal.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-utils-common.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-utils-env.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-utils-errors.ts.txt
+  75a290e44ba14bd723c8ef8546b6559c8ef3ae88 peaceai/test/fixtures/m265/im-src-utils-plugins.ts.txt
+  182009bfe08d036e969d4455f5052f622087973e peaceai/test/fixtures/m265/im-not-strict-copy.ts.txt
+license URL: https://github.com/immerjs/immer/blob/75a290e44ba14bd723c8ef8546b6559c8ef3ae88/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2017 Michel Weststrate
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: josdejong/jsonrepair
+license: ISC (LICENSE.md, sha256 of trimmed text 47a3cfe317ebc050c5d9d8b83e78ccc4a6b6ae88bdaa4dcbcd0d63802e337fb5)
+fixtures (commit path):
+  1bbc1da22babfd12d3d0fc73e607686b776c79e1 peaceai/test/fixtures/m265/jr-src-index.ts.txt
+  1bbc1da22babfd12d3d0fc73e607686b776c79e1 peaceai/test/fixtures/m265/jr-src-regular-jsonrepair.ts.txt
+  1bbc1da22babfd12d3d0fc73e607686b776c79e1 peaceai/test/fixtures/m265/jr-src-streaming-buffer-InputBuffer.ts.txt
+  1bbc1da22babfd12d3d0fc73e607686b776c79e1 peaceai/test/fixtures/m265/jr-src-streaming-buffer-OutputBuffer.ts.txt
+  1bbc1da22babfd12d3d0fc73e607686b776c79e1 peaceai/test/fixtures/m265/jr-src-streaming-core.ts.txt
+  1bbc1da22babfd12d3d0fc73e607686b776c79e1 peaceai/test/fixtures/m265/jr-src-streaming-stack.ts.txt
+  1bbc1da22babfd12d3d0fc73e607686b776c79e1 peaceai/test/fixtures/m265/jr-src-utils-JSONRepairError.ts.txt
+  1bbc1da22babfd12d3d0fc73e607686b776c79e1 peaceai/test/fixtures/m265/jr-src-utils-stringUtils.ts.txt
+  8d1754c43a769b1801c8845facbaf9d478066a0d peaceai/test/fixtures/m265/jr-index.test.ts.txt
+license URL: https://github.com/josdejong/jsonrepair/blob/1bbc1da22babfd12d3d0fc73e607686b776c79e1/LICENSE.md
+---- license text ----
+The ISC License
+
+Copyright (c) 2020-2026 by Jos de Jong
+
+Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL ISC BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+---- end ----
+==============================================================================
 repo: unjs/std-env
 license: MIT (LICENCE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
 fixtures (commit path):
