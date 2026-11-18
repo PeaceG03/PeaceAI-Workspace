@@ -1,0 +1,160 @@
+{
+  "se": [
+    {
+      "fixture": "se-src-agents.ts.txt",
+      "dest": "src/agents.ts"
+    },
+    {
+      "fixture": "se-src-env.ts.txt",
+      "dest": "src/env.ts"
+    },
+    {
+      "fixture": "se-src-flags.ts.txt",
+      "dest": "src/flags.ts"
+    },
+    {
+      "fixture": "se-src-index.ts.txt",
+      "dest": "src/index.ts"
+    },
+    {
+      "fixture": "se-src-providers.ts.txt",
+      "dest": "src/providers.ts"
+    },
+    {
+      "fixture": "se-src-runtimes.ts.txt",
+      "dest": "src/runtimes.ts"
+    },
+    {
+      "fixture": "se-test-agents.test.ts.txt",
+      "dest": "test/agents.test.ts"
+    }
+  ],
+  "r3": [
+    {
+      "fixture": "r3-src-_escape.ts.txt",
+      "dest": "src/_escape.ts"
+    },
+    {
+      "fixture": "r3-src-_group-delimiters.ts.txt",
+      "dest": "src/_group-delimiters.ts"
+    },
+    {
+      "fixture": "r3-src-_group-names.ts.txt",
+      "dest": "src/_group-names.ts"
+    },
+    {
+      "fixture": "r3-src-_overlap.ts.txt",
+      "dest": "src/_overlap.ts"
+    },
+    {
+      "fixture": "r3-src-_regexp-scan.ts.txt",
+      "dest": "src/_regexp-scan.ts"
+    },
+    {
+      "fixture": "r3-src-_segment-wildcards.ts.txt",
+      "dest": "src/_segment-wildcards.ts"
+    },
+    {
+      "fixture": "r3-src-_subsume.ts.txt",
+      "dest": "src/_subsume.ts"
+    },
+    {
+      "fixture": "r3-src-_trailing-slash.ts.txt",
+      "dest": "src/_trailing-slash.ts"
+    },
+    {
+      "fixture": "r3-src-compiler.ts.txt",
+      "dest": "src/compiler.ts"
+    },
+    {
+      "fixture": "r3-src-context.ts.txt",
+      "dest": "src/context.ts"
+    },
+    {
+      "fixture": "r3-src-index.ts.txt",
+      "dest": "src/index.ts"
+    },
+    {
+      "fixture": "r3-src-object.ts.txt",
+      "dest": "src/object.ts"
+    },
+    {
+      "fixture": "r3-src-operations-_suffix.ts.txt",
+      "dest": "src/operations/_suffix.ts"
+    },
+    {
+      "fixture": "r3-src-operations-_utils.ts.txt",
+      "dest": "src/operations/_utils.ts"
+    },
+    {
+      "fixture": "r3-src-operations-add.ts.txt",
+      "dest": "src/operations/add.ts"
+    },
+    {
+      "fixture": "r3-src-operations-find-all.ts.txt",
+      "dest": "src/operations/find-all.ts"
+    },
+    {
+      "fixture": "r3-src-operations-find.ts.txt",
+      "dest": "src/operations/find.ts"
+    },
+    {
+      "fixture": "r3-src-operations-overlap.ts.txt",
+      "dest": "src/operations/overlap.ts"
+    },
+    {
+      "fixture": "r3-src-operations-remove.ts.txt",
+      "dest": "src/operations/remove.ts"
+    },
+    {
+      "fixture": "r3-src-regexp-to-route.ts.txt",
+      "dest": "src/regexp-to-route.ts"
+    },
+    {
+      "fixture": "r3-src-regexp.ts.txt",
+      "dest": "src/regexp.ts"
+    },
+    {
+      "fixture": "r3-src-route-node-keys.ts.txt",
+      "dest": "src/route-node-keys.ts"
+    },
+    {
+      "fixture": "r3-src-types.ts.txt",
+      "dest": "src/types.ts"
+    },
+    {
+      "fixture": "r3-test-overlap.test.ts.txt",
+      "dest": "test/overlap.test.ts"
+    }
+  ],
+  "cd": [
+    {
+      "fixture": "cd-src-dotenv.ts.txt",
+      "dest": "src/dotenv.ts"
+    },
+    {
+      "fixture": "cd-src-index.ts.txt",
+      "dest": "src/index.ts"
+    },
+    {
+      "fixture": "cd-src-loader.ts.txt",
+      "dest": "src/loader.ts"
+    },
+    {
+      "fixture": "cd-src-types.ts.txt",
+      "dest": "src/types.ts"
+    },
+    {
+      "fixture": "cd-src-update.ts.txt",
+      "dest": "src/update.ts"
+    },
+    {
+      "fixture": "cd-src-watch.ts.txt",
+      "dest": "src/watch.ts"
+    },
+    {
+      "fixture": "cd-test-dotenv.test.ts.txt",
+      "dest": "test/dotenv.test.ts"
+    }
+  ]
+}

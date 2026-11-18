@@ -13272,3 +13272,129 @@ Permission to use, copy, modify, and/or distribute this software for any purpose
 
 THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL ISC BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ---- end ----
+==============================================================================
+repo: unjs/std-env
+license: MIT (LICENCE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+fixtures (commit path):
+  c5b59ac81465a539111821325306ce92038cabb0 peaceai/test/fixtures/m266/se-src-agents.ts.txt
+  c5b59ac81465a539111821325306ce92038cabb0 peaceai/test/fixtures/m266/se-src-env.ts.txt
+  c5b59ac81465a539111821325306ce92038cabb0 peaceai/test/fixtures/m266/se-src-flags.ts.txt
+  c5b59ac81465a539111821325306ce92038cabb0 peaceai/test/fixtures/m266/se-src-index.ts.txt
+  c5b59ac81465a539111821325306ce92038cabb0 peaceai/test/fixtures/m266/se-src-providers.ts.txt
+  c5b59ac81465a539111821325306ce92038cabb0 peaceai/test/fixtures/m266/se-src-runtimes.ts.txt
+  09d5e7805fc9507480ed8914cd21a469a5f70028 peaceai/test/fixtures/m266/se-test-agents.test.ts.txt
+license URL: https://github.com/unjs/std-env/blob/09d5e7805fc9507480ed8914cd21a469a5f70028/LICENCE
+as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---- end ----
+==============================================================================
+repo: unjs/rou3
+license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+fixtures (commit path):
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-_escape.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-_group-delimiters.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-_group-names.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-_overlap.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-_regexp-scan.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-_segment-wildcards.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-_subsume.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-_trailing-slash.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-compiler.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-context.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-index.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-object.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-operations-_suffix.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-operations-_utils.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-operations-add.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-operations-find-all.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-operations-find.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-operations-overlap.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-operations-remove.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-regexp-to-route.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-regexp.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-route-node-keys.ts.txt
+  68fc0173a9f4148988db83fb820e906c805a2ab2 peaceai/test/fixtures/m266/r3-src-types.ts.txt
+  a560d1652f347647216afc78dbc5a88f4c3616b8 peaceai/test/fixtures/m266/r3-test-overlap.test.ts.txt
+license URL: https://github.com/unjs/rou3/blob/a560d1652f347647216afc78dbc5a88f4c3616b8/LICENSE
+as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: unjs/c12
+license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+fixtures (commit path):
+  88c39bac64803d63c435c4c8a24193fa92bf6b53 peaceai/test/fixtures/m266/cd-src-dotenv.ts.txt
+  88c39bac64803d63c435c4c8a24193fa92bf6b53 peaceai/test/fixtures/m266/cd-src-index.ts.txt
+  88c39bac64803d63c435c4c8a24193fa92bf6b53 peaceai/test/fixtures/m266/cd-src-loader.ts.txt
+  88c39bac64803d63c435c4c8a24193fa92bf6b53 peaceai/test/fixtures/m266/cd-src-types.ts.txt
+  88c39bac64803d63c435c4c8a24193fa92bf6b53 peaceai/test/fixtures/m266/cd-src-update.ts.txt
+  88c39bac64803d63c435c4c8a24193fa92bf6b53 peaceai/test/fixtures/m266/cd-src-watch.ts.txt
+  f4bc78672c51ebd12a09d4e8d905b7dc97cf03c8 peaceai/test/fixtures/m266/cd-test-dotenv.test.ts.txt
+license URL: https://github.com/unjs/c12/blob/f4bc78672c51ebd12a09d4e8d905b7dc97cf03c8/LICENSE
+as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
