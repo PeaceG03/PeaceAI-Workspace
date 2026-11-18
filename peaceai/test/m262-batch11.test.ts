@@ -2,11 +2,10 @@
 // Third-party bytes run only inside the practice sandbox.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { pathToFileURL } from "node:url";
 import { digitToken, prefixSourceRoot, repairBatch11, zeroLimit } from "../lib/batch11.ts";
 import { gradeBehavior } from "../lib/specgrade.ts";
 import { practiceSandboxReady, runInPracticeSandbox, visibleNodeBin } from "../lib/practicemine.ts";
@@ -92,65 +91,65 @@ test("a zero query limit returns nothing, and a check that is not find is refuse
   assert.equal(zeroLimit(readFix("dom-querying.ts.txt").replace("export function find(", "export function kept(")), null);
 });
 
-const mutantBase = resolve(repoRoot, "peaceai/test/.capability-mutants");
-mkdirSync(mutantBase, { recursive: true });
-let mutantN = 0;
-async function mutant(guard: string) {
-  const text = readFileSync(resolve(repoRoot, "peaceai/lib/batch11.ts"), "utf8");
-  const lines = text.split("\n");
-  const hits = lines.flatMap((line, i) => (line.includes(`// ${guard}`) ? [i] : []));
-  assert.equal(hits.length, 1, guard);
-  const next = lines.filter((_, i) => i !== hits[0]).join("\n").replace(/from "\.\/([A-Za-z0-9-]+\.ts)"/g, (_m, name: string) => `from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "peaceai/lib", name)).href)}`);
-  const out = join(mutantBase, `m262-${mutantN++}.ts`);
-  writeFileSync(out, next);
-  return import(pathToFileURL(out).href);
-}
-
-test("deleting the batch 11 guards admits the near miss, with bwrap and without it", async () => {
-  const otherDigit = readFix("out-format.ts.txt").replace("export function format(", "export function kept(");
-  assert.equal(digitToken(otherDigit), null);
-  const digit = await mutant("digit-guard:token") as { digitToken: typeof digitToken; repairBatch11: typeof repairBatch11 };
-  assert.match(digit.digitToken(otherDigit) ?? "", /sdijo/);
-  const otherRoot = readFix("trace-resolve.ts.txt").replace("from '@jridgewell/resolve-uri'", "from './kept'");
-  assert.equal(prefixSourceRoot(otherRoot), null);
-  const rooted = await mutant("root-guard:prefix") as { prefixSourceRoot: typeof prefixSourceRoot; repairBatch11: typeof repairBatch11 };
-  assert.match(rooted.prefixSourceRoot(otherRoot) ?? "", /function resolver\(/);
-  const otherLimit = readFix("dom-querying.ts.txt").replace("export function find(", "export function kept(");
-  assert.equal(zeroLimit(otherLimit), null);
-  const limited = await mutant("limit-guard:zero") as { zeroLimit: typeof zeroLimit; repairBatch11: typeof repairBatch11 };
-  assert.match(limited.zeroLimit(otherLimit) ?? "", /limit <= 0/);
+test("undoing the new token fails the published check, in-process and inside bwrap", (t) => {
+  const digits = digitToken(readFix("out-format.ts.txt"));
+  const rooted = prefixSourceRoot(readFix("trace-resolve.ts.txt"));
+  const limited = zeroLimit(readFix("dom-querying.ts.txt"));
+  assert.ok(digits && rooted && limited);
+  const digitFile = digits.replace("[sdijo]", "[sdjo]");
+  const rootFile = rooted
+    .replace("  const prefix = sourceRoot ? sourceRoot + '/' : '';\n\n", "")
+    .replace("resolveUri(prefix + (source || ''), from)", "resolveUri(source || '', from)");
+  const limitFile = limited.replace("    if (limit <= 0) return result;\n", "");
+  assert.equal(digitFile, readFix("out-format.ts.txt"));
+  assert.equal(limitFile, readFix("dom-querying.ts.txt"));
+  assert.equal(rootFile.includes("prefix"), false);
+  assert.notEqual(rootFile, rooted);
   const node = visibleNodeBin();
   assert.ok(node);
-  const root = mkdtempSync(join(tmpdir(), "m262-miss-"));
-  place(root, { "src/format.ts": readFix("out-format.ts.txt"), "run.mjs": "process.exit(0)\n" });
-  gitInit(root);
-  assert.equal(repairBatch11({
-    root, output: "Error: not equal", sourcePattern: "^src/format\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"], bwrap: "/no/such/bwrap",
-  }), null);
-  if (practiceSandboxReady()) {
-    const run = (fn: typeof repairBatch11, dir: string, pattern: string) => fn({
-      root: dir, output: "Error: not equal", sourcePattern: pattern, nodePath: node!, testCommand: [node!, "run.mjs"],
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
+  const nm = runtimeModules();
+  const tsx = [node!, "node_modules/tsx/dist/cli.mjs"];
+  const cases: { files: Record<string, string>; dest: string; cmd: string[]; pattern: string; why: RegExp; restores: RegExp | null }[] = [
+    {
+      files: { "src/format.ts": digitFile, "src/format.test.ts": readFix("out-format.test.ts.txt"), "package.json": `{"type":"module"}\n`, "run.mjs": OUT_RUN },
+      dest: "src/format.ts", cmd: [...tsx, "run.mjs"], pattern: "^src/format\\.ts$", why: /%i/, restores: /\[sdijo\]/,
+    },
+    {
+      files: { "src/resolve.ts": rootFile, "src/strip-filename.ts": readFix("trace-strip-filename.ts.txt"), "test/resolve.test.ts": readFix("trace-resolve.test.ts.txt"), "package.json": `{"type":"module"}\n`, "run.mjs": TRACE_RUN },
+      dest: "src/resolve.ts", cmd: [...tsx, "run.mjs"], pattern: "^src/resolve\\.ts$", why: /foo\/input\.js/, restores: null,
+    },
+    {
+      files: { "src/querying.ts": limitFile, "src/querying.spec.ts": readFix("dom-querying.spec.ts.txt"), "package.json": `{"type":"module"}\n` },
+      dest: "src/querying.ts", cmd: [...tsx, "src/querying.spec.ts"], pattern: "^src/querying\\.ts$", why: /predicateCalls|toEqual|Expected/, restores: /limit <= 0/,
+    },
+  ];
+  for (const row of cases) {
+    const dir = mkdtempSync(join(tmpdir(), "m262-kill-"));
+    place(dir, { ...row.files, ".gitignore": "node_modules\n" });
+    symlinkSync(nm, join(dir, "node_modules"));
+    const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
+    const directOut = `${direct.stdout}\n${direct.stderr}`;
+    assert.notEqual(direct.status, 0, directOut.slice(-800));
+    assert.match(directOut, row.why, row.dest);
+    assert.doesNotMatch(directOut, /ReferenceError|TransformError|SyntaxError/, row.dest);
+    const sand = runInPracticeSandbox(dir, row.cmd, 120_000, { capture: true, nodePath: node, nodeModules: nm });
+    assert.equal(sand.unsafe, false, row.dest);
+    assert.notEqual(sand.code, 0, sand.stdout.slice(-800));
+    assert.match(sand.stdout, row.why, row.dest);
+    gitInit(dir);
+    const repaired = repairBatch11({
+      root: dir, output: sand.stdout, sourcePattern: row.pattern, nodePath: node!, nodeModules: nm, testCommand: row.cmd,
     });
-    const digitDir = mkdtempSync(join(tmpdir(), "m262-digit-"));
-    place(digitDir, { "src/format.ts": otherDigit, "run.mjs": "process.exit(0)\n" });
-    gitInit(digitDir);
-    assert.equal(run(repairBatch11, digitDir, "^src/format\\.ts$"), null);
-    assert.match(run(digit.repairBatch11, digitDir, "^src/format\\.ts$")?.diff ?? "", /sdijo/);
-    const rootDir = mkdtempSync(join(tmpdir(), "m262-root-"));
-    place(rootDir, { "src/resolve.ts": otherRoot, "run.mjs": "process.exit(0)\n" });
-    gitInit(rootDir);
-    assert.equal(run(repairBatch11, rootDir, "^src/resolve\\.ts$"), null);
-    assert.match(run(rooted.repairBatch11, rootDir, "^src/resolve\\.ts$")?.diff ?? "", /resolver/);
-    const limitDir = mkdtempSync(join(tmpdir(), "m262-limit-"));
-    place(limitDir, { "src/querying.ts": otherLimit, "run.mjs": "process.exit(0)\n" });
-    gitInit(limitDir);
-    assert.equal(run(repairBatch11, limitDir, "^src/querying\\.ts$"), null);
-    assert.match(run(limited.repairBatch11, limitDir, "^src/querying\\.ts$")?.diff ?? "", /limit <= 0/);
-    rmSync(digitDir, { recursive: true, force: true });
-    rmSync(rootDir, { recursive: true, force: true });
-    rmSync(limitDir, { recursive: true, force: true });
+    if (row.restores) {
+      assert.ok(repaired, row.dest);
+      assert.match(repaired!.diff, row.restores, row.dest);
+    } else {
+      assert.equal(repaired, null, row.dest);
+    }
+    rmSync(dir, { recursive: true, force: true });
   }
-  rmSync(root, { recursive: true, force: true });
+  rmSync(resolve(nm, ".."), { recursive: true, force: true });
 });
 
 test("an any-cast that only matches one recorded answer is test-only for each batch 11 family", (t) => {
