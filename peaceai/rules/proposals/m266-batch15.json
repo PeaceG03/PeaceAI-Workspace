@@ -1,0 +1,234 @@
+{
+  "schema": "peaceai-m266-batch15:v1",
+  "note": "Pinned copies of unjs/std-env, unjs/rou3, and unjs/c12 at the parent of a published bug fix, plus the test that fix changed. Each notice omits one email address. The code bytes are unmodified.",
+  "examples": [
+    {
+      "repo": "unjs/std-env",
+      "commit": "c5b59ac81465a539111821325306ce92038cabb0",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/se-src-agents.ts.txt"
+    },
+    {
+      "repo": "unjs/std-env",
+      "commit": "c5b59ac81465a539111821325306ce92038cabb0",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/se-src-env.ts.txt"
+    },
+    {
+      "repo": "unjs/std-env",
+      "commit": "c5b59ac81465a539111821325306ce92038cabb0",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/se-src-flags.ts.txt"
+    },
+    {
+      "repo": "unjs/std-env",
+      "commit": "c5b59ac81465a539111821325306ce92038cabb0",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/se-src-index.ts.txt"
+    },
+    {
+      "repo": "unjs/std-env",
+      "commit": "c5b59ac81465a539111821325306ce92038cabb0",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/se-src-providers.ts.txt"
+    },
+    {
+      "repo": "unjs/std-env",
+      "commit": "c5b59ac81465a539111821325306ce92038cabb0",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/se-src-runtimes.ts.txt"
+    },
+    {
+      "repo": "unjs/std-env",
+      "commit": "09d5e7805fc9507480ed8914cd21a469a5f70028",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/se-test-agents.test.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-_escape.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-_group-delimiters.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-_group-names.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-_overlap.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-_regexp-scan.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-_segment-wildcards.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-_subsume.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-_trailing-slash.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-compiler.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-context.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-index.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-object.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-operations-_suffix.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-operations-_utils.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-operations-add.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-operations-find-all.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-operations-find.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-operations-overlap.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-operations-remove.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-regexp-to-route.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-regexp.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-route-node-keys.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "68fc0173a9f4148988db83fb820e906c805a2ab2",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-src-types.ts.txt"
+    },
+    {
+      "repo": "unjs/rou3",
+      "commit": "a560d1652f347647216afc78dbc5a88f4c3616b8",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/r3-test-overlap.test.ts.txt"
+    },
+    {
+      "repo": "unjs/c12",
+      "commit": "88c39bac64803d63c435c4c8a24193fa92bf6b53",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/cd-src-dotenv.ts.txt"
+    },
+    {
+      "repo": "unjs/c12",
+      "commit": "88c39bac64803d63c435c4c8a24193fa92bf6b53",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/cd-src-index.ts.txt"
+    },
+    {
+      "repo": "unjs/c12",
+      "commit": "88c39bac64803d63c435c4c8a24193fa92bf6b53",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/cd-src-loader.ts.txt"
+    },
+    {
+      "repo": "unjs/c12",
+      "commit": "88c39bac64803d63c435c4c8a24193fa92bf6b53",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/cd-src-types.ts.txt"
+    },
+    {
+      "repo": "unjs/c12",
+      "commit": "88c39bac64803d63c435c4c8a24193fa92bf6b53",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/cd-src-update.ts.txt"
+    },
+    {
+      "repo": "unjs/c12",
+      "commit": "88c39bac64803d63c435c4c8a24193fa92bf6b53",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/cd-src-watch.ts.txt"
+    },
+    {
+      "repo": "unjs/c12",
+      "commit": "f4bc78672c51ebd12a09d4e8d905b7dc97cf03c8",
+      "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+      "fixture": "peaceai/test/fixtures/m266/cd-test-dotenv.test.ts.txt"
+    }
+  ]
+}
