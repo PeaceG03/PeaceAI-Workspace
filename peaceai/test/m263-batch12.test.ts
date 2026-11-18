@@ -2,11 +2,10 @@
 // Third-party bytes run only inside the practice sandbox.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { pathToFileURL } from "node:url";
 import { constructorName, literalDollar, plainMerge, repairBatch12 } from "../lib/batch12.ts";
 import { gradeBehavior } from "../lib/specgrade.ts";
 import { practiceSandboxReady, runInPracticeSandbox, visibleNodeBin } from "../lib/practicemine.ts";
@@ -78,65 +77,62 @@ test("a plain value is replaced by an incoming object, and a check that is not d
   assert.equal(plainMerge(readFix("au-object.ts.txt").replace("export function deepMerge<", "export function kept<")), null);
 });
 
-const mutantBase = resolve(repoRoot, "peaceai/test/.capability-mutants");
-mkdirSync(mutantBase, { recursive: true });
-let mutantN = 0;
-async function mutant(guard: string) {
-  const text = readFileSync(resolve(repoRoot, "peaceai/lib/batch12.ts"), "utf8");
-  const lines = text.split("\n");
-  const hits = lines.flatMap((line, i) => (line.includes(`// ${guard}`) ? [i] : []));
-  assert.equal(hits.length, 1, guard);
-  const next = lines.filter((_, i) => i !== hits[0]).join("\n").replace(/from "\.\/([A-Za-z0-9-]+\.ts)"/g, (_m, name: string) => `from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "peaceai/lib", name)).href)}`);
-  const out = join(mutantBase, `m263-${mutantN++}.ts`);
-  writeFileSync(out, next);
-  return import(pathToFileURL(out).href);
-}
-
-test("deleting the batch 12 guards admits the near miss, with bwrap and without it", async () => {
-  const otherDollar = readFix("re-utils.ts.txt").replace("export function injects(", "export function kept(");
-  assert.equal(literalDollar(otherDollar), null);
-  const dollar = await mutant("dollar-guard:literal") as { literalDollar: typeof literalDollar; repairBatch12: typeof repairBatch12 };
-  assert.match(dollar.literalDollar(otherDollar) ?? "", /\(\) => value/);
-  const otherName = readFix("ex-errors.ts.txt").replace("function determineSpecificType(", "function kept(");
-  assert.equal(constructorName(otherName), null);
-  const named = await mutant("name-guard:string") as { constructorName: typeof constructorName; repairBatch12: typeof repairBatch12 };
-  assert.match(named.constructorName(otherName) ?? "", /typeof name === "string"/);
-  const otherMerge = readFix("au-object.ts.txt").replace("export function deepMerge<", "export function kept<");
-  assert.equal(plainMerge(otherMerge), null);
-  const merged = await mutant("merge-guard:plain") as { plainMerge: typeof plainMerge; repairBatch12: typeof repairBatch12 };
-  assert.match(merged.plainMerge(otherMerge) ?? "", /isMergableObject/);
+test("deleting the new line is killed by the published check, in-process and inside bwrap", (t) => {
+  const dollars = literalDollar(readFix("re-utils.ts.txt"));
+  const named = constructorName(readFix("ex-errors.ts.txt"));
+  const merged = plainMerge(readFix("au-object.ts.txt"));
+  assert.ok(dollars && named && merged);
+  const dollarFile = dollars.replace("() => value", "() => \"\"");
+  const nameFile = named.replace("      const name: unknown = value.constructor?.name;\n", "");
+  const mergeFile = merged.replace("          target[key] = source[key]\n", "");
+  assert.notEqual(dollarFile, dollars);
+  assert.notEqual(nameFile, named);
+  assert.notEqual(mergeFile, merged);
   const node = visibleNodeBin();
   assert.ok(node);
-  const root = mkdtempSync(join(tmpdir(), "m263-miss-"));
-  place(root, { "src/utils.ts": readFix("re-utils.ts.txt"), "run.mjs": "process.exit(0)\n" });
-  gitInit(root);
-  assert.equal(repairBatch12({
-    root, output: "Error: not equal", sourcePattern: "^src/utils\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"], bwrap: "/no/such/bwrap",
-  }), null);
-  if (practiceSandboxReady()) {
-    const run = (fn: typeof repairBatch12, dir: string, pattern: string) => fn({
-      root: dir, output: "Error: not equal", sourcePattern: pattern, nodePath: node!, testCommand: [node!, "run.mjs"],
-    });
-    const dollarDir = mkdtempSync(join(tmpdir(), "m263-dollar-"));
-    place(dollarDir, { "src/utils.ts": otherDollar, "run.mjs": "process.exit(0)\n" });
-    gitInit(dollarDir);
-    assert.equal(run(repairBatch12, dollarDir, "^src/utils\\.ts$"), null);
-    assert.match(run(dollar.repairBatch12, dollarDir, "^src/utils\\.ts$")?.diff ?? "", /\(\) => value/);
-    const nameDir = mkdtempSync(join(tmpdir(), "m263-name-"));
-    place(nameDir, { "src/internal/errors.ts": otherName, "run.mjs": "process.exit(0)\n" });
-    gitInit(nameDir);
-    assert.equal(run(repairBatch12, nameDir, "^src/internal/errors\\.ts$"), null);
-    assert.match(run(named.repairBatch12, nameDir, "^src/internal/errors\\.ts$")?.diff ?? "", /typeof name/);
-    const mergeDir = mkdtempSync(join(tmpdir(), "m263-merge-"));
-    place(mergeDir, { "src/object.ts": otherMerge, "run.mjs": "process.exit(0)\n" });
-    gitInit(mergeDir);
-    assert.equal(run(repairBatch12, mergeDir, "^src/object\\.ts$"), null);
-    assert.match(run(merged.repairBatch12, mergeDir, "^src/object\\.ts$")?.diff ?? "", /isMergableObject/);
-    rmSync(dollarDir, { recursive: true, force: true });
-    rmSync(nameDir, { recursive: true, force: true });
-    rmSync(mergeDir, { recursive: true, force: true });
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
+  const tsx = [node!, "node_modules/tsx/dist/cli.mjs"];
+  const uvuModules = runtimeModules("uvu");
+  const vitestModules = runtimeModules("vitest");
+  const cases: { files: Record<string, string>; dest: string; cmd: string[]; pattern: string; modules: string }[] = [
+    {
+      files: {
+        "src/utils.ts": dollarFile, "src/index.ts": readFix("re-index.ts.txt"), "src/legacy.ts": readFix("re-legacy.ts.txt"),
+        "test/utils.ts": readFix("re-test-utils.ts.txt"), "test/index.ts": readFix("re-test-index.ts.txt"), "test/legacy.ts": readFix("re-test-legacy.ts.txt"),
+        "package.json": `{"type":"module"}\n`, "run.mjs": RESOLVE_RUN,
+      },
+      dest: "src/utils.ts", cmd: [...tsx, "run.mjs"], pattern: "^src/utils\\.ts$", modules: uvuModules,
+    },
+    {
+      files: { "src/internal/errors.ts": nameFile, "test/internal-errors.test.ts": readFix("ex-errors.test.ts.txt"), "package.json": `{"type":"module"}\n` },
+      dest: "src/internal/errors.ts", cmd: [...tsx, "test/internal-errors.test.ts"], pattern: "^src/internal/errors\\.ts$", modules: vitestModules,
+    },
+    {
+      files: {
+        "src/object.ts": mergeFile, "src/guards.ts": readFix("au-guards.ts.txt"), "src/is.ts": readFix("au-is.ts.txt"),
+        "src/base.ts": readFix("au-base.ts.txt"), "src/types.ts": readFix("au-types.ts.txt"), "src/object.test.ts": readFix("au-object.test.ts.txt"),
+        "package.json": `{"type":"module"}\n`,
+      },
+      dest: "src/object.ts", cmd: [...tsx, "src/object.test.ts"], pattern: "^src/object\\.ts$", modules: vitestModules,
+    },
+  ];
+  for (const row of cases) {
+    const dir = mkdtempSync(join(tmpdir(), "m263-kill-"));
+    place(dir, { ...row.files, ".gitignore": "node_modules\n" });
+    symlinkSync(row.modules, join(dir, "node_modules"));
+    const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
+    assert.notEqual(direct.status, 0, row.dest);
+    const sand = runInPracticeSandbox(dir, row.cmd, 120_000, { capture: true, nodePath: node, nodeModules: row.modules });
+    assert.equal(sand.unsafe, false, row.dest);
+    assert.notEqual(sand.code, 0, row.dest);
+    gitInit(dir);
+    assert.equal(repairBatch12({
+      root: dir, output: sand.stdout, sourcePattern: row.pattern, nodePath: node!, nodeModules: row.modules, testCommand: row.cmd,
+    }), null, row.dest);
+    rmSync(dir, { recursive: true, force: true });
   }
-  rmSync(root, { recursive: true, force: true });
+  rmSync(resolve(uvuModules, ".."), { recursive: true, force: true });
+  rmSync(resolve(vitestModules, ".."), { recursive: true, force: true });
 });
 
 test("an any-cast that only matches one recorded answer is test-only for each batch 12 family", (t) => {

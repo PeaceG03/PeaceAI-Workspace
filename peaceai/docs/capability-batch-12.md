@@ -18,7 +18,7 @@ Builder-log on the merged batches is 88 pass / 163 fail / 25 unmeasured, of whic
 
 ## Soundness
 
-Each edit is one shape. A subpath with no `$` is still written in place of `*`, because the replacer returns that same string. A class instance whose `constructor.name` is a non-empty string is still described with that name; a symbol, a number, or an empty name is inspected instead, and each accessor runs once. An object merged into an object still recurses; only a value that is not itself an object is replaced. Deleting each guard admits the near miss, with the sandbox and without it. An `any` parameter that returns the recorded answer for every input is `verified_test_only` for `injects`, `determineSpecificType`, and `deepMerge`. A review note that names no function, and `Add <name>` with no value, stay refusals.
+Each edit is one shape. A subpath with no `$` is still written in place of `*`, because the replacer returns that same string. A class instance whose `constructor.name` is a non-empty string is still described with that name; a symbol, a number, or an empty name is inspected instead, and each accessor runs once. An object merged into an object still recurses; only a value that is not itself an object is replaced. Deleting the new line from the repaired file makes the published check fail, in-process and inside the sandbox, so that mutant is rejected. An `any` parameter that returns the recorded answer for every input is `verified_test_only` for `injects`, `determineSpecificType`, and `deepMerge`. A review note that names no function, and `Add <name>` with no value, stay refusals.
 
 ## Dropped
 
