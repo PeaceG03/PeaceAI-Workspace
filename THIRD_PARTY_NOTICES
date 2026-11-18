@@ -12819,6 +12819,196 @@ THIS IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRE
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ---- end ----
 ==============================================================================
+repo: lukeed/resolve.exports
+license: MIT (license, sha256 of trimmed text d0a8e5996a99e9ea88093954e45ab673905d5fdc2d243e45622bc5ff1cf35f36)
+fixtures (commit path):
+  6613167c0b4fc1511fc52171f4f52cb030c928c3 peaceai/test/fixtures/m263/re-utils.ts.txt
+  6613167c0b4fc1511fc52171f4f52cb030c928c3 peaceai/test/fixtures/m263/re-index.ts.txt
+  6613167c0b4fc1511fc52171f4f52cb030c928c3 peaceai/test/fixtures/m263/re-legacy.ts.txt
+  beab56e8e3e70819073d04f3afc2db0216602158 peaceai/test/fixtures/m263/re-test-utils.ts.txt
+  beab56e8e3e70819073d04f3afc2db0216602158 peaceai/test/fixtures/m263/re-test-index.ts.txt
+  beab56e8e3e70819073d04f3afc2db0216602158 peaceai/test/fixtures/m263/re-test-legacy.ts.txt
+license URL: https://github.com/lukeed/resolve.exports/blob/6613167c0b4fc1511fc52171f4f52cb030c928c3/license
+as written: sha256 7a208143301dc2e13cd6805b6d7b1000b819cd112105a0ea389a02b151f4c3d2 (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) Luke Edwards <<email address omitted; see the license URL above>> (lukeed.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+==============================================================================
+repo: unjs/exsolve
+license: MIT (LICENSE, sha256 of trimmed text d63190bc72e36215a5b8e9f6f8e0abdd4821169ef22c98ab6f992f8123eed9ef)
+fixtures (commit path):
+  cad6769e49e58bc5d02fdc6042db01bbfdb85954 peaceai/test/fixtures/m263/ex-errors.ts.txt
+  1e43e570ab236b5c8484323a700630862c8d5a7d peaceai/test/fixtures/m263/ex-errors.test.ts.txt
+license URL: https://github.com/unjs/exsolve/blob/cad6769e49e58bc5d02fdc6042db01bbfdb85954/LICENSE
+as written: sha256 96749af51f7ccfee36d8a18d1e4ee523abed9b42b5c06460df95a72d063ebafc (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <<email address omitted; see the license URL above>>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+This is a derivative work based on:
+<https://github.com/unjs/mlly>.
+
+---
+
+This is a derivative work based on:
+<https://github.com/wooorm/import-meta-resolve>.
+
+Which is licensed:
+
+"""
+(The MIT License)
+
+Copyright (c) 2021 Titus Wormer <mailto:<email address omitted; see the license URL above>>
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+'Software'), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+"""
+
+---
+
+This is a derivative work based on:
+<https://github.com/nodejs/node>.
+
+Which is licensed:
+
+"""
+Copyright Node.js contributors. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+"""
+
+This license applies to parts of Node.js originating from the
+https://github.com/joyent/node repository:
+
+"""
+Copyright Joyent, Inc. and other Node contributors. All rights reserved.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+"""
+---- end ----
+==============================================================================
+repo: antfu/utils
+license: MIT (LICENSE, sha256 of trimmed text 665f7d320f283fea91448fa8fd17e17f129b7aedc9cecdc45d0b7bb0eb9b28cc)
+fixtures (commit path):
+  c7bbe2d06242d8ec026b3e209e6e5d2fc5efe3be peaceai/test/fixtures/m263/au-object.ts.txt
+  c7bbe2d06242d8ec026b3e209e6e5d2fc5efe3be peaceai/test/fixtures/m263/au-guards.ts.txt
+  c7bbe2d06242d8ec026b3e209e6e5d2fc5efe3be peaceai/test/fixtures/m263/au-is.ts.txt
+  c7bbe2d06242d8ec026b3e209e6e5d2fc5efe3be peaceai/test/fixtures/m263/au-base.ts.txt
+  c7bbe2d06242d8ec026b3e209e6e5d2fc5efe3be peaceai/test/fixtures/m263/au-types.ts.txt
+  34cbabfe51a070f6f914ecfebbe4c3aac11e5168 peaceai/test/fixtures/m263/au-object.test.ts.txt
+license URL: https://github.com/antfu/utils/blob/c7bbe2d06242d8ec026b3e209e6e5d2fc5efe3be/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2021 Anthony Fu <https://github.com/antfu>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
 repo: omgovich/colord
 license: MIT (LICENSE.md, sha256 of trimmed text a291da4a4e5f59dc6f1f0c1c8edee42d870bd051733d39ed1bbd99e6ce8586ee)
 fixtures (commit path):
