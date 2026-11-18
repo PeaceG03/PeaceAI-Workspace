@@ -1,0 +1,80 @@
+import {combineStreams, waitForEvent} from '../stream.js';
+import {describe, test, expect} from 'vitest';
+import {EventEmitter} from 'node:events';
+import {Readable} from 'node:stream';
+
+describe('waitForEvent', async () => {
+  test('waits for event to fire', async () => {
+    const emitter = new EventEmitter();
+    const waiter = waitForEvent(emitter, 'foo');
+    emitter.emit('foo');
+    await waiter;
+  });
+});
+
+describe('combineStreams', async () => {
+  test('ends without input streams', async () => {
+    const chunks = [];
+    for await (const chunk of combineStreams([])) {
+      chunks.push(chunk);
+    }
+    expect(chunks).toEqual([]);
+  });
+
+  test('works with a single stream', async () => {
+    const stream = Readable.from(['foo', 'bar']);
+    const combined = combineStreams([stream]);
+    const chunks: string[] = [];
+    combined.on('data', (chunk: Buffer) => {
+      chunks.push(chunk.toString());
+    });
+    await waitForEvent(combined, 'end');
+    expect(chunks).toEqual(['foo', 'bar']);
+  });
+
+  test('works with multiple streams', async () => {
+    const stream0 = Readable.from(['foo']);
+    const stream1 = Readable.from(['bar', 'baz']);
+    const combined = combineStreams([stream0, stream1]);
+    const chunks: string[] = [];
+    combined.on('data', (chunk: Buffer) => {
+      chunks.push(chunk.toString());
+    });
+    await waitForEvent(combined, 'end');
+    expect(chunks).toEqual(['foo', 'bar', 'baz']);
+  });
+
+  test('works with streams without auto-destroy', async () => {
+    const stream0 = Readable.from(['foo'], {autoDestroy: false});
+    const stream1 = Readable.from(['bar', 'baz']);
+    const combined = combineStreams([stream0, stream1]);
+    const chunks: string[] = [];
+    combined.on('data', (chunk: Buffer) => {
+      chunks.push(chunk.toString());
+    });
+    await waitForEvent(combined, 'end');
+    expect(chunks).toEqual(['foo', 'bar', 'baz']);
+  });
+
+  test('works with stream throwing an error', async () => {
+    const stream0 = Readable.from({
+      async *[Symbol.asyncIterator]() {
+        yield 'foo';
+        yield 'baz';
+      }
+    });
+    const stream1 = Readable.from({
+      async *[Symbol.asyncIterator]() {
+        yield 'bar';
+        stream0.destroy(); // stream0 will throw `ERR_STREAM_PREMATURE_CLOSE`
+      }
+    });
+    const combined = combineStreams([stream0, stream1]);
+    const chunks: string[] = [];
+    combined.on('data', (chunk: Buffer) => {
+      chunks.push(chunk.toString());
+    });
+    await waitForEvent(combined, 'end');
+    expect(chunks).toEqual(['foo', 'bar']); // no time for 'baz' before stream0 was destroyed
+  });
+});
