@@ -1,6 +1,6 @@
 # Capability batch 24
 
-Based on `cba73e7d8029fa70e04fc5257e29edd840f362f4`. No credit claim. Held-out diffs and reasons were not opened. The cap stays 20. `specgrade.ts`, `gate.ts`, `scope.ts`, and `capability-job.ts` were not edited. The self-change lane was not edited.
+Based on `4aaff542952dafb8ccd63564cf08b0d97ade75ae`. No credit claim. Held-out diffs and reasons were not opened. The cap stays 20. `specgrade.ts`, `gate.ts`, `scope.ts`, and `capability-job.ts` were not edited. The self-change lane was not edited.
 
 The libraries below were checked by name against the held-out list, the hidden set, the public exclusion list, the practice pairs, and the LM pair lists. None of those names is `unjs/unimport`, `unjs/compatx`, or `tinylibs/tinyexec`. They are also not already a fixture, and they are not the libraries used in batches 1 through 23. `unjs/ufo`, `unjs/defu`, `unjs/scule`, and `unjs/destr` were evaluated and dropped: each is named on the public exclusion list. `unjs/nypm` was evaluated and dropped: its CLI path needs packages already attributed in earlier notice groups. `unjs/perfect-debounce` was evaluated and dropped: the control-method cases fail with a TypeError when methods are absent. `unjs/ofetch` was evaluated and dropped: the published case hits the network. Each notice omits email addresses when the license text contains them and records the hash of that redacted text. A license with no email keeps the hash of the text as written.
 
