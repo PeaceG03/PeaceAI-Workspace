@@ -16,7 +16,6 @@ export const APPROVED_SKILLS = [
 ] as const;
 export const MISSING_SKILLS = [
   "MODIFY_LOGIC", // multi-line logic change in an existing function
-  "PEACEAI_SELF_CHANGE", // PeaceAI's own tooling: protected, never a PeaceAI edit by design
   "OPS_ACTION", // dispatch, close, label, diagnose: no code edit
 ] as const;
 /**
@@ -36,6 +35,7 @@ export const APPROVED_SINCE = {
   TEST_CASE_EXISTING: "2026-10-17 13:42", // public-test-case-existing-v1 (fix-free characterization test), approval PR #367 squash-merged b200b05 (19:42Z); earlier entries keep "missing skill"
   DERIVE_FROM_BEHAVIOR: "2026-10-23 18:22", // public-derive-from-behavior-v1 (new pure function derived from behavior-only examples), approval PR #499 merged 8d60a96 (00:22Z Oct 24); earlier entries keep "missing skill"
   IMPORT_EDIT: "2026-10-15 22:33", // public-import-edit-v2, approval PR #234 merged ba5f2b7 (04:33Z); earlier entries keep "missing skill"
+  PEACEAI_SELF_CHANGE: "2026-11-17 13:48", // Peace approved lane v1 on 2026-11-17 about 13:48 MT. Earlier entries keep "missing skill". Not live-proven until a real repo@sha landing; do not add LIVE_PROVEN_SINCE here.
 } as const;
 /**
  * Skills with a passing live proof from `since` (MT) on. Distinct from APPROVED_SINCE: approval alone is not

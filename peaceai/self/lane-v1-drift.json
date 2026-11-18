@@ -1,0 +1,6 @@
+{
+ "schema": "peaceai-lane-v1-drift:v1",
+ "status": "unchecked",
+ "sourceSha": "",
+ "lines": ["Main was not measured against the baseline. The next self-change stays blocked."]
+}

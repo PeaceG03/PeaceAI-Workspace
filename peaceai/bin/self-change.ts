@@ -30,12 +30,16 @@
 //            candidate). Exit 0 candidate, 2 refused. Never credit (credit2 still refuses).
 //   verify2 --record FILE [--repo DIR]   S2: re-run a generate2 record from its own inputs (task text + base tree) and
 //            check it reproduces field for field (createdAt excepted). Exit 0 reproduced, 3 differs. Never credit.
+//   lane1    --patch FILE --baseline FILE --before FILE --after FILE --drift FILE --parent SHA --head SHA --commits N --out FILE
+//            Lane v1 gate. No candidate code: the diff may touch only generate.ts, test-candidates.ts, derive.ts and
+//            editpropose.ts, the after scorecard must not lose a frozen baseline pass or drop a count, the PR is one
+//            commit whose parent is the recorded last-good, and an unresolved drift blocks it. Writes the scorecard.
 // Exit codes: 0 ok, 2 refused, 3 tests failed / not allowed, 1 usage or error.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { NO_GENERATOR_MARK, PRIVATE_RUNNERS, promotionDecision, selfChangeAllowedHere, STAGE2_FLAG_PATH, STAGE2_LEDGER_DIR, STAGE2_PHASES, stage2LandingDecision, WORKSPACE_REPO, type CommandComment, type SelfChangeRecord, type Stage2LedgerEntry, type Stage2Record, type Stage2RunFacts } from "../lib/selfchange.ts";
+import { decideLaneV1, NO_GENERATOR_MARK, PRIVATE_RUNNERS, promotionDecision, selfChangeAllowedHere, STAGE2_FLAG_PATH, STAGE2_LEDGER_DIR, STAGE2_PHASES, stage2LandingDecision, WORKSPACE_REPO, type CommandComment, type SelfChangeRecord, type Stage2LedgerEntry, type Stage2Record, type Stage2RunFacts } from "../lib/selfchange.ts";
 import { generateStage2Proposal, verifySelfGenRecord, prepareStage2InSandbox, proposeInSandbox, recordStage2, runStage2InSandbox, stage2PrFacts, suiteFilesAt, type Stage2PhaseRun, type Stage2Prep } from "../lib/selfpropose.ts";
 
 const argv = process.argv.slice(2);
@@ -201,4 +205,20 @@ if (mode === "propose") {
   });
   if (bad.length) die(3, `self-change rollback id=${rec.id} INCOMPLETE paths=${bad.length}`);
   die(0, `self-change rollback id=${rec.id} branch=${branch} reverts=${of!.slice(0, 12)} head=${git(repo, "rev-parse", "HEAD").slice(0, 12)} (open it as a normal PR)`);
-} else die(1, "usage: self-change.ts propose|decide|rollback|prepare2|run2|record2|decide2|credit2|generate2|verify2");
+} else if (mode === "lane1") {
+  const need = ["patch", "baseline", "before", "after", "drift", "parent", "head", "commits", "out"] as const;
+  if (need.some((n) => opt(n) === undefined)) die(1, "usage: lane1 --patch FILE --baseline FILE --before FILE --after FILE --drift FILE --parent SHA --head SHA --commits N --out FILE");
+  const commits = Number(opt("commits"));
+  const readJson = (name: string): unknown => {
+    try { return JSON.parse(readFileSync(resolve(opt(name)!), "utf8")); } catch { die(1, `self-change lane1 refused: ${name} is not json`); }
+  };
+  const decision = decideLaneV1({ // lane-guard: lane review stays on the self-change proposal path
+    diff: readFileSync(resolve(opt("patch")!), "utf8"),
+    baseline: readJson("baseline"), before: readJson("before"), after: readJson("after"), drift: readJson("drift"),
+    commits, parentSha: opt("parent")!, headSha: opt("head")!,
+  });
+  const out = resolve(opt("out")!);
+  mkdirSync(dirname(out), { recursive: true });
+  writeFileSync(out, JSON.stringify(decision.scorecard, null, 1) + "\n");
+  die(decision.ok ? 0 : 2, `self-change lane1 ok=${decision.ok} revert=${decision.scorecard.revert || "-"}${decision.refusals.length ? `\n${decision.refusals.map((r) => `  ${r}`).join("\n")}` : ""}`);
+} else die(1, "usage: self-change.ts propose|decide|rollback|prepare2|run2|record2|decide2|credit2|generate2|verify2|lane1");

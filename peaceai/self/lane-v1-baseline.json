@@ -1,0 +1,16 @@
+{
+ "schema": "peaceai-lane-v1-baseline:v1",
+ "locked": false,
+ "sourceSha": "",
+ "lastGoodSha": "",
+ "generatedBy": "tsx peaceai/bin/lane-baseline.ts --capability <capability-report.json> --practice <replay.json> --source-sha <40-hex> --out peaceai/self/lane-v1-baseline.json",
+ "builderLog": { "passing": [], "counts": { "pass": 0, "fail": 0, "unmeasured": 0 } },
+ "practiceDev": {
+  "text": { "passing": [], "counts": { "pass": 0, "fail": 0, "unmeasured": 0 } },
+  "test-as-spec": { "passing": [], "counts": { "pass": 0, "fail": 0, "unmeasured": 0 } }
+ },
+ "heldOut": {
+  "text": { "pass": 0, "fail": 0, "unmeasured": 0 },
+  "test-as-spec": { "pass": 0, "fail": 0, "unmeasured": 0 }
+ }
+}
