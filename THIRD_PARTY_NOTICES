@@ -12309,3 +12309,119 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+==============================================================================
+repo: formkit/tempo
+license: MIT (LICENSE, sha256 of trimmed text 3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025)
+fixtures (commit path):
+  1bef0677abc04b52648b0174d41d37b70087d704 peaceai/test/fixtures/m258/tempo-src-__tests__-parse.spec.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-ap.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-applyOffset.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-common.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-date.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-deviceLocale.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-deviceTZ.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-format.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-formatStr.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-fourDigitYear.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-iso8601.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-monthDays.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-monthEnd.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-offset.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-parse.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-parts.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-range.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-removeOffset.ts.txt
+  c42dff9b47e57abebb95dc0d228965e0d57beede peaceai/test/fixtures/m258/tempo-src-types.ts.txt
+license URL: https://github.com/formkit/tempo/blob/c42dff9b47e57abebb95dc0d228965e0d57beede/LICENSE
+---- license text ----
+Copyright 2023 FormKit Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+---- end ----
+==============================================================================
+repo: toss/es-hangul
+license: MIT (LICENSE, sha256 of trimmed text f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2)
+fixtures (commit path):
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-_internal-constants.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-_internal-hangul.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-_internal-index.ts.txt
+  ea06e349cc06885bbf6c7f92fb047148719b8fd6 peaceai/test/fixtures/m258/hangul-src-core-assemble-assemble.spec.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-assemble-assemble.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-canBeChoseong-canBeChoseong.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-canBeChoseong-index.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-canBeJongseong-canBeJongseong.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-canBeJongseong-index.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-canBeJungseong-canBeJungseong.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-canBeJungseong-index.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-combineCharacter-combineCharacter.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-combineCharacter-index.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-combineVowels-combineVowels.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-combineVowels-index.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-disassemble-disassemble.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-disassemble-index.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-disassembleCompleteCharacter-disassembleCompleteCharacter.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-disassembleCompleteCharacter-index.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-disassembleToGroups-disassembleToGroups.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-disassembleToGroups-index.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-hasBatchim-hasBatchim.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-hasBatchim-index.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-removeLastCharacter-index.ts.txt
+  79e7ef3d62842be05f77963abd6c3b5baa90fb1d peaceai/test/fixtures/m258/hangul-src-core-removeLastCharacter-removeLastCharacter.ts.txt
+license URL: https://github.com/toss/es-hangul/blob/79e7ef3d62842be05f77963abd6c3b5baa90fb1d/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2024 Viva Republica, Inc
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: preactjs/signals
+license: MIT (LICENSE, sha256 of trimmed text 4bdcf115291ba7876ff922e838b895e78f167c575a6092a011ad091b0717fe4f)
+fixtures (commit path):
+  500b7904ebd409471beba7e5ca923a0548ead9ba peaceai/test/fixtures/m258/signals-core-index.ts.txt
+  7528bce29fe457ae5bcff740cece8b703a651681 peaceai/test/fixtures/m258/signals-core.test.tsx.txt
+license URL: https://github.com/preactjs/signals/blob/500b7904ebd409471beba7e5ca923a0548ead9ba/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2022-present Preact Team
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----

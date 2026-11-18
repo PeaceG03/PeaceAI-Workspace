@@ -1,0 +1,282 @@
+{
+  "schema": "peaceai-m258-batch7:v1",
+  "note": "Pinned copies of formkit/tempo, toss/es-hangul, and preactjs/signals at the parent of a published bug fix, plus the test file that fix changed. License text is MIT and contains no email address. The code bytes are unmodified.",
+  "examples": [
+    {
+      "repo": "formkit/tempo",
+      "commit": "1bef0677abc04b52648b0174d41d37b70087d704",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-__tests__-parse.spec.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-ap.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-applyOffset.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-common.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-date.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-deviceLocale.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-deviceTZ.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-format.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-formatStr.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-fourDigitYear.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-iso8601.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-monthDays.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-monthEnd.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-offset.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-parse.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-parts.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-range.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-removeOffset.ts.txt"
+    },
+    {
+      "repo": "formkit/tempo",
+      "commit": "c42dff9b47e57abebb95dc0d228965e0d57beede",
+      "licenseSha256": "3ee99cc59b9bbf2714927c52b84c6f62490e6999e0a5deefef514c0b1e406025",
+      "fixture": "peaceai/test/fixtures/m258/tempo-src-types.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-_internal-constants.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-_internal-hangul.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-_internal-index.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "ea06e349cc06885bbf6c7f92fb047148719b8fd6",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-assemble-assemble.spec.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-assemble-assemble.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-canBeChoseong-canBeChoseong.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-canBeChoseong-index.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-canBeJongseong-canBeJongseong.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-canBeJongseong-index.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-canBeJungseong-canBeJungseong.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-canBeJungseong-index.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-combineCharacter-combineCharacter.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-combineCharacter-index.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-combineVowels-combineVowels.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-combineVowels-index.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-disassemble-disassemble.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-disassemble-index.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-disassembleCompleteCharacter-disassembleCompleteCharacter.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-disassembleCompleteCharacter-index.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-disassembleToGroups-disassembleToGroups.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-disassembleToGroups-index.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-hasBatchim-hasBatchim.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-hasBatchim-index.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-removeLastCharacter-index.ts.txt"
+    },
+    {
+      "repo": "toss/es-hangul",
+      "commit": "79e7ef3d62842be05f77963abd6c3b5baa90fb1d",
+      "licenseSha256": "f0b6cba96e2c6ee48c865097c1c8c91298d8b70fe9a825a8b6703e1bf4d172b2",
+      "fixture": "peaceai/test/fixtures/m258/hangul-src-core-removeLastCharacter-removeLastCharacter.ts.txt"
+    },
+    {
+      "repo": "preactjs/signals",
+      "commit": "500b7904ebd409471beba7e5ca923a0548ead9ba",
+      "licenseSha256": "4bdcf115291ba7876ff922e838b895e78f167c575a6092a011ad091b0717fe4f",
+      "fixture": "peaceai/test/fixtures/m258/signals-core-index.ts.txt"
+    },
+    {
+      "repo": "preactjs/signals",
+      "commit": "7528bce29fe457ae5bcff740cece8b703a651681",
+      "licenseSha256": "4bdcf115291ba7876ff922e838b895e78f167c575a6092a011ad091b0717fe4f",
+      "fixture": "peaceai/test/fixtures/m258/signals-core.test.tsx.txt"
+    }
+  ]
+}
