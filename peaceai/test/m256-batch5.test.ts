@@ -102,12 +102,12 @@ test("a raw argv assignment is coerced, and a file without a type helper is refu
   assert.equal(coerceArgValues(`const strings = new Set<string>();\n  // Add parsed values\n  (out as any)[key] = value;\n`), null);
 });
 
-test("deleting the new line is killed by the published check, in-process and inside bwrap", (t) => {
+test("the parent file fails the published check because the repair is absent, in-process and inside bwrap", (t) => {
   if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
   const node = visibleNodeBin();
   assert.ok(node);
   const nm = runtimeModules();
-  const rows: { dest: string; files: Record<string, string>; pattern: string; cmd: string[]; break: (text: string) => string }[] = [
+  const rows: { dest: string; files: Record<string, string>; pattern: string; cmd: string[]; why: RegExp; restores: RegExp; absent: string }[] = [
     {
       dest: "src/cookie/serialize.ts",
       files: {
@@ -124,7 +124,7 @@ test("deleting the new line is killed by the published check, in-process and ins
       },
       pattern: "^src/.+\\.ts$",
       cmd: [node!, "node_modules/tsx/dist/cli.mjs", "test/cookie-serialize.test.ts"],
-      break: (text) => text.replace('value: String(_val ?? "")', 'value: String(_val ?? "x")'),
+      why: /not same: "foo=null"/, restores: /_val \?\? ""/, absent: '_val ?? ""',
     },
     {
       dest: "src/_path.ts",
@@ -139,7 +139,7 @@ test("deleting the new line is killed by the published check, in-process and ins
       },
       pattern: "^src/.+\\.ts$",
       cmd: [node!, "node_modules/tsx/dist/cli.mjs", "test/index.spec.ts"],
-      break: (text) => text.replace("  let resolvedUNC = false;\n", ""),
+      why: /"\/server\/share\/file" !== "\/\/server\/share\/file"/, restores: /resolvedUNC/, absent: "resolvedUNC",
     },
     {
       dest: "src/_parser.ts",
@@ -150,26 +150,28 @@ test("deleting the new line is killed by the published check, in-process and ins
       },
       pattern: "^src/.+\\.ts$",
       cmd: [node!, "node_modules/tsx/dist/cli.mjs", "test/parser.test.ts"],
-      break: (text) => text.replace('value !== "false"', 'value !== "no"'),
+      why: /not same: "true"/, restores: /value !== "false"/, absent: 'value !== "false"',
     },
   ];
-  const fixers = [coerceCookieValue, preserveUncResolve, coerceArgValues];
-  for (const [i, row] of rows.entries()) {
-    const fixed = fixers[i]!(row.files[row.dest]!);
-    assert.ok(fixed, row.dest);
-    const broken = row.break(fixed!);
-    assert.notEqual(broken, fixed);
+  for (const row of rows) {
+    assert.equal(row.files[row.dest]!.includes(row.absent), false, row.dest);
     const dir = mkdtempSync(join(tmpdir(), "m256-kill-"));
-    place(dir, { ...row.files, [row.dest]: broken, ".gitignore": "node_modules\n" });
+    place(dir, { ...row.files, ".gitignore": "node_modules\n" });
     symlinkSync(nm, join(dir, "node_modules"));
     gitInit(dir);
     const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
-    assert.notEqual(direct.status, 0, row.dest);
+    const directOut = `${direct.stdout}\n${direct.stderr}`;
+    assert.notEqual(direct.status, 0, directOut.slice(-600));
+    assert.match(directOut, row.why, directOut.slice(-600));
+    assert.doesNotMatch(directOut, /ReferenceError|SyntaxError|TransformError/, row.dest);
     const sand = runInPracticeSandbox(dir, row.cmd, 60_000, { capture: true, nodePath: node, nodeModules: nm });
-    assert.notEqual(sand.code, 0, row.dest);
-    assert.equal(repairBatch5({
-      root: dir, output: `${direct.stdout}\n${direct.stderr}`, sourcePattern: row.pattern, nodePath: node!, nodeModules: nm, testCommand: row.cmd,
-    }), null, row.dest);
+    assert.notEqual(sand.code, 0, sand.stdout.slice(-600));
+    assert.match(sand.stdout, row.why, sand.stdout.slice(-600));
+    const repaired = repairBatch5({
+      root: dir, output: directOut, sourcePattern: row.pattern, nodePath: node!, nodeModules: nm, testCommand: row.cmd,
+    });
+    assert.ok(repaired, row.dest);
+    assert.match(repaired!.diff, row.restores, row.dest);
     rmSync(dir, { recursive: true, force: true });
   }
   rmSync(resolve(nm, ".."), { recursive: true, force: true });

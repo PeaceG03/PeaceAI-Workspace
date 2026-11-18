@@ -197,12 +197,12 @@ test("an offset reads fresh measurements, and a cache read that is not getOffset
   assert.equal(freshMeasurements(readFix("virtual-core-index.ts.txt").replace("getOffsetForIndex =", "kept =")), null);
 });
 
-test("deleting the new line is killed by the published check, in-process and inside bwrap", (t) => {
+test("the parent file fails the published check because the repair is absent, in-process and inside bwrap", (t) => {
   if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
   const node = visibleNodeBin();
   assert.ok(node);
   const nm = runtimeModules();
-  const rows: { dest: string; files: Record<string, string>; pattern: string; cmd: string[]; fix: (text: string) => string | null; break: (text: string) => string }[] = [
+  const rows: { dest: string; files: Record<string, string>; pattern: string; cmd: string[]; why: RegExp; restores: RegExp; absent: string }[] = [
     {
       dest: "src/index.ts",
       files: {
@@ -213,8 +213,7 @@ test("deleting the new line is killed by the published check, in-process and ins
       },
       pattern: "^src/.+\\.ts$",
       cmd: [node!, "node_modules/tsx/dist/cli.mjs", "src/index.spec.ts"],
-      fix: quoteAstralName,
-      break: (text) => text.replace('    const [first = ""] = next.value;\n', ""),
+      why: /\/:test/, restores: /const \[first/, absent: 'const [first = ""',
     },
     {
       dest: "index.ts",
@@ -225,8 +224,7 @@ test("deleting the new line is killed by the published check, in-process and ins
       },
       pattern: "index\\.ts$",
       cmd: [node!, "node_modules/tsx/dist/cli.mjs", "index.test.ts"],
-      fix: compareAnyKey,
-      break: (text) => text.replace("if (typeof compareFn !== 'function') {", "if (typeof compareFn === 'boolean') {"),
+      why: /compareFn is not a function/, restores: /!== 'function'/, absent: "!== 'function'",
     },
     {
       dest: "packages/virtual-core/src/index.ts",
@@ -241,26 +239,28 @@ test("deleting the new line is killed by the published check, in-process and ins
       },
       pattern: "^packages/virtual-core/src/.+\\.ts$",
       cmd: [node!, "node_modules/tsx/dist/cli.mjs", "packages/virtual-core/tests/measurement.test.ts"],
-      fix: freshMeasurements,
-      break: (text) => text.replace("this.getMeasurements()[index]", "this.getSize()[index]"),
+      why: /550 !== 700/, restores: /getMeasurements\(\)/, absent: "this.getMeasurements()[index]",
     },
   ];
   for (const row of rows) {
-    const fixed = row.fix(row.files[row.dest]!);
-    assert.ok(fixed, row.dest);
-    const broken = row.break(fixed!);
-    assert.notEqual(broken, fixed);
+    assert.equal(row.files[row.dest]!.includes(row.absent), false, row.dest);
     const dir = mkdtempSync(join(tmpdir(), "m259-kill-"));
-    place(dir, { ...row.files, [row.dest]: broken, ".gitignore": "node_modules\n" });
+    place(dir, { ...row.files, ".gitignore": "node_modules\n" });
     symlinkSync(nm, join(dir, "node_modules"));
     gitInit(dir);
     const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
-    assert.notEqual(direct.status, 0, `${row.dest}\n${direct.stdout}\n${direct.stderr}`.slice(-800));
+    const directOut = `${direct.stdout}\n${direct.stderr}`;
+    assert.notEqual(direct.status, 0, directOut.slice(-700));
+    assert.match(directOut, row.why, directOut.slice(-700));
+    assert.doesNotMatch(directOut, /ReferenceError|SyntaxError|TransformError/, row.dest);
     const sand = runInPracticeSandbox(dir, row.cmd, 120_000, { capture: true, nodePath: node, nodeModules: nm });
-    assert.notEqual(sand.code, 0, row.dest);
-    assert.equal(repairBatch8({
-      root: dir, output: `${direct.stdout}\n${direct.stderr}`, sourcePattern: row.pattern, nodePath: node!, nodeModules: nm, testCommand: row.cmd,
-    }), null, row.dest);
+    assert.notEqual(sand.code, 0, sand.stdout.slice(-700));
+    assert.match(sand.stdout, row.why, sand.stdout.slice(-700));
+    const repaired = repairBatch8({
+      root: dir, output: directOut, sourcePattern: row.pattern, nodePath: node!, nodeModules: nm, testCommand: row.cmd,
+    });
+    assert.ok(repaired, row.dest);
+    assert.match(repaired!.diff, row.restores, row.dest);
     rmSync(dir, { recursive: true, force: true });
   }
   rmSync(resolve(nm, ".."), { recursive: true, force: true });

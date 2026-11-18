@@ -18,7 +18,7 @@ Builder-log on the merged batches is 88 pass / 163 fail / 25 unmeasured, of whic
 
 ## Soundness
 
-Each edit is one shape. The sign is required only when `parse` still has text after `n`, so `even`, `odd`, and a formula that ends at `n` stay valid. The carry is the same 60-bit timestamp, split so a low-half overflow increments the high half; `0` through `4383` at the pinned millisecond do not change `time_mid`. The second walk edits only after the first walk has seen a continuous range, so a throw happens before `chunk.edit`. Deleting the new line from the repaired file makes the published check fail, in-process and inside the sandbox, so that mutant is rejected. An `any` parameter that returns the recorded answer for every input is `verified_test_only` for each family. A review note that names no function, and `Add <name>` with no value, stay refusals.
+Each edit is one shape. The sign is required only when `parse` still has text after `n`, so `even`, `odd`, and a formula that ends at `n` stay valid. The carry is the same 60-bit timestamp, split so a low-half overflow increments the high half; `0` through `4383` at the pinned millisecond do not change `time_mid`. The second walk edits only after the first walk has seen a continuous range, so a throw happens before `chunk.edit`. The unmodified parent fails the published check for that behavior, in-process and inside the sandbox, and the repair puts the token back. An `any` parameter that returns the recorded answer for every input is `verified_test_only` for each family. A review note that names no function, and `Add <name>` with no value, stay refusals.
 
 ## Dropped
 

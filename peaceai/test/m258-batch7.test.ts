@@ -262,7 +262,7 @@ test("a failed model disposes captured effects, and a catch that is not createMo
   assert.equal(disposeFailedModel(readFix("signals-core-index.ts.txt").replace("function createModel<", "function kept<")), null);
 });
 
-test("deleting the new line is killed by the published check, in-process and inside bwrap", (t) => {
+test("the parent file fails the published check because the repair is absent, in-process and inside bwrap", (t) => {
   if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
   const node = visibleNodeBin();
   assert.ok(node);
@@ -270,14 +270,15 @@ test("deleting the new line is killed by the published check, in-process and ins
   const savedTz = process.env.TZ;
   process.env.TZ = "America/New_York";
   try {
-    const rows: { dest: string; pattern: string; cmd: string[]; prep: (dir: string, broken: string) => void; fix: (text: string) => string | null; parent: string; break: (text: string) => string }[] = [
+    const rows: { dest: string; pattern: string; cmd: string[]; prep: (dir: string, body: string) => void; parent: string; absent: string; why: RegExp; restores: RegExp }[] = [
       {
         dest: "src/parse.ts",
         pattern: "^src/.+\\.ts$",
         cmd: [node!, "node_modules/tsx/dist/cli.mjs", "src/__tests__/parse.spec.ts"],
         parent: readFix("tempo-src-parse.ts.txt"),
-        fix: strictDateParse,
-        break: (text) => text.replace("normalizeLiteral(value) !== normalizeLiteral(current.partValue)", "false"),
+        absent: "normalizeLiteral",
+        why: /expected throw/,
+        restores: /normalizeLiteral/,
         prep: (dir, broken) => {
           placePrefix(dir, "tempo-");
           place(dir, { "package.json": `{ "type": "module" }\n`, "src/parse.ts": broken, ".gitignore": "node_modules\n" });
@@ -288,8 +289,9 @@ test("deleting the new line is killed by the published check, in-process and ins
         pattern: "^src/.+\\.ts$",
         cmd: [node!, "node_modules/tsx/dist/cli.mjs", "run.mjs"],
         parent: readFix("hangul-src-_internal-hangul.ts.txt"),
-        fix: keepForeignHangul,
-        break: (text) => text.replace("!isHangulAlphabet(nextCharacter)", "isHangulAlphabet(nextCharacter)"),
+        absent: "!(isHangulCharacter(lastCharacter)",
+        why: /Invalid source character: 1/,
+        restores: /isHangulAlphabet/,
         prep: (dir, broken) => {
           placePrefix(dir, "hangul-");
           place(dir, {
@@ -306,8 +308,9 @@ test("deleting the new line is killed by the published check, in-process and ins
         pattern: "^packages/core/src/.+\\.ts$",
         cmd: [node!, "node_modules/tsx/dist/cli.mjs", "packages/core/test/signal.test.tsx"],
         parent: readFix("signals-core-index.ts.txt"),
-        fix: disposeFailedModel,
-        break: (text) => text.replace("\t\t\t\t\t\t\t\teffects[i].dispose();\n", ""),
+        absent: "effects[i].dispose()",
+        why: /not called|times 0|toHaveBeenCalled/,
+        restores: /effects\[i\]\.dispose\(\)/,
         prep: (dir, broken) => {
           placePrefix(dir, "signals-");
           place(dir, { "package.json": `{ "type": "module" }\n`, "packages/core/src/index.ts": broken, ".gitignore": "node_modules\n" });
@@ -316,21 +319,24 @@ test("deleting the new line is killed by the published check, in-process and ins
       },
     ];
     for (const row of rows) {
-      const fixed = row.fix(row.parent);
-      assert.ok(fixed, row.dest);
-      const broken = row.break(fixed!);
-      assert.notEqual(broken, fixed);
+      assert.equal(row.parent.includes(row.absent), false, row.dest);
       const dir = mkdtempSync(join(tmpdir(), "m258-kill-"));
-      row.prep(dir, broken);
+      row.prep(dir, row.parent);
       symlinkSync(nm, join(dir, "node_modules"));
       gitInit(dir);
       const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
-      assert.notEqual(direct.status, 0, `${row.dest}\n${direct.stdout}\n${direct.stderr}`.slice(-800));
+      const directOut = `${direct.stdout}\n${direct.stderr}`;
+      assert.notEqual(direct.status, 0, directOut.slice(-700));
+      assert.match(directOut, row.why, directOut.slice(-700));
+      assert.doesNotMatch(directOut, /ReferenceError|SyntaxError|TransformError/, row.dest);
       const sand = runInPracticeSandbox(dir, row.cmd, 120_000, { capture: true, nodePath: node, nodeModules: nm });
-      assert.notEqual(sand.code, 0, row.dest);
-      assert.equal(repairBatch7({
-        root: dir, output: `${direct.stdout}\n${direct.stderr}`, sourcePattern: row.pattern, nodePath: node!, nodeModules: nm, testCommand: row.cmd,
-      }), null, row.dest);
+      assert.notEqual(sand.code, 0, sand.stdout.slice(-700));
+      assert.match(sand.stdout, row.why, sand.stdout.slice(-700));
+      const repaired = repairBatch7({
+        root: dir, output: directOut, sourcePattern: row.pattern, nodePath: node!, nodeModules: nm, testCommand: row.cmd,
+      });
+      assert.ok(repaired, row.dest);
+      assert.match(repaired!.diff, row.restores, row.dest);
       rmSync(dir, { recursive: true, force: true });
     }
   } finally {

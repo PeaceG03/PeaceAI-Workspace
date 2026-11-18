@@ -18,7 +18,7 @@ Builder-log on the merged batches is 88 pass / 163 fail / 25 unmeasured, of whic
 
 ## Soundness
 
-Each edit is one shape. The UNC flag is added only when the file already has the UNC regex and the resolve loop, and not when the flag is already there. Argument coercion is added only when the function already classifies options and still assigns the raw value. The cookie edit is added only when `serialize` still does `String(value)` and still treats an object value as the options object. `??` turns only `null` and `undefined` into `""`. `0`, `false`, and a string stay themselves, which is what the published suite checks. Deleting the new line from the repaired file makes the published check fail, in-process and inside the sandbox, so that mutant is rejected. An `any` parameter that returns the recorded empty cookie for every value is `verified_test_only`.
+Each edit is one shape. The UNC flag is added only when the file already has the UNC regex and the resolve loop, and not when the flag is already there. Argument coercion is added only when the function already classifies options and still assigns the raw value. The cookie edit is added only when `serialize` still does `String(value)` and still treats an object value as the options object. `??` turns only `null` and `undefined` into `""`. `0`, `false`, and a string stay themselves, which is what the published suite checks. The unmodified parent fails the published check for that behavior, in-process and inside the sandbox, and the repair puts the token back. An `any` parameter that returns the recorded empty cookie for every value is `verified_test_only`.
 
 ## Dropped
 
