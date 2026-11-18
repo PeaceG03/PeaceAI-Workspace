@@ -92,9 +92,14 @@ test("deleting the new line is killed by the published check, in-process and ins
   const overlap = registrationDedupe(one("r3", "src/operations/overlap.ts"));
   const dotenv = rawInterpolate(one("cd", "src/dotenv.ts"));
   assert.ok(agent && overlap && dotenv);
-  const agentFile = agent.replace("if (opts?.noTTY && process.stdout?.isTTY)", "if (opts?.noTTY && !process.stdout?.isTTY)");
+  const agentFile = agent.replace(
+    "    // When `noTTY` is set, only match in a non-interactive (agent) context. A TTY\n    // means a human is at an integrated terminal, not an agent-spawned subprocess.\n    if (opts?.noTTY && process.stdout?.isTTY) {\n      return false;\n    }\n",
+    "",
+  );
   const overlapFile = overlap.replace("if (routes?.has(entry.route)) continue;", "if (false) continue;");
-  const dotenvFile = dotenv.replace("  const raw = { ...target };\n", "");
+  const dotenvFile = one("cd", "src/dotenv.ts");
+  assert.equal(agentFile.includes("process.stdout?.isTTY"), false);
+  assert.equal(dotenvFile.includes("resolvedValues"), false);
   assert.notEqual(agentFile, agent);
   assert.notEqual(overlapFile, overlap);
   assert.notEqual(dotenvFile, dotenv);
@@ -104,18 +109,21 @@ test("deleting the new line is killed by the published check, in-process and ins
   const tsx = [node!, "node_modules/tsx/dist/cli.mjs"];
   const plain = runtimeModules("none");
   const c12 = runtimeModules("c12");
-  const cases: { files: Record<string, string>; dest: string; body: string; cmd: string[]; pattern: string; modules: string }[] = [
+  const cases: { files: Record<string, string>; dest: string; body: string; cmd: string[]; pattern: string; modules: string; why: RegExp }[] = [
     {
       files: { ...filesOf("se"), "package.json": `{"type":"module"}\n`, "src/agents.ts": agentFile },
       dest: "src/agents.ts", body: agentFile, cmd: [...tsx, "test/agents.test.ts"], pattern: "agents\\.ts$", modules: plain,
+      why: /toEqual \{"name":"kiro"\} vs \{\}/,
     },
     {
       files: { ...filesOf("r3"), "package.json": `{"type":"module"}\n`, "src/operations/overlap.ts": overlapFile },
       dest: "src/operations/overlap.ts", body: overlapFile, cmd: [...tsx, "test/overlap.test.ts"], pattern: "overlap\\.ts$", modules: plain,
+      why: /toHaveLength/,
     },
     {
       files: { ...filesOf("cd"), "package.json": `{"type":"module"}\n`, "src/dotenv.ts": dotenvFile },
       dest: "src/dotenv.ts", body: dotenvFile, cmd: [...tsx, "test/dotenv.test.ts"], pattern: "dotenv\\.ts$", modules: c12,
+      why: /"REF":"\/test"/,
     },
   ];
   for (const row of cases) {
@@ -123,14 +131,28 @@ test("deleting the new line is killed by the published check, in-process and ins
     place(dir, { ...row.files, ".gitignore": "node_modules\n" });
     symlinkSync(row.modules, join(dir, "node_modules"));
     const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
-    assert.notEqual(direct.status, 0, row.dest);
+    const directOut = `${direct.stdout}\n${direct.stderr}`;
+    assert.notEqual(direct.status, 0, directOut.slice(-800));
+    assert.match(directOut, row.why, directOut.slice(-800));
+    assert.doesNotMatch(directOut, /ReferenceError/, row.dest);
+    if (row.dest.endsWith("agents.ts")) {
+      assert.match(directOut, /Error: 1 failed/);
+      assert.doesNotMatch(directOut, /toEqual \{\} vs \{"name":"kiro"\}/);
+    }
     const sand = runInPracticeSandbox(dir, row.cmd, 120_000, { capture: true, nodePath: node, nodeModules: row.modules });
     assert.equal(sand.unsafe, false, row.dest);
-    assert.notEqual(sand.code, 0, row.dest);
+    assert.notEqual(sand.code, 0, sand.stdout.slice(-800));
+    assert.match(sand.stdout, row.why, sand.stdout.slice(-800));
     gitInit(dir);
-    assert.equal(repairBatch15({
+    const repaired = repairBatch15({
       root: dir, output: sand.stdout, sourcePattern: row.pattern, nodePath: node!, nodeModules: row.modules, testCommand: row.cmd,
-    }), null, row.dest);
+    });
+    if (row.dest.endsWith("dotenv.ts")) {
+      assert.ok(repaired, row.dest);
+      assert.match(repaired!.diff, /resolvedValues/, row.dest);
+    } else {
+      assert.equal(repaired, null, row.dest);
+    }
     rmSync(dir, { recursive: true, force: true });
   }
   rmSync(resolve(plain, ".."), { recursive: true, force: true });

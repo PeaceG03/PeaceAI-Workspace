@@ -18,7 +18,7 @@ Builder-log on the merged batches is 88 pass / 163 fail / 25 unmeasured, of whic
 
 ## Soundness
 
-Each edit is one shape. An agent env var other than kiro's `TERM_PROGRAM` is still detected, and kiro with no TTY is still an agent. Two tree entries from one optional route are still one match; two routes that share a data object are both reported. A normal `${VAR}` reference still expands, and an escaped literal stays literal in either key order. Deleting the new line from the repaired file makes the published check fail, in-process and inside the sandbox, so that mutant is rejected. An `any` parameter that returns the recorded answer for every input is `verified_test_only` for `detectAgent`, `routesOverlap`, and `setupDotenv`. A review note that names no function, and `Add <name>` with no value, stay refusals.
+Each edit is one shape. An agent env var other than kiro's `TERM_PROGRAM` is still detected, and kiro with no TTY is still an agent. Two tree entries from one optional route are still one match; two routes that share a data object are both reported. A normal `${VAR}` reference still expands, and an escaped literal stays literal in either key order. Deleting the new TTY `if` makes the published check fail the one kiro-with-a-TTY assertion, in-process and inside the sandbox, and that file is not repaired. The old dotenv source fails the same `REF` value as the parent, and the repair restores `resolvedValues`. Dropping the registration `continue` fails the overlap length check and is not repaired. An `any` parameter that returns the recorded answer for every input is `verified_test_only` for `detectAgent`, `routesOverlap`, and `setupDotenv`. A review note that names no function, and `Add <name>` with no value, stay refusals.
 
 ## Dropped
 
