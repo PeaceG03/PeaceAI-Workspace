@@ -1,0 +1,540 @@
+{
+  "schema": "peaceai-m261-batch10:v1",
+  "note": "Pinned copies of jridgewell/resolve-uri, eemeli/yaml, and fb55/css-what at the parent of a published bug fix, plus the test that fix changed. The resolve-uri and yaml notices omit one email address each. The css-what license has no email, so its pinned hash is the text as written. The code bytes are unmodified.",
+  "examples": [
+    {
+      "repo": "jridgewell/resolve-uri",
+      "commit": "730a61ad423359a972b7935a4304db04983a3251",
+      "licenseSha256": "b8778b155bfde5a28b023a558753c0fa058a52bb9de35c343c250be1bbcdedab",
+      "fixture": "peaceai/test/fixtures/m261/resolve-uri.ts.txt"
+    },
+    {
+      "repo": "jridgewell/resolve-uri",
+      "commit": "1123e444e27f68df245b224be6fa614c255155bc",
+      "licenseSha256": "b8778b155bfde5a28b023a558753c0fa058a52bb9de35c343c250be1bbcdedab",
+      "fixture": "peaceai/test/fixtures/m261/resolve-ipv6.test.js.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--cli.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--compose-collection.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--compose-doc.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--compose-node.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--compose-scalar.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--composer.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--resolve-block-map.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--resolve-block-scalar.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--resolve-block-seq.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--resolve-end.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--resolve-flow-collection.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--resolve-flow-scalar.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--resolve-props.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--util-contains-newline.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--util-empty-scalar-position.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--compose--util-flow-indent-check.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--doc--Document.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--doc--NodeCreator.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--doc--anchors.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--doc--applyReviver.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--doc--directives.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--errors.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--index.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--log.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--nodes--Alias.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--nodes--Pair.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--nodes--Scalar.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--nodes--YAMLMap.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--nodes--YAMLSeq.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--nodes--YAMLSet.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--nodes--addPairToJSMap.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--nodes--identity.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--nodes--toJS.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--nodes--types.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--nodes--util-clone-map-or-set.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--options.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--parse--cst-scalar.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--parse--cst-stringify.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--parse--cst-visit.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--parse--cst.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--parse--lexer.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--parse--line-counter.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--parse--parser.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--public-api.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--Schema.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--common--map.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--common--null.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--common--seq.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--common--string.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--core--bool.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--core--float.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--core--int.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--core--schema.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--json--schema.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--json-schema.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--tags.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--types.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--util-primitive-key.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--binary.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--bool.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--float.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--int.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--merge.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--omap.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--pairs.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--schema.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--set.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--schema--yaml-1.1--timestamp.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--stringify--foldFlowLines.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--stringify--stringify.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--stringify--stringifyComment.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--stringify--stringifyDocument.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--stringify--stringifyNumber.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--stringify--stringifyPair.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--stringify--stringifyString.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--test-events.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--util.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--src--visit.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "6c13734af8dac735644d9c137c6d1c79987d97db",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--tests--_utils.ts.txt"
+    },
+    {
+      "repo": "eemeli/yaml",
+      "commit": "9fa8098fa40e318b260884f3e7b853ddb3b9f023",
+      "licenseSha256": "cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c",
+      "fixture": "peaceai/test/fixtures/m261/yaml--tests--doc--anchors.ts.txt"
+    },
+    {
+      "repo": "fb55/css-what",
+      "commit": "24c3a50fe98a25cb56ed170955b097d4dd1971f6",
+      "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+      "fixture": "peaceai/test/fixtures/m261/css-index.ts.txt"
+    },
+    {
+      "repo": "fb55/css-what",
+      "commit": "24c3a50fe98a25cb56ed170955b097d4dd1971f6",
+      "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+      "fixture": "peaceai/test/fixtures/m261/css-out.json.txt"
+    },
+    {
+      "repo": "fb55/css-what",
+      "commit": "24c3a50fe98a25cb56ed170955b097d4dd1971f6",
+      "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+      "fixture": "peaceai/test/fixtures/m261/css-parse.ts.txt"
+    },
+    {
+      "repo": "fb55/css-what",
+      "commit": "b8420ca444cc569d8ec3950bfa1b5a53945d255d",
+      "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+      "fixture": "peaceai/test/fixtures/m261/css-stringify.spec.ts.txt"
+    },
+    {
+      "repo": "fb55/css-what",
+      "commit": "24c3a50fe98a25cb56ed170955b097d4dd1971f6",
+      "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+      "fixture": "peaceai/test/fixtures/m261/css-stringify.ts.txt"
+    },
+    {
+      "repo": "fb55/css-what",
+      "commit": "24c3a50fe98a25cb56ed170955b097d4dd1971f6",
+      "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+      "fixture": "peaceai/test/fixtures/m261/css-tests.ts.txt"
+    },
+    {
+      "repo": "fb55/css-what",
+      "commit": "24c3a50fe98a25cb56ed170955b097d4dd1971f6",
+      "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+      "fixture": "peaceai/test/fixtures/m261/css-types.ts.txt"
+    }
+  ]
+}
