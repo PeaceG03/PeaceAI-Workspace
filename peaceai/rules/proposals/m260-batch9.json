@@ -1,0 +1,162 @@
+{
+  "schema": "peaceai-m260-batch9:v1",
+  "note": "Pinned copies of fb55/nth-check, uuidjs/uuid, and Rich-Harris/magic-string at the parent of a published bug fix, plus the test that fix changed. License text is BSD-2-Clause or MIT. None of the three license texts contains an email address, so the pinned hash is the text as written. The code bytes are unmodified.",
+  "examples": [
+    {
+      "repo": "fb55/nth-check",
+      "commit": "1df5171127f56e0274e6b22ab6387b5b8a7ae52c",
+      "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+      "fixture": "peaceai/test/fixtures/m260/nth-parse.ts.txt"
+    },
+    {
+      "repo": "fb55/nth-check",
+      "commit": "ecbb7ebf4f421d63fdc90342f9204e21a3cf9186",
+      "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+      "fixture": "peaceai/test/fixtures/m260/nth-rules.ts.txt"
+    },
+    {
+      "repo": "fb55/nth-check",
+      "commit": "ecbb7ebf4f421d63fdc90342f9204e21a3cf9186",
+      "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+      "fixture": "peaceai/test/fixtures/m260/nth-parse.spec.ts.txt"
+    },
+    {
+      "repo": "uuidjs/uuid",
+      "commit": "ea83515d6a4de13a8f9d253fe772752c9dd7bbbe",
+      "licenseSha256": "19f9e00b8c981751ab9b00c64c5d573976c192cbfba0937d8ab48777d38bbf9b",
+      "fixture": "peaceai/test/fixtures/m260/uuid-v1.ts.txt"
+    },
+    {
+      "repo": "uuidjs/uuid",
+      "commit": "ea83515d6a4de13a8f9d253fe772752c9dd7bbbe",
+      "licenseSha256": "19f9e00b8c981751ab9b00c64c5d573976c192cbfba0937d8ab48777d38bbf9b",
+      "fixture": "peaceai/test/fixtures/m260/uuid-rng.ts.txt"
+    },
+    {
+      "repo": "uuidjs/uuid",
+      "commit": "ea83515d6a4de13a8f9d253fe772752c9dd7bbbe",
+      "licenseSha256": "19f9e00b8c981751ab9b00c64c5d573976c192cbfba0937d8ab48777d38bbf9b",
+      "fixture": "peaceai/test/fixtures/m260/uuid-stringify.ts.txt"
+    },
+    {
+      "repo": "uuidjs/uuid",
+      "commit": "ea83515d6a4de13a8f9d253fe772752c9dd7bbbe",
+      "licenseSha256": "19f9e00b8c981751ab9b00c64c5d573976c192cbfba0937d8ab48777d38bbf9b",
+      "fixture": "peaceai/test/fixtures/m260/uuid-parse.ts.txt"
+    },
+    {
+      "repo": "uuidjs/uuid",
+      "commit": "ea83515d6a4de13a8f9d253fe772752c9dd7bbbe",
+      "licenseSha256": "19f9e00b8c981751ab9b00c64c5d573976c192cbfba0937d8ab48777d38bbf9b",
+      "fixture": "peaceai/test/fixtures/m260/uuid-validate.ts.txt"
+    },
+    {
+      "repo": "uuidjs/uuid",
+      "commit": "ea83515d6a4de13a8f9d253fe772752c9dd7bbbe",
+      "licenseSha256": "19f9e00b8c981751ab9b00c64c5d573976c192cbfba0937d8ab48777d38bbf9b",
+      "fixture": "peaceai/test/fixtures/m260/uuid-regex.ts.txt"
+    },
+    {
+      "repo": "uuidjs/uuid",
+      "commit": "6adcc1d81bfaeb653c49d9b7ca7b0579244ae60c",
+      "licenseSha256": "19f9e00b8c981751ab9b00c64c5d573976c192cbfba0937d8ab48777d38bbf9b",
+      "fixture": "peaceai/test/fixtures/m260/uuid-v1.test.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-BitSet.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-Bundle.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-Chunk.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-MagicString.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-MagicStringError.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-SourceMap.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-index.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-Mappings.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-MappingsEncoder.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-Stats.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-getLocator.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-getRelativePath.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-guessIndent.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-isObject.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "b28c233b7b6ee67a96c6eeb9322d5c86e71a9385",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-IntegrityCheckingMagicString.ts.txt"
+    },
+    {
+      "repo": "Rich-Harris/magic-string",
+      "commit": "f815ec4e2fd010fc47f09ebb2d1c2935cda0be8c",
+      "licenseSha256": "cda0745d0629e42687ac3ce75343ed806d0aeacd1619993a41f118112dabfd5f",
+      "fixture": "peaceai/test/fixtures/m260/magic-update.test.ts.txt"
+    }
+  ]
+}
