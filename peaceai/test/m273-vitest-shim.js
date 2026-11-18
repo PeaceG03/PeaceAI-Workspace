@@ -28,6 +28,7 @@ it.only=it
 it.todo=()=>{}
 it.skipIf=(c)=>(n,fn)=>{ if(!c) it(n,fn); };
 it.for=(cases)=>(name,fn)=>{ let i=0; for (const c of cases){ const title=String(name).replaceAll("%s", String(Array.isArray(c)?c[0]:c))+" #"+i; it(title, ()=>fn(c)); i++; } };
+it.each=it.for;
 const test=it;
 function beforeEach(fn){befores.push(fn)}
 function beforeAll(fn){beforeAlls.push(fn)}
@@ -59,7 +60,7 @@ function expect(actual){
     toBeFalsy(){ if(actual) throw new Error("toBeFalsy"); },
     toBeUndefined(){ if(actual!==undefined) throw new Error("toBeUndefined "+JSON.stringify(actual).slice(0,120)); },
     toHaveBeenCalledTimes(n){ const c=actual?.mock?.calls?.length ?? -1; if(c!==n) throw new Error("called "+c+" !== "+n); },
-    toHaveBeenCalledWith(...args){ const calls=actual?.mock?.calls||[]; if(!calls.some(c=>eq(c,args))) throw new Error("calledWith "+JSON.stringify(calls).slice(0,220)+" vs "+JSON.stringify(args).slice(0,180)); },
+    toHaveBeenCalledWith(...args){ const calls=actual?.mock?.calls||[]; const same=(a,b)=>b&&b.__stringContaining?String(a).includes(b.__stringContaining):eq(a,b); if(!calls.some(c=>c.length===args.length&&c.every((v,i)=>same(v,args[i])))) throw new Error("calledWith "+JSON.stringify(calls).slice(0,220)); },
     toHaveBeenCalledOnce(){ const c=actual?.mock?.calls?.length??0; if(c!==1) throw new Error("calledOnce "+c); },
     toMatch(e){ const ok=e instanceof RegExp?e.test(String(actual)):String(actual).includes(String(e)); if(!ok) throw new Error("toMatch "+String(actual).slice(0,180)); },
     toMatchObject(e){ if(!eq(pick(actual,e), e)) throw new Error("toMatchObject "+JSON.stringify(actual).slice(0,240)+" vs "+JSON.stringify(e).slice(0,180)); },
@@ -67,6 +68,8 @@ function expect(actual){
     toHaveLength(n){ if(!actual || actual.length!==n) throw new Error("toHaveLength "+actual?.length+" !== "+n); },
     toBeInstanceOf(ctor){ if(!(actual instanceof ctor)) throw new Error("toBeInstanceOf "+ctor?.name); },
     toBeGreaterThan(n){ if(!(actual>n)) throw new Error("toBeGreaterThan "+actual+" <= "+n); },
+    toBeGreaterThanOrEqual(n){ if(!(actual>=n)) throw new Error("toBeGreaterThanOrEqual "+actual+" < "+n); },
+    toHaveBeenCalled(){ const c=actual?.mock?.calls?.length??0; if(!c) throw new Error("toHaveBeenCalled 0"); },
     toBeLessThan(n){ if(!(actual<n)) throw new Error("toBeLessThan "+actual); },
     toMatchFileSnapshot(file){ const text=readFileSync(snapPath(file),'utf8'); let expected; const loose=text.replace(/,(\s*[}\]])/g,"$1"); try { expected=JSON.parse(loose); } catch { expected=text.replace(/\n$/,""); } if(typeof expected==='string'){ const got=String(actual); if(got!==expected && got+"\n"!==text) throw new Error('snapshot file '+got.slice(0,180)); return; } if(!eq(actual, expected)) throw new Error('snapshot '+JSON.stringify(actual).slice(0,220)+' vs '+JSON.stringify(expected).slice(0,180)); },
     toMatchInlineSnapshot(expected){
@@ -86,6 +89,8 @@ function expect(actual){
     toHaveBeenCalled(){ const n=actual?.mock?.calls?.length||0; if(n) throw new Error("not.toHaveBeenCalled "+n+" "+JSON.stringify(actual.mock.calls[0]).slice(0,180)); },
     toEqual(e){ if(eq(actual,e)) throw new Error("not.toEqual "+JSON.stringify(actual)); },
     toBe(e){ if(Object.is(actual,e)) throw new Error("not.toBe"); },
+    toMatch(e){ const ok=e instanceof RegExp?e.test(String(actual)):String(actual).includes(String(e)); if(ok) throw new Error("not.toMatch"); },
+    toHaveProperty(k){ if(actual!=null && (typeof actual==="object"||typeof actual==="function") && k in actual) throw new Error("not.toHaveProperty "+k); },
     toThrow(){ let err; try { actual(); } catch(x){ err=x; } if(err) throw new Error("not.toThrow "+(err&&err.message||err)); },
   };
   const have={
@@ -100,6 +105,7 @@ function expect(actual){
     toBeTruthy(){ return run(v=>{ if(!v) throw new Error("resolves.toBeTruthy"); }); },
     toMatchObject(e){ return run(v=>{ if(!eq(pick(v,e), e)) throw new Error("resolves.match "+JSON.stringify(v).slice(0,200)); }); },
     toEqual(e){ return run(v=>{ if(!eq(v,e)) throw new Error("resolves.equal "+JSON.stringify(v).slice(0,160)); }); },
+    toContain(e){ return run(v=>{ const ok=typeof v==="string"?v.includes(e):Array.isArray(v)&&v.some(x=>eq(x,e)); if(!ok) throw new Error("resolves.contain"); }); },
   }; }});
   Object.defineProperty(api,"rejects",{get(){ const run=async(check)=>{ let err, failed=true; try { await actual; failed=false; } catch(e){ err=e; } if(!failed) throw new Error("rejects did not reject"); check(err); }; return {
     toThrow(exp){ return run(err=>{ const ok=!exp || (exp instanceof RegExp ? exp.test(String(err)) : String(err).includes(String(exp))); if(!ok) throw new Error("rejects.toThrow "+err); }); },
@@ -142,6 +148,7 @@ function restoreSpies(){ for (const s of spies) s.mockRestore?.(); spies.length=
 const vi={fn:viFn, spyOn, resetAllMocks: restoreSpies, restoreAllMocks: restoreSpies};
 globalThis.describe=describe; globalThis.it=it; globalThis.test=test; globalThis.expect=expect; globalThis.vi=vi;
 globalThis.beforeEach=beforeEach; globalThis.afterAll=afterAll;
+expect.stringContaining=(s)=>({__stringContaining:s});
 export {describe,it,test,expect,vi,beforeEach,beforeAll,afterEach,afterAll};
 const hold = setInterval(() => {}, 1 << 30);
 let tries = 0;

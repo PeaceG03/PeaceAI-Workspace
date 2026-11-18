@@ -6,7 +6,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writ
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { listedPortFirst, onFailIgnore, repairBatch22, wildcardTrailer } from "../lib/batch22.ts";
+import { listedPortFirst, repairBatch22, wildcardTrailer } from "../lib/batch22.ts";
 import { gradeBehavior } from "../lib/specgrade.ts";
 import { practiceSandboxReady, runInPracticeSandbox, visibleNodeBin } from "../lib/practicemine.ts";
 
@@ -80,14 +80,6 @@ test("a wildcard import with a trailer still resolves, and a check that is not t
   assert.equal(wildcardTrailer(source.replace("export async function traceNodeModules", "export async function kept")), null);
 });
 
-test("onFail ignore does not warn, and a check that is not reconcile is refused", () => {
-  const source = text("ju-src-project-manifest.ts.txt");
-  const next = onFailIgnore(source);
-  assert.match(next ?? "", /onFail === "ignore"/);
-  assert.equal(onFailIgnore(next!), null);
-  assert.equal(onFailIgnore(source.replace("export function reconcile", "export function kept")), null);
-});
-
 function rows() {
   const node = visibleNodeBin()!;
   const tsx = [node, "node_modules/tsx/dist/cli.mjs"];
@@ -113,13 +105,6 @@ function rows() {
         cmd: [...tsx, "test/trace.test.ts"],
         why: /imports-wildcard/,
         restores: /nftResolve/,
-      },
-      {
-        files: typed("ju-", false),
-        pattern: "^src/project/manifest\\.ts$",
-        cmd: [...tsx, "test/unit/manifest.test.ts"],
-        why: /devEngines\.packageManager/,
-        restores: /onFail === "ignore"/,
       },
     ],
   };
@@ -158,7 +143,7 @@ test("an any-cast that only matches one recorded answer is test-only for each ba
   if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
   const node = visibleNodeBin();
   assert.ok(node);
-  for (const symbol of ["getPort", "traceNodeModules", "reconcile"]) {
+  for (const symbol of ["getPort", "traceNodeModules"]) {
     const strict = `export function ${symbol}(kind: string): string {\n  return kind === "b" ? "B" : "A";\n}\n`;
     const over = `export function ${symbol}(kind: any): string {\n  return "A";\n}\n`;
     const make = (body: string) => {
@@ -182,7 +167,7 @@ test("an any-cast that only matches one recorded answer is test-only for each ba
   }
 });
 
-test("the published get-port-please, nf3, and jup checks fail before the repair and pass after, inside the sandbox", (t) => {
+test("the published get-port-please and nf3 checks fail before the repair and pass after, inside the sandbox", (t) => {
   if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
   const node = visibleNodeBin();
   assert.ok(node);
