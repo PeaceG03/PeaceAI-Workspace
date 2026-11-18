@@ -1,0 +1,137 @@
+import type { BunFetchHandler, Server, ServerHandler, ServerOptions } from "../types.ts";
+import type { BunServeOptions } from "../types/bun.ts";
+import {
+  fmtURL,
+  printListening,
+  resolvePortAndHost,
+  resolveTLSOptions,
+  createWaitUntil,
+  toNativeResponse,
+} from "../_utils.ts";
+import { wrapFetch } from "../_middleware.ts";
+import { gracefulShutdownPlugin } from "../_plugins.ts";
+import { trustProxyPlugin } from "../_trust-proxy.ts";
+
+export { FastURL } from "../_url.ts";
+export const FastResponse: typeof globalThis.Response = Response;
+
+export function serve(options: ServerOptions): BunServer {
+  return new BunServer(options);
+}
+
+// https://bun.sh/docs/api/http
+
+class BunServer implements Server<BunFetchHandler> {
+  readonly runtime = "bun";
+  readonly options: Server["options"];
+  readonly bun: Server["bun"] = {};
+  readonly serveOptions: BunServeOptions | undefined;
+  readonly fetch: BunFetchHandler;
+  readonly waitUntil?: Server["waitUntil"];
+
+  #wait: ReturnType<typeof createWaitUntil> | undefined;
+
+  constructor(options: ServerOptions) {
+    this.options = { ...options, middleware: [...(options.middleware || [])] };
+
+    for (const plugin of options.plugins || []) plugin(this);
+
+    trustProxyPlugin(this);
+    gracefulShutdownPlugin(this);
+
+    const fetchHandler = wrapFetch(this);
+
+    // Detect running in srvx loader
+    const loader = (globalThis as any).__srvxLoader__ as
+      | ((obj: { server: Server }) => void)
+      | undefined;
+    if (loader) {
+      this.fetch = fetchHandler;
+      loader({ server: this });
+      return;
+    }
+
+    this.#wait = createWaitUntil();
+    this.waitUntil = this.#wait.waitUntil;
+
+    this.fetch = (request, server) => {
+      Object.defineProperties(request, {
+        waitUntil: { value: this.#wait?.waitUntil },
+        runtime: {
+          enumerable: true,
+          value: { name: "bun", bun: { server } },
+        },
+        ip: {
+          enumerable: true,
+          // Configurable so the trustProxy plugin can override it from
+          // `X-Forwarded-For` when the peer is trusted.
+          configurable: true,
+          get() {
+            return server?.requestIP(request as Request)?.address;
+          },
+        },
+      });
+      // Bun.serve strictly requires a native Response; normalize node-adapter
+      // NodeResponse (see toNativeResponse). Cheap no-op for native responses.
+      return toNativeResponse(fetchHandler(request));
+    };
+
+    const tls = resolveTLSOptions(this.options);
+    this.serveOptions = {
+      ...resolvePortAndHost(this.options),
+      reusePort: this.options.reusePort,
+      error: this.options.error,
+      // Forward `maxRequestBodySize` to Bun's native serve option (Bun enforces it,
+      // returning 413 before the handler runs). An explicit `bun.maxRequestBodySize`
+      // below still wins.
+      ...(this.options.maxRequestBodySize !== undefined
+        ? { maxRequestBodySize: this.options.maxRequestBodySize }
+        : {}),
+      ...this.options.bun,
+      tls: {
+        cert: tls?.cert,
+        key: tls?.key,
+        passphrase: tls?.passphrase,
+        ...this.options.bun?.tls,
+      },
+      fetch: this.fetch,
+    };
+
+    if (!options.manual) {
+      this.serve();
+    }
+  }
+
+  serve(): Promise<this> {
+    if (!this.bun!.server) {
+      // `BunServeOptions` is the open shape srvx accepts (see
+      // `src/types/README.md`); `Bun.serve` overloads on mutually exclusive
+      // tcp/unix variants that no single object type satisfies.
+      this.bun!.server = Bun.serve(this.serveOptions as Bun.Serve.Options<any>);
+    }
+    printListening(this.options, this.url);
+    return Promise.resolve(this);
+  }
+
+  get url(): string | undefined {
+    const server = this.bun?.server;
+    if (!server) {
+      return;
+    }
+    // Prefer address since server.url hostname is not reliable
+    const address = (server as { address?: { address: string; family: string; port: number } })
+      .address;
+    if (address) {
+      return fmtURL(address.address, address.port, (server as any).protocol === "https");
+    }
+    return server.url.href;
+  }
+
+  ready(): Promise<this> {
+    return Promise.resolve(this);
+  }
+
+  async close(closeAll?: boolean): Promise<void> {
+    await Promise.all([this.#wait?.wait(), Promise.resolve(this.bun?.server?.stop(closeAll))]);
+  }
+}
