@@ -3,11 +3,10 @@
 // Third-party bytes run only inside the practice sandbox.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { pathToFileURL } from "node:url";
 import { coerceArgValues, coerceCookieValue, preserveUncResolve, repairBatch5 } from "../lib/batch5.ts";
 import { gradeBehavior } from "../lib/specgrade.ts";
 import { practiceSandboxReady, runInPracticeSandbox, visibleNodeBin } from "../lib/practicemine.ts";
@@ -103,65 +102,77 @@ test("a raw argv assignment is coerced, and a file without a type helper is refu
   assert.equal(coerceArgValues(`const strings = new Set<string>();\n  // Add parsed values\n  (out as any)[key] = value;\n`), null);
 });
 
-const mutantBase = resolve(repoRoot, "peaceai/test/.capability-mutants");
-mkdirSync(mutantBase, { recursive: true });
-let mutantN = 0;
-async function mutant(guard: string) {
-  const text = readFileSync(resolve(repoRoot, "peaceai/lib/batch5.ts"), "utf8");
-  const lines = text.split("\n");
-  const hits = lines.flatMap((line, i) => (line.includes(`// ${guard}`) ? [i] : []));
-  assert.equal(hits.length, 1, guard);
-  const next = lines.filter((_, i) => i !== hits[0]).join("\n").replace(/from "\.\/([A-Za-z0-9-]+\.ts)"/g, (_m, name: string) => `from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "peaceai/lib", name)).href)}`);
-  const out = join(mutantBase, `m256-${mutantN++}.ts`);
-  writeFileSync(out, next);
-  return import(pathToFileURL(out).href);
-}
-
-test("deleting the batch 5 guards admits the near miss, with bwrap and without it", async () => {
-  const bareCookie = `const cookie = { value: String(_val) };\nconst options = typeof _val === "object" ? _val : _opts;\n`;
-  assert.equal(coerceCookieValue(bareCookie), null);
-  const opened = await mutant("cookie-guard:serialize") as { coerceCookieValue: typeof coerceCookieValue; repairBatch5: typeof repairBatch5 };
-  assert.match(opened.coerceCookieValue(bareCookie) ?? "", /String\(_val \?\? ""\)/);
-  const fixed = preserveUncResolve(readFix("pathe-path.ts.txt"))!;
-  assert.equal(preserveUncResolve(fixed), null);
-  const unc = await mutant("path-guard:unc") as { preserveUncResolve: typeof preserveUncResolve; repairBatch5: typeof repairBatch5 };
-  assert.ok((unc.preserveUncResolve(fixed) ?? "").split("let resolvedUNC").length > 2);
-  const bare = `const strings = new Set<string>();\n  // Add parsed values\n  (out as any)[key] = value;\n`;
-  assert.equal(coerceArgValues(bare), null);
-  const arg = await mutant("arg-guard:typed") as { coerceArgValues: typeof coerceArgValues; repairBatch5: typeof repairBatch5 };
-  assert.match(arg.coerceArgValues(bare) ?? "", /value !== "false"/);
+test("deleting the new line is killed by the published check, in-process and inside bwrap", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
   const node = visibleNodeBin();
   assert.ok(node);
-  const root = mkdtempSync(join(tmpdir(), "m256-miss-"));
-  place(root, { "src/serialize.ts": readFix("cookie-es-serialize.ts.txt"), "run.mjs": "process.exit(0)\n" });
-  gitInit(root);
-  const missing = repairBatch5({
-    root, output: "Error: not equal", sourcePattern: "^src/.+\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"], bwrap: "/no/such/bwrap",
-  });
-  assert.equal(missing, null);
-  if (practiceSandboxReady()) {
-    const run = (fn: typeof repairBatch5, dir: string) => fn({
-      root: dir, output: "Error: not equal", sourcePattern: "^src/.+\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"],
-    });
-    const cookieDir = mkdtempSync(join(tmpdir(), "m256-cookie-miss-"));
-    place(cookieDir, { "src/serialize.ts": bareCookie, "run.mjs": "process.exit(0)\n" });
-    gitInit(cookieDir);
-    assert.match(run(opened.repairBatch5, cookieDir)?.diff ?? "", /_val \?\? ""/);
-    rmSync(cookieDir, { recursive: true, force: true });
-    const uncDir = mkdtempSync(join(tmpdir(), "m256-unc-miss-"));
-    place(uncDir, { "src/_path.ts": fixed, "run.mjs": "process.exit(0)\n" });
-    gitInit(uncDir);
-    assert.equal(run(repairBatch5, uncDir), null);
-    assert.match(run(unc.repairBatch5, uncDir)?.diff ?? "", /resolvedUNC/);
-    const argDir = mkdtempSync(join(tmpdir(), "m256-arg-miss-"));
-    place(argDir, { "src/_parser.ts": bare, "run.mjs": "process.exit(0)\n" });
-    gitInit(argDir);
-    assert.equal(run(repairBatch5, argDir), null);
-    assert.match(run(arg.repairBatch5, argDir)?.diff ?? "", /value !== "false"/);
-    rmSync(uncDir, { recursive: true, force: true });
-    rmSync(argDir, { recursive: true, force: true });
+  const nm = runtimeModules();
+  const rows: { dest: string; files: Record<string, string>; pattern: string; cmd: string[]; break: (text: string) => string }[] = [
+    {
+      dest: "src/cookie/serialize.ts",
+      files: {
+        "src/_utils.ts": readFix("cookie-es-utils.ts.txt"),
+        "src/index.ts": readFix("cookie-es-index.ts.txt"),
+        "src/cookie/parse.ts": readFix("cookie-es-parse.ts.txt"),
+        "src/cookie/serialize.ts": readFix("cookie-es-serialize.ts.txt"),
+        "src/cookie/types.ts": readFix("cookie-es-types.ts.txt"),
+        "src/set-cookie/parse.ts": readFix("cookie-es-set-parse.ts.txt"),
+        "src/set-cookie/split.ts": readFix("cookie-es-set-split.ts.txt"),
+        "src/set-cookie/types.ts": readFix("cookie-es-set-types.ts.txt"),
+        "test/cookie-serialize.test.ts": readFix("cookie-es-serialize.test.ts.txt"),
+        "package.json": `{ "type": "module" }\n`,
+      },
+      pattern: "^src/.+\\.ts$",
+      cmd: [node!, "node_modules/tsx/dist/cli.mjs", "test/cookie-serialize.test.ts"],
+      break: (text) => text.replace('value: String(_val ?? "")', 'value: String(_val ?? "x")'),
+    },
+    {
+      dest: "src/_path.ts",
+      files: {
+        "src/_path.ts": readFix("pathe-path.ts.txt"),
+        "src/_internal.ts": readFix("pathe-internal.ts.txt"),
+        "src/_glob.ts": readFix("pathe-glob.ts.txt"),
+        "src/index.ts": readFix("pathe-index.ts.txt"),
+        "src/utils.ts": readFix("pathe-utils.ts.txt"),
+        "test/index.spec.ts": readFix("pathe-index.spec.ts.txt"),
+        "package.json": `{ "type": "module" }\n`,
+      },
+      pattern: "^src/.+\\.ts$",
+      cmd: [node!, "node_modules/tsx/dist/cli.mjs", "test/index.spec.ts"],
+      break: (text) => text.replace("  let resolvedUNC = false;\n", ""),
+    },
+    {
+      dest: "src/_parser.ts",
+      files: {
+        "src/_parser.ts": readFix("citty-parser.ts.txt"),
+        "test/parser.test.ts": readFix("citty-parser.test.ts.txt"),
+        "package.json": `{ "type": "module" }\n`,
+      },
+      pattern: "^src/.+\\.ts$",
+      cmd: [node!, "node_modules/tsx/dist/cli.mjs", "test/parser.test.ts"],
+      break: (text) => text.replace('value !== "false"', 'value !== "no"'),
+    },
+  ];
+  const fixers = [coerceCookieValue, preserveUncResolve, coerceArgValues];
+  for (const [i, row] of rows.entries()) {
+    const fixed = fixers[i]!(row.files[row.dest]!);
+    assert.ok(fixed, row.dest);
+    const broken = row.break(fixed!);
+    assert.notEqual(broken, fixed);
+    const dir = mkdtempSync(join(tmpdir(), "m256-kill-"));
+    place(dir, { ...row.files, [row.dest]: broken, ".gitignore": "node_modules\n" });
+    symlinkSync(nm, join(dir, "node_modules"));
+    gitInit(dir);
+    const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
+    assert.notEqual(direct.status, 0, row.dest);
+    const sand = runInPracticeSandbox(dir, row.cmd, 60_000, { capture: true, nodePath: node, nodeModules: nm });
+    assert.notEqual(sand.code, 0, row.dest);
+    assert.equal(repairBatch5({
+      root: dir, output: `${direct.stdout}\n${direct.stderr}`, sourcePattern: row.pattern, nodePath: node!, nodeModules: nm, testCommand: row.cmd,
+    }), null, row.dest);
+    rmSync(dir, { recursive: true, force: true });
   }
-  rmSync(root, { recursive: true, force: true });
+  rmSync(resolve(nm, ".."), { recursive: true, force: true });
 });
 
 test("an any-cast that only matches the recorded null cookie is test-only", (t) => {

@@ -3,11 +3,10 @@
 // that this file does not add personal data. Third-party bytes run only inside the practice sandbox.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { pathToFileURL } from "node:url";
 import { copyHooksBeforeCall, nullTryUse, plainAugmentation, repairBatch6 } from "../lib/batch6.ts";
 import { gradeBehavior } from "../lib/specgrade.ts";
 import { practiceSandboxReady, runInPracticeSandbox, visibleNodeBin } from "../lib/practicemine.ts";
@@ -148,65 +147,80 @@ test("an empty context becomes null, and a return that is not tryUse is refused"
   assert.equal(nullTryUse(bare), null);
 });
 
-const mutantBase = resolve(repoRoot, "peaceai/test/.capability-mutants");
-mkdirSync(mutantBase, { recursive: true });
-let mutantN = 0;
-async function mutant(guard: string) {
-  const text = readFileSync(resolve(repoRoot, "peaceai/lib/batch6.ts"), "utf8");
-  const lines = text.split("\n");
-  const hits = lines.flatMap((line, i) => (line.includes(`// ${guard}`) ? [i] : []));
-  assert.equal(hits.length, 1, guard);
-  const next = lines.filter((_, i) => i !== hits[0]).join("\n").replace(/from "\.\/([A-Za-z0-9-]+\.ts)"/g, (_m, name: string) => `from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "peaceai/lib", name)).href)}`);
-  const out = join(mutantBase, `m257-${mutantN++}.ts`);
-  writeFileSync(out, next);
-  return import(pathToFileURL(out).href);
-}
-
-test("deleting the batch 6 guards admits the near miss, with bwrap and without it", async () => {
-  const other = readFix("knitwork-typescript.ts.txt").replace("export function genAugmentation(", "function kept(");
-  assert.equal(plainAugmentation(other), null);
-  const opened = await mutant("aug-guard:module") as { plainAugmentation: typeof plainAugmentation; repairBatch6: typeof repairBatch6 };
-  assert.match(opened.plainAugmentation(other) ?? "", /false,/);
-  const unspliced = readFix("hookable-core.ts.txt").replaceAll("hooks.splice(index, 1)", "list.copy(index, 1)");
-  assert.equal(copyHooksBeforeCall(unspliced), null);
-  const hook = await mutant("hook-guard:splice") as { copyHooksBeforeCall: typeof copyHooksBeforeCall; repairBatch6: typeof repairBatch6 };
-  assert.match(hook.copyHooksBeforeCall(unspliced) ?? "", /hooks\.slice\(\)/);
-  const unread = readFix("unctx-index.ts.txt").replaceAll("tryUse: () =>", "read: () =>");
-  assert.equal(nullTryUse(unread), null);
-  const ctx = await mutant("ctx-guard:tryuse") as { nullTryUse: typeof nullTryUse; repairBatch6: typeof repairBatch6 };
-  assert.match(ctx.nullTryUse(unread) ?? "", /\?\? null/);
+test("deleting the new line is killed by the published check, in-process and inside bwrap", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
   const node = visibleNodeBin();
   assert.ok(node);
-  const root = mkdtempSync(join(tmpdir(), "m257-miss-"));
-  place(root, { "src/index.ts": readFix("unctx-index.ts.txt"), "run.mjs": "process.exit(0)\n" });
-  gitInit(root);
-  assert.equal(repairBatch6({
-    root, output: "Error: not equal", sourcePattern: "^src/.+\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"], bwrap: "/no/such/bwrap",
-  }), null);
-  if (practiceSandboxReady()) {
-    const run = (fn: typeof repairBatch6, dir: string) => fn({
-      root: dir, output: "Error: not equal", sourcePattern: "^src/.+\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"],
-    });
-    const augDir = mkdtempSync(join(tmpdir(), "m257-aug-"));
-    place(augDir, { "src/typescript.ts": other, "run.mjs": "process.exit(0)\n" });
-    gitInit(augDir);
-    assert.equal(run(repairBatch6, augDir), null);
-    assert.match(run(opened.repairBatch6, augDir)?.diff ?? "", /false,/);
-    const hookDir = mkdtempSync(join(tmpdir(), "m257-hook-"));
-    place(hookDir, { "src/hookable.ts": unspliced, "run.mjs": "process.exit(0)\n" });
-    gitInit(hookDir);
-    assert.equal(run(repairBatch6, hookDir), null);
-    assert.match(run(hook.repairBatch6, hookDir)?.diff ?? "", /hooks\.slice\(\)/);
-    const ctxDir = mkdtempSync(join(tmpdir(), "m257-ctx-"));
-    place(ctxDir, { "src/index.ts": unread, "run.mjs": "process.exit(0)\n" });
-    gitInit(ctxDir);
-    assert.equal(run(repairBatch6, ctxDir), null);
-    assert.match(run(ctx.repairBatch6, ctxDir)?.diff ?? "", /\?\? null/);
-    rmSync(augDir, { recursive: true, force: true });
-    rmSync(hookDir, { recursive: true, force: true });
-    rmSync(ctxDir, { recursive: true, force: true });
+  const nm = runtimeModules();
+  const rows: { dest: string; files: Record<string, string>; pattern: string; cmd: string[]; fix: (text: string) => string | null; break: (text: string) => string }[] = [
+    {
+      dest: "src/typescript.ts",
+      files: {
+        "src/_utils.ts": readFix("knitwork-utils-internal.ts.txt"),
+        "src/esm.ts": readFix("knitwork-esm.ts.txt"),
+        "src/index.ts": readFix("knitwork-index.ts.txt"),
+        "src/object.ts": readFix("knitwork-object.ts.txt"),
+        "src/string.ts": readFix("knitwork-string.ts.txt"),
+        "src/types.ts": readFix("knitwork-types.ts.txt"),
+        "src/typescript.ts": readFix("knitwork-typescript.ts.txt"),
+        "src/utils.ts": readFix("knitwork-utils.ts.txt"),
+        "test/_utils.ts": readFix("knitwork-test-utils.ts.txt"),
+        "test/typescript.test.ts": readFix("knitwork-typescript.test.ts.txt"),
+        "package.json": `{ "type": "module" }\n`,
+      },
+      pattern: "^src/.+\\.ts$",
+      cmd: [node!, "node_modules/tsx/dist/cli.mjs", "test/typescript.test.ts"],
+      fix: plainAugmentation,
+      break: (text) => text.replace("    undefined,\n    undefined,\n    false,\n", "    undefined,\n    undefined,\n    true,\n"),
+    },
+    {
+      dest: "src/hookable.ts",
+      files: {
+        "src/debugger.ts": readFix("hookable-debugger.ts.txt"),
+        "src/hookable.ts": readFix("hookable-core.ts.txt"),
+        "src/index.ts": readFix("hookable-index.ts.txt"),
+        "src/types.ts": readFix("hookable-types.ts.txt"),
+        "src/utils.ts": readFix("hookable-utils.ts.txt"),
+        "test/hookable.test.ts": readFix("hookable-core.test.ts.txt"),
+        "package.json": `{ "type": "module" }\n`,
+      },
+      pattern: "^src/.+\\.ts$",
+      cmd: [node!, "node_modules/tsx/dist/cli.mjs", "test/hookable.test.ts"],
+      fix: copyHooksBeforeCall,
+      break: (text) => text.replace("return callHooks(hooks.slice(), args, 0);", "return callHooks(hooks.slice(1), args, 0);"),
+    },
+    {
+      dest: "src/index.ts",
+      files: {
+        "src/index.ts": readFix("unctx-index.ts.txt"),
+        "test/index.test.ts": readFix("unctx-index.test.ts.txt"),
+        "package.json": `{ "type": "module" }\n`,
+      },
+      pattern: "^src/.+\\.ts$",
+      cmd: [node!, "node_modules/tsx/dist/cli.mjs", "test/index.test.ts"],
+      fix: nullTryUse,
+      break: (text) => text.replace("return _getCurrentInstance() ?? null;", "return _getCurrentInstance() ?? 0;"),
+    },
+  ];
+  for (const row of rows) {
+    const fixed = row.fix(row.files[row.dest]!);
+    assert.ok(fixed, row.dest);
+    const broken = row.break(fixed!);
+    assert.notEqual(broken, fixed);
+    const dir = mkdtempSync(join(tmpdir(), "m257-kill-"));
+    place(dir, { ...row.files, [row.dest]: broken, ".gitignore": "node_modules\n" });
+    symlinkSync(nm, join(dir, "node_modules"));
+    gitInit(dir);
+    const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
+    assert.notEqual(direct.status, 0, row.dest);
+    const sand = runInPracticeSandbox(dir, row.cmd, 60_000, { capture: true, nodePath: node, nodeModules: nm });
+    assert.notEqual(sand.code, 0, row.dest);
+    assert.equal(repairBatch6({
+      root: dir, output: `${direct.stdout}\n${direct.stderr}`, sourcePattern: row.pattern, nodePath: node!, nodeModules: nm, testCommand: row.cmd,
+    }), null, row.dest);
+    rmSync(dir, { recursive: true, force: true });
   }
-  rmSync(root, { recursive: true, force: true });
+  rmSync(resolve(nm, ".."), { recursive: true, force: true });
 });
 
 test("an any-cast that only matches the recorded empty context is test-only", (t) => {

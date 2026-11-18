@@ -2,11 +2,10 @@
 // Third-party bytes run only inside the practice sandbox.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { pathToFileURL } from "node:url";
 import { disposeFailedModel, keepForeignHangul, repairBatch7, strictDateParse } from "../lib/batch7.ts";
 import { gradeBehavior } from "../lib/specgrade.ts";
 import { practiceSandboxReady, runInPracticeSandbox, visibleNodeBin } from "../lib/practicemine.ts";
@@ -263,65 +262,82 @@ test("a failed model disposes captured effects, and a catch that is not createMo
   assert.equal(disposeFailedModel(readFix("signals-core-index.ts.txt").replace("function createModel<", "function kept<")), null);
 });
 
-const mutantBase = resolve(repoRoot, "peaceai/test/.capability-mutants");
-mkdirSync(mutantBase, { recursive: true });
-let mutantN = 0;
-async function mutant(guard: string) {
-  const text = readFileSync(resolve(repoRoot, "peaceai/lib/batch7.ts"), "utf8");
-  const lines = text.split("\n");
-  const hits = lines.flatMap((line, i) => (line.includes(`// ${guard}`) ? [i] : []));
-  assert.equal(hits.length, 1, guard);
-  const next = lines.filter((_, i) => i !== hits[0]).join("\n").replace(/from "\.\/([A-Za-z0-9-]+\.ts)"/g, (_m, name: string) => `from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "peaceai/lib", name)).href)}`);
-  const out = join(mutantBase, `m258-${mutantN++}.ts`);
-  writeFileSync(out, next);
-  return import(pathToFileURL(out).href);
-}
-
-test("deleting the batch 7 guards admits the near miss, with bwrap and without it", async () => {
-  const otherParse = readFix("tempo-src-parse.ts.txt").replace("export function parseParts(", "function kept(");
-  assert.equal(strictDateParse(otherParse), null);
-  const opened = await mutant("parse-guard:literal") as { strictDateParse: typeof strictDateParse; repairBatch7: typeof repairBatch7 };
-  assert.match(opened.strictDateParse(otherParse) ?? "", /normalizeLiteral/);
-  const otherJoin = readFix("hangul-src-_internal-hangul.ts.txt").replace("export function binaryAssemble(", "export function kept(");
-  assert.equal(keepForeignHangul(otherJoin), null);
-  const hangul = await mutant("hangul-guard:assemble") as { keepForeignHangul: typeof keepForeignHangul; repairBatch7: typeof repairBatch7 };
-  assert.match(hangul.keepForeignHangul(otherJoin) ?? "", /isHangulAlphabet\(nextCharacter\)/);
-  const otherModel = readFix("signals-core-index.ts.txt").replace("function createModel<", "function kept<");
-  assert.equal(disposeFailedModel(otherModel), null);
-  const model = await mutant("model-guard:dispose") as { disposeFailedModel: typeof disposeFailedModel; repairBatch7: typeof repairBatch7 };
-  assert.match(model.disposeFailedModel(otherModel) ?? "", /effects\[i\]\.dispose\(\)/);
+test("deleting the new line is killed by the published check, in-process and inside bwrap", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
   const node = visibleNodeBin();
   assert.ok(node);
-  const root = mkdtempSync(join(tmpdir(), "m258-miss-"));
-  place(root, { "src/parse.ts": readFix("tempo-src-parse.ts.txt"), "run.mjs": "process.exit(0)\n" });
-  gitInit(root);
-  assert.equal(repairBatch7({
-    root, output: "Error: not equal", sourcePattern: "^src/.+\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"], bwrap: "/no/such/bwrap",
-  }), null);
-  if (practiceSandboxReady()) {
-    const run = (fn: typeof repairBatch7, dir: string) => fn({
-      root: dir, output: "Error: not equal", sourcePattern: "^src/.+\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"],
-    });
-    const parseDir = mkdtempSync(join(tmpdir(), "m258-parse-"));
-    place(parseDir, { "src/parse.ts": otherParse, "run.mjs": "process.exit(0)\n" });
-    gitInit(parseDir);
-    assert.equal(run(repairBatch7, parseDir), null);
-    assert.match(run(opened.repairBatch7, parseDir)?.diff ?? "", /normalizeLiteral/);
-    const hangulDir = mkdtempSync(join(tmpdir(), "m258-hangul-"));
-    place(hangulDir, { "src/hangul.ts": otherJoin, "run.mjs": "process.exit(0)\n" });
-    gitInit(hangulDir);
-    assert.equal(run(repairBatch7, hangulDir), null);
-    assert.match(run(hangul.repairBatch7, hangulDir)?.diff ?? "", /isHangulAlphabet/);
-    const modelDir = mkdtempSync(join(tmpdir(), "m258-model-"));
-    place(modelDir, { "src/index.ts": otherModel, "run.mjs": "process.exit(0)\n" });
-    gitInit(modelDir);
-    assert.equal(run(repairBatch7, modelDir), null);
-    assert.match(run(model.repairBatch7, modelDir)?.diff ?? "", /dispose\(\)/);
-    rmSync(parseDir, { recursive: true, force: true });
-    rmSync(hangulDir, { recursive: true, force: true });
-    rmSync(modelDir, { recursive: true, force: true });
+  const nm = runtimeModules();
+  const savedTz = process.env.TZ;
+  process.env.TZ = "America/New_York";
+  try {
+    const rows: { dest: string; pattern: string; cmd: string[]; prep: (dir: string, broken: string) => void; fix: (text: string) => string | null; parent: string; break: (text: string) => string }[] = [
+      {
+        dest: "src/parse.ts",
+        pattern: "^src/.+\\.ts$",
+        cmd: [node!, "node_modules/tsx/dist/cli.mjs", "src/__tests__/parse.spec.ts"],
+        parent: readFix("tempo-src-parse.ts.txt"),
+        fix: strictDateParse,
+        break: (text) => text.replace("normalizeLiteral(value) !== normalizeLiteral(current.partValue)", "false"),
+        prep: (dir, broken) => {
+          placePrefix(dir, "tempo-");
+          place(dir, { "package.json": `{ "type": "module" }\n`, "src/parse.ts": broken, ".gitignore": "node_modules\n" });
+        },
+      },
+      {
+        dest: "src/_internal/hangul.ts",
+        pattern: "^src/.+\\.ts$",
+        cmd: [node!, "node_modules/tsx/dist/cli.mjs", "run.mjs"],
+        parent: readFix("hangul-src-_internal-hangul.ts.txt"),
+        fix: keepForeignHangul,
+        break: (text) => text.replace("!isHangulAlphabet(nextCharacter)", "isHangulAlphabet(nextCharacter)"),
+        prep: (dir, broken) => {
+          placePrefix(dir, "hangul-");
+          place(dir, {
+            "package.json": `{ "type": "module" }\n`,
+            "tsconfig.json": `{ "compilerOptions": { "baseUrl": ".", "paths": { "@/*": ["src/*"] }, "module": "ESNext", "moduleResolution": "Bundler", "target": "ES2022" } }\n`,
+            "run.mjs": HANGUL_RUN,
+            "src/_internal/hangul.ts": broken,
+            ".gitignore": "node_modules\n",
+          });
+        },
+      },
+      {
+        dest: "packages/core/src/index.ts",
+        pattern: "^packages/core/src/.+\\.ts$",
+        cmd: [node!, "node_modules/tsx/dist/cli.mjs", "packages/core/test/signal.test.tsx"],
+        parent: readFix("signals-core-index.ts.txt"),
+        fix: disposeFailedModel,
+        break: (text) => text.replace("\t\t\t\t\t\t\t\teffects[i].dispose();\n", ""),
+        prep: (dir, broken) => {
+          placePrefix(dir, "signals-");
+          place(dir, { "package.json": `{ "type": "module" }\n`, "packages/core/src/index.ts": broken, ".gitignore": "node_modules\n" });
+          linkSignals(nm, dir);
+        },
+      },
+    ];
+    for (const row of rows) {
+      const fixed = row.fix(row.parent);
+      assert.ok(fixed, row.dest);
+      const broken = row.break(fixed!);
+      assert.notEqual(broken, fixed);
+      const dir = mkdtempSync(join(tmpdir(), "m258-kill-"));
+      row.prep(dir, broken);
+      symlinkSync(nm, join(dir, "node_modules"));
+      gitInit(dir);
+      const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
+      assert.notEqual(direct.status, 0, `${row.dest}\n${direct.stdout}\n${direct.stderr}`.slice(-800));
+      const sand = runInPracticeSandbox(dir, row.cmd, 120_000, { capture: true, nodePath: node, nodeModules: nm });
+      assert.notEqual(sand.code, 0, row.dest);
+      assert.equal(repairBatch7({
+        root: dir, output: `${direct.stdout}\n${direct.stderr}`, sourcePattern: row.pattern, nodePath: node!, nodeModules: nm, testCommand: row.cmd,
+      }), null, row.dest);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  } finally {
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+    rmSync(resolve(nm, ".."), { recursive: true, force: true });
   }
-  rmSync(root, { recursive: true, force: true });
 });
 
 function overfit(symbol: string) {

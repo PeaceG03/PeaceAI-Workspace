@@ -18,7 +18,7 @@ Builder-log on the merged batches is 88 pass / 163 fail / 25 unmeasured, of whic
 
 ## Soundness
 
-Each edit is one shape. The name is quoted only when `stringifyName` sees text after the name, and the character tested is the first code point, so a BMP character and an astral character follow the same `ID_Continue` rule. A function passed to `useArrayDifference` stays the comparator. `0`, a symbol, and a string become keys. `getOffsetForIndex` is the only call switched to `getMeasurements()`, so other reads of the cache stay as they are. Deleting each guard admits the near miss, with the sandbox and without it. An `any` parameter that returns the recorded answer for every input is `verified_test_only` for each family. A review note that names no function, and `Add <name>` with no value, stay refusals.
+Each edit is one shape. The name is quoted only when `stringifyName` sees text after the name, and the character tested is the first code point, so a BMP character and an astral character follow the same `ID_Continue` rule. A function passed to `useArrayDifference` stays the comparator. `0`, a symbol, and a string become keys. `getOffsetForIndex` is the only call switched to `getMeasurements()`, so other reads of the cache stay as they are. Deleting the new line from the repaired file makes the published check fail, in-process and inside the sandbox, so that mutant is rejected. An `any` parameter that returns the recorded answer for every input is `verified_test_only` for each family. A review note that names no function, and `Add <name>` with no value, stay refusals.
 
 ## Dropped
 

@@ -18,7 +18,7 @@ Builder-log on the merged batches is 88 pass / 163 fail / 25 unmeasured, of whic
 
 ## Soundness
 
-Each edit is one shape. The host alternative matches a bracketed literal only, so a hostname without brackets still stops at `:` and the port stays a port. The merge edit resolves the value that `addToJSMap` already loaded, and it still refuses a source that is not a map. The identifier set grows by those seven characters; a character that was already escaped stays escaped. Deleting each guard admits the near miss, with the sandbox and without it. An `any` parameter that returns the recorded answer for every input is `verified_test_only` for each family. A review note that names no function, and `Add <name>` with no value, stay refusals.
+Each edit is one shape. The host alternative matches a bracketed literal only, so a hostname without brackets still stops at `:` and the port stays a port. The merge edit resolves the value that `addToJSMap` already loaded, and it still refuses a source that is not a map. The identifier set grows by those seven characters; a character that was already escaped stays escaped. Deleting the new line from the repaired file makes the published check fail, in-process and inside the sandbox, so that mutant is rejected. An `any` parameter that returns the recorded answer for every input is `verified_test_only` for each family. A review note that names no function, and `Add <name>` with no value, stay refusals.
 
 ## Dropped
 
