@@ -1,0 +1,275 @@
+import { sendErrorResponse, sendNodeResponseDetached } from "./_node/send.ts";
+import { NodeRequest } from "./_node/request.ts";
+import { isValidAbsoluteForm } from "./_node/url.ts";
+import {
+  fmtURL,
+  resolveTLSOptions,
+  printListening,
+  resolvePortAndHost,
+  createWaitUntil,
+} from "../_utils.ts";
+import { wrapFetch } from "../_middleware.ts";
+import { errorPlugin, gracefulShutdownPlugin } from "../_plugins.ts";
+
+import nodeHTTP from "node:http";
+import nodeHTTPS from "node:https";
+import nodeHTTP2 from "node:http2";
+
+import type NodeHttp from "node:http";
+import type NodeHttps from "node:https";
+import type NodeHttp2 from "node:http2";
+import type {
+  NodeServerRequest,
+  NodeServerResponse,
+  Server,
+  ServerHandler,
+  ServerOptions,
+} from "../types.ts";
+
+export { FastURL } from "../_url.ts";
+export { NodeRequest, patchGlobalRequest } from "./_node/request.ts";
+export { NodeResponse } from "./_node/response.ts";
+export { NodeResponse as FastResponse } from "./_node/response.ts";
+export { sendNodeResponse } from "./_node/send.ts";
+export { fetchNodeHandler } from "./_node/web/fetch.ts";
+export { toNodeHandler, toFetchHandler } from "./_node/adapter.ts";
+
+export type { AdapterMeta } from "./_node/adapter.ts";
+
+export function serve(options: ServerOptions): Server {
+  return new NodeServer(options);
+}
+
+// https://nodejs.org/api/http.html
+// https://nodejs.org/api/https.html
+// https://nodejs.org/api/http2.html
+class NodeServer implements Server {
+  readonly runtime = "node";
+  readonly options: Server["options"];
+  readonly node: Server["node"];
+  readonly serveOptions: ServerOptions["node"];
+  readonly fetch: ServerHandler;
+  readonly waitUntil?: Server["waitUntil"];
+  readonly #isSecure?: boolean;
+
+  #listeningPromise?: Promise<void>;
+  #listenError?: Error;
+  #listenErrorObserved?: boolean;
+
+  #wait?: ReturnType<typeof createWaitUntil>;
+
+  constructor(options: ServerOptions) {
+    this.options = { ...options, middleware: [...(options.middleware || [])] };
+
+    for (const plugin of options.plugins || []) plugin(this);
+    errorPlugin(this);
+
+    const fetchHandler = (this.fetch = wrapFetch(this));
+
+    const handler = (nodeReq: NodeServerRequest, nodeRes: NodeServerResponse) => {
+      // Reject request-targets llhttp admits but that aren't valid Fetch URLs:
+      // anything that isn't origin-form (/...), absolute-form, or the RFC 9110
+      // §7.1 asterisk-form (`*`). Bun/Deno reject these at the parser layer;
+      // Node leaves it to us. (Hot path is a single char compare.)
+      // Absolute-form must additionally name an http(s) authority: srvx is an
+      // origin server, not a proxy, so `file://`/`ftp://`/`zzz://` targets —
+      // which llhttp does deliver — are 400, per RFC 9110 §7.4. The ones that
+      // pass are normalized in `NodeRequestURL` (transport scheme wins, the
+      // authority is `HOST_RE`-validated, userinfo is dropped).
+      const reqUrl = nodeReq.url;
+      if (reqUrl && reqUrl[0] !== "/" && reqUrl !== "*" && !isValidAbsoluteForm(reqUrl)) {
+        nodeRes.statusCode = 400;
+        nodeRes.end();
+        return;
+      }
+      const request = new NodeRequest({
+        req: nodeReq,
+        res: nodeRes,
+        maxRequestBodySize: this.options.maxRequestBodySize,
+        trustProxy: this.options.trustProxy,
+      });
+      request.waitUntil = this.#wait?.waitUntil;
+      let res: Response | Promise<Response>;
+      try {
+        res = fetchHandler(request);
+      } catch (error) {
+        // Sync throw with no `error` option: answer 500 instead of letting it
+        // escape as an `uncaughtException` (see sendErrorResponse).
+        return sendErrorResponse(nodeRes, error, this.options.silent);
+      }
+      // node:http ignores the listener's return value — use the detached
+      // variant to skip the per-response end-tracking Promise.
+      return typeof (res as Promise<Response>)?.then === "function"
+        ? (res as Promise<Response>).then(
+            (resolvedRes) => sendNodeResponseDetached(nodeRes, resolvedRes, this.options.silent),
+            // Rejection handler (not `.catch`) so send failures, which
+            // `sendNodeResponseDetached` already answers, aren't handled twice.
+            (error) => sendErrorResponse(nodeRes, error, this.options.silent),
+          )
+        : sendNodeResponseDetached(nodeRes, res as Response, this.options.silent);
+    };
+
+    this.node = { handler, server: undefined };
+
+    // Detect running in srvx loader
+    const loader = (globalThis as any).__srvxLoader__ as
+      | ((obj: { server: Server }) => void)
+      | undefined;
+    if (loader) {
+      loader({ server: this });
+      return;
+    }
+
+    gracefulShutdownPlugin(this);
+
+    this.#wait = createWaitUntil();
+    this.waitUntil = this.#wait.waitUntil;
+
+    const tls = resolveTLSOptions(this.options);
+    // `node.path` (unix socket / named pipe), `handle` or `fd` pick the listen
+    // target themselves. Node prefers `port` over `path` when both are given,
+    // so leave the `port`/`host` keys out entirely (`port: undefined` still
+    // means a random port to Node).
+    const nodeListen = this.options.node as { path?: string; handle?: unknown; fd?: number };
+    const hasListenTarget =
+      nodeListen?.path != null || nodeListen?.handle != null || nodeListen?.fd != null;
+    let portAndHost: { port: number; host: string | undefined } | undefined;
+    if (!hasListenTarget) {
+      const { port, hostname: host } = resolvePortAndHost(this.options);
+      portAndHost = { port, host };
+    }
+    this.serveOptions = {
+      ...portAndHost,
+      exclusive: !this.options.reusePort,
+      // Enable SO_REUSEPORT for cross-process port sharing (Node >= 22.12).
+      // Older Node versions ignore this option; unsupported platforms throw.
+      reusePort: this.options.reusePort,
+      ...tls,
+      ...this.options.node,
+    };
+
+    // prettier-ignore
+    let server: NodeHttp.Server | NodeHttps.Server | NodeHttp2.Http2SecureServer;
+
+    // prettier-ignore
+    this.#isSecure = !!(this.serveOptions as { cert?: string }).cert && this.options.protocol !== "http";
+    const isHttp2 = this.options.node?.http2 ?? this.#isSecure;
+
+    if (isHttp2) {
+      if (this.#isSecure) {
+        server = nodeHTTP2.createSecureServer({ allowHTTP1: true, ...this.serveOptions }, handler);
+      } else {
+        throw new Error("node.http2 option requires tls certificate!");
+      }
+    } else if (this.#isSecure) {
+      server = nodeHTTPS.createServer(this.serveOptions as NodeHttps.ServerOptions, handler);
+    } else {
+      server = nodeHTTP.createServer(this.serveOptions as NodeHttp.ServerOptions, handler);
+    }
+
+    this.node.server = server;
+
+    if (!options.manual) {
+      // Auto-listen: the constructor is the caller, so there is nobody for this
+      // rejection to reach. `ready()` is the documented way to observe it
+      // (`serve()` never throws; `ready()` rejects) but nothing forces a caller
+      // to await it -- and a failed listen leaves no open handle, so a bare
+      // `serve({ port })` would otherwise exit 0 without a word, or keep running
+      // with a dead server. Report it unless `ready()` has claimed it.
+      this.serve().catch((error) => this.#reportUnobservedListenError(error));
+    }
+  }
+
+  /**
+   * Last-resort reporting for a listen failure nobody is waiting on.
+   *
+   * A `ready()` chained synchronously after `serve()` -- the common shape --
+   * always wins the race, since the `error` event cannot fire before the
+   * constructor returns. A `ready()` awaited later still rejects; it just also
+   * gets this log, which is the safe way round.
+   */
+  #reportUnobservedListenError(error: unknown): void {
+    if (this.#listenErrorObserved) {
+      return;
+    }
+    // `silent` gates the adapter's error logs (see `_node/send.ts`).
+    if (!this.options.silent) {
+      console.error("[srvx] Failed to start server:", error);
+    }
+    // The server is dead; don't let the process report success on the way out.
+    const process = globalThis.process;
+    if (process && !process.exitCode) {
+      process.exitCode = 1;
+    }
+  }
+
+  serve(): Promise<this> {
+    if (this.#listeningPromise) {
+      return this.#listeningPromise.then(() => this);
+    }
+
+    const server = this.node?.server;
+    if (!server) {
+      return Promise.reject(new Error("Server not initialized"));
+    }
+
+    this.#listenError = undefined;
+    this.#listeningPromise = new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => {
+        server.off("listening", onListening);
+        this.#listenError = error;
+        this.#listeningPromise = undefined;
+        reject(error);
+      };
+
+      const onListening = () => {
+        server.off("error", onError);
+        printListening(this.options, this.url);
+        resolve();
+      };
+
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(this.serveOptions);
+    });
+
+    return this.#listeningPromise.then(() => this);
+  }
+
+  get url() {
+    const addr = this.node?.server?.address();
+    if (!addr) {
+      return;
+    }
+
+    return typeof addr === "string"
+      ? addr /* socket */
+      : fmtURL(addr.address, addr.port, this.#isSecure);
+  }
+
+  ready(): Promise<Server> {
+    // Calling `ready()` is the caller taking responsibility for the outcome,
+    // which switches off `#reportUnobservedListenError`.
+    this.#listenErrorObserved = true;
+    if (this.#listenError) {
+      return Promise.reject(this.#listenError);
+    }
+    return Promise.resolve(this.#listeningPromise).then(() => this);
+  }
+
+  async close(closeAll?: boolean): Promise<void> {
+    await Promise.all([
+      this.#wait?.wait(),
+      new Promise<void>((resolve, reject) => {
+        const server = this.node?.server;
+        if (server && closeAll && "closeAllConnections" in server) {
+          server.closeAllConnections();
+        }
+        if (!server || !server.listening) {
+          return resolve();
+        }
+        server.close((error?: Error) => (error ? reject(error) : resolve()));
+      }),
+    ]);
+  }
+}
