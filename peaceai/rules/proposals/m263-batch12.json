@@ -1,0 +1,90 @@
+{
+  "schema": "peaceai-m263-batch12:v1",
+  "note": "Pinned copies of lukeed/resolve.exports, unjs/exsolve, and antfu/utils at the parent of a published bug fix, plus the test that fix changed. The resolve.exports and exsolve notices omit one email address each. The antfu/utils license has no email, so its pinned hash is the text as written. The code bytes are unmodified.",
+  "examples": [
+    {
+      "repo": "lukeed/resolve.exports",
+      "commit": "6613167c0b4fc1511fc52171f4f52cb030c928c3",
+      "licenseSha256": "d0a8e5996a99e9ea88093954e45ab673905d5fdc2d243e45622bc5ff1cf35f36",
+      "fixture": "peaceai/test/fixtures/m263/re-utils.ts.txt"
+    },
+    {
+      "repo": "lukeed/resolve.exports",
+      "commit": "6613167c0b4fc1511fc52171f4f52cb030c928c3",
+      "licenseSha256": "d0a8e5996a99e9ea88093954e45ab673905d5fdc2d243e45622bc5ff1cf35f36",
+      "fixture": "peaceai/test/fixtures/m263/re-index.ts.txt"
+    },
+    {
+      "repo": "lukeed/resolve.exports",
+      "commit": "6613167c0b4fc1511fc52171f4f52cb030c928c3",
+      "licenseSha256": "d0a8e5996a99e9ea88093954e45ab673905d5fdc2d243e45622bc5ff1cf35f36",
+      "fixture": "peaceai/test/fixtures/m263/re-legacy.ts.txt"
+    },
+    {
+      "repo": "lukeed/resolve.exports",
+      "commit": "beab56e8e3e70819073d04f3afc2db0216602158",
+      "licenseSha256": "d0a8e5996a99e9ea88093954e45ab673905d5fdc2d243e45622bc5ff1cf35f36",
+      "fixture": "peaceai/test/fixtures/m263/re-test-utils.ts.txt"
+    },
+    {
+      "repo": "lukeed/resolve.exports",
+      "commit": "beab56e8e3e70819073d04f3afc2db0216602158",
+      "licenseSha256": "d0a8e5996a99e9ea88093954e45ab673905d5fdc2d243e45622bc5ff1cf35f36",
+      "fixture": "peaceai/test/fixtures/m263/re-test-index.ts.txt"
+    },
+    {
+      "repo": "lukeed/resolve.exports",
+      "commit": "beab56e8e3e70819073d04f3afc2db0216602158",
+      "licenseSha256": "d0a8e5996a99e9ea88093954e45ab673905d5fdc2d243e45622bc5ff1cf35f36",
+      "fixture": "peaceai/test/fixtures/m263/re-test-legacy.ts.txt"
+    },
+    {
+      "repo": "unjs/exsolve",
+      "commit": "cad6769e49e58bc5d02fdc6042db01bbfdb85954",
+      "licenseSha256": "d63190bc72e36215a5b8e9f6f8e0abdd4821169ef22c98ab6f992f8123eed9ef",
+      "fixture": "peaceai/test/fixtures/m263/ex-errors.ts.txt"
+    },
+    {
+      "repo": "unjs/exsolve",
+      "commit": "1e43e570ab236b5c8484323a700630862c8d5a7d",
+      "licenseSha256": "d63190bc72e36215a5b8e9f6f8e0abdd4821169ef22c98ab6f992f8123eed9ef",
+      "fixture": "peaceai/test/fixtures/m263/ex-errors.test.ts.txt"
+    },
+    {
+      "repo": "antfu/utils",
+      "commit": "c7bbe2d06242d8ec026b3e209e6e5d2fc5efe3be",
+      "licenseSha256": "665f7d320f283fea91448fa8fd17e17f129b7aedc9cecdc45d0b7bb0eb9b28cc",
+      "fixture": "peaceai/test/fixtures/m263/au-object.ts.txt"
+    },
+    {
+      "repo": "antfu/utils",
+      "commit": "c7bbe2d06242d8ec026b3e209e6e5d2fc5efe3be",
+      "licenseSha256": "665f7d320f283fea91448fa8fd17e17f129b7aedc9cecdc45d0b7bb0eb9b28cc",
+      "fixture": "peaceai/test/fixtures/m263/au-guards.ts.txt"
+    },
+    {
+      "repo": "antfu/utils",
+      "commit": "c7bbe2d06242d8ec026b3e209e6e5d2fc5efe3be",
+      "licenseSha256": "665f7d320f283fea91448fa8fd17e17f129b7aedc9cecdc45d0b7bb0eb9b28cc",
+      "fixture": "peaceai/test/fixtures/m263/au-is.ts.txt"
+    },
+    {
+      "repo": "antfu/utils",
+      "commit": "c7bbe2d06242d8ec026b3e209e6e5d2fc5efe3be",
+      "licenseSha256": "665f7d320f283fea91448fa8fd17e17f129b7aedc9cecdc45d0b7bb0eb9b28cc",
+      "fixture": "peaceai/test/fixtures/m263/au-base.ts.txt"
+    },
+    {
+      "repo": "antfu/utils",
+      "commit": "c7bbe2d06242d8ec026b3e209e6e5d2fc5efe3be",
+      "licenseSha256": "665f7d320f283fea91448fa8fd17e17f129b7aedc9cecdc45d0b7bb0eb9b28cc",
+      "fixture": "peaceai/test/fixtures/m263/au-types.ts.txt"
+    },
+    {
+      "repo": "antfu/utils",
+      "commit": "34cbabfe51a070f6f914ecfebbe4c3aac11e5168",
+      "licenseSha256": "665f7d320f283fea91448fa8fd17e17f129b7aedc9cecdc45d0b7bb0eb9b28cc",
+      "fixture": "peaceai/test/fixtures/m263/au-object.test.ts.txt"
+    }
+  ]
+}
