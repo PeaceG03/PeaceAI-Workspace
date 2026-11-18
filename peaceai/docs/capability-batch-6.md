@@ -18,7 +18,7 @@ Builder-log on the merged batches is 88 pass / 163 fail / 25 unmeasured, of whic
 
 ## Soundness
 
-Each edit is one shape. The augmentation edit is only the one-argument `wrapInDelimiters` call inside `genAugmentation`, so generators that want commas stay. The hook copy is only added when the same file splices that list. The `tryUse` edit is only the unset return. Deleting each guard admits the near miss, with the sandbox and without it. An `any` parameter that returns the recorded answer for every input is `verified_test_only`. A review note that names no function, and `Add <name>` with no value, stay refusals.
+Each edit is one shape. The augmentation edit is only the one-argument `wrapInDelimiters` call inside `genAugmentation`, so generators that want commas stay. The hook copy is only added when the same file splices that list. The `tryUse` edit is only the unset return. The unmodified parent fails the published check for that behavior, in-process and inside the sandbox, and the repair puts the token back. An `any` parameter that returns the recorded answer for every input is `verified_test_only`. A review note that names no function, and `Add <name>` with no value, stay refusals.
 
 ## Dropped
 

@@ -2,11 +2,10 @@
 // Third-party bytes run only inside the practice sandbox.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { pathToFileURL } from "node:url";
 import { bracketHost, escapeIdent, repairBatch10, resolveMerge } from "../lib/batch10.ts";
 import { gradeBehavior } from "../lib/specgrade.ts";
 import { practiceSandboxReady, runInPracticeSandbox, visibleNodeBin } from "../lib/practicemine.ts";
@@ -299,65 +298,71 @@ test("selector characters in an identifier are escaped, and a check that is not 
   assert.equal(escapeIdent(readFix("css-stringify.ts.txt").replace("export function stringify(", "export function kept(")), null);
 });
 
-const mutantBase = resolve(repoRoot, "peaceai/test/.capability-mutants");
-mkdirSync(mutantBase, { recursive: true });
-let mutantN = 0;
-async function mutant(guard: string) {
-  const text = readFileSync(resolve(repoRoot, "peaceai/lib/batch10.ts"), "utf8");
-  const lines = text.split("\n");
-  const hits = lines.flatMap((line, i) => (line.includes(`// ${guard}`) ? [i] : []));
-  assert.equal(hits.length, 1, guard);
-  const next = lines.filter((_, i) => i !== hits[0]).join("\n").replace(/from "\.\/([A-Za-z0-9-]+\.ts)"/g, (_m, name: string) => `from ${JSON.stringify(pathToFileURL(resolve(repoRoot, "peaceai/lib", name)).href)}`);
-  const out = join(mutantBase, `m261-${mutantN++}.ts`);
-  writeFileSync(out, next);
-  return import(pathToFileURL(out).href);
-}
-
-test("deleting the batch 10 guards admits the near miss, with bwrap and without it", async () => {
-  const otherHost = readFix("resolve-uri.ts.txt").replace("export default function resolve(", "export default function kept(");
-  assert.equal(bracketHost(otherHost), null);
-  const host = await mutant("host-guard:bracket") as { bracketHost: typeof bracketHost; repairBatch10: typeof repairBatch10 };
-  assert.match(host.bracketHost(otherHost) ?? "", /\[\^\\\]\]/);
-  const otherMerge = readFix("yaml--src--schema--yaml-1.1--merge.ts.txt").replace("export class MergeKey", "export class Kept");
-  assert.equal(resolveMerge(otherMerge), null);
-  const merged = await mutant("merge-guard:resolve") as { resolveMerge: typeof resolveMerge; repairBatch10: typeof repairBatch10 };
-  assert.match(merged.resolveMerge(otherMerge) ?? "", /instanceof YAMLMap/);
-  const otherIdent = readFix("css-stringify.ts.txt").replace("export function stringify(", "export function kept(");
-  assert.equal(escapeIdent(otherIdent), null);
-  const ident = await mutant("ident-guard:escape") as { escapeIdent: typeof escapeIdent; repairBatch10: typeof repairBatch10 };
-  assert.match(ident.escapeIdent(otherIdent) ?? "", /"&"/);
+test("the parent file fails the published check because the repair is absent, in-process and inside bwrap", (t) => {
+  if (!practiceSandboxReady()) { t.skip("bwrap is not installed"); return; }
   const node = visibleNodeBin();
   assert.ok(node);
-  const root = mkdtempSync(join(tmpdir(), "m261-miss-"));
-  place(root, { "src/resolve-uri.ts": readFix("resolve-uri.ts.txt"), "run.mjs": "process.exit(0)\n" });
-  gitInit(root);
-  assert.equal(repairBatch10({
-    root, output: "Error: not equal", sourcePattern: "^src/resolve-uri\\.ts$", nodePath: node!, testCommand: [node!, "run.mjs"], bwrap: "/no/such/bwrap",
-  }), null);
-  if (practiceSandboxReady()) {
-    const run = (fn: typeof repairBatch10, dir: string, pattern: string) => fn({
-      root: dir, output: "Error: not equal", sourcePattern: pattern, nodePath: node!, testCommand: [node!, "run.mjs"],
+  const nm = runtimeModules();
+  const rows: { dest: string; files: Record<string, string>; pattern: string; cmd: string[]; why: RegExp; restores: RegExp; absent: string }[] = [
+    {
+      dest: "src/resolve-uri.ts",
+      files: {
+        "src/resolve-uri.ts": readFix("resolve-uri.ts.txt"),
+        "test/resolve/ipv6.test.js": readFix("resolve-ipv6.test.js.txt"),
+        "package.json": `{"type":"commonjs","main":"dist/resolve-uri.umd.js"}\n`,
+        "run.mjs": RESOLVE_RUN,
+      },
+      pattern: "^src/resolve-uri\\.ts$",
+      cmd: [node!, "run.mjs"],
+      why: /::1|\[2001/, restores: /\[\^\\\]/, absent: String.raw`\[[^\]]+\]`,
+    },
+    {
+      dest: "src/schema/yaml-1.1/merge.ts",
+      files: { ...prefixed("yaml--"), "package.json": `{"name":"yaml","type":"module","exports":{".":"./src/index.ts"}}\n`, "run.mjs": YAML_RUN },
+      pattern: "^src/schema/yaml-1\\.1/merge\\.ts$",
+      cmd: [node!, "node_modules/tsx/dist/cli.mjs", "run.mjs"],
+      why: /YAMLMap|toEqual|Error/, restores: /instanceof YAMLMap/, absent: "instanceof YAMLMap",
+    },
+    {
+      dest: "src/stringify.ts",
+      files: {
+        "src/stringify.ts": readFix("css-stringify.ts.txt"),
+        "src/parse.ts": readFix("css-parse.ts.txt"),
+        "src/types.ts": readFix("css-types.ts.txt"),
+        "src/index.ts": readFix("css-index.ts.txt"),
+        "src/__fixtures__/tests.ts": readFix("css-tests.ts.txt"),
+        "src/__fixtures__/out.json": readFix("css-out.json.txt"),
+        "src/stringify.spec.ts": readFix("css-stringify.spec.ts.txt"),
+        "package.json": `{"type":"module"}\n`,
+        "run.mjs": CSS_RUN,
+      },
+      pattern: "^src/stringify\\.ts$",
+      cmd: [node!, "run.mjs"],
+      why: /&/, restores: /"&"/, absent: '"&"',
+    },
+  ];
+  for (const row of rows) {
+    assert.equal(row.files[row.dest]!.includes(row.absent), false, row.dest);
+    const dir = mkdtempSync(join(tmpdir(), "m261-kill-"));
+    place(dir, { ...row.files, ".gitignore": "node_modules\n" });
+    symlinkSync(nm, join(dir, "node_modules"));
+    gitInit(dir);
+    const direct = spawnSync(row.cmd[0]!, row.cmd.slice(1), { cwd: dir, encoding: "utf8" });
+    const directOut = `${direct.stdout}\n${direct.stderr}`;
+    assert.notEqual(direct.status, 0, directOut.slice(-700));
+    assert.match(directOut, row.why, directOut.slice(-700));
+    assert.doesNotMatch(directOut, /ReferenceError|SyntaxError|TransformError/, row.dest);
+    const sand = runInPracticeSandbox(dir, row.cmd, 120_000, { capture: true, nodePath: node, nodeModules: nm });
+    assert.notEqual(sand.code, 0, sand.stdout.slice(-700));
+    assert.match(sand.stdout, row.why, sand.stdout.slice(-700));
+    const repaired = repairBatch10({
+      root: dir, output: directOut, sourcePattern: row.pattern, nodePath: node!, nodeModules: nm, testCommand: row.cmd,
     });
-    const hostDir = mkdtempSync(join(tmpdir(), "m261-host-"));
-    place(hostDir, { "src/resolve-uri.ts": otherHost, "run.mjs": "process.exit(0)\n" });
-    gitInit(hostDir);
-    assert.equal(run(repairBatch10, hostDir, "^src/resolve-uri\\.ts$"), null);
-    assert.match(run(host.repairBatch10, hostDir, "^src/resolve-uri\\.ts$")?.diff ?? "", /\[\^\\\]\]/);
-    const mergeDir = mkdtempSync(join(tmpdir(), "m261-merge-"));
-    place(mergeDir, { "src/merge.ts": otherMerge, "run.mjs": "process.exit(0)\n" });
-    gitInit(mergeDir);
-    assert.equal(run(repairBatch10, mergeDir, "^src/merge\\.ts$"), null);
-    assert.match(run(merged.repairBatch10, mergeDir, "^src/merge\\.ts$")?.diff ?? "", /YAMLMap/);
-    const cssDir = mkdtempSync(join(tmpdir(), "m261-css-"));
-    place(cssDir, { "src/stringify.ts": otherIdent, "run.mjs": "process.exit(0)\n" });
-    gitInit(cssDir);
-    assert.equal(run(repairBatch10, cssDir, "^src/stringify\\.ts$"), null);
-    assert.match(run(ident.repairBatch10, cssDir, "^src/stringify\\.ts$")?.diff ?? "", /"&"/);
-    rmSync(hostDir, { recursive: true, force: true });
-    rmSync(mergeDir, { recursive: true, force: true });
-    rmSync(cssDir, { recursive: true, force: true });
+    assert.ok(repaired, row.dest);
+    assert.match(repaired!.diff, row.restores, row.dest);
+    rmSync(dir, { recursive: true, force: true });
   }
-  rmSync(root, { recursive: true, force: true });
+  rmSync(resolve(nm, ".."), { recursive: true, force: true });
 });
 
 test("an any-cast that only matches one recorded answer is test-only for each batch 10 family", (t) => {
