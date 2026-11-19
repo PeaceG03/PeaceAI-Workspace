@@ -1,0 +1,144 @@
+{
+  "schema": "peaceai-m281-batch30:v1",
+  "note": "Pinned copies of TanStack/store, honojs/node-server, and antfu/bumpp at the parent of a published bug fix, plus the test that fix changed. The store, node-server, and bumpp licenses contain no email address, so each pinned hash is the text as written.",
+  "examples": [
+    {
+      "repo": "antfu/bumpp",
+      "commit": "fa0f433a6fd77a1173f10d7c696e7090b6d3972d",
+      "licenseSha256": "f622996315fe02f3832cde3f077744583ebe1600a95c97f0103541dbd64f36f8",
+      "fixture": "peaceai/test/fixtures/m281/bp-src-fs.ts.txt"
+    },
+    {
+      "repo": "antfu/bumpp",
+      "commit": "fa0f433a6fd77a1173f10d7c696e7090b6d3972d",
+      "licenseSha256": "f622996315fe02f3832cde3f077744583ebe1600a95c97f0103541dbd64f36f8",
+      "fixture": "peaceai/test/fixtures/m281/bp-src-manifest.ts.txt"
+    },
+    {
+      "repo": "antfu/bumpp",
+      "commit": "fa0f433a6fd77a1173f10d7c696e7090b6d3972d",
+      "licenseSha256": "f622996315fe02f3832cde3f077744583ebe1600a95c97f0103541dbd64f36f8",
+      "fixture": "peaceai/test/fixtures/m281/bp-src-normalize-options.ts.txt"
+    },
+    {
+      "repo": "antfu/bumpp",
+      "commit": "fa0f433a6fd77a1173f10d7c696e7090b6d3972d",
+      "licenseSha256": "f622996315fe02f3832cde3f077744583ebe1600a95c97f0103541dbd64f36f8",
+      "fixture": "peaceai/test/fixtures/m281/bp-src-operation.ts.txt"
+    },
+    {
+      "repo": "antfu/bumpp",
+      "commit": "fa0f433a6fd77a1173f10d7c696e7090b6d3972d",
+      "licenseSha256": "f622996315fe02f3832cde3f077744583ebe1600a95c97f0103541dbd64f36f8",
+      "fixture": "peaceai/test/fixtures/m281/bp-src-release-type.ts.txt"
+    },
+    {
+      "repo": "antfu/bumpp",
+      "commit": "fa0f433a6fd77a1173f10d7c696e7090b6d3972d",
+      "licenseSha256": "f622996315fe02f3832cde3f077744583ebe1600a95c97f0103541dbd64f36f8",
+      "fixture": "peaceai/test/fixtures/m281/bp-src-run-npm-script.ts.txt"
+    },
+    {
+      "repo": "antfu/bumpp",
+      "commit": "fa0f433a6fd77a1173f10d7c696e7090b6d3972d",
+      "licenseSha256": "f622996315fe02f3832cde3f077744583ebe1600a95c97f0103541dbd64f36f8",
+      "fixture": "peaceai/test/fixtures/m281/bp-src-types-version-bump-options.ts.txt"
+    },
+    {
+      "repo": "antfu/bumpp",
+      "commit": "fa0f433a6fd77a1173f10d7c696e7090b6d3972d",
+      "licenseSha256": "f622996315fe02f3832cde3f077744583ebe1600a95c97f0103541dbd64f36f8",
+      "fixture": "peaceai/test/fixtures/m281/bp-src-types-version-bump-progress.ts.txt"
+    },
+    {
+      "repo": "antfu/bumpp",
+      "commit": "fa0f433a6fd77a1173f10d7c696e7090b6d3972d",
+      "licenseSha256": "f622996315fe02f3832cde3f077744583ebe1600a95c97f0103541dbd64f36f8",
+      "fixture": "peaceai/test/fixtures/m281/bp-src-types-version-bump-results.ts.txt"
+    },
+    {
+      "repo": "antfu/bumpp",
+      "commit": "aa3fc86e3bb152dda8627a7fe156acb45f800ca8",
+      "licenseSha256": "f622996315fe02f3832cde3f077744583ebe1600a95c97f0103541dbd64f36f8",
+      "fixture": "peaceai/test/fixtures/m281/bp-test-run-npm-script.test.ts.txt"
+    },
+    {
+      "repo": "honojs/node-server",
+      "commit": "348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b",
+      "licenseSha256": "35d16fc259cf940287dbd8f7106d6e80f5316e00a51b46b399c26d4c4b377574",
+      "fixture": "peaceai/test/fixtures/m281/ns-src-error.ts.txt"
+    },
+    {
+      "repo": "honojs/node-server",
+      "commit": "348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b",
+      "licenseSha256": "35d16fc259cf940287dbd8f7106d6e80f5316e00a51b46b399c26d4c4b377574",
+      "fixture": "peaceai/test/fixtures/m281/ns-src-headers.ts.txt"
+    },
+    {
+      "repo": "honojs/node-server",
+      "commit": "348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b",
+      "licenseSha256": "35d16fc259cf940287dbd8f7106d6e80f5316e00a51b46b399c26d4c4b377574",
+      "fixture": "peaceai/test/fixtures/m281/ns-src-request.ts.txt"
+    },
+    {
+      "repo": "honojs/node-server",
+      "commit": "348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b",
+      "licenseSha256": "35d16fc259cf940287dbd8f7106d6e80f5316e00a51b46b399c26d4c4b377574",
+      "fixture": "peaceai/test/fixtures/m281/ns-src-url.ts.txt"
+    },
+    {
+      "repo": "honojs/node-server",
+      "commit": "9f7a5cbf68dff5cb7f6ed3aded98c6ff3ee4802a",
+      "licenseSha256": "35d16fc259cf940287dbd8f7106d6e80f5316e00a51b46b399c26d4c4b377574",
+      "fixture": "peaceai/test/fixtures/m281/ns-test-request.test.ts.txt"
+    },
+    {
+      "repo": "honojs/node-server",
+      "commit": "348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b",
+      "licenseSha256": "35d16fc259cf940287dbd8f7106d6e80f5316e00a51b46b399c26d4c4b377574",
+      "fixture": "peaceai/test/fixtures/m281/ns-test-setup.ts.txt"
+    },
+    {
+      "repo": "TanStack/store",
+      "commit": "4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d",
+      "licenseSha256": "d71ca6db0f8bd8b31d8426ec6e7410457eac2ed6832138e6f5ea8566b248ef28",
+      "fixture": "peaceai/test/fixtures/m281/st-packages-store-src-alien.ts.txt"
+    },
+    {
+      "repo": "TanStack/store",
+      "commit": "4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d",
+      "licenseSha256": "d71ca6db0f8bd8b31d8426ec6e7410457eac2ed6832138e6f5ea8566b248ef28",
+      "fixture": "peaceai/test/fixtures/m281/st-packages-store-src-atom.ts.txt"
+    },
+    {
+      "repo": "TanStack/store",
+      "commit": "4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d",
+      "licenseSha256": "d71ca6db0f8bd8b31d8426ec6e7410457eac2ed6832138e6f5ea8566b248ef28",
+      "fixture": "peaceai/test/fixtures/m281/st-packages-store-src-index.ts.txt"
+    },
+    {
+      "repo": "TanStack/store",
+      "commit": "4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d",
+      "licenseSha256": "d71ca6db0f8bd8b31d8426ec6e7410457eac2ed6832138e6f5ea8566b248ef28",
+      "fixture": "peaceai/test/fixtures/m281/st-packages-store-src-shallow.ts.txt"
+    },
+    {
+      "repo": "TanStack/store",
+      "commit": "4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d",
+      "licenseSha256": "d71ca6db0f8bd8b31d8426ec6e7410457eac2ed6832138e6f5ea8566b248ef28",
+      "fixture": "peaceai/test/fixtures/m281/st-packages-store-src-store.ts.txt"
+    },
+    {
+      "repo": "TanStack/store",
+      "commit": "4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d",
+      "licenseSha256": "d71ca6db0f8bd8b31d8426ec6e7410457eac2ed6832138e6f5ea8566b248ef28",
+      "fixture": "peaceai/test/fixtures/m281/st-packages-store-src-types.ts.txt"
+    },
+    {
+      "repo": "TanStack/store",
+      "commit": "e06c28cbdf3514c4edd5dfc29c4d05e396363605",
+      "licenseSha256": "d71ca6db0f8bd8b31d8426ec6e7410457eac2ed6832138e6f5ea8566b248ef28",
+      "fixture": "peaceai/test/fixtures/m281/st-packages-store-tests-observer-isolation.test.ts.txt"
+    }
+  ]
+}
