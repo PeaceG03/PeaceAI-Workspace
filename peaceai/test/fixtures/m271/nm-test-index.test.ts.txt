@@ -1,0 +1,155 @@
+import { describe, expect, it } from "vitest";
+import {
+  fetchNodeRequestHandler,
+  callNodeRequestHandler,
+  type NodeRequestHandler,
+  type NodeRequestHeaders,
+} from "../src";
+
+const echoHandler: NodeRequestHandler = (req, res) => {
+  res.end(JSON.stringify({ url: req.url, headers: req.headers }));
+};
+
+describe("callNodeRequestHandler", () => {
+  it("works", async () => {
+    const res = await callNodeRequestHandler(echoHandler, { url: "/test" });
+    expect(JSON.parse(res.body)).toEqual({
+      url: "/test",
+      headers: { host: "localhost" },
+    });
+  });
+});
+
+describe("fetchNodeRequestHandler", () => {
+  it("works", async () => {
+    const res = await fetchNodeRequestHandler(
+      echoHandler,
+      "http://example.com/test",
+    );
+    expect(await res.json()).toEqual({
+      url: "/test",
+      headers: { host: "example.com" },
+    });
+  });
+
+  const requestHeaderTestCases: {
+    description: string;
+    input: HeadersInit & (HeadersInit | NodeRequestHeaders);
+    expected: Record<string, string | string[]>;
+  }[] = [
+    {
+      description: "Headers",
+      input: new Headers({ foo: "bar", empty: "" }),
+      expected: { foo: "bar", host: "localhost" },
+    },
+    {
+      description: "object",
+      input: { foo: "bar", empty: "" },
+      expected: { foo: "bar", host: "localhost" },
+    },
+    {
+      description: "array",
+      input: [
+        ["foo", "bar"],
+        ["empty", ""],
+        ["array", "a"],
+        ["array", "b"],
+        ["array", ""],
+        ["array", "c"],
+      ],
+      expected: { foo: "bar", host: "localhost", array: ["a", "b", "c"] },
+    },
+  ];
+
+  for (const testCase of requestHeaderTestCases) {
+    const { description, input, expected } = testCase;
+
+    it(`with request headers formatted as ${description}`, async () => {
+      const res = await fetchNodeRequestHandler(echoHandler, "/test", {
+        headers: input,
+      });
+      expect(await res.json()).toEqual({ url: "/test", headers: expected });
+    });
+  }
+
+  it("error response", async () => {
+    const res = await fetchNodeRequestHandler(() => {
+      throw new Error("test error");
+    }, "/error");
+    expect(await res.text()).toBe("Error: test error");
+    expect(res.status).toBe(500);
+  });
+
+  it("HEAD request", async () => {
+    const res = await fetchNodeRequestHandler(
+      (req, res) => {
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ url: req.url }));
+      },
+      "/test",
+      { method: "HEAD" },
+    );
+    expect(await res.text()).toBe("");
+    expect(res.headers.get("content-type")).toBe("application/json");
+    expect(res.headers.get("content-length")).toBe(null);
+  });
+
+  it("response headers", async () => {
+    const res = await fetchNodeRequestHandler((req, res) => {
+      res.setHeader("content-type", "application/json");
+      res.setHeader("max-age", 3600);
+      res.setHeader("set-cookie", "a=b; c=d");
+      res.appendHeader("set-cookie", ["e=f", "g=h"]);
+      res.setHeader("x-unused", undefined as any);
+    }, "/test");
+
+    expect(res.headers.getSetCookie()).toEqual(["a=b; c=d", "e=f", "g=h"]);
+
+    expect(Object.fromEntries(res.headers)).toEqual({
+      "content-type": "application/json",
+      "max-age": "3600",
+      "set-cookie": "g=h", // expect Headers behavior
+    });
+  });
+});
+
+describe("ServerResponse#end callback", () => {
+  it("invokes callback with no chunk", async () => {
+    const calls: string[] = [];
+    const res = await fetchNodeRequestHandler((_req, res) => {
+      res.on("finish", () => calls.push("finish"));
+      res.end(() => calls.push("callback"));
+    }, "/test");
+    expect(await res.text()).toBe("");
+    expect(calls).toEqual(["finish", "callback"]);
+  });
+
+  it("invokes callback once with chunk", async () => {
+    const calls: string[] = [];
+    const res = await fetchNodeRequestHandler((_req, res) => {
+      res.on("finish", () => calls.push("finish"));
+      res.end("hello", () => calls.push("callback"));
+    }, "/test");
+    expect(await res.text()).toBe("hello");
+    expect(calls).toEqual(["finish", "callback"]);
+  });
+
+  it("invokes callback once with chunk and encoding", async () => {
+    let calls = 0;
+    const res = await fetchNodeRequestHandler((_req, res) => {
+      res.end("hello", "utf8", () => calls++);
+    }, "/test");
+    expect(await res.text()).toBe("hello");
+    expect(calls).toBe(1);
+  });
+
+  it("invokes callback on an already ended response", async () => {
+    let calls = 0;
+    const res = await fetchNodeRequestHandler((_req, res) => {
+      res.end("hello");
+      res.end(() => calls++);
+    }, "/test");
+    expect(await res.text()).toBe("hello");
+    expect(calls).toBe(1);
+  });
+});
