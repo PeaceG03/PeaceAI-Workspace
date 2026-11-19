@@ -1,0 +1,42 @@
+{
+ "schema": "peaceai-m301-batch50:v1",
+ "note": "Pinned copies of jonschlinkert/has-prop, jonschlinkert/omit-deep, and jonschlinkert/is-odd at the parent of a published bug fix, plus the test that fix changed. The has-prop, omit-deep, and is-odd licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/has-prop",
+   "commit": "dbd7098c463a13658f18790e3a086cf0973b23c2",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m301/hp-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/has-prop",
+   "commit": "126d5b3b716903a6c1a87dbbb1a2f5cfe932da54",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m301/hp-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/omit-deep",
+   "commit": "730e6c978e549d19fc3ca3ddbfbd05ffebdd8d54",
+   "licenseSha256": "7ff8e9c76c608628545c52101aabbec4e5d787b32fe5d2417f06d6e5f748c781",
+   "fixture": "peaceai/test/fixtures/m301/od-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/omit-deep",
+   "commit": "f8c3cd9606f1aba75f2d0d2a6192c4d18ede44de",
+   "licenseSha256": "7ff8e9c76c608628545c52101aabbec4e5d787b32fe5d2417f06d6e5f748c781",
+   "fixture": "peaceai/test/fixtures/m301/od-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-odd",
+   "commit": "f449dd9f289b6773c69b203386e866a88e137c2c",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m301/io-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-odd",
+   "commit": "dcc7eeff5be8f8190e2a7e63b76eae2992ad854f",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m301/io-test.js.txt"
+  }
+ ]
+}
