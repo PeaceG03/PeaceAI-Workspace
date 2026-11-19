@@ -14981,3 +14981,140 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: tinylibs/tinyspy
+license: MIT (LICENCE, sha256 of trimmed text 551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591)
+fixtures (commit path):
+  f42d54522dc94b2102558172ab7c0766f1d65110 peaceai/test/fixtures/m276/ts-src-constants.ts.txt
+  f42d54522dc94b2102558172ab7c0766f1d65110 peaceai/test/fixtures/m276/ts-src-index.ts.txt
+  f42d54522dc94b2102558172ab7c0766f1d65110 peaceai/test/fixtures/m276/ts-src-internal.ts.txt
+  f42d54522dc94b2102558172ab7c0766f1d65110 peaceai/test/fixtures/m276/ts-src-restoreAll.ts.txt
+  f42d54522dc94b2102558172ab7c0766f1d65110 peaceai/test/fixtures/m276/ts-src-spy.ts.txt
+  f42d54522dc94b2102558172ab7c0766f1d65110 peaceai/test/fixtures/m276/ts-src-spyOn.ts.txt
+  f42d54522dc94b2102558172ab7c0766f1d65110 peaceai/test/fixtures/m276/ts-src-utils.ts.txt
+  0684083fc217e18d21ea404b3461bde52b60fdb3 peaceai/test/fixtures/m276/ts-test-class.test.ts.txt
+license URL: https://github.com/tinylibs/tinyspy/blob/f42d54522dc94b2102558172ab7c0766f1d65110/LICENCE
+---- license text ----
+MIT License
+
+Copyright (c) 2022 Tinylibs
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: SuperchupuDev/tinyglobby
+license: MIT (LICENSE, sha256 of trimmed text 4918b99deb04bad7ac6e3398e28d1a06eca1f713387ea3ee95d8200062f6469b)
+fixtures (commit path):
+  577920259c91f5603fab3dbfa599a83bbb14a27a peaceai/test/fixtures/m276/tg-src-crawler.ts.txt
+  577920259c91f5603fab3dbfa599a83bbb14a27a peaceai/test/fixtures/m276/tg-src-index.ts.txt
+  577920259c91f5603fab3dbfa599a83bbb14a27a peaceai/test/fixtures/m276/tg-src-patterns.ts.txt
+  577920259c91f5603fab3dbfa599a83bbb14a27a peaceai/test/fixtures/m276/tg-src-types.ts.txt
+  577920259c91f5603fab3dbfa599a83bbb14a27a peaceai/test/fixtures/m276/tg-src-utils.ts.txt
+  a37f27a670fa8c94f5108dbd2a90307e14cab077 peaceai/test/fixtures/m276/tg-test-index.test.ts.txt
+license URL: https://github.com/SuperchupuDev/tinyglobby/blob/577920259c91f5603fab3dbfa599a83bbb14a27a/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2024 Madeline Gurriarán
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: unjs/magicast
+license: MIT (LICENSE, sha256 of trimmed text 0b3a20ded830e5ba0f85f91cc24fcc9c6768d0baf8ad6b0113007abdac0e7e81)
+fixtures (commit path):
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-types.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-babel.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-index.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-file.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-error.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-helpers.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-code.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-format.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-core.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-builders.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-helpers-index.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-helpers-config.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-helpers-nuxt.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-helpers-vite.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-helpers-deep-merge.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-function-expression.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-module.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-array.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-new-expression.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-member-expression.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-types.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-_utils.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-imports.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-object.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-arrow-function-expression.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-logical-expression.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-binary-expression.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-block-statement.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-exports.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-proxify.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-function-call.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-identifier.ts.txt
+  e90ac46fd96d308c856542be04d15020e2696d38 peaceai/test/fixtures/m276/ma-src-proxy-await-expression.ts.txt
+  abea2cfd2a01821f84067962000471b787543c85 peaceai/test/fixtures/m276/ma-test-array.test.ts.txt
+  abea2cfd2a01821f84067962000471b787543c85 peaceai/test/fixtures/m276/ma-test-_utils.ts.txt
+license URL: https://github.com/unjs/magicast/blob/e90ac46fd96d308c856542be04d15020e2696d38/LICENSE
+as written: sha256 afe91061830bbec69e7f8ec3ba4854dcc1be19bfa39a711f3b3ad8cda86b3b9b (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above> and Anthony Fu <https://github.com/antfu>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
