@@ -39,6 +39,8 @@ import { repairBatch17 } from "./batch17.ts";
 import { repairBatch19 } from "./batch19.ts";
 import { repairBatch21 } from "./batch21.ts";
 import { repairBatch23 } from "./batch23.ts";
+import { repairBatch28 } from "./batch28.ts";
+
 
 import { parseTypeDiagnostics, repairTypedFailure } from "./sigfix.ts";
 
@@ -3239,6 +3241,18 @@ export function runTestSpec(input: SpecInput): SpecResult {
     return {
       status: "diff", diff: batch23.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
       fit: { shape: "batch23", examples: 0, targets: [{ symbol: "batch23", file: batch23.file, form: "named", exportName: "batch23", args: [] }] },
+    };
+  }
+  const batch28 = !parseTypeDiagnostics(output).length && input.toolchain.nodePath
+    ? repairBatch28({
+      root: input.root, output, sourcePattern: input.sourcePattern,
+      nodePath: input.toolchain.nodePath, nodeModules: input.nodeModules, testCommand: input.testCommand,
+    })
+    : null;
+  if (batch28) {
+    return {
+      status: "diff", diff: batch28.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
+      fit: { shape: "batch28", examples: 0, targets: [{ symbol: "batch28", file: batch28.file, form: "named", exportName: "batch28", args: [] }] },
     };
   }
   if (parseTypeDiagnostics(output).length) {
