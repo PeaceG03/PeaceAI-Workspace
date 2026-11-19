@@ -1,0 +1,60 @@
+{
+ "schema": "peaceai-m275-batch24:v1",
+ "note": "Pinned copies of unjs/unimport, unjs/compatx, and tinylibs/tinyexec at the parent of a published bug fix, plus the tests that fix changed. Each notice omits email addresses when present and records the hash of that redacted text.",
+ "examples": [
+  {
+   "repo": "unjs/unimport",
+   "commit": "8f84905a6ac775a0b80709ffe8f75360cc55ec84",
+   "licenseSha256": "4d04b8c0848bda9b32f9c6bb491f93fd62b166544c563961bf2528b6415eeaf9",
+   "fixture": "peaceai/test/fixtures/m275/ui-src-regexp.ts.txt"
+  },
+  {
+   "repo": "unjs/unimport",
+   "commit": "6bbb566559a1ca7572454e31448311ccf97c4b24",
+   "licenseSha256": "4d04b8c0848bda9b32f9c6bb491f93fd62b166544c563961bf2528b6415eeaf9",
+   "fixture": "peaceai/test/fixtures/m275/ui-test-existing-scanning.test.ts.txt"
+  },
+  {
+   "repo": "unjs/compatx",
+   "commit": "ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m275/cx-src-date.ts.txt"
+  },
+  {
+   "repo": "unjs/compatx",
+   "commit": "ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m275/cx-src-index.ts.txt"
+  },
+  {
+   "repo": "unjs/compatx",
+   "commit": "ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m275/cx-src-platforms.ts.txt"
+  },
+  {
+   "repo": "unjs/compatx",
+   "commit": "ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m275/cx-src-updates.ts.txt"
+  },
+  {
+   "repo": "unjs/compatx",
+   "commit": "9526a1d2cdab4ce429b3927eb436ead7db9cad02",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m275/cx-test-date.test.ts.txt"
+  },
+  {
+   "repo": "tinylibs/tinyexec",
+   "commit": "9f44cd6cb9427ce41d96c9423835f098a5c238c9",
+   "licenseSha256": "1b5f37fd06c10b0fede3b1baba3592da2a28d50933034a88fb3b4d7b17a327a7",
+   "fixture": "peaceai/test/fixtures/m275/tx-src-stream.ts.txt"
+  },
+  {
+   "repo": "tinylibs/tinyexec",
+   "commit": "4a2aca1cf11943445c7bae6c767086a8c61291ef",
+   "licenseSha256": "1b5f37fd06c10b0fede3b1baba3592da2a28d50933034a88fb3b4d7b17a327a7",
+   "fixture": "peaceai/test/fixtures/m275/tx-test-stream_test.ts.txt"
+  }
+ ]
+}

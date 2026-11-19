@@ -1,0 +1,11 @@
+{
+ "ui-src-regexp.ts.txt": "src/regexp.ts",
+ "ui-test-existing-scanning.test.ts.txt": "test/existing-scanning.test.ts",
+ "cx-src-date.ts.txt": "src/date.ts",
+ "cx-src-index.ts.txt": "src/index.ts",
+ "cx-src-platforms.ts.txt": "src/platforms.ts",
+ "cx-src-updates.ts.txt": "src/updates.ts",
+ "cx-test-date.test.ts.txt": "test/date.test.ts",
+ "tx-src-stream.ts.txt": "src/stream.ts",
+ "tx-test-stream_test.ts.txt": "src/test/stream_test.ts"
+}
