@@ -1,0 +1,15 @@
+{
+  "as-LICENSE-MIT.txt": "LICENSE-MIT",
+  "as-README.md.txt": "README.md",
+  "as-index.js.txt": "index.js",
+  "as-test-test.js.txt": "test/test.js",
+  "av-LICENSE.txt": "LICENSE",
+  "av-README.md.txt": "README.md",
+  "av-index.js.txt": "index.js",
+  "av-test.js.txt": "test.js",
+  "av-utils.js.txt": "utils.js",
+  "tl-LICENSE.txt": "LICENSE",
+  "tl-index.js.txt": "index.js",
+  "tl-readme.md.txt": "readme.md",
+  "tl-test.js.txt": "test.js"
+}
