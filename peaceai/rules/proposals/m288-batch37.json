@@ -1,0 +1,42 @@
+{
+ "schema": "peaceai-m288-batch37:v1",
+ "note": "Pinned copies of jonschlinkert/is-glob, jonschlinkert/is-number, and npm/validate-npm-package-name at the parent of a published bug fix, plus the test that fix changed. The is-glob, is-number, and validate-npm-package-name licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/is-glob",
+   "commit": "722a6e9f14cb370aa8cc5976d1319bc5ce8dfdfe",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m288/glob-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-glob",
+   "commit": "a1654f060b19a322103b9d0155d5d22dd63dfd12",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m288/glob-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-number",
+   "commit": "204c885659b8ee1946534c61db91603b9a16d661",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m288/num-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-number",
+   "commit": "12749e3c411750f754d50f093471234c7ab270b0",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m288/num-test.js.txt"
+  },
+  {
+   "repo": "npm/validate-npm-package-name",
+   "commit": "52ff0f181afeb60126ec0e623991130dd94785e2",
+   "licenseSha256": "b532ba8a201fbc5d2a5553be745153da6a1fbdd92e33e7f10889c19dd7eccb31",
+   "fixture": "peaceai/test/fixtures/m288/pkg-lib-index.js.txt"
+  },
+  {
+   "repo": "npm/validate-npm-package-name",
+   "commit": "23f220dad912024af5f3a48501f8f1bfbf8fa311",
+   "licenseSha256": "b532ba8a201fbc5d2a5553be745153da6a1fbdd92e33e7f10889c19dd7eccb31",
+   "fixture": "peaceai/test/fixtures/m288/pkg-test-index.js.txt"
+  }
+ ]
+}
