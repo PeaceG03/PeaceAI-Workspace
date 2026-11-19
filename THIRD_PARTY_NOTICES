@@ -14126,3 +14126,155 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 IN THE SOFTWARE.
 """
 ---- end ----
+
+==============================================================================
+repo: unjs/ipx
+license: MIT (LICENSE, sha256 of trimmed text 386bbb22f7eb04a0e2af47540fda721811d8851ae744601c38c6a07c73fb9017)
+fixtures (commit path):
+  7f2deadfa785ee9eb0fc1443a7df30dd39c9367d peaceai/test/fixtures/m280/ix-src-storage-http.ts.txt
+  7f2deadfa785ee9eb0fc1443a7df30dd39c9367d peaceai/test/fixtures/m280/ix-src-utils.ts.txt
+  7f2deadfa785ee9eb0fc1443a7df30dd39c9367d peaceai/test/fixtures/m280/ix-src-types.ts.txt
+  7f2deadfa785ee9eb0fc1443a7df30dd39c9367d peaceai/test/fixtures/m280/ix-package.json.txt
+  7f2deadfa785ee9eb0fc1443a7df30dd39c9367d peaceai/test/fixtures/m280/ix-vitest.config.ts.txt
+  1fcd418f6c239c77041afa47ab1af8d6e1cffaed peaceai/test/fixtures/m280/ix-test-storage-http.test.ts.txt
+license URL: https://github.com/unjs/ipx/blob/7f2deadfa785ee9eb0fc1443a7df30dd39c9367d/LICENSE
+as written: sha256 b257274f370bad1ff65b17fad3c503f4b1dac51ddfa69a2b0f53bc74b558ee19 (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: pmndrs/valtio
+license: MIT (LICENSE, sha256 of trimmed text adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b)
+fixtures (commit path):
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-index.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-react.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-react-utils.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-react-utils-useProxy.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-types.d.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-utils.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-vanilla.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-vanilla-utils.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-vanilla-utils-deepClone.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-vanilla-utils-deepProxy.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-vanilla-utils-devtools.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-vanilla-utils-proxyMap.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-vanilla-utils-proxySet.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-vanilla-utils-subscribeKey.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-src-vanilla-utils-watch.ts.txt
+  38e9a8786dcce2566ae30ddedca83ce99e5c2038 peaceai/test/fixtures/m280/va-package.json.txt
+  c24a93a1b62d1fb95a7fa78c840d32cf95bef348 peaceai/test/fixtures/m280/va-tests-watch.test.tsx.txt
+  c24a93a1b62d1fb95a7fa78c840d32cf95bef348 peaceai/test/fixtures/m280/va-tests-utils.tsx.txt
+license URL: https://github.com/pmndrs/valtio/blob/38e9a8786dcce2566ae30ddedca83ce99e5c2038/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2020 Poimandres
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: typestack/class-transformer
+license: MIT (LICENSE, sha256 of trimmed text 40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef)
+fixtures (commit path):
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-ClassTransformer.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-MetadataStorage.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-TransformOperationExecutor.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-constants-default-options.constant.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-decorators-exclude.decorator.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-decorators-expose.decorator.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-decorators-index.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-decorators-transform-instance-to-instance.decorator.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-decorators-transform-instance-to-plain.decorator.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-decorators-transform-plain-to-instance.decorator.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-decorators-transform.decorator.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-decorators-type.decorator.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-enums-index.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-enums-transformation-type.enum.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-index.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-class-constructor.type.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-class-transformer-options.interface.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-decorator-options-exclude-options.interface.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-decorator-options-expose-options.interface.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-decorator-options-transform-options.interface.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-decorator-options-type-discriminator-descriptor.interface.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-decorator-options-type-options.interface.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-index.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-metadata-exclude-metadata.interface.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-metadata-expose-metadata.interface.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-metadata-transform-fn-params.interface.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-metadata-transform-metadata.interface.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-metadata-type-metadata.interface.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-target-map.interface.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-interfaces-type-help-options.interface.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-storage.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-utils-get-global.util.spect.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-utils-get-global.util.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-utils-index.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-src-utils-is-promise.util.ts.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-package.json.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-jest.config.js.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-tsconfig.json.txt
+  c0ec22a83494dbcb3d441e83a3bc08143fb47ad3 peaceai/test/fixtures/m280/ct-tsconfig.spec.json.txt
+  a073b5ea218dd4da9325fe980f15c1538980500e peaceai/test/fixtures/m280/ct-test-functional-basic-functionality.spec.ts.txt
+license URL: https://github.com/typestack/class-transformer/blob/c0ec22a83494dbcb3d441e83a3bc08143fb47ad3/LICENSE
+---- license text ----
+The MIT License
+
+Copyright (c) 2015-2020 TypeStack
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
