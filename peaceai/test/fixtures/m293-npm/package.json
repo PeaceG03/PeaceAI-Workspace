@@ -1,0 +1,10 @@
+{
+  "name": "m293-npm",
+  "private": true,
+  "devDependencies": {
+    "is-number": "0.1.1",
+    "mocha": "10.8.2",
+    "normalize-path": "3.0.0",
+    "should": "13.2.3"
+  }
+}
