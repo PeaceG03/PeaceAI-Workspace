@@ -1,0 +1,10 @@
+{
+  "name": "m289-npm",
+  "private": true,
+  "devDependencies": {
+    "camelcase": "4.1.0",
+    "chai": "4.5.0",
+    "mocha": "10.8.2",
+    "rimraf": "3.0.2"
+  }
+}

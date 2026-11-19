@@ -14361,3 +14361,91 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: epoberezkin/fast-deep-equal
+license: MIT (LICENSE, sha256 of trimmed text aa407ee69b3f646286f5162d0679256a0fe5b7fcc51f104ffb647efe167715ea)
+fixtures (commit path):
+  5a472bc5bde46f446d21138c5234cd101ce6d5e0 peaceai/test/fixtures/m289/eq-index.js.txt
+  787ba533350fd0620e14845b35f013253cc48e44 peaceai/test/fixtures/m289/eq-spec-tests.js.txt
+  787ba533350fd0620e14845b35f013253cc48e44 peaceai/test/fixtures/m289/eq-spec-index.spec.js.txt
+license URL: https://github.com/epoberezkin/fast-deep-equal/blob/5a472bc5bde46f446d21138c5234cd101ce6d5e0/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2017 Evgeny Poberezkin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: yargs/y18n
+license: ISC (LICENSE, sha256 of trimmed text b9cc78972af8e4170abae385b6d6f0f964d421e695561be74a769d6c526dc64a)
+fixtures (commit path):
+  c66f8baa9165ded6c90fe909575f4b7643ec741e peaceai/test/fixtures/m289/y18n-index.js.txt
+  c92612347847fdaee53ba2f5dd23f51734c349bc peaceai/test/fixtures/m289/y18n-test-y18n-test.js.txt
+  c92612347847fdaee53ba2f5dd23f51734c349bc peaceai/test/fixtures/m289/y18n-test-locales-en.json.txt
+  c92612347847fdaee53ba2f5dd23f51734c349bc peaceai/test/fixtures/m289/y18n-test-locales-pirate.json.txt
+  c92612347847fdaee53ba2f5dd23f51734c349bc peaceai/test/fixtures/m289/y18n-test-locales-bad-locale.json.txt
+license URL: https://github.com/yargs/y18n/blob/c66f8baa9165ded6c90fe909575f4b7643ec741e/LICENSE
+---- license text ----
+Copyright (c) 2015, Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: yargs/yargs-parser
+license: ISC (LICENSE.txt, sha256 of trimmed text 59f5ade0fa9a78b563bc7fa00f0c6bb0e65e05c0e809e1a4f948b1fead534a8b)
+fixtures (commit path):
+  00bde7d60c433c188f2529a33bab187d40645f7d peaceai/test/fixtures/m289/yp-index.js.txt
+  00bde7d60c433c188f2529a33bab187d40645f7d peaceai/test/fixtures/m289/yp-lib-tokenize-arg-string.js.txt
+  d1372279d3fc574ecc67bf9b3a21d785dd33a5a4 peaceai/test/fixtures/m289/yp-test-tokenize-arg-string.js.txt
+  d1372279d3fc574ecc67bf9b3a21d785dd33a5a4 peaceai/test/fixtures/m289/yp-test-yargs-parser.js.txt
+  d1372279d3fc574ecc67bf9b3a21d785dd33a5a4 peaceai/test/fixtures/m289/yp-test-fixtures-config.json.txt
+  d1372279d3fc574ecc67bf9b3a21d785dd33a5a4 peaceai/test/fixtures/m289/yp-test-fixtures-config.txt.txt
+  d1372279d3fc574ecc67bf9b3a21d785dd33a5a4 peaceai/test/fixtures/m289/yp-test-fixtures-nested_config.json.txt
+  d1372279d3fc574ecc67bf9b3a21d785dd33a5a4 peaceai/test/fixtures/m289/yp-test-fixtures-settings.js.txt
+license URL: https://github.com/yargs/yargs-parser/blob/00bde7d60c433c188f2529a33bab187d40645f7d/LICENSE.txt
+---- license text ----
+Copyright (c) 2016, Contributors
+
+Permission to use, copy, modify, and/or distribute this software
+for any purpose with or without fee is hereby granted, provided
+that the above copyright notice and this permission notice
+appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE
+LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES
+OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+---- end ----
