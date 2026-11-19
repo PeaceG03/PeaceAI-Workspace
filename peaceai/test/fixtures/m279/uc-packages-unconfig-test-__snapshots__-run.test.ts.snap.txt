@@ -1,0 +1,65 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`array 1`] = `
+[
+  {
+    "dts": true,
+    "entry": [
+      "src/index.ts",
+    ],
+    "platform": "node",
+  },
+  {
+    "dts": false,
+    "entry": [
+      "src/index.ts",
+    ],
+    "platform": "node",
+  },
+]
+`;
+
+exports[`custom parser 1`] = `
+"custom:hello world
+"
+`;
+
+exports[`one > files 1`] = `
+[
+  "un.config.ts",
+  "un.config.mjs",
+  "un.config.json",
+  "package.json",
+  "rewrite.js",
+  "rewrite2.js",
+  "params.js",
+]
+`;
+
+exports[`one 1`] = `
+{
+  "deep": {
+    "foo": "you should get this",
+  },
+  "defaults": "default",
+  "from": "package.json",
+  "json": "allo",
+  "mjs": "hi",
+  "param1": "include me",
+  "rewrite": "Hi",
+  "ts": "hello",
+}
+`;
+
+exports[`two > files 1`] = `
+[
+  "lodash-es.js",
+]
+`;
+
+exports[`two 1`] = `
+{
+  "bar": "bar",
+  "foo": "foo",
+}
+`;
