@@ -1,0 +1,20 @@
+{
+ "up-src-yaml.ts.txt": "src/yaml.ts",
+ "up-test-yaml.test.ts.txt": "test/yaml.test.ts",
+ "uw-src-tools-parser.ts.txt": "src/tools/parser.ts",
+ "uw-src-tools-index.ts.txt": "src/tools/index.ts",
+ "uw-test-parse.test.ts.txt": "test/parse.test.ts",
+ "uw-examples-rand.wasm.txt": "examples/rand.wasm",
+ "uw-examples-sum.wasm.txt": "examples/sum.wasm",
+ "uw-examples-add-esmi.wasm.txt": "examples/add-esmi.wasm",
+ "cl-src-semver.ts.txt": "src/semver.ts",
+ "cl-src-index.ts.txt": "src/index.ts",
+ "cl-src-git.ts.txt": "src/git.ts",
+ "cl-src-github.ts.txt": "src/github.ts",
+ "cl-src-markdown.ts.txt": "src/markdown.ts",
+ "cl-src-config.ts.txt": "src/config.ts",
+ "cl-src-repo.ts.txt": "src/repo.ts",
+ "cl-src-package.ts.txt": "src/package.ts",
+ "cl-src-exec.ts.txt": "src/exec.ts",
+ "cl-test-semver.test.ts.txt": "test/semver.test.ts"
+}
