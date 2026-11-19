@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "un": {
+    "from": "package.json"
+  }
+}
