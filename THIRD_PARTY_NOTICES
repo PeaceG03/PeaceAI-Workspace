@@ -14361,3 +14361,102 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: jonschlinkert/shallow-clone
+license: MIT (LICENSE, sha256 of trimmed text 5308428966b96c947750ac2ba4262417dedf7d2f8cc78ba928255807aa985f55)
+fixtures (commit path):
+  fa62f9dfa131ba79bab0fe2b09d1e9a53121c48e peaceai/test/fixtures/m290/sc-index.js.txt
+  fa957e2ea0611027a69f8ae71b87b9b9f2eb22e3 peaceai/test/fixtures/m290/sc-test.js.txt
+license URL: https://github.com/jonschlinkert/shallow-clone/blob/fa62f9dfa131ba79bab0fe2b09d1e9a53121c48e/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2015-2018, Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: puleos/object-hash
+license: MIT (LICENSE, sha256 of trimmed text 22534974fd44135a1c1682da62286e12be49187d199f8c03bcb0245634e7ac0f)
+fixtures (commit path):
+  9b84910d942cb881c5a47277ba471ca9b3bf8418 peaceai/test/fixtures/m290/oh-index.js.txt
+  e090f7e04fd9d5361a32295417c4f6e1ae9ef5a4 peaceai/test/fixtures/m290/oh-test-index.js.txt
+  e090f7e04fd9d5361a32295417c4f6e1ae9ef5a4 peaceai/test/fixtures/m290/oh-test-types.js.txt
+  e090f7e04fd9d5361a32295417c4f6e1ae9ef5a4 peaceai/test/fixtures/m290/oh-test-object-classes.js.txt
+  e090f7e04fd9d5361a32295417c4f6e1ae9ef5a4 peaceai/test/fixtures/m290/oh-test-old-crypto.js.txt
+  e090f7e04fd9d5361a32295417c4f6e1ae9ef5a4 peaceai/test/fixtures/m290/oh-test-replacer.js.txt
+  e090f7e04fd9d5361a32295417c4f6e1ae9ef5a4 peaceai/test/fixtures/m290/oh-test-writeToStream.js.txt
+license URL: https://github.com/puleos/object-hash/blob/9b84910d942cb881c5a47277ba471ca9b3bf8418/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014 object-hash contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: doowb/ansi-colors
+license: MIT (LICENSE, sha256 of trimmed text 11444e32fb9aa8cd1d0c3656879384afcf1efb1227a9975feadf0aab0f9d9d83)
+fixtures (commit path):
+  33f0b43d33c1e5ee189eac54e53d7d3c9d9b7c53 peaceai/test/fixtures/m290/ac-index.js.txt
+  33f0b43d33c1e5ee189eac54e53d7d3c9d9b7c53 peaceai/test/fixtures/m290/ac-symbols.js.txt
+  a98a825c55c80aa81df71333e769722b4babb7e2 peaceai/test/fixtures/m290/ac-test.js.txt
+license URL: https://github.com/doowb/ansi-colors/blob/33f0b43d33c1e5ee189eac54e53d7d3c9d9b7c53/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2015-present, Brian Woodward.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----

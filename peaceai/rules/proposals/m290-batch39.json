@@ -1,0 +1,78 @@
+{
+ "schema": "peaceai-m290-batch39:v1",
+ "note": "Pinned copies of jonschlinkert/shallow-clone, puleos/object-hash, and doowb/ansi-colors at the parent of a published bug fix, plus the test that fix changed. The shallow-clone, object-hash, and ansi-colors licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/shallow-clone",
+   "commit": "fa62f9dfa131ba79bab0fe2b09d1e9a53121c48e",
+   "licenseSha256": "5308428966b96c947750ac2ba4262417dedf7d2f8cc78ba928255807aa985f55",
+   "fixture": "peaceai/test/fixtures/m290/sc-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/shallow-clone",
+   "commit": "fa957e2ea0611027a69f8ae71b87b9b9f2eb22e3",
+   "licenseSha256": "5308428966b96c947750ac2ba4262417dedf7d2f8cc78ba928255807aa985f55",
+   "fixture": "peaceai/test/fixtures/m290/sc-test.js.txt"
+  },
+  {
+   "repo": "puleos/object-hash",
+   "commit": "9b84910d942cb881c5a47277ba471ca9b3bf8418",
+   "licenseSha256": "22534974fd44135a1c1682da62286e12be49187d199f8c03bcb0245634e7ac0f",
+   "fixture": "peaceai/test/fixtures/m290/oh-index.js.txt"
+  },
+  {
+   "repo": "puleos/object-hash",
+   "commit": "e090f7e04fd9d5361a32295417c4f6e1ae9ef5a4",
+   "licenseSha256": "22534974fd44135a1c1682da62286e12be49187d199f8c03bcb0245634e7ac0f",
+   "fixture": "peaceai/test/fixtures/m290/oh-test-index.js.txt"
+  },
+  {
+   "repo": "puleos/object-hash",
+   "commit": "e090f7e04fd9d5361a32295417c4f6e1ae9ef5a4",
+   "licenseSha256": "22534974fd44135a1c1682da62286e12be49187d199f8c03bcb0245634e7ac0f",
+   "fixture": "peaceai/test/fixtures/m290/oh-test-types.js.txt"
+  },
+  {
+   "repo": "puleos/object-hash",
+   "commit": "e090f7e04fd9d5361a32295417c4f6e1ae9ef5a4",
+   "licenseSha256": "22534974fd44135a1c1682da62286e12be49187d199f8c03bcb0245634e7ac0f",
+   "fixture": "peaceai/test/fixtures/m290/oh-test-object-classes.js.txt"
+  },
+  {
+   "repo": "puleos/object-hash",
+   "commit": "e090f7e04fd9d5361a32295417c4f6e1ae9ef5a4",
+   "licenseSha256": "22534974fd44135a1c1682da62286e12be49187d199f8c03bcb0245634e7ac0f",
+   "fixture": "peaceai/test/fixtures/m290/oh-test-old-crypto.js.txt"
+  },
+  {
+   "repo": "puleos/object-hash",
+   "commit": "e090f7e04fd9d5361a32295417c4f6e1ae9ef5a4",
+   "licenseSha256": "22534974fd44135a1c1682da62286e12be49187d199f8c03bcb0245634e7ac0f",
+   "fixture": "peaceai/test/fixtures/m290/oh-test-replacer.js.txt"
+  },
+  {
+   "repo": "puleos/object-hash",
+   "commit": "e090f7e04fd9d5361a32295417c4f6e1ae9ef5a4",
+   "licenseSha256": "22534974fd44135a1c1682da62286e12be49187d199f8c03bcb0245634e7ac0f",
+   "fixture": "peaceai/test/fixtures/m290/oh-test-writeToStream.js.txt"
+  },
+  {
+   "repo": "doowb/ansi-colors",
+   "commit": "33f0b43d33c1e5ee189eac54e53d7d3c9d9b7c53",
+   "licenseSha256": "11444e32fb9aa8cd1d0c3656879384afcf1efb1227a9975feadf0aab0f9d9d83",
+   "fixture": "peaceai/test/fixtures/m290/ac-index.js.txt"
+  },
+  {
+   "repo": "doowb/ansi-colors",
+   "commit": "33f0b43d33c1e5ee189eac54e53d7d3c9d9b7c53",
+   "licenseSha256": "11444e32fb9aa8cd1d0c3656879384afcf1efb1227a9975feadf0aab0f9d9d83",
+   "fixture": "peaceai/test/fixtures/m290/ac-symbols.js.txt"
+  },
+  {
+   "repo": "doowb/ansi-colors",
+   "commit": "a98a825c55c80aa81df71333e769722b4babb7e2",
+   "licenseSha256": "11444e32fb9aa8cd1d0c3656879384afcf1efb1227a9975feadf0aab0f9d9d83",
+   "fixture": "peaceai/test/fixtures/m290/ac-test.js.txt"
+  }
+ ]
+}
