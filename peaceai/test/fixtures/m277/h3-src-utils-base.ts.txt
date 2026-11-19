@@ -1,0 +1,46 @@
+import type {
+  EventHandler,
+  EventHandlerRequest,
+  HTTPHandler,
+  ResolvedRequest,
+} from "../types/handler.ts";
+import { toEventHandler } from "../handler.ts";
+import { HTTPError } from "../error.ts";
+import { hasEmptySegmentAfterBase, withoutBase, withoutTrailingSlash } from "./internal/path.ts";
+
+/**
+ * Returns a new event handler that removes the base url of the event before calling the original handler.
+ *
+ * @example
+ * const api = new H3()
+ *  .get("/", () => "Hello API!");
+ * const app = new H3()
+ *  .use("/api/**", withBase("/api", api.handler));
+ *
+ * @param base The base path to prefix.
+ * @param handler The event handler to use with the adapted path.
+ */
+export function withBase<_RequestT extends EventHandlerRequest = EventHandlerRequest>(
+  base: string,
+  input: HTTPHandler<_RequestT>,
+): EventHandler<ResolvedRequest<_RequestT>> {
+  base = withoutTrailingSlash(base);
+
+  const handler = toEventHandler(input);
+  if (!handler) {
+    throw new Error("Invalid handler", { cause: input });
+  }
+
+  return async function _handlerWithBase(event) {
+    const _pathBefore = event.url.pathname || "/";
+    if (base !== "/" && hasEmptySegmentAfterBase(_pathBefore, base)) {
+      throw new HTTPError({ status: 404 });
+    }
+    event.url.pathname = withoutBase(event.url.pathname || "/", base);
+    try {
+      return await handler(event);
+    } finally {
+      event.url.pathname = _pathBefore;
+    }
+  };
+}

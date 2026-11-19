@@ -1,0 +1,468 @@
+{
+ "schema": "peaceai-m277-batch26:v1",
+ "note": "Pinned copies of fb55/htmlparser2, fb55/css-select, and h3js/h3 at the parent of a published bug fix, plus the tests that fix changed. Each notice omits email addresses when present and records the hash of that redacted text. A license with no email keeps the hash of the text as written.",
+ "examples": [
+  {
+   "repo": "fb55/htmlparser2",
+   "commit": "97e19fd906bf156a93e2292e3e56225651cc8841",
+   "licenseSha256": "204cfa747341660e4da64cd23e8c876c6b20279d247f48564993d3fc4a2eab47",
+   "fixture": "peaceai/test/fixtures/m277/hp-src-Parser.ts.txt"
+  },
+  {
+   "repo": "fb55/htmlparser2",
+   "commit": "97e19fd906bf156a93e2292e3e56225651cc8841",
+   "licenseSha256": "204cfa747341660e4da64cd23e8c876c6b20279d247f48564993d3fc4a2eab47",
+   "fixture": "peaceai/test/fixtures/m277/hp-src-Tokenizer.ts.txt"
+  },
+  {
+   "repo": "fb55/htmlparser2",
+   "commit": "97e19fd906bf156a93e2292e3e56225651cc8841",
+   "licenseSha256": "204cfa747341660e4da64cd23e8c876c6b20279d247f48564993d3fc4a2eab47",
+   "fixture": "peaceai/test/fixtures/m277/hp-src-index.ts.txt"
+  },
+  {
+   "repo": "fb55/htmlparser2",
+   "commit": "1765516bdf55f1287c8458ed6dd9c88648d0db73",
+   "licenseSha256": "204cfa747341660e4da64cd23e8c876c6b20279d247f48564993d3fc4a2eab47",
+   "fixture": "peaceai/test/fixtures/m277/hp-src-Parser.spec.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "49579df230cb1cce5ca819f752f5231fa92332a3",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-src-attributes.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "49579df230cb1cce5ca819f752f5231fa92332a3",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-src-compile.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "49579df230cb1cce5ca819f752f5231fa92332a3",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-src-general.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "49579df230cb1cce5ca819f752f5231fa92332a3",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-src-helpers-cache.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "49579df230cb1cce5ca819f752f5231fa92332a3",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-src-helpers-options.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "49579df230cb1cce5ca819f752f5231fa92332a3",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-src-helpers-querying.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "49579df230cb1cce5ca819f752f5231fa92332a3",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-src-helpers-selectors.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "49579df230cb1cce5ca819f752f5231fa92332a3",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-src-index.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "49579df230cb1cce5ca819f752f5231fa92332a3",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-src-types.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "49579df230cb1cce5ca819f752f5231fa92332a3",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-src-pseudo-selectors-aliases.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "49579df230cb1cce5ca819f752f5231fa92332a3",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-src-pseudo-selectors-filters.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "49579df230cb1cce5ca819f752f5231fa92332a3",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-src-pseudo-selectors-index.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "49579df230cb1cce5ca819f752f5231fa92332a3",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-src-pseudo-selectors-pseudos.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "49579df230cb1cce5ca819f752f5231fa92332a3",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-src-pseudo-selectors-subselects.ts.txt"
+  },
+  {
+   "repo": "fb55/css-select",
+   "commit": "ca67a21cb2cf4733281f15e82ed9832b5dc16d14",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m277/cs-test-attributes.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-_deprecated.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-adapters.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-error.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-event.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-h3.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-handler.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-index.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-middleware.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-plugin.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-response.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-rules-types.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-types-_utils.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-types-context.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-types-h3.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-types-handler.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-types-route-rules.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-auth.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-base.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-body.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-cache.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-cookie.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-cors.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-event-stream.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-event.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-fingerprint.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-auth.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-body.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-cache.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-cors.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-dispose.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-encoding.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-event-stream.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-iron-crypto.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-iterable.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-mime.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-obj.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-object.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-path.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-proxy.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-query.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-route.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-session.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-standard-schema.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-internal-validate.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-json-rpc.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-middleware.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-path.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-proxy.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-query.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-request.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-response.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-route.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-sanitize.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-session.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-static.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-timing.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "d37911d1be17a2834fb194f1732fe73ba1641617",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-src-utils-ws.ts.txt"
+  },
+  {
+   "repo": "h3js/h3",
+   "commit": "badc762899af14ec024ee18dd2cc930bfb97e160",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m277/h3-test-unit-cors.test.ts.txt"
+  }
+ ]
+}
