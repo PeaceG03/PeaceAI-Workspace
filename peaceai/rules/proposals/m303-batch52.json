@@ -1,0 +1,132 @@
+{
+ "schema": "peaceai-m303-batch52:v1",
+ "note": "Pinned copies of jonschlinkert/extract-comments, jonschlinkert/option-cache, and jonschlinkert/map-visit at the parent of a published bug fix, plus the test that fix changed. The extract-comments, option-cache, and map-visit licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/extract-comments",
+   "commit": "11fc97653dad784a90018d89cda02c2bcd184e68",
+   "licenseSha256": "3d9abf2d92b07e68eee89f651f7c7853bc303f27889ed89d9e50258f217ef9f7",
+   "fixture": "peaceai/test/fixtures/m303/ec-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/extract-comments",
+   "commit": "11fc97653dad784a90018d89cda02c2bcd184e68",
+   "licenseSha256": "3d9abf2d92b07e68eee89f651f7c7853bc303f27889ed89d9e50258f217ef9f7",
+   "fixture": "peaceai/test/fixtures/m303/ec-lib-block.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/extract-comments",
+   "commit": "11fc97653dad784a90018d89cda02c2bcd184e68",
+   "licenseSha256": "3d9abf2d92b07e68eee89f651f7c7853bc303f27889ed89d9e50258f217ef9f7",
+   "fixture": "peaceai/test/fixtures/m303/ec-lib-code.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/extract-comments",
+   "commit": "11fc97653dad784a90018d89cda02c2bcd184e68",
+   "licenseSha256": "3d9abf2d92b07e68eee89f651f7c7853bc303f27889ed89d9e50258f217ef9f7",
+   "fixture": "peaceai/test/fixtures/m303/ec-lib-context.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/extract-comments",
+   "commit": "11fc97653dad784a90018d89cda02c2bcd184e68",
+   "licenseSha256": "3d9abf2d92b07e68eee89f651f7c7853bc303f27889ed89d9e50258f217ef9f7",
+   "fixture": "peaceai/test/fixtures/m303/ec-lib-extractor.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/extract-comments",
+   "commit": "11fc97653dad784a90018d89cda02c2bcd184e68",
+   "licenseSha256": "3d9abf2d92b07e68eee89f651f7c7853bc303f27889ed89d9e50258f217ef9f7",
+   "fixture": "peaceai/test/fixtures/m303/ec-lib-line.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/extract-comments",
+   "commit": "11fc97653dad784a90018d89cda02c2bcd184e68",
+   "licenseSha256": "3d9abf2d92b07e68eee89f651f7c7853bc303f27889ed89d9e50258f217ef9f7",
+   "fixture": "peaceai/test/fixtures/m303/ec-lib-utils.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/extract-comments",
+   "commit": "094ea6bad16cc965a9430ed78ac86972d032e1bb",
+   "licenseSha256": "3d9abf2d92b07e68eee89f651f7c7853bc303f27889ed89d9e50258f217ef9f7",
+   "fixture": "peaceai/test/fixtures/m303/ec-test-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/extract-comments",
+   "commit": "094ea6bad16cc965a9430ed78ac86972d032e1bb",
+   "licenseSha256": "3d9abf2d92b07e68eee89f651f7c7853bc303f27889ed89d9e50258f217ef9f7",
+   "fixture": "peaceai/test/fixtures/m303/ec-test-fixtures-mixed.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/option-cache",
+   "commit": "089ec0250738b17e7cdbe5c9c8812db29e0d1826",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m303/oc-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/option-cache",
+   "commit": "089ec0250738b17e7cdbe5c9c8812db29e0d1826",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m303/oc-utils.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/option-cache",
+   "commit": "af0216f7520da127e136301665e8aa9b8bf554be",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m303/oc-test-disabled.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/option-cache",
+   "commit": "af0216f7520da127e136301665e8aa9b8bf554be",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m303/oc-test-enabled.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/option-cache",
+   "commit": "af0216f7520da127e136301665e8aa9b8bf554be",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m303/oc-test-events.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/option-cache",
+   "commit": "af0216f7520da127e136301665e8aa9b8bf554be",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m303/oc-test-hasOption.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/option-cache",
+   "commit": "af0216f7520da127e136301665e8aa9b8bf554be",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m303/oc-test-isBoolean.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/option-cache",
+   "commit": "af0216f7520da127e136301665e8aa9b8bf554be",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m303/oc-test-option.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/option-cache",
+   "commit": "af0216f7520da127e136301665e8aa9b8bf554be",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m303/oc-test-options.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/map-visit",
+   "commit": "4e325c69a1e26dbf65bda0e3069d009327591fee",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m303/mv-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/map-visit",
+   "commit": "4e325c69a1e26dbf65bda0e3069d009327591fee",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m303/mv-utils.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/map-visit",
+   "commit": "a13b8ae91cc4e32c4153485342ed9e6af9367482",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m303/mv-test.js.txt"
+  }
+ ]
+}
