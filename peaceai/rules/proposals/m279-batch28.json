@@ -1,0 +1,246 @@
+{
+  "schema": "peaceai-m279-batch28:v1",
+  "note": "Pinned copies of unjs/impound, antfu/unconfig, and harrisiirak/cron-parser at the parent of a published bug fix, plus the test that fix changed. None of the three licenses contains an email address, so each pinned hash is the text as written.",
+  "examples": [
+    {
+      "repo": "unjs/impound",
+      "commit": "7d87daea0d3ebdeb816404e50b89ad2252712038",
+      "licenseSha256": "2a012c35735ae3a78747819292adaffaf7222593ee1de9ad74008833b971cdb8",
+      "fixture": "peaceai/test/fixtures/m279/ip-src-index.ts.txt"
+    },
+    {
+      "repo": "unjs/impound",
+      "commit": "7d5daccf0b0d36e8624d3d3f5e1e84b8b6d7a465",
+      "licenseSha256": "2a012c35735ae3a78747819292adaffaf7222593ee1de9ad74008833b971cdb8",
+      "fixture": "peaceai/test/fixtures/m279/ip-test-index.test.ts.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "542d7c7a043a210934cbea72d5a2c0ee84e3f9c5",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-core-src-fs.ts.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "542d7c7a043a210934cbea72d5a2c0ee84e3f9c5",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-core-src-index.ts.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "542d7c7a043a210934cbea72d5a2c0ee84e3f9c5",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-core-src-types.ts.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "542d7c7a043a210934cbea72d5a2c0ee84e3f9c5",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-src-index.ts.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "542d7c7a043a210934cbea72d5a2c0ee84e3f9c5",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-src-interop.ts.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "542d7c7a043a210934cbea72d5a2c0ee84e3f9c5",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-src-presets.ts.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "542d7c7a043a210934cbea72d5a2c0ee84e3f9c5",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-src-types.ts.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "61c87a27a4bef991646f89eacd30c36e384a229f",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-test-run.test.ts.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "61c87a27a4bef991646f89eacd30c36e384a229f",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-test-__snapshots__-run.test.ts.snap.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "61c87a27a4bef991646f89eacd30c36e384a229f",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-test-fixtures-array-foo.config.cjs.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "61c87a27a4bef991646f89eacd30c36e384a229f",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-test-fixtures-custom-parser-config.txt.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "61c87a27a4bef991646f89eacd30c36e384a229f",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-test-fixtures-one-package.json.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "61c87a27a4bef991646f89eacd30c36e384a229f",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-test-fixtures-one-params.js.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "61c87a27a4bef991646f89eacd30c36e384a229f",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-test-fixtures-one-rewrite.js.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "61c87a27a4bef991646f89eacd30c36e384a229f",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-test-fixtures-one-rewrite2.js.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "61c87a27a4bef991646f89eacd30c36e384a229f",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-test-fixtures-one-un.config.json.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "61c87a27a4bef991646f89eacd30c36e384a229f",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-test-fixtures-one-un.config.mjs.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "61c87a27a4bef991646f89eacd30c36e384a229f",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-test-fixtures-one-un.config.ts.txt"
+    },
+    {
+      "repo": "antfu/unconfig",
+      "commit": "61c87a27a4bef991646f89eacd30c36e384a229f",
+      "licenseSha256": "604957a6f422647f477d07f40200ad11db3830a1d463b344c25ccf75bd4bd933",
+      "fixture": "peaceai/test/fixtures/m279/uc-packages-unconfig-test-fixtures-two-lodash-es.js.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-CronDate.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-CronExpression.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-CronExpressionParser.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-CronFieldCollection.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-CronFileParser.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-fields-CronDayOfMonth.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-fields-CronDayOfWeek.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-fields-CronField.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-fields-CronHour.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-fields-CronMinute.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-fields-CronMonth.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-fields-CronSecond.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-fields-index.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-fields-types.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-index.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-src-utils-random.ts.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-jest.config.js.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "f52ea067e67b284e4c1149990d130b7eb55c5aff",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-tsconfig.json.txt"
+    },
+    {
+      "repo": "harrisiirak/cron-parser",
+      "commit": "282a1737b34b8f08a8c21242ad31c7714f8466f2",
+      "licenseSha256": "9a08965c44ca16aa85423ed8a1f8682e9d8229897cb4189099bd38e132afa93a",
+      "fixture": "peaceai/test/fixtures/m279/cp-tests-CronExpressionParser.test.ts.txt"
+    }
+  ]
+}
