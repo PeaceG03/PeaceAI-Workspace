@@ -40,6 +40,8 @@ import { repairBatch19 } from "./batch19.ts";
 import { repairBatch21 } from "./batch21.ts";
 import { repairBatch28 } from "./batch28.ts";
 import { repairBatch32 } from "./batch32.ts";
+import { repairBatch37 } from "./batch37.ts";
+
 
 import { parseTypeDiagnostics, repairTypedFailure } from "./sigfix.ts";
 
@@ -3252,6 +3254,18 @@ export function runTestSpec(input: SpecInput): SpecResult {
     return {
       status: "diff", diff: batch32.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
       fit: { shape: "batch32", examples: 0, targets: [{ symbol: "batch32", file: batch32.file, form: "named", exportName: "batch32", args: [] }] },
+    };
+  }
+  const batch37 = !parseTypeDiagnostics(output).length && input.toolchain.nodePath
+    ? repairBatch37({
+      root: input.root, output, sourcePattern: input.sourcePattern,
+      nodePath: input.toolchain.nodePath, nodeModules: input.nodeModules, testCommand: input.testCommand,
+    })
+    : null;
+  if (batch37) {
+    return {
+      status: "diff", diff: batch37.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
+      fit: { shape: "batch37", examples: 0, targets: [{ symbol: "batch37", file: batch37.file, form: "named", exportName: "batch37", args: [] }] },
     };
   }
   if (parseTypeDiagnostics(output).length) {
