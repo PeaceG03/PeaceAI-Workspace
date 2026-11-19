@@ -1,0 +1,23 @@
+{
+  "name": "m307-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "should": "13.2.3",
+    "array-each": "1.0.1",
+    "define-property": "0.2.5",
+    "extend-shallow": "2.0.1",
+    "snapdragon": "0.11.0",
+    "extract-comments": "0.10.1",
+    "cache-base": "0.8.0",
+    "clone-deep": "0.2.4",
+    "graceful-fs": "4.1.3",
+    "has-own-deep": "0.1.4",
+    "lazy-cache": "1.0.3",
+    "mkdirp": "0.5.1",
+    "project-name": "0.2.4",
+    "resolve-dir": "0.1.0",
+    "rimraf": "2.5.2",
+    "union-value": "0.2.3"
+  }
+}
