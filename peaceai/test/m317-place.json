@@ -1,0 +1,13 @@
+{
+  "cd-LICENSE.txt": "LICENSE",
+  "cd-index.js.txt": "index.js",
+  "cd-test.js.txt": "test.js",
+  "hd-LICENSE.txt": "LICENSE",
+  "hd-README.md.txt": "README.md",
+  "hd-index.js.txt": "index.js",
+  "hd-test.js.txt": "test.js",
+  "mo-LICENSE.txt": "LICENSE",
+  "mo-README.md.txt": "README.md",
+  "mo-index.js.txt": "index.js",
+  "mo-test.js.txt": "test.js"
+}
