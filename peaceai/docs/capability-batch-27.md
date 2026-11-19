@@ -1,0 +1,17 @@
+# Capability batch 27
+
+Based on `4aaff542952dafb8ccd63564cf08b0d97ade75ae`. No credit claim. Held-out diffs and reasons were not opened. The cap stays 20. `specgrade.ts`, `gate.ts`, `scope.ts`, and `capability-job.ts` were not edited. The self-change lane was not edited.
+
+The libraries below were checked by name against the held-out list, the hidden set, the public exclusion list, the practice pairs, and the LM pair lists. None of those names is `tinylibs/tinyps`, `tinylibs/tinybench`, or `antfu/ni`. They are also not already a fixture, and they are not the libraries used in batches 1 through 26. `unjs/ufo`, `unjs/defu`, `unjs/scule`, and `unjs/destr` were not reused: each is named on the public exclusion list. `antfu/strip-literal` was evaluated and dropped: a published fixture contains a personal home path that the leak scan flags. A `tinylibs/tinyps` throw-on-non-positive-pid repair was evaluated and dropped: the published parent path calls `killTree(0)`, which terminates the test process before a clean assertion. `typicode/steno` URL support was evaluated and dropped: the published `npm test` command is not available on the practice sandbox PATH. Each notice keeps the license text as written: none of the three licenses contain an email address.
+
+## Families
+
+`killAll` threw the first non-`ESRCH` error and stopped, so a descendant that could still be signalled was left running when one kill failed. `tinylibs/tinyps` at parent `c157a5f6aa5e6e3763ed70044aed84764abaf68e` does that in `src/main.ts`. Commit `f40ac2824c1ebfdaf5615a5839028c8b9cf9e631` records every such error, continues through the tree, and raises `AggregateError`. The published `src/main.test.ts` fails the "kills the rest of the tree when a process cannot be killed" case, and passes after the edit.
+
+`withConcurrency` left its `abort` listener on the signal after a run finished or after timestamp initialization threw, so a later run saw a leftover listener. `tinylibs/tinybench` at parent `dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb` does that in `src/concurrency.ts`. Commit `93c5fdcbd4728e81d32121bc0477747db4b0e1e2` removes the listener in a `finally` block. The published `test/with-concurrency.test.ts` fails the listener-cleanup cases, and passes after the edit.
+
+`getPackageJSON` used `JSON.parse` on the manifest, so a JSONC `package.json` with comments or trailing commas was rejected. `antfu/ni` at parent `daad868b723fd2f541b20650b0dce8821d4f621f` does that in `src/fs.ts`. Commit `40124c2053a6d9c5cf1543803ae774b033bb099a` parses with `strip-json-comments` (trailing commas included) when `JSON.parse` fails, and rethrows the original error when the text is simply invalid JSON. The published `test/package-json.spec.ts` fails the comment and trailing-comma cases, and passes after the edit. The parent failure is a `JSON.parse` `SyntaxError` of the manifest text, not a syntax error in the source under test.
+
+## Soundness
+
+The mutant for each family is that unmodified parent. The same published command fails in-process and inside the sandbox for the reason above, and the repair puts the parent file back to the fixed source. An `any` parameter that returns the recorded answer for every input is `verified_test_only` for `killTree`, `withConcurrency`, and `getPackageJSON`. A check that renames `killTree`, `withConcurrency`, or `getPackageJSON` is refused. The cap stays 20. No credit is claimed. Held-out repositories were not opened.

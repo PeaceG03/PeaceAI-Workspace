@@ -1,0 +1,394 @@
+import type {
+  AddEventListenerOptionsArgument,
+  BenchEvents,
+  BenchLike,
+  BenchOptions,
+  Concurrency,
+  EventListener,
+  EventListenerObject,
+  Fn,
+  FnOptions,
+  HookMode,
+  JSRuntime,
+  NowFn,
+  RemoveEventListenerOptionsArgument,
+  TaskResult,
+  TimestampProvider,
+} from './types'
+
+import {
+  defaultMinimumIterations as defaultIterations,
+  defaultMinimumWarmupTime,
+  defaultMinimumTime as defaultTime,
+  defaultMinimumWarmupIterations as defaultWarmupIterations,
+  emptyFunction,
+} from './constants'
+import { BenchEvent } from './event'
+import { Task } from './task'
+import {
+  assert,
+  calibrateTimerOverhead,
+  defaultConvertTaskResultForConsoleTable,
+  getTimestampProvider,
+  runtime,
+  runtimeVersion,
+} from './utils'
+
+const subtractTimerOverheadConcurrencyError =
+  '`subtractTimerOverhead` cannot be used with `concurrency: "task"` — set `concurrency` to `null` or `"bench"`, or disable `subtractTimerOverhead`'
+
+/**
+ * The Bench class keeps track of the benchmark tasks and controls them.
+ */
+export class Bench extends EventTarget implements BenchLike {
+  declare addEventListener: (<K extends BenchEvents>(
+    type: K,
+    listener: EventListener<K> | EventListenerObject<K> | null,
+    options?: AddEventListenerOptionsArgument
+  ) => void) & EventTarget['addEventListener']
+
+  /**
+   * Executes tasks concurrently based on the specified concurrency mode.
+   *
+   * - When `mode` is set to `null` (default), concurrency is disabled.
+   * - When `mode` is set to 'task', each task's iterations (calls of a task function) run concurrently.
+   * - When `mode` is set to 'bench', different tasks within the bench run concurrently.
+   */
+  readonly concurrency: Concurrency
+
+  /**
+   * The iteration limit per task; see {@link BenchOptions.iterations}.
+   */
+  readonly iterations: number
+
+  /**
+   * The benchmark name.
+   */
+  readonly name: string | undefined
+
+  /**
+   * A function to get a timestamp.
+   */
+  readonly now: NowFn
+
+  /**
+   * Removes a previously registered event listener.
+   */
+  declare removeEventListener: (<K extends BenchEvents>(
+    type: K,
+    listener: EventListener<K> | EventListenerObject<K> | null,
+    options?: RemoveEventListenerOptionsArgument
+  ) => void) & EventTarget['removeEventListener']
+
+  readonly retainSamples: boolean
+
+  /**
+   * The JavaScript runtime environment.
+   */
+  readonly runtime: JSRuntime
+
+  /**
+   * The JavaScript runtime version.
+   */
+  readonly runtimeVersion: string
+
+  /**
+   * A setup function called once per task and phase.
+   */
+  readonly setup: (task: Task, mode: HookMode) => Promise<void> | void
+
+  /**
+   * An AbortSignal to cancel the benchmark.
+   */
+  readonly signal?: AbortSignal
+
+  /**
+   * Whether to subtract an estimated timestamp provider call overhead from
+   * each raw latency sample.
+   *
+   * Incompatible with `concurrency: 'task'`. Enforced at construction and
+   * re-checked at the start of {@link Bench.run} to guard against untyped
+   * (JS-side) mutation of the `readonly` `concurrency` field after
+   * construction.
+   * @default false
+   */
+  readonly subtractTimerOverhead: boolean
+
+  /**
+   * A teardown function called once per task and phase.
+   */
+  readonly teardown: (task: Task, mode: HookMode) => Promise<void> | void
+
+  /**
+   * Maximum concurrent iterations within a task; only for `concurrency: 'task'`.
+   * @default Number.POSITIVE_INFINITY
+   */
+  readonly threshold: number
+
+  /**
+   * Whether to throw an error if a task function throws
+   * @default false
+   */
+  readonly throws: boolean
+
+  /**
+   * The time budget per task in milliseconds; see {@link BenchOptions.time}.
+   */
+  readonly time: number
+
+  /**
+   * The estimated cost of one timestamp provider call in milliseconds.
+   *
+   * `undefined` when {@link subtractTimerOverhead} is `false`.
+   * Otherwise calibrated once at construction time via
+   * {@link calibrateTimerOverhead}.
+   */
+  readonly timerOverhead?: number
+
+  /**
+   * A timestamp provider and its related functions.
+   */
+  readonly timestampProvider: TimestampProvider
+
+  /**
+   * Whether to warmup the tasks before running them
+   */
+  readonly warmup: boolean
+
+  /**
+   * The warmup iteration limit; see {@link BenchOptions.warmupIterations}.
+   */
+  readonly warmupIterations: number
+
+  /**
+   * The warmup time budget in milliseconds; see {@link BenchOptions.warmupTime}.
+   */
+  readonly warmupTime: number
+
+  /**
+   * The tasks results as an array.
+   * @returns the tasks results
+   */
+  get results (): Readonly<TaskResult>[] {
+    return this.tasks.map(task => task.result)
+  }
+
+  /**
+   * The tasks as an array.
+   * @returns An array containing all benchmark tasks
+   */
+  get tasks (): Task[] {
+    return [...this.#tasks.values()]
+  }
+
+  /**
+   * The task map
+   */
+  readonly #tasks: Map<string, Task> = new Map<string, Task>()
+
+  constructor (options: BenchOptions = {}) {
+    super()
+    const { name, ...restOptions } = options
+    this.name = name
+    this.runtime = runtime
+    this.runtimeVersion = runtimeVersion
+    this.concurrency = restOptions.concurrency ?? null
+    this.threshold = restOptions.threshold ?? Number.POSITIVE_INFINITY
+
+    this.time = restOptions.time ?? defaultTime
+    this.iterations = restOptions.iterations ?? defaultIterations
+
+    assert(
+      !(
+        restOptions.now !== undefined &&
+        restOptions.timestampProvider !== undefined
+      ),
+      'Cannot set both `now` and `timestampProvider` options'
+    )
+    this.timestampProvider = getTimestampProvider(
+      restOptions.now ?? restOptions.timestampProvider
+    )
+
+    this.now = () => this.timestampProvider.toMs(this.timestampProvider.fn())
+
+    this.warmup = restOptions.warmup ?? true
+    this.warmupIterations =
+      restOptions.warmupIterations ?? defaultWarmupIterations
+    this.warmupTime = restOptions.warmupTime ?? defaultMinimumWarmupTime
+    this.setup = restOptions.setup ?? emptyFunction
+    this.teardown = restOptions.teardown ?? emptyFunction
+    this.throws = restOptions.throws ?? false
+    if (restOptions.signal != null) {
+      this.signal = restOptions.signal
+    }
+    this.retainSamples = restOptions.retainSamples === true
+    this.subtractTimerOverhead = restOptions.subtractTimerOverhead === true
+    assert(
+      !(this.subtractTimerOverhead && this.concurrency === 'task'),
+      subtractTimerOverheadConcurrencyError
+    )
+    const timerOverhead = this.subtractTimerOverhead
+      ? calibrateTimerOverhead(this.timestampProvider)
+      : undefined
+    if (timerOverhead != null) {
+      this.timerOverhead = timerOverhead
+    }
+
+    if (this.signal) {
+      this.signal.addEventListener(
+        'abort',
+        () => {
+          this.dispatchEvent(new BenchEvent('abort'))
+        },
+        { once: true }
+      )
+    }
+  }
+
+  /**
+   * Adds a benchmark task to the task map.
+   * @param name - the task name
+   * @param fn - the task function
+   * @param fnOpts - the task function options
+   * @returns the Bench instance
+   * @throws {Error} when a task with the same name already exists
+   */
+  add (name: string, fn: Fn, fnOpts: FnOptions = {}): this {
+    if (!this.#tasks.has(name)) {
+      const task = new Task(this, name, fn, fnOpts)
+      this.#tasks.set(name, task)
+      this.dispatchEvent(new BenchEvent('add', task))
+    } else {
+      throw new Error(`Task "${name}" already exists`)
+    }
+    return this
+  }
+
+  /**
+   * Gets a task based on the task name.
+   * @param name - the task name
+   * @returns the Task instance or undefined if not found
+   */
+  getTask (name: string): Task | undefined {
+    return this.#tasks.get(name)
+  }
+
+  /**
+   * Removes a benchmark task from the task map.
+   * @param name - the task name
+   * @returns the Bench instance
+   */
+  remove (name: string): this {
+    const task = this.getTask(name)
+    if (task) {
+      this.#tasks.delete(name)
+      this.dispatchEvent(new BenchEvent('remove', task))
+    }
+    return this
+  }
+
+  /**
+   * Resets each task's run count, statistics and diagnostics. Results remain
+   * available as `not-started` or `aborted`; aborted signals are not rearmed.
+   */
+  reset (): void {
+    for (const task of this.#tasks.values()) {
+      task.reset()
+    }
+    this.dispatchEvent(new BenchEvent('reset'))
+  }
+
+  /**
+   * Runs the added benchmark tasks.
+   * @returns the tasks array
+   */
+  async run (): Promise<Task[]> {
+    assert(
+      !(this.subtractTimerOverhead && this.concurrency === 'task'),
+      subtractTimerOverheadConcurrencyError
+    )
+    if (this.warmup) {
+      await this.#warmupTasks()
+    }
+
+    this.dispatchEvent(new BenchEvent('start'))
+
+    let values: Task[] = []
+
+    if (this.concurrency === 'bench') {
+      const taskPromises = []
+      for (const task of this.#tasks.values()) {
+        taskPromises.push(task.run())
+      }
+      values = await Promise.all(taskPromises)
+    } else {
+      for (const task of this.#tasks.values()) {
+        values.push(await task.run())
+      }
+    }
+
+    this.dispatchEvent(new BenchEvent('complete'))
+    return values
+  }
+
+  /**
+   * Runs the added benchmark tasks synchronously.
+   * @returns the tasks array
+   */
+  runSync (): Task[] {
+    assert(
+      this.concurrency === null,
+      'Cannot use `concurrency` option when using `runSync`'
+    )
+    if (this.warmup) {
+      this.#warmupTasksSync()
+    }
+    const values: Task[] = []
+    this.dispatchEvent(new BenchEvent('start'))
+    for (const task of this.#tasks.values()) {
+      values.push(task.runSync())
+    }
+    this.dispatchEvent(new BenchEvent('complete'))
+    return values
+  }
+
+  /**
+   * Returns the tasks results as a table.
+   * @param convert - an optional callback to convert the task result to a table record
+   * @returns the tasks results as an array of table records
+   */
+  table (
+    convert = defaultConvertTaskResultForConsoleTable
+  ): (null | Record<string, number | string | undefined>)[] {
+    return this.tasks.map(convert)
+  }
+
+  /**
+   * Warms up the benchmark tasks.
+   */
+  async #warmupTasks (): Promise<void> {
+    this.dispatchEvent(new BenchEvent('warmup'))
+
+    if (this.concurrency === 'bench') {
+      const taskPromises = []
+      for (const task of this.#tasks.values()) {
+        taskPromises.push(task.warmup())
+      }
+      await Promise.all(taskPromises)
+    } else {
+      for (const task of this.#tasks.values()) {
+        await task.warmup()
+      }
+    }
+  }
+
+  /**
+   * Warms up the benchmark tasks synchronously.
+   */
+  #warmupTasksSync (): void {
+    this.dispatchEvent(new BenchEvent('warmup'))
+    for (const task of this.#tasks.values()) {
+      task.warmupSync()
+    }
+  }
+}

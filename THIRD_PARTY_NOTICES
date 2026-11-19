@@ -13776,3 +13776,116 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 IN THE SOFTWARE.
 """
 ---- end ----
+==============================================================================
+repo: tinylibs/tinyps
+license: MIT (LICENSE, sha256 of trimmed text 69c409d1c1e226dc53cd59b468ba819098284f6b8bf634a63be3c9a73f09d8ca)
+fixtures (commit path):
+  c157a5f6aa5e6e3763ed70044aed84764abaf68e peaceai/test/fixtures/m278/ps-src-main.ts.txt
+  f40ac2824c1ebfdaf5615a5839028c8b9cf9e631 peaceai/test/fixtures/m278/ps-src-main.test.ts.txt
+  f40ac2824c1ebfdaf5615a5839028c8b9cf9e631 peaceai/test/fixtures/m278/ps-test-warmup.ts.txt
+  f40ac2824c1ebfdaf5615a5839028c8b9cf9e631 peaceai/test/fixtures/m278/ps-test-fixtures-client.js.txt
+  f40ac2824c1ebfdaf5615a5839028c8b9cf9e631 peaceai/test/fixtures/m278/ps-test-fixtures-idle.js.txt
+  f40ac2824c1ebfdaf5615a5839028c8b9cf9e631 peaceai/test/fixtures/m278/ps-test-fixtures-listener.js.txt
+  f40ac2824c1ebfdaf5615a5839028c8b9cf9e631 peaceai/test/fixtures/m278/ps-test-fixtures-parent.js.txt
+license URL: https://github.com/tinylibs/tinyps/blob/c157a5f6aa5e6e3763ed70044aed84764abaf68e/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2026 Tinylibs
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: tinylibs/tinybench
+license: MIT (LICENSE, sha256 of trimmed text 551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591)
+fixtures (commit path):
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-async.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-bench.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-concurrency.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-console-table.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-constants.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-conversions.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-error.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-event.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-format.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-index.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-runtime.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-statistics.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-student-t.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-task.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-timer-diagnostics.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-timestamp.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-types.ts.txt
+  dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb peaceai/test/fixtures/m278/tb-src-utils.ts.txt
+  93c5fdcbd4728e81d32121bc0477747db4b0e1e2 peaceai/test/fixtures/m278/tb-test-with-concurrency.test.ts.txt
+  93c5fdcbd4728e81d32121bc0477747db4b0e1e2 peaceai/test/fixtures/m278/tb-test-utils.ts.txt
+license URL: https://github.com/tinylibs/tinybench/blob/dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2022 Tinylibs
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+==============================================================================
+repo: antfu/ni
+license: MIT (LICENSE, sha256 of trimmed text b675b9dfbf4513fb377e89a5c09240bc9a9d164ba026102a1bc1e8781fae49f7)
+fixtures (commit path):
+  daad868b723fd2f541b20650b0dce8821d4f621f peaceai/test/fixtures/m278/ni-src-fs.ts.txt
+  40124c2053a6d9c5cf1543803ae774b033bb099a peaceai/test/fixtures/m278/ni-test-package-json.spec.ts.txt
+license URL: https://github.com/antfu/ni/blob/daad868b723fd2f541b20650b0dce8821d4f621f/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2020 Anthony Fu <https://github.com/antfu>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
