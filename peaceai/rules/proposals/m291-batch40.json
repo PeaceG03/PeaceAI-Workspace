@@ -1,0 +1,42 @@
+{
+ "schema": "peaceai-m291-batch40:v1",
+ "note": "Pinned copies of jonschlinkert/is-extglob, jonschlinkert/relative, and jonschlinkert/to-regex-range at the parent of a published bug fix, plus the test that fix changed. The is-extglob, relative, and to-regex-range licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/is-extglob",
+   "commit": "2f993202b5a71752bd3bda564febf1624e5de197",
+   "licenseSha256": "e7950ccd3b1fe0780fa8e661ca8ea0dba93072f553b6f9345b625c97b7c8b1bd",
+   "fixture": "peaceai/test/fixtures/m291/eg-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-extglob",
+   "commit": "733822f4af14540f300f8672f7e15da3d9affe75",
+   "licenseSha256": "e7950ccd3b1fe0780fa8e661ca8ea0dba93072f553b6f9345b625c97b7c8b1bd",
+   "fixture": "peaceai/test/fixtures/m291/eg-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/relative",
+   "commit": "9f8a3ff0652b20238965e70c85e7192905b4d696",
+   "licenseSha256": "8c6578e8b84e56636d35aef5afffed48b1184923973523736dc6d9d68d312b56",
+   "fixture": "peaceai/test/fixtures/m291/rel-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/relative",
+   "commit": "97edbbff8fd3e2ba318f1296215c90f637dfaca5",
+   "licenseSha256": "8c6578e8b84e56636d35aef5afffed48b1184923973523736dc6d9d68d312b56",
+   "fixture": "peaceai/test/fixtures/m291/rel-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/to-regex-range",
+   "commit": "6bc3a6053b05827ed8dfa52e42f7458cd343e8c3",
+   "licenseSha256": "1c389d981f3311b86ae4aace6308ccf5e042643a373b84c7113adcfa3be0fceb",
+   "fixture": "peaceai/test/fixtures/m291/trr-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/to-regex-range",
+   "commit": "60591f029886cd879d74df069380824b0a80ea43",
+   "licenseSha256": "1c389d981f3311b86ae4aace6308ccf5e042643a373b84c7113adcfa3be0fceb",
+   "fixture": "peaceai/test/fixtures/m291/trr-test-test.js.txt"
+  }
+ ]
+}

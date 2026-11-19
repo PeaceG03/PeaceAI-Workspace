@@ -14361,3 +14361,99 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: jonschlinkert/is-extglob
+license: MIT (LICENSE, sha256 of trimmed text e7950ccd3b1fe0780fa8e661ca8ea0dba93072f553b6f9345b625c97b7c8b1bd)
+fixtures (commit path):
+  2f993202b5a71752bd3bda564febf1624e5de197 peaceai/test/fixtures/m291/eg-index.js.txt
+  733822f4af14540f300f8672f7e15da3d9affe75 peaceai/test/fixtures/m291/eg-test.js.txt
+license URL: https://github.com/jonschlinkert/is-extglob/blob/2f993202b5a71752bd3bda564febf1624e5de197/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014-2016, Jon Schlinkert
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/relative
+license: MIT (LICENSE, sha256 of trimmed text 8c6578e8b84e56636d35aef5afffed48b1184923973523736dc6d9d68d312b56)
+fixtures (commit path):
+  9f8a3ff0652b20238965e70c85e7192905b4d696 peaceai/test/fixtures/m291/rel-index.js.txt
+  97edbbff8fd3e2ba318f1296215c90f637dfaca5 peaceai/test/fixtures/m291/rel-test.js.txt
+license URL: https://github.com/jonschlinkert/relative/blob/9f8a3ff0652b20238965e70c85e7192905b4d696/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014 Jon Schlinkert
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/to-regex-range
+license: MIT (LICENSE, sha256 of trimmed text 1c389d981f3311b86ae4aace6308ccf5e042643a373b84c7113adcfa3be0fceb)
+fixtures (commit path):
+  6bc3a6053b05827ed8dfa52e42f7458cd343e8c3 peaceai/test/fixtures/m291/trr-index.js.txt
+  60591f029886cd879d74df069380824b0a80ea43 peaceai/test/fixtures/m291/trr-test-test.js.txt
+license URL: https://github.com/jonschlinkert/to-regex-range/blob/6bc3a6053b05827ed8dfa52e42f7458cd343e8c3/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2015-2017, Jon Schlinkert
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
