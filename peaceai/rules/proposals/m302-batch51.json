@@ -1,0 +1,54 @@
+{
+ "schema": "peaceai-m302-batch51:v1",
+ "note": "Pinned copies of jonschlinkert/longest-value, jonschlinkert/write-json, and jonschlinkert/project-name at the parent of a published bug fix, plus the test that fix changed. The longest-value, write-json, and project-name licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/longest-value",
+   "commit": "8644c6bb5c40727ce84e1e8331cfbb31ccffbccb",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m302/lv-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/longest-value",
+   "commit": "04dc344fb5516c54120f83d6b853bed07eebea17",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m302/lv-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/write-json",
+   "commit": "6a29ee125ba7eea6b28f8a1a89813c8dc423322b",
+   "licenseSha256": "1389f4843de90cdcd23e6cee9f336de3160cb211e746a4b10b7c4b007b447aa4",
+   "fixture": "peaceai/test/fixtures/m302/wj-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/write-json",
+   "commit": "eecb6649856ba71b226454b54ab7025efe446db4",
+   "licenseSha256": "1389f4843de90cdcd23e6cee9f336de3160cb211e746a4b10b7c4b007b447aa4",
+   "fixture": "peaceai/test/fixtures/m302/wj-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/project-name",
+   "commit": "55c4bbe4cd7b721858baea03a6ceeafbabfb2abf",
+   "licenseSha256": "f6355b305c682df8ad29fac06d679f92e3261a5c8e6ffa3815537232f9f176ad",
+   "fixture": "peaceai/test/fixtures/m302/pn-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/project-name",
+   "commit": "45ae088d43c801f3440300e3857c923b02a7b04a",
+   "licenseSha256": "f6355b305c682df8ad29fac06d679f92e3261a5c8e6ffa3815537232f9f176ad",
+   "fixture": "peaceai/test/fixtures/m302/pn-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/project-name",
+   "commit": "45ae088d43c801f3440300e3857c923b02a7b04a",
+   "licenseSha256": "f6355b305c682df8ad29fac06d679f92e3261a5c8e6ffa3815537232f9f176ad",
+   "fixture": "peaceai/test/fixtures/m302/pn-package.json.txt"
+  },
+  {
+   "repo": "jonschlinkert/project-name",
+   "commit": "45ae088d43c801f3440300e3857c923b02a7b04a",
+   "licenseSha256": "f6355b305c682df8ad29fac06d679f92e3261a5c8e6ffa3815537232f9f176ad",
+   "fixture": "peaceai/test/fixtures/m302/pn-fixtures-foo-a.txt.txt"
+  }
+ ]
+}
