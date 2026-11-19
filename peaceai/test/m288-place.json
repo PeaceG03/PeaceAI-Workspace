@@ -1,0 +1,8 @@
+{
+  "glob-index.js.txt": "index.js",
+  "glob-test.js.txt": "test.js",
+  "num-index.js.txt": "index.js",
+  "num-test.js.txt": "test.js",
+  "pkg-lib-index.js.txt": "lib/index.js",
+  "pkg-test-index.js.txt": "test/index.js"
+}
