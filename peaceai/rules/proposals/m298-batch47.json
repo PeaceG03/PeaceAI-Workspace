@@ -1,0 +1,54 @@
+{
+ "schema": "peaceai-m298-batch47:v1",
+ "note": "Pinned copies of jonschlinkert/rename-keys, jonschlinkert/remove-bom-buffer, and jonschlinkert/requires-regex at the parent of a published bug fix, plus the test that fix changed. The rename-keys, remove-bom-buffer, and requires-regex licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/rename-keys",
+   "commit": "b932e011e7448dc173505870d9fd3af050489a9e",
+   "licenseSha256": "bd570353c73bc534716118cd5e4d241fedfa8375048912eb62df50820414f725",
+   "fixture": "peaceai/test/fixtures/m298/rkeys-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/rename-keys",
+   "commit": "aca64ec56a063ca81a03d9314648fba28016c38f",
+   "licenseSha256": "bd570353c73bc534716118cd5e4d241fedfa8375048912eb62df50820414f725",
+   "fixture": "peaceai/test/fixtures/m298/rkeys-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/remove-bom-buffer",
+   "commit": "b09cacff47e997d86ae47d1175a7071f50f69a0f",
+   "licenseSha256": "1c389d981f3311b86ae4aace6308ccf5e042643a373b84c7113adcfa3be0fceb",
+   "fixture": "peaceai/test/fixtures/m298/rbb-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/remove-bom-buffer",
+   "commit": "49a7fd6450a12f8c24cec1fec7b7ede45e7286ce",
+   "licenseSha256": "1c389d981f3311b86ae4aace6308ccf5e042643a373b84c7113adcfa3be0fceb",
+   "fixture": "peaceai/test/fixtures/m298/rbb-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/remove-bom-buffer",
+   "commit": "49a7fd6450a12f8c24cec1fec7b7ede45e7286ce",
+   "licenseSha256": "1c389d981f3311b86ae4aace6308ccf5e042643a373b84c7113adcfa3be0fceb",
+   "fixture": "peaceai/test/fixtures/m298/rbb-fixtures-bom-utf16be.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/remove-bom-buffer",
+   "commit": "49a7fd6450a12f8c24cec1fec7b7ede45e7286ce",
+   "licenseSha256": "1c389d981f3311b86ae4aace6308ccf5e042643a373b84c7113adcfa3be0fceb",
+   "fixture": "peaceai/test/fixtures/m298/rbb-fixtures-bom-utf16le.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/requires-regex",
+   "commit": "8c301a0dfb37169e43ad9acbaa844a679951e3f5",
+   "licenseSha256": "3d9abf2d92b07e68eee89f651f7c7853bc303f27889ed89d9e50258f217ef9f7",
+   "fixture": "peaceai/test/fixtures/m298/rre-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/requires-regex",
+   "commit": "9288a933d936b5cb20b112b847b5c8343abfc23e",
+   "licenseSha256": "3d9abf2d92b07e68eee89f651f7c7853bc303f27889ed89d9e50258f217ef9f7",
+   "fixture": "peaceai/test/fixtures/m298/rre-test.js.txt"
+  }
+ ]
+}
