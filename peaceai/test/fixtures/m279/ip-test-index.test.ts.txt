@@ -1,0 +1,1861 @@
+import type { RollupError } from 'rollup'
+import type { ObjectHook } from 'unplugin'
+import type { ImpoundOptions, ImpoundViolationInfo } from '../src'
+import { rollup } from 'rollup'
+import { describe, expect, it, vi } from 'vitest'
+import { ImpoundPlugin } from '../src'
+
+describe('impound plugin', () => {
+  const code = (id: string) => `import thing from "${id}";console.log(thing)`
+
+  it('prevents importing a disallowed pattern', async () => {
+    const result = await process(code('bar'), { patterns: [['bar']] }) as RollupError
+    expect(result.message).toMatchInlineSnapshot(`"[plugin impound] Invalid import [importing \`bar\` from \`entry.js\`]"`)
+  })
+
+  it('should work with relative imports', async () => {
+    const result = await process(code('./bar.js'), { patterns: [['bar.js']] }) as RollupError
+    expect(result.message).toMatchInlineSnapshot(`"[plugin impound] Invalid import [importing \`bar.js\` from \`entry.js\`]"`)
+  })
+
+  it('should handle absolute paths', async () => {
+    const result = await process(code('/root/bar.js'), { cwd: '/root', patterns: [['bar.js']] }) as RollupError
+    expect(result.message).toMatchInlineSnapshot(`"[plugin impound] Invalid import [importing \`bar.js\` from \`entry.js\`]"`)
+  })
+
+  it('should handle absolutely resolved importers', async () => {
+    const result = await process(code('/root/bar.js'), { cwd: '/root', patterns: [['bar.js']] }, '/root/entry.js') as RollupError
+    expect(result.message).toMatchInlineSnapshot(`"[plugin impound] Invalid import [importing \`bar.js\` from \`entry.js\`]"`)
+  })
+
+  it('should handle RegExp patterns', async () => {
+    const result = await process(code('baar'), { patterns: [[/ba.r/]] }) as RollupError
+    expect(result.message).toMatchInlineSnapshot(`"[plugin impound] Invalid import [importing \`baar\` from \`entry.js\`]"`)
+  })
+
+  it('should handle functional patterns', async () => {
+    const result = await process(code('bar'), { patterns: [[id => id === 'bar']] }) as RollupError
+    expect(result.message).toMatchInlineSnapshot(`"[plugin impound] Invalid import [importing \`bar\` from \`entry.js\`]"`)
+
+    const result2 = await process(code('bar'), { patterns: [[id => id === 'bar' ? 'boo!' : false]] }) as RollupError
+    expect(result2.message).toMatchInlineSnapshot(`"[plugin impound] boo! [importing \`bar\` from \`entry.js\`]"`)
+  })
+
+  it('should pass importer to functional patterns', async () => {
+    const result = await process(code('bar'), { patterns: [[(id, importer) => importer === 'entry.js' && id === 'bar']] }) as RollupError
+    expect(result.message).toMatchInlineSnapshot(`"[plugin impound] Invalid import [importing \`bar\` from \`entry.js\`]"`)
+
+    const result2 = await process(code('bar'), { patterns: [[(id, importer) => `${id} is not allowed in ${importer}`]] }) as RollupError
+    expect(result2.message).toMatchInlineSnapshot(`"[plugin impound] bar is not allowed in entry.js [importing \`bar\` from \`entry.js\`]"`)
+  })
+
+  it('should handle error: false', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const result = await process(code('bar'), { patterns: [['bar']], error: false }) as RollupError
+    expect(result.message).toBeUndefined()
+    expect(errorSpy).toHaveBeenCalledWith('Invalid import [importing `bar` from `entry.js`]')
+    errorSpy.mockRestore()
+  })
+
+  it('deduplicates warnings by default (warn: once)', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    // Two patterns that both match 'bar'; same message would be logged twice without dedup
+    await process(code('bar'), { patterns: [['bar'], [/^bar$/]], error: false })
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    errorSpy.mockRestore()
+  })
+
+  it('logs all warnings when warn is set to always', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    // Two patterns that both match 'bar'; both log without dedup
+    await process(code('bar'), { patterns: [['bar'], [/^bar$/]], error: false, warn: 'always' })
+    expect(errorSpy).toHaveBeenCalledTimes(2)
+    errorSpy.mockRestore()
+  })
+
+  it('raises the same denied import error on every request', () => {
+    const raw = ImpoundPlugin.raw({ patterns: [['secret']], error: true }, { framework: 'rollup', versions: {} })
+    const plugin = (Array.isArray(raw) ? raw : [raw]).find(p => p.name === 'impound') as any
+    const error = vi.fn((message: string) => {
+      throw new Error(message)
+    })
+    const context = { error }
+
+    expect(() => plugin.resolveId.call(context, 'secret', 'entry.js')).toThrow('Invalid import')
+    expect(() => plugin.resolveId.call(context, 'secret', 'entry.js')).toThrow('Invalid import')
+    expect(error).toHaveBeenCalledTimes(2)
+  })
+
+  it('supports using matchers array syntax', async () => {
+    const result = await process(code('bar'), {
+      matchers: [
+        { patterns: [['foo']] }, // This matcher shouldn't apply to 'bar'
+        { patterns: [['bar', 'Using the matchers array syntax']] }, // This should match
+      ],
+    }) as RollupError
+    expect(result.message).toMatchInlineSnapshot(`"[plugin impound] Using the matchers array syntax [importing \`bar\` from \`entry.js\`]"`)
+  })
+
+  it(`doesn't apply rule to excluded files`, async () => {
+    const result = await process(code('bar'), { patterns: [['foo']] })
+    expect(result).toMatchInlineSnapshot(`
+      "var thing = "loaded";
+
+      console.log(thing);"
+    `)
+  })
+
+  it('calls onViolation callback with violation info', async () => {
+    const onViolation = vi.fn()
+    const result = await process(code('bar'), { patterns: [['bar']], onViolation }) as RollupError
+    expect(onViolation).toHaveBeenCalledWith({
+      id: 'bar',
+      importer: 'entry.js',
+      message: 'Invalid import [importing `bar` from `entry.js`]',
+    })
+    expect(result.message).toMatchInlineSnapshot(`"[plugin impound] Invalid import [importing \`bar\` from \`entry.js\`]"`)
+  })
+
+  it('allows import when onViolation returns false', async () => {
+    const result = await process(code('bar'), {
+      patterns: [['bar']],
+      onViolation: () => false,
+    })
+    expect(result).toMatchInlineSnapshot(`
+      "var thing = "loaded";
+
+      console.log(thing);"
+    `)
+  })
+
+  it('provides a helpful error message when importing a disallowed pattern', async () => {
+    const result = await process(code('bar'), { patterns: [['bar', '"bar" is a dangerous library and should never be used.']] }) as RollupError
+    expect(result.message).toMatchInlineSnapshot(`"[plugin impound] "bar" is a dangerous library and should never be used. [importing \`bar\` from \`entry.js\`]"`)
+  })
+
+  it('appends suggestions to error message', async () => {
+    const result = await process(code('bar'), {
+      patterns: [['bar', 'Server-only import', ['Use a server function instead', 'Move this import to a .server.ts file']]],
+    }) as RollupError
+    expect(result.message).toMatchInlineSnapshot(`
+      "[plugin impound] Server-only import [importing \`bar\` from \`entry.js\`]
+
+      Suggestions:
+        - Use a server function instead
+        - Move this import to a .server.ts file"
+    `)
+  })
+
+  it('skips pattern checks for imports matching excludeFiles', async () => {
+    const result = await process(code('bar'), {
+      patterns: [[/^bar$/]],
+      excludeFiles: [/^bar$/],
+    })
+    expect(result).toMatchInlineSnapshot(`
+      "var thing = "loaded";
+
+      console.log(thing);"
+    `)
+  })
+
+  it('still applies patterns to imports not matching excludeFiles', async () => {
+    const result = await process(code('bar'), {
+      patterns: [[/^bar$/]],
+      excludeFiles: [/^foo$/],
+    }) as RollupError
+    expect(result.message).toMatchInlineSnapshot(`"[plugin impound] Invalid import [importing \`bar\` from \`entry.js\`]"`)
+  })
+})
+
+describe('trace mode', () => {
+  it.each([
+    {
+      name: 'the last duplicate import',
+      code: [
+        'import \'secret\'',
+        'const value = 1',
+        'import \'secret\'',
+      ].join('\n'),
+      line: 3,
+      column: 8,
+    },
+    {
+      name: 'a multiline import',
+      code: [
+        'import {',
+        '  value,',
+        '} from \'secret\'',
+      ].join('\n'),
+      line: 3,
+      column: 8,
+    },
+    {
+      name: 'an import after a nonliteral dynamic import',
+      code: [
+        'import(name + suffix)',
+        '',
+        'import \'secret\'',
+      ].join('\n'),
+      line: 3,
+      column: 8,
+    },
+    {
+      name: 'an import after astral Unicode',
+      code: 'const value = \'😀\'; import \'secret\'',
+      line: 1,
+      column: 28,
+    },
+  ])('preserves the diagnostic location for $name', async ({ code, line, column }) => {
+    const violation = await getTraceViolation(code)
+
+    expect(violation.snippet).toMatchObject({ line, column })
+    expect(violation.snippet!.text).toContain(`${' '.repeat(column)}^`)
+  })
+
+  it('includes import trace in violation', async () => {
+    const result = await processTrace({
+      trace: true,
+      patterns: [['secret']],
+    }) as RollupError
+    expect(result.message).toContain('Trace:')
+    expect(result.message).toContain('entry.js')
+    expect(result.message).toContain('middle.js')
+  })
+
+  it('traces through importers outside the include filter', async () => {
+    const result = await processTrace({
+      trace: true,
+      include: [/middle/],
+      patterns: [['secret']],
+    }) as RollupError
+    expect(result.message).toContain('Trace:')
+    expect(result.message).toContain('entry.js')
+    expect(result.message).toContain('(entry)')
+    expect(result.message).toContain('Code:')
+  })
+
+  it('records relative import edges for the trace', async () => {
+    const files: Record<string, string> = {
+      'entry.js': 'import "./middle.js"',
+      'middle.js': 'import secret from "secret";console.log(secret)',
+    }
+    const violations: ImpoundViolationInfo[] = []
+    await rollup({
+      input: 'entry.js',
+      onwarn: () => {},
+      plugins: [
+        ImpoundPlugin.rollup({ trace: true, patterns: [['secret']], error: false, onViolation: info => void violations.push(info) }),
+        {
+          name: 'files',
+          resolveId: (id: string) => {
+            const clean = id.replace('./', '')
+            return (clean in files || id === 'secret') ? clean : undefined
+          },
+          load: (id: string) => files[id] ?? 'export default 1',
+        },
+      ],
+    })
+    expect(violations[0]!.trace).toMatchObject([
+      { file: 'entry.js', import: './middle.js' },
+      { file: 'middle.js' },
+    ])
+  })
+
+  it('includes code snippet in violation', async () => {
+    const result = await processTrace({
+      trace: true,
+      patterns: [['secret']],
+    }) as RollupError
+    expect(result.message).toContain('Code:')
+    expect(result.message).toContain('import secret from "secret"')
+    expect(result.message).toContain('^')
+  })
+
+  it('includes suggestions with trace', async () => {
+    const result = await processTrace({
+      trace: true,
+      patterns: [['secret', 'Server-only import', ['Use a server function']]],
+    }) as RollupError
+    expect(result.message).toContain('Suggestions:')
+    expect(result.message).toContain('Use a server function')
+  })
+
+  it('calls onViolation with trace and snippet', async () => {
+    const violations: ImpoundViolationInfo[] = []
+    await processTrace({
+      trace: true,
+      patterns: [['secret']],
+      error: false,
+      onViolation: (info) => { violations.push(info) },
+    })
+    expect(violations).toHaveLength(1)
+    expect(violations[0]!.trace).toBeDefined()
+    expect(violations[0]!.trace!.length).toBeGreaterThanOrEqual(2)
+    expect(violations[0]!.snippet).toBeDefined()
+    expect(violations[0]!.snippet!.line).toBeGreaterThan(0)
+  })
+
+  it('suppresses the report but still proxies the import when onViolation returns false', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const result = await processTrace({
+      trace: true,
+      patterns: [['secret']],
+      error: false,
+      onViolation: () => false,
+    })
+    expect(errorSpy).not.toHaveBeenCalled()
+    expect(result).toContain('createMock')
+    errorSpy.mockRestore()
+  })
+
+  it('tracks entries resolved before the trace plugin sees them', async () => {
+    const violations: ImpoundViolationInfo[] = []
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']], error: false, onViolation: info => void violations.push(info) })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(plugin => plugin.name === 'impound')!
+    const tracePlugin = pluginArray.find(plugin => plugin.name === 'impound:trace')!
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await (impoundPlugin as any).resolveId.call({ error: () => {} }, 'entry.js', undefined, { isEntry: true })
+    await (impoundPlugin as any).resolveId.call({ error: () => {} }, 'middle.js', 'entry.js')
+    await (tracePlugin as any).transform.call({}, 'import middle from "middle.js"', 'entry.js')
+    await (tracePlugin as any).transform.call({}, 'import secret from "secret"', 'middle.js')
+    await (impoundPlugin as any).resolveId.call({ error: () => {} }, 'secret', 'middle.js')
+
+    expect(violations[0]!.trace).toMatchObject([{ file: 'entry.js', import: 'middle.js' }, { file: 'middle.js' }])
+    errorSpy.mockRestore()
+  })
+
+  it('ignores importers that have not been transformed when walking the chain', async () => {
+    const violations: ImpoundViolationInfo[] = []
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']], error: false, onViolation: info => void violations.push(info) })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(plugin => plugin.name === 'impound')!
+    const tracePlugin = pluginArray.find(plugin => plugin.name === 'impound:trace')!
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await (impoundPlugin as any).resolveId.call({ error: () => {} }, 'middle.js', 'entry.js')
+    await (tracePlugin as any).transform.call({}, 'import secret from "secret"', 'middle.js')
+    await (impoundPlugin as any).resolveId.call({ error: () => {} }, 'secret', 'middle.js')
+
+    expect(violations[0]!.trace).toBeUndefined()
+    errorSpy.mockRestore()
+  })
+
+  it('holds a repeated violation once, so a dev server does not accumulate it', async () => {
+    const onViolation = vi.fn()
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']], error: false, onViolation })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(plugin => plugin.name === 'impound')!
+    const tracePlugin = pluginArray.find(plugin => plugin.name === 'impound:trace')!
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    for (let i = 0; i < 3; i++) {
+      await (impoundPlugin as any).resolveId.call({ error: () => {} }, 'secret', 'middle.js')
+    }
+    await (tracePlugin as any).transform.call({}, 'import secret from "secret"', 'middle.js')
+
+    expect(onViolation).toHaveBeenCalledTimes(1)
+    errorSpy.mockRestore()
+  })
+
+  it('deduplicates trace violations (warn: once)', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await processTrace({
+      trace: true,
+      patterns: [['secret'], [/^secret$/]],
+      error: false,
+    })
+    // Both patterns match but produce the same base message, so only 1 after dedup
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    errorSpy.mockRestore()
+  })
+
+  it('shows original source in snippet when code has been transformed', async () => {
+    // Simulate a Vue SFC-like compiler that strips a wrapping tag and shifts lines
+    const originalSource = '<script>\nimport secret from "secret"\nexport default {}\n</script>'
+    const transformedSource = 'import secret from "secret";\nexport default {};'
+
+    // Source map: transformed line 1 -> original line 2, transformed line 2 -> original line 3
+    // VLQ: "AACA" = (0,0,1,0) meaning gen col 0, source 0, orig line +1, orig col 0
+    // Second mapping "AACA" on line 2 means same thing: gen col 0, source 0, orig line +1, orig col 0
+    const sourceMap = {
+      version: 3,
+      sources: ['middle.js'],
+      sourcesContent: [originalSource],
+      mappings: 'AACA;AACA',
+      names: [],
+    }
+
+    const sfcPlugin = {
+      name: 'sfc-compiler',
+      transform(code: string, id: string) {
+        if (id === 'middle.js') {
+          return { code: transformedSource, map: sourceMap }
+        }
+      },
+    }
+
+    const files: Record<string, string> = {
+      'entry.js': 'import middle from "middle.js";console.log(middle)',
+      'middle.js': originalSource,
+    }
+    const result = await buildWithTrace(files, ['secret'], {
+      trace: true,
+      patterns: [['secret']],
+    }, [sfcPlugin]) as RollupError
+
+    expect(result.message).toContain('Code:')
+    expect(result.message).toContain('<script>')
+    expect(result.message).toContain('import secret from "secret"')
+    expect(result.message).toMatch(/> 2 \|/)
+  })
+
+  it('shows original source via onViolation snippet when code has been transformed', async () => {
+    const originalSource = '// header comment\nimport secret from "secret"\nexport default {}'
+    const transformedSource = 'import secret from "secret";\nexport default {};'
+
+    const sourceMap = {
+      version: 3,
+      sources: ['middle.js'],
+      sourcesContent: [originalSource],
+      mappings: 'AACA;AACA',
+      names: [],
+    }
+
+    const transformPlugin = {
+      name: 'strip-comments',
+      transform(code: string, id: string) {
+        if (id === 'middle.js') {
+          return { code: transformedSource, map: sourceMap }
+        }
+      },
+    }
+
+    const violations: ImpoundViolationInfo[] = []
+    const files: Record<string, string> = {
+      'entry.js': 'import middle from "middle.js";console.log(middle)',
+      'middle.js': originalSource,
+    }
+    await buildWithTrace(files, ['secret'], {
+      trace: true,
+      patterns: [['secret']],
+      error: false,
+      onViolation: (info) => { violations.push(info) },
+    }, [transformPlugin])
+
+    expect(violations).toHaveLength(1)
+    expect(violations[0]!.snippet).toBeDefined()
+    expect(violations[0]!.snippet!.line).toBe(2)
+  })
+
+  it('falls back to originalCode when sourcesContent is missing from source map', async () => {
+    const originalSource = '// original\nimport secret from "secret"\nexport default {}'
+    const transformedSource = 'import secret from "secret";\nexport default {};'
+
+    // Source map without sourcesContent
+    const sourceMap = {
+      version: 3,
+      sources: ['middle.js'],
+      mappings: 'AACA;AACA',
+      names: [],
+    }
+
+    const transformPlugin = {
+      name: 'strip-comments',
+      transform(code: string, id: string) {
+        if (id === 'middle.js') {
+          return { code: transformedSource, map: sourceMap }
+        }
+      },
+    }
+
+    const violations: ImpoundViolationInfo[] = []
+    const files: Record<string, string> = {
+      'entry.js': 'import middle from "middle.js";console.log(middle)',
+      'middle.js': originalSource,
+    }
+    await buildWithTrace(files, ['secret'], {
+      trace: true,
+      patterns: [['secret']],
+      error: false,
+      onViolation: (info) => { violations.push(info) },
+    }, [transformPlugin])
+
+    expect(violations).toHaveLength(1)
+    expect(violations[0]!.snippet).toBeDefined()
+    expect(violations[0]!.snippet!.line).toBe(2)
+  })
+
+  it('falls back to transformed code when source map has empty mappings', async () => {
+    const originalSource = '// original\nimport secret from "secret"\nexport default {}'
+    const transformedSource = 'import secret from "secret";\nexport default {};'
+
+    // Source map with empty mappings; no position data
+    const sourceMap = {
+      version: 3,
+      sources: ['middle.js'],
+      sourcesContent: [originalSource],
+      mappings: '',
+      names: [],
+    }
+
+    const transformPlugin = {
+      name: 'empty-map',
+      transform(code: string, id: string) {
+        if (id === 'middle.js') {
+          return { code: transformedSource, map: sourceMap }
+        }
+      },
+    }
+
+    const violations: ImpoundViolationInfo[] = []
+    const files: Record<string, string> = {
+      'entry.js': 'import middle from "middle.js";console.log(middle)',
+      'middle.js': originalSource,
+    }
+    await buildWithTrace(files, ['secret'], {
+      trace: true,
+      patterns: [['secret']],
+      error: false,
+      onViolation: (info) => { violations.push(info) },
+    }, [transformPlugin])
+
+    expect(violations).toHaveLength(1)
+    expect(violations[0]!.snippet).toBeDefined()
+    expect(violations[0]!.snippet!.line).toBeGreaterThan(0)
+  })
+
+  it('uses transformed code when getCombinedSourcemap is not available', async () => {
+    // Use ImpoundPlugin.raw to get the base plugin without builder-specific overrides,
+    // exercising the base transform path (for webpack/rspack/etc.)
+    const rawPlugins = ImpoundPlugin.raw({ trace: true, patterns: [['secret', 'Not allowed']] }, { framework: 'rollup', versions: {} })
+    const pluginArray = Array.isArray(rawPlugins) ? rawPlugins : [rawPlugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    // Base transform; no getCombinedSourcemap available
+    const transformFn = typeof tracePlugin.transform === 'function' ? tracePlugin.transform : (tracePlugin.transform as any)?.handler
+    await transformFn.call({}, 'import secret from "secret"\nexport default secret', 'middle.js')
+    const resolveIdFn = typeof impoundPlugin.resolveId === 'function' ? impoundPlugin.resolveId : (impoundPlugin.resolveId as any)?.handler
+    await resolveIdFn.call(context, 'secret', 'middle.js')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Code:')
+    expect(errors[0]).toContain('import secret from "secret"')
+  })
+
+  it('falls back to originalCode when sourceContentFor returns null', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    const originalCode = '// original header\nimport secret from "secret"\nexport default {}'
+
+    // Source map has sourcesContent for source index 0, but the mapping points to
+    // source index 1 which has null content; sourceContentFor returns null for that source,
+    // so the fallback to originalCode (from sourcesContent[0]) should be used.
+    const traceContext = {
+      getCombinedSourcemap: () => ({
+        version: 3,
+        sources: ['original.js', 'other.js'],
+        sourcesContent: [originalCode, null],
+        // "ACCA" = gen col 0, source index 1, orig line +1, orig col 0
+        // This maps to source index 1 ('other.js') which has null content
+        mappings: 'ACCA;AACA',
+        names: [],
+      }),
+    }
+
+    await (tracePlugin as any).transform.call(traceContext, 'import secret from "secret";\nexport default {};', 'middle.js')
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Code:')
+    expect(errors[0]).toContain('// original header')
+  })
+
+  it('falls back to originalCode from sourcesContent[0] when source is null in mapping', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    const originalCode = '// original\nimport secret from "secret"\nexport default {}'
+
+    // Provide getCombinedSourcemap with sourcesContent (so originalCode is set)
+    // but mappings that don't include a source index; originalPositionFor returns null source
+    const traceContext = {
+      getCombinedSourcemap: () => ({
+        version: 3,
+        sources: ['middle.js'],
+        sourcesContent: [originalCode],
+        // "AACA" includes source index 0; to get null source we need segments without source info
+        // An empty VLQ segment with only 1 field (generated column) has no source mapping
+        // VLQ "A" = [0]; only generated column, no source info
+        mappings: 'A',
+        names: [],
+      }),
+    }
+
+    await (tracePlugin as any).transform.call(traceContext, 'import secret from "secret";\nexport default {};', 'middle.js')
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Code:')
+    expect(errors[0]).toMatch(/> 1 \|/)
+  })
+
+  it('falls back gracefully when getCombinedSourcemap throws', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    const traceContext = {
+      getCombinedSourcemap: () => { throw new Error('no source map available') },
+    }
+
+    await (tracePlugin as any).transform.call(traceContext, 'import secret from "secret";\nexport default {};', 'middle.js')
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Code:')
+    expect(errors[0]).toContain('import secret from "secret"')
+  })
+
+  it('falls back to transformed code when originalCode is not set and sourceContentFor returns null', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    // Source map has mappings but empty sourcesContent; originalCode won't be set,
+    // and sourceContentFor will return null
+    const traceContext = {
+      getCombinedSourcemap: () => ({
+        version: 3,
+        sources: ['middle.js'],
+        sourcesContent: [],
+        mappings: 'AACA;AACA',
+        names: [],
+      }),
+    }
+
+    await (tracePlugin as any).transform.call(traceContext, 'import secret from "secret";\nexport default {};', 'middle.js')
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Code:')
+    expect(errors[0]).toMatch(/> 2 \|/)
+    expect(errors[0]).toContain('export default {}')
+  })
+
+  it('handles getCombinedSourcemap returning map without mappings', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    const traceContext = {
+      getCombinedSourcemap: () => ({
+        version: 3,
+        sources: [],
+        // No mappings field; sourceMap should not be stored
+      }),
+    }
+
+    await (tracePlugin as any).transform.call(traceContext, 'import secret from "secret";\nexport default {};', 'middle.js')
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Code:')
+    expect(errors[0]).toContain('import secret from "secret"')
+  })
+})
+
+describe('trace mode (deferred violations)', () => {
+  it('defers and flushes violations when importer is not yet transformed', async () => {
+    // Simulate dev-mode: resolveId fires before the importer's transform
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    await (impoundPlugin as any).resolveId.call(context, 'middle.js', undefined, { isEntry: true })
+    await (impoundPlugin as any).resolveId.call(context, 'middle.js', undefined, { isEntry: true })
+
+    // resolveId BEFORE transform; violation is deferred
+    const result = await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+    expect(result).toBe('\0impound:proxy')
+    expect(errors).toHaveLength(0)
+
+    // Transform flushes the deferred violation with enriched snippet
+    const multiLineCode = 'const x = 1\nimport secret from "secret"\nexport default secret'
+    await (tracePlugin as any).transform(multiLineCode, 'middle.js')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Not allowed')
+    expect(errors[0]).toContain('Code:')
+    expect(errors[0]).toContain('import secret from "secret"')
+    expect(errors[0]).toContain('^')
+  })
+
+  it('reports immediately when importer is already in module graph', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = {
+      error: (msg: string) => errors.push(msg),
+    }
+
+    // Transform first; populates module graph
+    await (tracePlugin as any).transform('import secret from "secret";export default secret', 'middle.js')
+
+    // resolveId finds importer in module graph; reports immediately with snippet
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Not allowed')
+    expect(errors[0]).toContain('Code:')
+  })
+
+  it('flushes deferred violations with absolute path when resolveId uses relative', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, cwd: '/root', patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = {
+      error: (msg: string) => errors.push(msg),
+    }
+
+    // resolveId with relative importer; deferred under key 'middle.js'
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+    expect(errors).toHaveLength(0)
+
+    // transform with absolute path; candidate keys include relative form, so flush works
+    await (tracePlugin as any).transform('import secret from "secret";export default secret', '/root/middle.js')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Not allowed')
+    expect(errors[0]).toContain('Code:')
+  })
+
+  it('flushes deferred violations when transform id has query string', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = {
+      error: (msg: string) => errors.push(msg),
+    }
+
+    // resolveId with bare importer; deferred under key 'app.vue'
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'app.vue')
+    expect(errors).toHaveLength(0)
+
+    // transform with query-string suffixed id (like Vue SFC script block)
+    // candidate keys include bare id stripped of query, matching 'app.vue'
+    await (tracePlugin as any).transform('import secret from "secret";export default secret', 'app.vue?vue&type=script')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Not allowed')
+  })
+
+  it('skips filtered importers in trace mode', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, include: [/^app\./], patterns: [['secret']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const context = { error: () => {} }
+
+    // 'other.js' doesn't match include filter; should return undefined (no match)
+    const result = await (impoundPlugin as any).resolveId.call(context, 'secret', 'other.js')
+    expect(result).toBeUndefined()
+  })
+
+  it('handles deep import chains exceeding maxTraceDepth', async () => {
+    const files: Record<string, string> = {
+      'entry.js': 'import a from "a.js";console.log(a)',
+      'a.js': 'import b from "b.js";export default b',
+      'b.js': 'import c from "c.js";export default c',
+      'c.js': 'import secret from "secret";export default secret',
+    }
+    const libs = ['secret']
+
+    const result = await buildWithTrace(files, libs, {
+      trace: true,
+      maxTraceDepth: 1,
+      patterns: [['secret']],
+    }) as RollupError
+
+    // A chain cut off by the depth limit never reaches an entry.
+    expect(result.message).toContain('Invalid import')
+    expect(result.message).not.toContain('Trace:')
+  })
+
+  it('accumulates multiple deferred violations for the same importer', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret'], ['other']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    // Two violations from the same importer; both deferred
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+    await (impoundPlugin as any).resolveId.call(context, 'other', 'middle.js')
+    expect(errors).toHaveLength(0)
+
+    await (tracePlugin as any).transform('import secret from "secret";import other from "other";export default secret', 'middle.js')
+    expect(errors).toHaveLength(2)
+  })
+
+  it('deferred violations with warn: always report all occurrences', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret'], [/^secret$/]], error: false, warn: 'always' })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const context = { error: () => {} }
+
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+    await (tracePlugin as any).transform('import secret from "secret";export default secret', 'middle.js')
+
+    expect(errorSpy).toHaveBeenCalledTimes(2)
+    errorSpy.mockRestore()
+  })
+
+  it('handles importer with no matching import location for rawId', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    // Transform with code that doesn't contain the import specifier 'secret'.
+    // The module graph will have the importer but no import location for 'secret'.
+    await (tracePlugin as any).transform('const x = 1;export default x', 'middle.js')
+
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Not allowed')
+    expect(errors[0]).not.toContain('Code:')
+  })
+
+  it('builds trace through intermediate modules with line info', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    await (impoundPlugin as any).resolveId('entry.js', undefined, { isEntry: true })
+
+    // Build the graph: entry.js -> middle.js -> secret
+    await (tracePlugin as any).transform('import middle from "middle.js"\nconsole.log(middle)', 'entry.js')
+    await (impoundPlugin as any).resolveId.call(context, 'middle.js', 'entry.js')
+
+    await (tracePlugin as any).transform('import secret from "secret"\nexport default secret', 'middle.js')
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Trace:')
+    expect(errors[0]).toContain('entry.js')
+    expect(errors[0]).toContain('middle.js')
+    expect(errors[0]).toContain('Code:')
+  })
+
+  it('formats trace with cwd and absolute step.file paths', async () => {
+    const files: Record<string, string> = {
+      '/root/entry.js': 'import middle from "/root/middle.js";console.log(middle)',
+      '/root/middle.js': 'import secret from "secret";export default secret',
+    }
+    const libs = ['secret']
+
+    const result = await buildWithTrace(files, libs, {
+      trace: true,
+      cwd: '/root',
+      patterns: [['secret']],
+    }) as RollupError
+
+    expect(result.message).toContain('Trace:')
+    // relativised against cwd: /root/entry.js is shown as entry.js
+    expect(result.message).toContain('1. entry.js')
+    expect(result.message).not.toContain('/root/entry.js')
+    expect(result.message).toContain('Code:')
+  })
+
+  it('formats trace step without line info when graphEntry has no matching specifier', async () => {
+    // The entry's import map has no matching specifier for "middle.js", so its trace step
+    // carries no line or column.
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    await (impoundPlugin as any).resolveId('entry.js', undefined, { isEntry: true })
+
+    // Transform entry with no imports; graphEntry exists but has empty import map
+    await (tracePlugin as any).transform('console.log("no imports")', 'entry.js')
+    // Track entry.js -> middle.js in resolvedImports
+    await (impoundPlugin as any).resolveId.call(context, 'middle.js', 'entry.js')
+
+    await (tracePlugin as any).transform('import secret from "secret"\nexport default secret', 'middle.js')
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Trace:')
+    // entry.js step has no line info; formatTrace produces "entry.js (entry)" without :line:col
+    expect(errors[0]).toMatch(/entry\.js \(entry\)/)
+    expect(errors[0]).not.toMatch(/entry\.js:\d/)
+  })
+
+  it('formats trace without cwd', async () => {
+    const result = await processTrace({
+      trace: true,
+      patterns: [['secret', 'Not allowed']],
+    }) as RollupError
+
+    expect(result.message).toContain('Trace:')
+    expect(result.message).toContain('entry.js')
+  })
+
+  it('finds snippet via fallback when rawId differs from source specifier', async () => {
+    // Simulates frameworks like Nuxt where alias resolution rewrites import specifiers
+    // before resolveId sees them (e.g. ../server/api/test → ~~/server/api/test)
+    const plugins = ImpoundPlugin.rollup({ trace: true, cwd: '/root', patterns: [[/server\/api/, 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    // Transform with source code using a relative specifier
+    await (tracePlugin as any).transform('import api from "../server/api/test";\nconsole.log(api)', '/root/app/app.vue')
+
+    // But resolveId receives an absolute pre-resolved path (as if a bundler alias resolved it)
+    // rawId will be the absolute path, not the relative specifier from source
+    await (impoundPlugin as any).resolveId.call(context, '/root/server/api/test', '/root/app/app.vue')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Not allowed')
+    // Fallback search should find the snippet by resolving '../server/api/test' relative to importer
+    expect(errors[0]).toContain('Code:')
+    expect(errors[0]).toContain('import api from "../server/api/test"')
+    expect(errors[0]).toContain('^')
+  })
+
+  it('handles fallback when no specifier matches the resolved id', async () => {
+    // The fallback loop runs but no specifier matches; snippet remains undefined
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [[/secret/, 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    // Transform with an import that doesn't match the resolved id at all
+    await (tracePlugin as any).transform('import foo from "unrelated-module";\nexport default foo', 'middle.js')
+    // resolveId with a completely different id
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Not allowed')
+    expect(errors[0]).not.toContain('Code:')
+  })
+
+  it('finds snippet via fallback without cwd', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [[/server\/api/, 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    await (tracePlugin as any).transform('import api from "~~/server/api/test";\nconsole.log(api)', 'app.vue')
+    await (impoundPlugin as any).resolveId.call(context, 'server/api/test', 'app.vue')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Code:')
+  })
+
+  it('finds snippet via suffix match when specifier uses aliases', async () => {
+    // When the source has an alias like ~~/server/api/test and the resolved id is server/api/test
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [[/server\/api/, 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    // Transform with aliased import
+    await (tracePlugin as any).transform('import api from "~~/server/api/test";\nconsole.log(api)', 'app.vue')
+
+    // resolveId receives the resolved form (without alias)
+    await (impoundPlugin as any).resolveId.call(context, 'server/api/test', 'app.vue')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Code:')
+    expect(errors[0]).toContain('~~/server/api/test')
+  })
+
+  it('handles dynamic imports with non-literal specifiers in transform', async () => {
+    // A non-literal dynamic import has no resolvable specifier, so it is skipped when
+    // import positions are recorded. The static import after it must still be located.
+    const violations: ImpoundViolationInfo[] = []
+    const traced = ImpoundPlugin.rollup({
+      trace: true,
+      patterns: [['secret', 'Denied']],
+      onViolation: (info) => {
+        violations.push(info)
+        return false
+      },
+    })
+    const tracedArray = Array.isArray(traced) ? traced : [traced]
+    const impound = tracedArray.find(plugin => plugin.name === 'impound')!
+    const tracer = tracedArray.find(plugin => plugin.name === 'impound:trace')!
+
+    await (tracer as any).transform.call({}, 'const x = "mod";const m = import(x);import secret from "secret"', 'test.js')
+    await (impound as any).resolveId.call({ error: () => {} }, 'secret', 'test.js')
+
+    expect(violations[0]!.snippet!.line).toBe(1)
+    expect(violations[0]!.snippet!.text).toContain('import secret from "secret"')
+  })
+
+  it('registers module in graph even when parsing fails (e.g. Vue SFC)', async () => {
+    // When es-module-lexer can't parse a file (like a raw Vue SFC), the module should
+    // still be registered in the graph so that resolveId can report violations immediately.
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const errors: string[] = []
+    const context = { error: (msg: string) => errors.push(msg) }
+
+    // Transform with unparseable SFC content; parse will fail
+    await (tracePlugin as any).transform('<script setup>\nimport secret from "secret"\n</script>', 'app.vue')
+
+    // resolveId should find the importer in the graph and report immediately
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'app.vue')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Not allowed')
+    expect(errors[0]).not.toContain('Code:')
+  })
+
+  it('deferred violations with error: false log to console', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret']], error: false })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const context = { error: () => {} }
+
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'middle.js')
+    expect(errorSpy).not.toHaveBeenCalled()
+
+    await (tracePlugin as any).transform('import secret from "secret";export default secret', 'middle.js')
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    expect(errorSpy.mock.calls[0]![0]).toContain('Code:')
+
+    errorSpy.mockRestore()
+  })
+
+  it('deduplicates deferred violations using shared warnedMessages set from matcher', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    // Use two patterns that produce the same message for the same import
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['secret', 'Not allowed']], error: false })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(p => p.name === 'impound')!
+    const tracePlugin = pluginArray.find(p => p.name === 'impound:trace')!
+
+    const context = { error: () => {} }
+
+    // First: defer a violation, then flush via transform
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'a.js')
+    await (tracePlugin as any).transform('import secret from "secret"', 'a.js')
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+
+    // Second: same import from a different file triggers immediate path (a.js already in graph).
+    // The warnedMessages set is shared with the matcher, so the *immediate* violation from b.js
+    // is a different message (different importer) and should log.
+    await (tracePlugin as any).transform('import secret from "secret"', 'b.js')
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'b.js')
+    expect(errorSpy).toHaveBeenCalledTimes(2)
+
+    // Third: re-resolve 'secret' from a.js; immediate path, same message as first.
+    // Should be deduped because the deferred flush used the matcher's warnedMessages set.
+    await (impoundPlugin as any).resolveId.call(context, 'secret', 'a.js')
+    expect(errorSpy).toHaveBeenCalledTimes(2) // still 2, deduped
+
+    errorSpy.mockRestore()
+  })
+})
+
+describe('denied modules with named imports', () => {
+  // The proxy substituted for a denied import has only a default export, so a named
+  // import from it can fail the bundler's static export check with an error naming
+  // `impound:proxy` rather than the offending import.
+  const files = {
+    'entry.js': 'import { helper } from "middle.js";console.log(helper)',
+    'middle.js': 'import { getUsers } from "secret";export const helper = getUsers',
+  }
+
+  it('lets the build continue when only warning', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const result = await buildWithTrace(files, ['secret'], {
+      patterns: [['secret', 'Not allowed']],
+      error: false,
+    })
+    expect(result).not.toHaveProperty('message')
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Not allowed'))
+    errorSpy.mockRestore()
+  })
+
+  it('reports the denied import, not a missing proxy export', async () => {
+    const result = await buildWithTrace(files, ['secret'], {
+      trace: 'lazy',
+      patterns: [['secret', 'Not allowed']],
+    }) as RollupError
+    expect(result.message).toContain('Not allowed')
+    expect(result.message).not.toContain('is not exported by')
+  })
+})
+
+describe('trace mode (lazy) on webpack and rspack', () => {
+  // The shape impound reads from `getNativeBuildContext` on webpack and rspack:
+  // `compilation.moduleGraph` plus `originalSource`.
+  const nativeContext = (errors: Error[]) => {
+    const mod = (resource: string, code: string) => ({
+      resource,
+      originalSource: () => ({ source: () => code }),
+    })
+    const entry = mod('/p/entry.js', 'import { loadAuth } from "./session.js"')
+    const session = mod('/p/session.js', 'import { getUsers } from "./queries.server"\nexport const loadAuth = getUsers')
+    const incoming = new Map<unknown, { originModule: unknown }[]>([
+      [entry, [{ originModule: null }]],
+      [session, [{ originModule: entry }]],
+    ])
+    return {
+      getNativeBuildContext: () => ({
+        framework: 'webpack',
+        compilation: {
+          errors,
+          modules: [entry, session],
+          moduleGraph: { getIncomingConnections: (m: unknown) => incoming.get(m) ?? [] },
+        },
+      }),
+    }
+  }
+
+  const report = async (trace: 'lazy') => {
+    const plugins = ImpoundPlugin.raw({ cwd: '/p', trace, patterns: [['queries.server', 'Server-only', ['Use a server function']]] }, { framework: 'webpack', versions: {}, webpack: { compiler: {} } } as any)
+    const array = Array.isArray(plugins) ? plugins : [plugins]
+    const plugin = array.find(p => p.name === 'impound')!
+    const errors: Error[] = []
+    const ctx = nativeContext(errors)
+    await (plugin as any).resolveId.call({ ...ctx, error: () => {} }, './queries.server', '/p/session.js')
+    await (plugin as any).buildEnd.call(ctx)
+    return errors.map(e => e.message).join('\n')
+  }
+
+  it('builds the chain from compilation.moduleGraph', async () => {
+    const message = await report('lazy')
+    expect(message).toContain('Server-only')
+    expect(message).toContain('1. entry.js')
+    expect(message).toContain('2. session.js')
+  })
+
+  it('takes the snippet from originalSource, so it shows pre-transform code', async () => {
+    const message = await report('lazy')
+    expect(message).toContain('import { getUsers } from "./queries.server"')
+    expect(message).toContain('^')
+  })
+
+  it('reports through compilation.errors rather than throwing', async () => {
+    await expect(report('lazy')).resolves.toContain('Server-only')
+  })
+
+  it('skips modules with no resource and unknown ids', async () => {
+    const plugins = ImpoundPlugin.raw({ cwd: '/p', trace: 'lazy', patterns: [['queries.server', 'Server-only']] }, { framework: 'webpack', versions: {}, webpack: { compiler: {} } } as any)
+    const array = Array.isArray(plugins) ? plugins : [plugins]
+    const plugin = array.find(p => p.name === 'impound')!
+    const errors: Error[] = []
+    // A concatenated or runtime module has no `resource`, and the importer is a file the
+    // index never saw, so every lookup misses.
+    const ctx = {
+      getNativeBuildContext: () => ({
+        framework: 'webpack',
+        compilation: {
+          errors,
+          modules: [{ originalSource: () => null }],
+          moduleGraph: { getIncomingConnections: () => [] },
+        },
+      }),
+    }
+    await (plugin as any).resolveId.call({ ...ctx, error: () => {} }, './queries.server', '/p/unknown.js')
+    await (plugin as any).buildEnd.call(ctx)
+    expect(errors.map(e => e.message).join('')).toContain('Server-only')
+  })
+
+  it('reports without a chain when no cwd is set and the importer has no known origin', async () => {
+    const plugins = ImpoundPlugin.raw({ trace: 'lazy', patterns: [['queries.server', 'Server-only']] }, { framework: 'webpack', versions: {}, webpack: { compiler: {} } } as any)
+    const array = Array.isArray(plugins) ? plugins : [plugins]
+    const plugin = array.find(p => p.name === 'impound')!
+    const errors: Error[] = []
+    const session = { resource: 'session.js', originalSource: () => ({ source: () => 'import { getUsers } from "./queries.server"' }) }
+    const ctx = {
+      getNativeBuildContext: () => ({
+        framework: 'webpack',
+        compilation: {
+          errors,
+          modules: [session],
+          // A concatenated origin module has no `resource`, so it cannot be a chain step.
+          moduleGraph: { getIncomingConnections: () => [{ originModule: {} }] },
+        },
+      }),
+    }
+    await (plugin as any).resolveId.call({ ...ctx, error: () => {} }, './queries.server', 'session.js')
+    await (plugin as any).buildEnd.call(ctx)
+
+    const message = errors.map(e => e.message).join('')
+    expect(message).toContain('Server-only')
+    expect(message).not.toContain('Trace:')
+  })
+})
+
+describe('virtual modules', () => {
+  const build = async (opts: Partial<ImpoundOptions>) => {
+    const bundle = await rollup({
+      input: 'entry.js',
+      onwarn() {},
+      plugins: [
+        ImpoundPlugin.rollup({ patterns: [['secret', 'Server-only']], ...opts } as ImpoundOptions),
+        {
+          name: 'virtual',
+          resolveId: id => id === 'virtual:mod' ? '\0virtual:mod' : ['entry.js', 'secret'].includes(id) ? id : undefined,
+          load: id => ({
+            'entry.js': 'import v from "virtual:mod";console.log(v)',
+            '\0virtual:mod': 'import secret from "secret";export default secret',
+            'secret': 'export default "TOP-SECRET"',
+          } as Record<string, string>)[id],
+        },
+      ],
+    })
+    return (await bundle.generate({})).output[0].code
+  }
+
+  it('blocks an import from a virtual module', async () => {
+    await expect(build({})).rejects.toThrow('Server-only [importing `secret` from `\0virtual:mod`]')
+  })
+
+  it('checks a virtual importer passed by rspack as /\\0id', async () => {
+    const raw = ImpoundPlugin.raw({ error: false, patterns: [['secret.js', 'Server-only']] }, { framework: 'rspack', versions: {} } as any)
+    const plugin = (Array.isArray(raw) ? raw : [raw]).find(p => p.name === 'impound') as any
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(await plugin.resolveId.call({ error: () => {} }, 'secret.js', '/\0virtual-mod')).toBe('\0impound:proxy')
+      expect(error).toHaveBeenCalledWith('Server-only [importing `secret.js` from `/\0virtual-mod`]')
+    }
+    finally {
+      error.mockRestore()
+    }
+  })
+
+  it('does not remove null bytes inside an importer id', async () => {
+    const raw = ImpoundPlugin.raw({ patterns: [['secret.js']] }, { framework: 'rollup', versions: {} })
+    const plugin = (Array.isArray(raw) ? raw : [raw]).find(p => p.name === 'impound') as any
+    const error = vi.fn()
+
+    for (const importer of ['src/\0virtual-mod', '\0virtual\0mod', '/\0virtual\0mod']) {
+      expect(await plugin.resolveId.call({ error }, 'secret.js', importer)).toBeUndefined()
+    }
+    expect(error).not.toHaveBeenCalled()
+  })
+
+  it('respects include for virtual modules', async () => {
+    const code = await build({ include: [/^src\//] })
+    expect(code).toContain('TOP-SECRET')
+  })
+})
+
+describe('reporting when the build is already failing', () => {
+  const lazy = () => {
+    const plugins = ImpoundPlugin.rollup({ trace: 'lazy', patterns: [['secret', 'Denied']] })
+    const array = Array.isArray(plugins) ? plugins : [plugins]
+    return array.find(plugin => plugin.name === 'impound')!
+  }
+  const ctx = (error: (msg: string) => void) => ({
+    error,
+    getModuleInfo: (id: string) => ({
+      code: id === 'middle.js' ? 'import secret from "secret"' : 'import middle from "middle.js"',
+      importers: id === 'middle.js' ? ['entry.js'] : [],
+      isEntry: id === 'entry.js',
+    }),
+  })
+
+  it('stays quiet when buildEnd is handed a build error', async () => {
+    const plugin = lazy()
+    const error = vi.fn()
+    await (plugin as any).resolveId.call(ctx(error), 'secret', 'middle.js')
+    await (plugin as any).buildEnd.call(ctx(error), new Error('unrelated plugin failure'))
+    expect(error).not.toHaveBeenCalled()
+  })
+
+  it('does not carry the violation into the next build', async () => {
+    const plugin = lazy()
+    const error = vi.fn()
+    await (plugin as any).resolveId.call(ctx(error), 'secret', 'middle.js')
+    await (plugin as any).buildEnd.call(ctx(error), new Error('unrelated plugin failure'))
+    await (plugin as any).buildEnd.call(ctx(error))
+    expect(error).not.toHaveBeenCalled()
+  })
+
+  it('reports as usual when the build has not failed', async () => {
+    const plugin = lazy()
+    const error = vi.fn()
+    await (plugin as any).resolveId.call(ctx(error), 'secret', 'middle.js')
+    await (plugin as any).buildEnd.call(ctx(error))
+    expect(error).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('locating a denied import the bundler pre-resolved', () => {
+  // `resolveId` can be handed an already-resolved id, which is not a key in the
+  // importer's import map, so the lookup falls back to matching by suffix.
+  it('does not match a specifier that merely ends with the same name', async () => {
+    const violations: ImpoundViolationInfo[] = []
+    const plugins = ImpoundPlugin.rollup({
+      trace: true,
+      patterns: [[/a\.js$/, 'Denied']],
+      onViolation: (info) => {
+        violations.push(info)
+        return false
+      },
+    })
+    const array = Array.isArray(plugins) ? plugins : [plugins]
+    const impound = array.find(plugin => plugin.name === 'impound')!
+    const trace = array.find(plugin => plugin.name === 'impound:trace')!
+
+    await (trace as any).transform.call({}, 'import "./data.js"\nimport "./a.js"\n', 'entry.js')
+    await (impound as any).resolveId.call({ error: () => {} }, 'a.js', 'entry.js')
+
+    // the caret belongs on line 2, where `./a.js` is imported, not line 1 (`./data.js`)
+    expect(violations[0]!.snippet!.line).toBe(2)
+  })
+})
+
+describe('trace mode parity on a real build', () => {
+  const files = {
+    'entry.js': 'import middle from "middle.js";console.log(middle)',
+    'middle.js': 'import secret from "secret";export default secret',
+  }
+
+  it('reports the same violation, chain and suggestions either way', async () => {
+    const [eager, lazy] = await Promise.all([
+      buildWithTrace(files, ['secret'], { trace: true, patterns: [['secret', 'Server-only', ['Use a server function']]] }),
+      buildWithTrace(files, ['secret'], { trace: 'lazy', patterns: [['secret', 'Server-only', ['Use a server function']]] }),
+    ]) as [RollupError, RollupError]
+
+    for (const { message } of [eager, lazy]) {
+      expect(message).toContain('Server-only [importing `secret` from `middle.js`]')
+      expect(message).toContain('1. entry.js')
+      expect(message).toContain('2. middle.js')
+      expect(message).toContain('import secret from "secret"')
+      expect(message).toContain('Use a server function')
+    }
+  })
+
+  it('attributes the error to the same plugin either way', async () => {
+    const [eager, lazy] = await Promise.all([
+      buildWithTrace(files, ['secret'], { trace: true, patterns: [['secret']] }),
+      buildWithTrace(files, ['secret'], { trace: 'lazy', patterns: [['secret']] }),
+    ]) as [RollupError, RollupError]
+    expect(eager.message.startsWith('[plugin impound]')).toBe(true)
+    expect(lazy.message.startsWith('[plugin impound]')).toBe(true)
+  })
+})
+
+describe('trace mode (lazy) graph walking', () => {
+  const lazyPlugin = () => {
+    const plugins = ImpoundPlugin.rollup({ trace: 'lazy', maxTraceDepth: 3, patterns: [['secret', 'Not allowed']] })
+    const array = Array.isArray(plugins) ? plugins : [plugins]
+    return array.find(plugin => plugin.name === 'impound')!
+  }
+
+  const walk = async (graph: Record<string, { code?: string, importers?: string[], dynamicImporters?: string[], isEntry?: boolean }>, importer: string) => {
+    const plugin = lazyPlugin()
+    const error = vi.fn()
+    const ctx = { error, getModuleInfo: (id: string) => graph[id] ?? null }
+    await (plugin as any).resolveId.call(ctx, 'secret', importer)
+    await (plugin as any).buildEnd.call(ctx)
+    return error.mock.calls[0]?.[0] as string | undefined
+  }
+
+  it('walks a chain deeper than one hop', async () => {
+    const message = await walk({
+      'entry.js': { code: 'import "a.js"', importers: [], isEntry: true },
+      'a.js': { code: 'import "b.js"', importers: ['entry.js'] },
+      'b.js': { code: 'import secret from "secret"', importers: ['a.js'] },
+    }, 'b.js')
+    expect(message).toContain('1. entry.js')
+    expect(message).toContain('2. a.js')
+    expect(message).toContain('3. b.js')
+  })
+
+  it('does not revisit a module reachable by two paths', async () => {
+    const message = await walk({
+      'entry.js': { code: 'import "left.js";import "right.js"', importers: [], isEntry: true },
+      'left.js': { code: 'import "shared.js"', importers: ['entry.js'] },
+      'right.js': { code: 'import "shared.js"', importers: ['entry.js'] },
+      'shared.js': { code: 'import secret from "secret"', importers: ['left.js', 'right.js'] },
+    }, 'shared.js')
+    expect(message).toContain('Trace:')
+    expect(message).toContain('entry.js')
+    expect(message).not.toContain('right.js')
+  })
+
+  it('does not loop when two modules import each other', async () => {
+    const message = await walk({
+      'entry.js': { code: 'import "a.js"', importers: [], isEntry: true },
+      'a.js': { code: 'import "b.js"', importers: ['b.js', 'entry.js'] },
+      'b.js': { code: 'import secret from "secret"', importers: ['a.js'] },
+    }, 'b.js')
+    expect(message).toContain('Not allowed')
+    expect(message).toContain('entry.js')
+  })
+
+  it('stops at maxTraceDepth instead of walking forever', async () => {
+    const graph: Record<string, any> = { 'entry.js': { code: '', importers: [], isEntry: true } }
+    let previous = 'entry.js'
+    for (let i = 0; i < 8; i++) {
+      const id = `m${i}.js`
+      graph[id] = { code: `import "${previous}"`, importers: [previous] }
+      previous = id
+    }
+    graph[previous].code = 'import secret from "secret"'
+    const message = await walk(graph, previous)
+    expect(message).toContain('Not allowed')
+    expect(message).not.toContain('Trace:')
+  })
+
+  it('reports no chain when no entry is reachable', async () => {
+    const message = await walk({
+      'orphan-root.js': { code: 'import "mid.js"', importers: [] },
+      'mid.js': { code: 'import "leaf.js"', importers: ['orphan-root.js'] },
+      'leaf.js': { code: 'import secret from "secret"', importers: ['mid.js'] },
+    }, 'leaf.js')
+    expect(message).toContain('Not allowed')
+    expect(message).not.toContain('(entry)')
+  })
+
+  it('annotates the specifier that resolves, not one that merely ends with it', async () => {
+    const message = await walk({
+      'entry.js': { code: 'import "./data.js"\nimport "./a.js"', importers: [], isEntry: true },
+      'a.js': { code: 'import secret from "secret"', importers: ['entry.js'] },
+    }, 'a.js')
+    expect(message).toContain('import "./a.js"')
+    expect(message).not.toContain('import "./data.js"')
+  })
+
+  it('follows a dynamic import when building the chain', async () => {
+    const message = await walk({
+      'entry.js': { code: 'export const p = import("mid.js")', importers: [], isEntry: true },
+      'mid.js': { code: 'import secret from "secret"', importers: [], dynamicImporters: ['entry.js'] },
+    }, 'mid.js')
+    expect(message).toContain('Trace:')
+    expect(message).toContain('entry.js')
+    expect(message).toContain('mid.js')
+  })
+
+  it('reports without a chain when the importer is itself an entry', async () => {
+    const message = await walk({
+      'entry.js': { code: 'import secret from "secret"', importers: [], isEntry: true },
+    }, 'entry.js')
+    expect(message).toContain('Not allowed')
+    expect(message).not.toContain('Trace:')
+  })
+
+  it('reports without a snippet when the module has no code', async () => {
+    const message = await walk({
+      'entry.js': { importers: [], isEntry: true },
+      'opaque.js': { importers: ['entry.js'] },
+    }, 'opaque.js')
+    expect(message).toContain('Not allowed')
+    expect(message).not.toContain('Code:')
+  })
+
+  it('lexes a shared file once across violations', async () => {
+    const plugin = lazyPlugin()
+    const error = vi.fn()
+    let reads = 0
+    const graph: Record<string, any> = {
+      'entry.js': { code: 'import "shared.js"', importers: [], isEntry: true },
+      'shared.js': { code: 'import a from "secret";import b from "other"', importers: ['entry.js'] },
+    }
+    const ctx = {
+      error,
+      getModuleInfo: (id: string) => {
+        reads++
+        return graph[id] ?? null
+      },
+    }
+    await (plugin as any).resolveId.call(ctx, 'secret', 'shared.js')
+    await (plugin as any).resolveId.call(ctx, 'secret', 'shared.js')
+    reads = 0
+    await (plugin as any).buildEnd.call(ctx)
+    expect(error).toHaveBeenCalled()
+    expect(reads).toBeGreaterThan(0)
+  })
+})
+
+describe('trace mode (lazy)', () => {
+  it('reports under the same plugin name as eager mode', async () => {
+    const eager = await processTrace({ trace: true, patterns: [['secret']] }) as RollupError
+    const lazy = await processTrace({ trace: 'lazy', patterns: [['secret']] }) as RollupError
+    expect(eager.message.startsWith('[plugin impound]')).toBe(true)
+    expect(lazy.message.startsWith('[plugin impound]')).toBe(true)
+  })
+
+  it('builds the import chain from the bundler graph', async () => {
+    const result = await processTrace({
+      trace: 'lazy',
+      patterns: [['secret']],
+    }) as RollupError
+    expect(result.message).toContain('Trace:')
+    expect(result.message).toContain('entry.js')
+    expect(result.message).toContain('middle.js')
+  })
+
+  it('includes a code snippet pointing at the denied import', async () => {
+    const result = await processTrace({
+      trace: 'lazy',
+      patterns: [['secret']],
+    }) as RollupError
+    expect(result.message).toContain('Code:')
+    expect(result.message).toContain('import secret from "secret"')
+    expect(result.message).toContain('^')
+  })
+
+  it('includes suggestions', async () => {
+    const result = await processTrace({
+      trace: 'lazy',
+      patterns: [['secret', 'Server-only import', ['Use a server function']]],
+    }) as RollupError
+    expect(result.message).toContain('Suggestions:')
+    expect(result.message).toContain('Use a server function')
+  })
+
+  it('calls onViolation with trace and snippet', async () => {
+    const violations: ImpoundViolationInfo[] = []
+    await processTrace({
+      trace: 'lazy',
+      patterns: [['secret']],
+      error: false,
+      onViolation: (info) => { violations.push(info) },
+    })
+    expect(violations).toHaveLength(1)
+    expect(violations[0]!.trace!.length).toBeGreaterThanOrEqual(2)
+    expect(violations[0]!.trace!.at(0)!.file).toContain('entry.js')
+    expect(violations[0]!.trace!.at(-1)!.file).toContain('middle.js')
+    expect(violations[0]!.snippet!.line).toBe(1)
+  })
+
+  it('annotates each step with the specifier that leads to the next', async () => {
+    const violations: ImpoundViolationInfo[] = []
+    await processTrace({
+      trace: 'lazy',
+      patterns: [['secret']],
+      error: false,
+      onViolation: (info) => { violations.push(info) },
+    })
+    expect(violations[0]!.trace!.at(0)!.import).toBe('middle.js')
+  })
+
+  it('suppresses the error when onViolation returns false', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const result = await processTrace({
+      trace: 'lazy',
+      patterns: [['secret']],
+      error: false,
+      onViolation: () => false,
+    })
+    expect((result as RollupError).message).toBeUndefined()
+    expect(errorSpy).not.toHaveBeenCalled()
+    errorSpy.mockRestore()
+  })
+
+  it('reports the plain message when the bundler exposes no module graph', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: 'lazy', patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(plugin => plugin.name === 'impound')!
+    await (impoundPlugin as any).resolveId.call({ error: () => {} }, 'secret', 'middle.js')
+
+    // A webpack/rspack-shaped context: no getModuleInfo, no error.
+    await expect((impoundPlugin as any).buildEnd.call({})).rejects.toThrow('Not allowed')
+  })
+
+  it('holds a repeated violation once, so a dev server does not accumulate it', async () => {
+    const onViolation = vi.fn()
+    const plugins = ImpoundPlugin.rollup({ trace: 'lazy', patterns: [['secret', 'Not allowed']], error: false, onViolation })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(plugin => plugin.name === 'impound')!
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    for (let i = 0; i < 3; i++) {
+      await (impoundPlugin as any).resolveId.call({ error: () => {} }, 'secret', 'middle.js')
+    }
+    await (impoundPlugin as any).buildEnd.call({ getModuleInfo: () => null })
+
+    expect(onViolation).toHaveBeenCalledTimes(1)
+    errorSpy.mockRestore()
+  })
+
+  it('suppresses the report but still proxies the import when onViolation returns false', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const result = await processTrace({
+      trace: 'lazy',
+      patterns: [['secret']],
+      error: false,
+      onViolation: () => false,
+    })
+    expect(errorSpy).not.toHaveBeenCalled()
+    expect(result).toContain('createMock')
+    errorSpy.mockRestore()
+  })
+
+  it('reports without a snippet when the importer has no matching import', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: 'lazy', patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(plugin => plugin.name === 'impound')!
+    const error = vi.fn()
+    // A bundler-generated importer: it holds the resolved import, but no source for it.
+    const ctx = { error, getModuleInfo: () => ({ code: 'export default 1', isEntry: true }) }
+
+    await (impoundPlugin as any).resolveId.call(ctx, 'secret', 'middle.js')
+    await (impoundPlugin as any).buildEnd.call(ctx)
+
+    expect(error).toHaveBeenCalledTimes(1)
+    expect(error.mock.calls[0]![0]).not.toContain('Code:')
+  })
+
+  it('holds violations until the graph is complete rather than reporting on resolve', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: 'lazy', patterns: [['secret', 'Not allowed']] })
+    const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+    const impoundPlugin = pluginArray.find(plugin => plugin.name === 'impound')!
+    const error = vi.fn()
+
+    await (impoundPlugin as any).resolveId.call({ error }, 'secret', 'middle.js')
+
+    expect(error).not.toHaveBeenCalled()
+  })
+})
+
+async function buildWithTrace(files: Record<string, string>, libs: string[], opts: ImpoundOptions, extraPlugins: any[] = []) {
+  try {
+    const entries = Object.keys(files)
+    const build = await rollup({
+      input: entries[0],
+      plugins: [
+        // Extra plugins run first so their transforms (and source maps) are available
+        // when impound:trace's transform calls getCombinedSourcemap().
+        ...extraPlugins,
+        ImpoundPlugin.rollup(opts),
+        {
+          name: 'virtual-files',
+          load: id => files[id],
+          resolveId: id => (id in files || libs.includes(id)) ? id : undefined,
+        },
+        {
+          name: 'lib-load',
+          load: id => libs.includes(id) ? 'export default "loaded"' : undefined,
+        },
+      ],
+    })
+    const bundle = await build.generate({})
+    return bundle.output[0]?.code.trim()
+  }
+  catch (e) {
+    return e as RollupError
+  }
+}
+
+async function processTrace(opts: ImpoundOptions) {
+  const files: Record<string, string> = {
+    'entry.js': 'import middle from "middle.js";console.log(middle)',
+    'middle.js': 'import secret from "secret";export default secret',
+  }
+  const libs = ['secret']
+  return buildWithTrace(files, libs, opts)
+}
+
+async function getTraceViolation(code: string): Promise<ImpoundViolationInfo> {
+  let violation: ImpoundViolationInfo | undefined
+  const plugins = ImpoundPlugin.rollup({
+    trace: true,
+    patterns: [['secret', 'Invalid import']],
+    onViolation: (info) => {
+      violation = info
+      return false
+    },
+  })
+  const pluginArray = Array.isArray(plugins) ? plugins : [plugins]
+  const impoundPlugin = pluginArray.find(plugin => plugin.name === 'impound')!
+  const tracePlugin = pluginArray.find(plugin => plugin.name === 'impound:trace')!
+
+  await (tracePlugin as any).transform.call({}, code, 'entry.js')
+  await (impoundPlugin as any).resolveId.call({ error: () => {} }, 'secret', 'entry.js')
+
+  expect(violation).toBeDefined()
+  return violation!
+}
+
+async function process(code: string, opts: ImpoundOptions, importer = 'entry.js') {
+  const libs = ['foo', 'bar']
+
+  try {
+    const build = await rollup({
+      input: importer,
+      plugins: [
+        ImpoundPlugin.rollup(opts),
+        {
+          name: 'entry',
+          load: id => id === importer ? code : undefined,
+          resolveId: id => id === importer ? id : undefined,
+        },
+        {
+          name: 'lib-load',
+          load: id => libs.includes(id) ? 'export default "loaded"' : undefined,
+          resolveId: id => libs.includes(id) ? id : undefined,
+        },
+      ],
+    })
+    const bundle = await build.generate({})
+    return bundle.output[0]?.code.trim()
+  }
+  catch (e) {
+    return e as RollupError
+  }
+}
+
+describe('hook filters', () => {
+  it('should only claim the proxy module in load', () => {
+    const rawPlugins = ImpoundPlugin.raw({ patterns: [['bar']] }, { framework: 'rollup', versions: {} })
+    const plugins = Array.isArray(rawPlugins) ? rawPlugins : [rawPlugins]
+    const impoundPlugin = plugins.find(p => p.name === 'impound')!
+
+    const loadFilter = (impoundPlugin.load as ObjectHook<any, 'id'>).filter!.id as RegExp
+    expect(loadFilter.test('\0impound:proxy')).toBe(true)
+    expect(loadFilter.test('/app/assets/font.woff2')).toBe(false)
+    expect(loadFilter.test('/app/entry.js')).toBe(false)
+  })
+
+  it('should leave other modules alone in load', () => {
+    const rawPlugins = ImpoundPlugin.raw({ patterns: [['bar']] }, { framework: 'rollup', versions: {} })
+    const plugins = Array.isArray(rawPlugins) ? rawPlugins : [rawPlugins]
+    const impoundPlugin = plugins.find(p => p.name === 'impound')!
+
+    expect((impoundPlugin.load as ObjectHook<any, 'id'>).handler.call({}, 'entry.js')).toBeUndefined()
+  })
+
+  it('should resolve the proxy module to itself', () => {
+    const rawPlugins = ImpoundPlugin.raw({ patterns: [['bar']] }, { framework: 'rollup', versions: {} })
+    const plugins = Array.isArray(rawPlugins) ? rawPlugins : [rawPlugins]
+    const impoundPlugin = plugins.find(p => p.name === 'impound')!
+
+    expect((impoundPlugin as any).resolveId.call({}, '\0impound:proxy', 'entry.js')).toBe('\0impound:proxy')
+  })
+
+  it('should only build a sourcemap for modules a matcher includes', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, include: [/src\//], patterns: [['bar']] }) as any[]
+    const tracePlugin = plugins.find(p => p.name === 'impound:trace')!
+
+    const getCombinedSourcemap = vi.fn(() => ({ mappings: '' }))
+
+    await tracePlugin.transform.call({ getCombinedSourcemap }, 'export default 1', '/app/node_modules/dep/index.js')
+    expect(getCombinedSourcemap).not.toHaveBeenCalled()
+
+    await tracePlugin.transform.call({ getCombinedSourcemap }, 'export default 1', '/app/src/entry.js')
+    expect(getCombinedSourcemap).toHaveBeenCalledTimes(1)
+  })
+
+  it('should not transform binary assets in trace mode', () => {
+    const rawPlugins = ImpoundPlugin.raw({ trace: true, patterns: [['bar']] }, { framework: 'rollup', versions: {} })
+    const plugins = Array.isArray(rawPlugins) ? rawPlugins : [rawPlugins]
+    const tracePlugin = plugins.find(p => p.name === 'impound:trace')!
+
+    const excludeFilter = ((tracePlugin.transform as ObjectHook<any, 'id'>).filter!.id as { exclude: RegExp }).exclude
+    expect(excludeFilter.test('/app/assets/font.woff2')).toBe(true)
+    expect(excludeFilter.test('/app/assets/logo.png?inline')).toBe(true)
+    expect(excludeFilter.test('/app/entry.js')).toBe(false)
+  })
+
+  it('should not transform binary assets via a converted adapter', async () => {
+    const plugins = ImpoundPlugin.rollup({ trace: true, patterns: [['bar']] }) as any[]
+    const tracePlugin = plugins.find(p => p.name === 'impound:trace')!
+
+    const getCombinedSourcemap = vi.fn(() => ({ mappings: '' }))
+
+    await tracePlugin.transform.call({ getCombinedSourcemap }, 'export default 1', '/app/assets/logo.png?inline')
+    expect(getCombinedSourcemap).not.toHaveBeenCalled()
+
+    await tracePlugin.transform.call({ getCombinedSourcemap }, 'export default 1', '/app/entry.js')
+    expect(getCombinedSourcemap).toHaveBeenCalled()
+  })
+
+  it.each(['vite', 'rolldown'] as const)('should keep the binary asset filter on the %s adapter', (framework) => {
+    const plugins = ImpoundPlugin[framework]({ trace: true, patterns: [['bar']] }) as any[]
+    const tracePlugin = plugins.find(p => p.name === 'impound:trace')!
+
+    const excludeFilter = (tracePlugin.transform as ObjectHook<any, 'id'>).filter!.id as { exclude: RegExp }
+    expect(excludeFilter.exclude.test('/app/assets/font.woff2')).toBe(true)
+    expect(excludeFilter.exclude.test('/app/assets/logo.png?inline')).toBe(true)
+    expect(excludeFilter.exclude.test('/app/entry.js')).toBe(false)
+  })
+})
