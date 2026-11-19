@@ -1,0 +1,14 @@
+{
+  "ac-index.js.txt": "index.js",
+  "ac-symbols.js.txt": "symbols.js",
+  "ac-test.js.txt": "test.js",
+  "oh-index.js.txt": "index.js",
+  "oh-test-index.js.txt": "test/index.js",
+  "oh-test-object-classes.js.txt": "test/object-classes.js",
+  "oh-test-old-crypto.js.txt": "test/old-crypto.js",
+  "oh-test-replacer.js.txt": "test/replacer.js",
+  "oh-test-types.js.txt": "test/types.js",
+  "oh-test-writeToStream.js.txt": "test/writeToStream.js",
+  "sc-index.js.txt": "index.js",
+  "sc-test.js.txt": "test.js"
+}
