@@ -14234,3 +14234,114 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: alexreardon/memoize-one
+license: MIT (LICENSE, sha256 of trimmed text b1c501095de70182748cb8e8d97ac5577701a4ef3b755ba30d59fd87b24bdb0f)
+fixtures (commit path):
+  2f875cac31ef8ce64112a4f9226684e521f9e2a9 peaceai/test/fixtures/m284/mo-src-are-inputs-equal.ts.txt
+  2f875cac31ef8ce64112a4f9226684e521f9e2a9 peaceai/test/fixtures/m284/mo-src-memoize-one.ts.txt
+  2f875cac31ef8ce64112a4f9226684e521f9e2a9 peaceai/test/fixtures/m284/mo-tsconfig.json.txt
+  8109d454dc65585a13eb2d8db937395116c24338 peaceai/test/fixtures/m284/mo-test-memoize-one.spec.ts.txt
+license URL: https://github.com/alexreardon/memoize-one/blob/2f875cac31ef8ce64112a4f9226684e521f9e2a9/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2019 Alexander Reardon
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: cosmiconfig/cosmiconfig
+license: MIT (LICENSE, sha256 of trimmed text 020991f5faee10ddd4afc8d31fe4fbc1b004c37eeb6c6d8065b85885aac6e882)
+fixtures (commit path):
+  18346056c9a7fdf8d7531ea5a998edfb255fc140 peaceai/test/fixtures/m284/cc-src-Explorer.ts.txt
+  18346056c9a7fdf8d7531ea5a998edfb255fc140 peaceai/test/fixtures/m284/cc-src-ExplorerBase.ts.txt
+  18346056c9a7fdf8d7531ea5a998edfb255fc140 peaceai/test/fixtures/m284/cc-src-ExplorerSync.ts.txt
+  18346056c9a7fdf8d7531ea5a998edfb255fc140 peaceai/test/fixtures/m284/cc-src-cacheWrapper.ts.txt
+  18346056c9a7fdf8d7531ea5a998edfb255fc140 peaceai/test/fixtures/m284/cc-src-getDirectory.ts.txt
+  18346056c9a7fdf8d7531ea5a998edfb255fc140 peaceai/test/fixtures/m284/cc-src-getPropertyByPath.ts.txt
+  18346056c9a7fdf8d7531ea5a998edfb255fc140 peaceai/test/fixtures/m284/cc-src-index.ts.txt
+  18346056c9a7fdf8d7531ea5a998edfb255fc140 peaceai/test/fixtures/m284/cc-src-loaders.ts.txt
+  18346056c9a7fdf8d7531ea5a998edfb255fc140 peaceai/test/fixtures/m284/cc-src-readFile.ts.txt
+  18346056c9a7fdf8d7531ea5a998edfb255fc140 peaceai/test/fixtures/m284/cc-src-types.ts.txt
+  18346056c9a7fdf8d7531ea5a998edfb255fc140 peaceai/test/fixtures/m284/cc-test-util.ts.txt
+  18346056c9a7fdf8d7531ea5a998edfb255fc140 peaceai/test/fixtures/m284/cc-tsconfig.json.txt
+  18346056c9a7fdf8d7531ea5a998edfb255fc140 peaceai/test/fixtures/m284/cc-global.d.ts.txt
+  f6980541371db31174bd92958e3b2f7fc4ff6412 peaceai/test/fixtures/m284/cc-test-successful-directories.test.ts.txt
+license URL: https://github.com/cosmiconfig/cosmiconfig/blob/18346056c9a7fdf8d7531ea5a998edfb255fc140/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2015 David Clark
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: planttheidea/micro-memoize
+license: MIT (LICENSE, sha256 of trimmed text 75fdc63fde14c30b735cf78c5b12a73a11234ba9c7a7486e6d82eeb33f1fb37e)
+fixtures (commit path):
+  b3d8f2ae1ec3c3cee1926d78b85b8a56a08b5df3 peaceai/test/fixtures/m284/mm-src-Cache.ts.txt
+  b3d8f2ae1ec3c3cee1926d78b85b8a56a08b5df3 peaceai/test/fixtures/m284/mm-src-index.ts.txt
+  b3d8f2ae1ec3c3cee1926d78b85b8a56a08b5df3 peaceai/test/fixtures/m284/mm-src-types.ts.txt
+  b3d8f2ae1ec3c3cee1926d78b85b8a56a08b5df3 peaceai/test/fixtures/m284/mm-src-utils.ts.txt
+  b3d8f2ae1ec3c3cee1926d78b85b8a56a08b5df3 peaceai/test/fixtures/m284/mm-tsconfig.json.txt
+  52ee826eeb19d5f2cfa1ddedc93f5818a8c43c4a peaceai/test/fixtures/m284/mm-__tests__-Cache.ts.txt
+license URL: https://github.com/planttheidea/micro-memoize/blob/b3d8f2ae1ec3c3cee1926d78b85b8a56a08b5df3/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2018 Tony Quetano
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
