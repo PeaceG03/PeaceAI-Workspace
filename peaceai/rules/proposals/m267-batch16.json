@@ -1,0 +1,78 @@
+{
+ "schema": "peaceai-m267-batch16:v1",
+ "note": "Pinned copies of unjs/unimport, unjs/compatx, and unjs/nypm at the parent of a published bug fix, plus the test that fix changed. The unimport license has no email, so its pinned hash is the text as written. The compatx and nypm notices omit one email address each.",
+ "examples": [
+  {
+   "repo": "unjs/citty",
+   "commit": "9cb0edcc55c133ea04d3cbb350284a9a3548946e",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m267/citty-dist-index.mjs.txt"
+  },
+  {
+   "repo": "unjs/citty",
+   "commit": "9cb0edcc55c133ea04d3cbb350284a9a3548946e",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m267/citty-dist-scule.mjs.txt"
+  },
+  {
+   "repo": "unjs/unimport",
+   "commit": "10a9ef35a344b660cedeb97a9028a31489c122c8",
+   "licenseSha256": "4d04b8c0848bda9b32f9c6bb491f93fd62b166544c563961bf2528b6415eeaf9",
+   "fixture": "peaceai/test/fixtures/m267/ui-src-utils.ts.txt"
+  },
+  {
+   "repo": "unjs/unimport",
+   "commit": "4f462cb6c177ed95c413e192cfbd90c6670f006d",
+   "licenseSha256": "4d04b8c0848bda9b32f9c6bb491f93fd62b166544c563961bf2528b6415eeaf9",
+   "fixture": "peaceai/test/fixtures/m267/ui-test-dedupe.test.ts.txt"
+  },
+  {
+   "repo": "unjs/compatx",
+   "commit": "3bd47ef45e1a57c377f56c6b889b0b98648dcf28",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m267/cx-src-date.ts.txt"
+  },
+  {
+   "repo": "unjs/compatx",
+   "commit": "3bd47ef45e1a57c377f56c6b889b0b98648dcf28",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m267/cx-src-platforms.ts.txt"
+  },
+  {
+   "repo": "unjs/compatx",
+   "commit": "aaf7e4a95bb5abb9dbfe16dd89bf057abcbf5acd",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m267/cx-test-date.test.ts.txt"
+  },
+  {
+   "repo": "unjs/nypm",
+   "commit": "9357ac261a489cb0d60d4b2f0d5d72672693e7fd",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m267/np-src-cli.ts.txt"
+  },
+  {
+   "repo": "unjs/nypm",
+   "commit": "9357ac261a489cb0d60d4b2f0d5d72672693e7fd",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m267/np-src-api.ts.txt"
+  },
+  {
+   "repo": "unjs/nypm",
+   "commit": "9357ac261a489cb0d60d4b2f0d5d72672693e7fd",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m267/np-src-_utils.ts.txt"
+  },
+  {
+   "repo": "unjs/nypm",
+   "commit": "9357ac261a489cb0d60d4b2f0d5d72672693e7fd",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m267/np-src-package-manager.ts.txt"
+  },
+  {
+   "repo": "unjs/nypm",
+   "commit": "7d028c8f50794845e62a98302acc2ddfde8ca111",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m267/np-test-cli.test.ts.txt"
+  }
+ ]
+}
