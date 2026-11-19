@@ -1,0 +1,822 @@
+import type {
+  AddEventListenerOptionsArgument,
+  BenchLike,
+  EventListener,
+  EventListenerObject,
+  Fn,
+  FnOptions,
+  HookMode,
+  RemoveEventListenerOptionsArgument,
+  Samples,
+  TaskEvents,
+  TaskResult,
+  TaskResultRuntimeInfo,
+  TaskResultTimestampProviderInfo,
+  TimerSaturationReason,
+  TimestampFn,
+  TimestampProvider,
+  TimestampValue,
+} from './types'
+
+import { BenchEvent } from './event'
+import {
+  assert,
+  classifyTimerSaturation,
+  computeStatistics,
+  estimateResolution,
+  isFnAsyncResource,
+  isPromiseLike,
+  isValidSamples,
+  medianAbsoluteDeviation,
+  sortSamples,
+  toError,
+  withConcurrency,
+} from './utils'
+
+/**
+ * The names of all supported task lifecycle hooks.
+ */
+const hookNames = ['afterAll', 'beforeAll', 'beforeEach', 'afterEach'] as const
+
+/**
+ * Task states that can be aborted.
+ */
+const abortableStates = ['not-started', 'started'] as const
+
+/**
+ * Result of a single `#benchmark` / `#benchmarkSync` run: either an `error`,
+ * or the collected `samples` together with the `overriddenIndices` whose
+ * durations were supplied via `overriddenDuration` (mutually exclusive).
+ */
+type BenchmarkResult =
+  | { error: Error; overriddenIndices?: never; samples?: never }
+  | { error?: never; overriddenIndices?: Set<number>; samples?: Samples }
+
+/**
+ * Default task result for tasks that have not yet started.
+ */
+const notStartedTaskResult: TaskResult = { state: 'not-started' }
+
+/**
+ * Default task result for tasks that have been aborted.
+ */
+const abortedTaskResult: TaskResult = { state: 'aborted' }
+
+/**
+ * Default task result for tasks that have started running.
+ */
+const startedTaskResult: TaskResult = { state: 'started' }
+
+/**
+ * A class that represents each benchmark task in Tinybench. It keeps track of the
+ * results, name, the task function, the number times the task function has been executed, ...
+ */
+export class Task extends EventTarget {
+  declare addEventListener: (<K extends TaskEvents>(
+    type: K,
+    listener: EventListener<K, 'task'> | EventListenerObject<K, 'task'> | null,
+    options?: AddEventListenerOptionsArgument
+  ) => void) & EventTarget['addEventListener']
+
+  declare removeEventListener: (<K extends TaskEvents>(
+    type: K,
+    listener: EventListener<K, 'task'> | EventListenerObject<K, 'task'> | null,
+    options?: RemoveEventListenerOptionsArgument
+  ) => void) & EventTarget['removeEventListener']
+
+  /**
+   * Sample-based timer-resolution heuristic for the last run. Returns the
+   * smallest positive latency repeated at least twice, otherwise the minimum
+   * positive latency. Uses timer-measured samples after overhead correction;
+   * samples supplied via `overriddenDuration` are excluded. This does not
+   * guarantee a bound on the timer's resolution.
+   * @returns The estimate in milliseconds, or `undefined` when no eligible
+   *   sample remains positive after correction.
+   */
+  get detectedResolution (): number | undefined {
+    return this.#detectedResolution
+  }
+
+  /**
+   * The name of the task.
+   * @returns The task name as a string
+   */
+  get name (): string {
+    return this.#name
+  }
+
+  /**
+   * The result of the task.
+   * @returns The task result including state, statistics, and runtime information
+   */
+  get result (): TaskResult &
+    TaskResultRuntimeInfo &
+    TaskResultTimestampProviderInfo {
+    return {
+      ...this.#result,
+      runtime: this.#bench.runtime,
+      runtimeVersion: this.#bench.runtimeVersion,
+      timestampProviderName: this.#bench.timestampProvider.name,
+    }
+  }
+
+  /**
+   * The recorded sample count from run statistics or task-concurrent execution.
+   * Task-concurrent warmup also updates this counter; other warmup and
+   * async-detection calls do not.
+   * @returns The recorded sample count.
+   */
+  get runs (): number {
+    return this.#runs
+  }
+
+  /**
+   * Check if either our signal or the bench-level signal is aborted.
+   */
+  #aborted = false
+
+  /**
+   * The task asynchronous status
+   */
+  readonly #async: boolean
+
+  /**
+   * The Bench instance reference
+   */
+  readonly #bench: BenchLike
+
+  /**
+   * The estimated effective timer resolution from the last run.
+   */
+  #detectedResolution: number | undefined = undefined
+
+  /**
+   * The task function
+   */
+  readonly #fn: Fn
+
+  /**
+   * The task function options
+   */
+  readonly #fnOpts: Readonly<FnOptions>
+
+  /**
+   * The task name
+   */
+  readonly #name: string
+
+  /**
+   * The result object
+   */
+  #result: TaskResult = notStartedTaskResult
+
+  /**
+   * Retain samples
+   */
+  readonly #retainSamples: boolean
+
+  /**
+   * The number of times the task function has been executed
+   */
+  #runs = 0
+
+  /**
+   * The task-level abort signal
+   */
+  readonly #signal: AbortSignal | undefined
+
+  /**
+   * The timestamp function
+   */
+  readonly #timestampFn: TimestampFn
+
+  /**
+   * The timestamp provider
+   */
+  readonly #timestampProvider: TimestampProvider
+
+  /**
+   * The timestamp to milliseconds conversion function
+   */
+  readonly #timestampToMs: (value: TimestampValue) => number
+
+  constructor (bench: BenchLike, name: string, fn: Fn, fnOpts: FnOptions = {}) {
+    super()
+    this.#bench = bench
+    this.#name = name
+    this.#fn = fn
+    this.#fnOpts = fnOpts
+    this.#async = fnOpts.async ?? isFnAsyncResource(fn)
+    this.#signal = fnOpts.signal
+    this.#retainSamples = fnOpts.retainSamples ?? bench.retainSamples
+    this.#timestampProvider = bench.timestampProvider
+    this.#timestampFn = bench.timestampProvider.fn
+    this.#timestampToMs = bench.timestampProvider.toMs
+
+    for (const hookName of hookNames) {
+      if (this.#fnOpts[hookName] != null) {
+        assert(
+          typeof this.#fnOpts[hookName] === 'function',
+          `'${hookName}' must be a function if provided`
+        )
+      }
+    }
+
+    this.reset(false)
+
+    if (this.#signal) {
+      if (this.#signal.aborted) {
+        this.#onAbort()
+      } else {
+        this.#signal.addEventListener('abort', this.#onAbort.bind(this), {
+          once: true,
+        })
+      }
+    }
+
+    if (this.#bench.signal) {
+      if (this.#bench.signal.aborted) {
+        this.#onAbort()
+      } else {
+        this.#bench.signal.addEventListener('abort', this.#onAbort.bind(this), {
+          once: true,
+        })
+      }
+    }
+  }
+
+  /**
+   * Clears the run count, statistics and diagnostics. The result becomes
+   * `not-started`, or stays `aborted` if a signal has aborted. Does not rearm
+   * an aborted signal.
+   * @param emit - whether to emit the `reset` event or not
+   */
+  reset (emit = true): void {
+    this.#runs = 0
+    this.#detectedResolution = undefined
+    this.#result = this.#aborted ? abortedTaskResult : notStartedTaskResult
+
+    if (emit) this.dispatchEvent(new BenchEvent('reset', this))
+  }
+
+  /**
+   * Runs the current task and writes the results in `Task.result` object property.
+   * @returns the current task
+   */
+  async run (): Promise<Task> {
+    if (this.#result.state !== 'not-started') {
+      return this
+    }
+    this.#result = { state: 'started' }
+    this.dispatchEvent(new BenchEvent('start', this))
+    await this.#bench.setup(this, 'run')
+    const {
+      error,
+      overriddenIndices,
+      samples: latencySamples,
+    } = await this.#benchmark('run', this.#bench.time, this.#bench.iterations)
+    await this.#bench.teardown(this, 'run')
+
+    this.#processRunResult({ error, latencySamples, overriddenIndices })
+
+    return this
+  }
+
+  /**
+   * Runs the current task synchronously and writes the results in `Task.result` object property.
+   * @returns the current task
+   */
+  runSync (): this {
+    if (this.#result.state !== 'not-started') {
+      return this
+    }
+
+    assert(
+      this.#bench.concurrency === null,
+      'Cannot use `concurrency` option when using `runSync`'
+    )
+    this.#result = startedTaskResult
+    this.dispatchEvent(new BenchEvent('start', this))
+
+    const setupResult = this.#bench.setup(this, 'run')
+    assert(
+      !isPromiseLike(setupResult),
+      '`setup` function must be sync when using `runSync()`'
+    )
+
+    const {
+      error,
+      overriddenIndices,
+      samples: latencySamples,
+    } = this.#benchmarkSync('run', this.#bench.time, this.#bench.iterations)
+
+    const teardownResult = this.#bench.teardown(this, 'run')
+    assert(
+      !isPromiseLike(teardownResult),
+      '`teardown` function must be sync when using `runSync()`'
+    )
+
+    this.#processRunResult({ error, latencySamples, overriddenIndices })
+
+    return this
+  }
+
+  /**
+   * Warms up the current task.
+   */
+  async warmup (): Promise<void> {
+    if (this.#result.state !== 'not-started') {
+      return
+    }
+    this.dispatchEvent(new BenchEvent('warmup', this))
+    await this.#bench.setup(this, 'warmup')
+    const { error } = await this.#benchmark(
+      'warmup',
+      this.#bench.warmupTime,
+      this.#bench.warmupIterations
+    )
+    await this.#bench.teardown(this, 'warmup')
+
+    this.#postWarmup(error)
+  }
+
+  /**
+   * Warms up the current task synchronously.
+   */
+  warmupSync (): void {
+    if (this.#result.state !== 'not-started') {
+      return
+    }
+
+    this.dispatchEvent(new BenchEvent('warmup', this))
+
+    const setupResult = this.#bench.setup(this, 'warmup')
+    assert(
+      !isPromiseLike(setupResult),
+      '`setup` function must be sync when using `runSync()`'
+    )
+
+    const { error } = this.#benchmarkSync(
+      'warmup',
+      this.#bench.warmupTime,
+      this.#bench.warmupIterations
+    )
+
+    const teardownResult = this.#bench.teardown(this, 'warmup')
+    assert(
+      !isPromiseLike(teardownResult),
+      '`teardown` function must be sync when using `runSync()`'
+    )
+
+    this.#postWarmup(error)
+  }
+
+  async #benchmark (
+    mode: HookMode,
+    time: number,
+    iterations: number
+  ): Promise<BenchmarkResult> {
+    try {
+      if (this.#fnOpts.beforeAll) {
+        await this.#fnOpts.beforeAll.call(this, mode)
+      }
+
+      const sequential = this.#bench.concurrency !== 'task'
+      let totalTime = 0 // ms
+      const samples: number[] = []
+      const overriddenIndices = new Set<number>()
+
+      const benchmarkTask = async () => {
+        if (this.#aborted) {
+          return
+        }
+        try {
+          if (this.#fnOpts.beforeEach != null) {
+            await this.#fnOpts.beforeEach.call(this, mode)
+          }
+
+          const { iterationCost, overridden, taskTime } = this.#async
+            ? await this.#measure(sequential)
+            : this.#measureSync(sequential)
+
+          const idx = samples.push(taskTime) - 1
+          if (overridden) overriddenIndices.add(idx)
+          if (sequential) totalTime += iterationCost ?? taskTime
+        } finally {
+          if (this.#fnOpts.afterEach != null) {
+            await this.#fnOpts.afterEach.call(this, mode)
+          }
+        }
+      }
+
+      if (!sequential) {
+        await withConcurrency({
+          fn: benchmarkTask,
+          iterations,
+          limit: Math.max(1, Math.floor(this.#bench.threshold)),
+          signal: this.#signal ?? this.#bench.signal,
+          time,
+          timestampProvider: this.#timestampProvider,
+        })
+        this.#runs = samples.length
+      } else {
+        while (
+          // eslint-disable-next-line no-unmodified-loop-condition
+          (totalTime < time || samples.length < iterations) &&
+          !this.#aborted
+        ) {
+          await benchmarkTask()
+        }
+      }
+
+      if (this.#fnOpts.afterAll != null) {
+        await this.#fnOpts.afterAll.call(this, mode)
+      }
+
+      return isValidSamples(samples) ? { overriddenIndices, samples } : {}
+    } catch (error) {
+      return { error: toError(error) }
+    }
+  }
+
+  /**
+   * @param mode - 'run' | 'warmup'
+   * @param time - the amount of time to run the benchmark
+   * @param iterations - the amount of iterations to run the benchmark
+   * @returns the error if any, and the samples if any
+   */
+  #benchmarkSync (
+    mode: HookMode,
+    time: number,
+    iterations: number
+  ): BenchmarkResult {
+    try {
+      if (this.#fnOpts.beforeAll) {
+        const beforeAllResult = this.#fnOpts.beforeAll.call(this, mode)
+        assert(
+          !isPromiseLike(beforeAllResult),
+          '`beforeAll` function must be sync when using `runSync()`'
+        )
+      }
+
+      let totalTime = 0
+      const samples: number[] = []
+      const overriddenIndices = new Set<number>()
+
+      const benchmarkTask = () => {
+        if (this.#aborted) {
+          return
+        }
+        try {
+          if (this.#fnOpts.beforeEach) {
+            const beforeEachResult = this.#fnOpts.beforeEach.call(this, mode)
+            assert(
+              !isPromiseLike(beforeEachResult),
+              '`beforeEach` function must be sync when using `runSync()`'
+            )
+          }
+
+          const { iterationCost, overridden, taskTime } = this.#measureSync(true)
+
+          const idx = samples.push(taskTime) - 1
+          if (overridden) overriddenIndices.add(idx)
+          totalTime += iterationCost ?? taskTime
+        } finally {
+          if (this.#fnOpts.afterEach) {
+            const afterEachResult = this.#fnOpts.afterEach.call(this, mode)
+            assert(
+              !isPromiseLike(afterEachResult),
+              '`afterEach` function must be sync when using `runSync()`'
+            )
+          }
+        }
+      }
+
+      while (
+        // eslint-disable-next-line no-unmodified-loop-condition
+        (totalTime < time || samples.length < iterations) &&
+        !this.#aborted
+      ) {
+        benchmarkTask()
+      }
+
+      if (this.#fnOpts.afterAll) {
+        const afterAllResult = this.#fnOpts.afterAll.call(this, mode)
+        assert(
+          !isPromiseLike(afterAllResult),
+          '`afterAll` function must be sync when using `runSync()`'
+        )
+      }
+      return isValidSamples(samples) ? { overriddenIndices, samples } : {}
+    } catch (error) {
+      return { error: toError(error) }
+    }
+  }
+
+  /**
+   * Measures a single execution of the task function asynchronously.
+   * @param collectIterationCost - Whether to extract cost for a sequential budget
+   * @returns The measured execution time (`taskTime`, the statistical sample),
+   *   whether it was supplied by the task function via `overriddenDuration`,
+   *   and the declared iteration cost (`iterationCost`, the budget cost) when
+   *   requested and supplied via `overriddenIterationCost`
+   */
+  async #measure (collectIterationCost: boolean): Promise<{
+    iterationCost: number | undefined
+    overridden: boolean
+    taskTime: number
+  }> {
+    const taskStart = this.#timestampFn() as unknown as number
+    // eslint-disable-next-line no-useless-call
+    const fnResult = await this.#fn.call(this)
+    const taskTime = this.#timestampToMs(
+      (this.#timestampFn() as unknown as number) - taskStart
+    )
+
+    const iterationCost = collectIterationCost
+      ? getOverriddenIterationCostFromFnResult(fnResult)
+      : undefined
+    const overriddenDuration = getOverriddenDurationFromFnResult(fnResult)
+    if (overriddenDuration !== undefined) {
+      return { iterationCost, overridden: true, taskTime: overriddenDuration }
+    }
+    return { iterationCost, overridden: false, taskTime }
+  }
+
+  /**
+   * Measures a single execution of the task function synchronously.
+   * @param collectIterationCost - Whether to extract cost for a sequential budget
+   * @returns The measured execution time (`taskTime`, the statistical sample),
+   *   whether it was supplied by the task function via `overriddenDuration`,
+   *   and the declared iteration cost (`iterationCost`, the budget cost) when
+   *   requested and supplied via `overriddenIterationCost`
+   */
+  #measureSync (collectIterationCost: boolean): {
+    iterationCost: number | undefined
+    overridden: boolean
+    taskTime: number
+  } {
+    const taskStart = this.#timestampFn() as unknown as number
+    // eslint-disable-next-line no-useless-call
+    const fnResult = this.#fn.call(this)
+    const taskTime = this.#timestampToMs(
+      (this.#timestampFn() as unknown as number) - taskStart
+    )
+
+    assert(
+      !isPromiseLike(fnResult),
+      'task function must be sync when using `runSync()`'
+    )
+    const iterationCost = collectIterationCost
+      ? getOverriddenIterationCostFromFnResult(fnResult)
+      : undefined
+    const overriddenDuration = getOverriddenDurationFromFnResult(fnResult)
+    if (overriddenDuration !== undefined) {
+      return { iterationCost, overridden: true, taskTime: overriddenDuration }
+    }
+    return { iterationCost, overridden: false, taskTime }
+  }
+
+  /**
+   * Handles the abort event from either the task-level or bench-level signal.
+   * Sets the task result to aborted if the task is in an abortable state.
+   */
+  #onAbort (): void {
+    this.#aborted = true
+    if (
+      abortableStates.includes(
+        this.#result.state as (typeof abortableStates)[number]
+      )
+    ) {
+      this.#result = abortedTaskResult
+      const ev = new BenchEvent('abort', this)
+      this.dispatchEvent(ev)
+      this.#bench.dispatchEvent(ev)
+    }
+  }
+
+  /**
+   * Processes the result of the warmup phase.
+   * Dispatches an error event if the warmup encountered an error.
+   * @param error - The error that occurred during warmup, if any
+   */
+  #postWarmup (error: Error | undefined): void {
+    if (error) {
+      /* eslint-disable perfectionist/sort-objects */
+      this.#result = { state: 'errored', error }
+      /* eslint-enable perfectionist/sort-objects */
+      const ev = new BenchEvent('error', this, error)
+      this.dispatchEvent(ev)
+      this.#bench.dispatchEvent(ev)
+      if (this.#bench.throws) {
+        throw error
+      }
+    }
+  }
+
+  /**
+   * Processes the result of a benchmark run and updates the task result.
+   * Calculates statistics from the collected samples and dispatches appropriate events.
+   *
+   * Ordering:
+   * 1. Apply overhead correction in-place on the collection-order sample array
+   *    (alignment with `overriddenIndices` preserved — index `i` still refers
+   *    to the same sample because no sort has been performed yet).
+   *    Samples whose duration was supplied via `overriddenDuration` are skipped.
+   * 2. Build a measured-only view (excluding `overriddenDuration` samples) used
+   *    for both `detectedResolution` and timer-saturation detection. Constant
+   *    `overriddenDuration` values would otherwise be reported as the timer
+   *    grain or trigger a spurious low-distinct-count warning.
+   * 3. Sort the working array for the final statistics.
+   * 4. Compute the final statistics on the (possibly corrected) sorted samples.
+   * 5. Compute `detectedResolution` and classify timer saturation on the
+   *    (sorted) measured-only subset.
+   * 6. Dispatch `'warning'` (carrying the {@link TimerSaturationReason}) if a
+   *    saturation criterion fired, then `'cycle'` and `'complete'`.
+   * @param options - An object containing the run results
+   * @param options.error - The error that occurred during the run, if any
+   * @param options.latencySamples - The array of latency samples collected during the run
+   * @param options.overriddenIndices - Set of collection-order indices whose
+   *   samples were supplied by the task function via `overriddenDuration`,
+   *   or `undefined` on the error / no-valid-samples path
+   */
+  #processRunResult ({
+    error,
+    latencySamples,
+    overriddenIndices,
+  }: {
+    error: Error | undefined
+    latencySamples: number[] | undefined
+    overriddenIndices: Set<number> | undefined
+  }): void {
+    if (isValidSamples(latencySamples)) {
+      this.#runs = latencySamples.length
+
+      const overhead = this.#bench.timerOverhead
+      const hasOverhead = overhead !== undefined && overhead > 0
+
+      // Phase 1 — Subtract overhead while overriddenIndices is still aligned
+      // with latencySamples[i] (collection order, pre-sort).
+      if (hasOverhead) {
+        for (let i = 0; i < latencySamples.length; i++) {
+          if (!overriddenIndices?.has(i)) {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            latencySamples[i] = Math.max(0, latencySamples[i]! - overhead)
+          }
+        }
+      }
+
+      // Phase 2 — Capture measured-only samples (alignment with
+      // overriddenIndices is still valid since the array has not been sorted
+      // yet).
+      const hasAnyOverridden = (overriddenIndices?.size ?? 0) > 0
+      const measuredOnly: number[] = hasAnyOverridden
+        ? latencySamples.filter((_, i) => !overriddenIndices?.has(i))
+        : latencySamples
+
+      // Phase 3 — Single sort of the working array.
+      sortSamples(latencySamples)
+
+      // Phase 4 — Final statistics on (possibly corrected) sorted samples.
+      const latencyStatistics = computeStatistics(
+        latencySamples,
+        this.#retainSamples
+      )
+
+      // Phase 5 — Resolution diagnostic and saturation classification on the
+      // measured-only subset (sorted). Excluding `overriddenDuration` samples
+      // prevents a constant user value from being reported as the timer grain
+      // or triggering a spurious low-distinct-count warning.
+      let saturationReason: TimerSaturationReason | undefined
+      if (!hasAnyOverridden) {
+        this.#detectedResolution = estimateResolution(latencySamples)
+        saturationReason = classifyTimerSaturation(
+          latencySamples,
+          latencyStatistics.mad
+        )
+      } else if (isValidSamples(measuredOnly)) {
+        sortSamples(measuredOnly)
+        this.#detectedResolution = estimateResolution(measuredOnly)
+        saturationReason = classifyTimerSaturation(
+          measuredOnly,
+          medianAbsoluteDeviation(measuredOnly)
+        )
+      } else {
+        this.#detectedResolution = undefined
+      }
+
+      const latencyStatisticsMean = latencyStatistics.mean
+
+      let totalTime = 0
+      const throughputSamples: Samples | undefined = [] as unknown as Samples
+
+      for (const sample of latencySamples) {
+        if (sample !== 0) {
+          totalTime += sample
+          throughputSamples.push(1000 / sample)
+        } else {
+          throughputSamples.push(
+            latencyStatisticsMean === 0 ? 0 : 1000 / latencyStatisticsMean
+          )
+        }
+      }
+
+      sortSamples(throughputSamples)
+      const throughputStatistics = computeStatistics(
+        throughputSamples,
+        this.#retainSamples
+      )
+
+      /* eslint-disable perfectionist/sort-objects */
+      this.#result = {
+        state: this.#aborted ? 'aborted-with-statistics' : 'completed',
+        latency: latencyStatistics,
+        period: totalTime / this.runs,
+        throughput: throughputStatistics,
+        totalTime,
+      }
+      /* eslint-enable perfectionist/sort-objects */
+
+      if (saturationReason !== undefined) {
+        const warningEv = new BenchEvent('warning', this, saturationReason)
+        this.dispatchEvent(warningEv)
+        this.#bench.dispatchEvent(warningEv)
+      }
+    } else if (this.#aborted) {
+      // If aborted with no samples, still set the aborted flag
+      this.#result = abortedTaskResult
+    }
+
+    if (error) {
+      /* eslint-disable perfectionist/sort-objects */
+      this.#result = {
+        state: 'errored',
+        error,
+      }
+      /* eslint-enable perfectionist/sort-objects */
+      const ev = new BenchEvent('error', this, error)
+      this.dispatchEvent(ev)
+      this.#bench.dispatchEvent(ev)
+      if (this.#bench.throws) {
+        throw error
+      }
+    }
+
+    const ev = new BenchEvent('cycle', this)
+    this.dispatchEvent(ev)
+    this.#bench.dispatchEvent(ev)
+    // cycle and complete are equal in Task
+    this.dispatchEvent(new BenchEvent('complete', this))
+  }
+}
+
+/**
+ * Extracts a finite, non-negative `overriddenDuration`, otherwise undefined.
+ * Checks own and inherited properties, reads the value once and propagates
+ * presence-check and access errors.
+ * @param fnResult - The result of the task function
+ * @returns The declared duration in milliseconds, otherwise undefined
+ */
+function getOverriddenDurationFromFnResult (
+  fnResult: unknown
+): number | undefined {
+  if (fnResult == null || typeof fnResult !== 'object') {
+    return undefined
+  }
+  const record = fnResult as Record<string, unknown>
+  if (!('overriddenDuration' in record)) {
+    return undefined
+  }
+  const value = record.overriddenDuration
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined
+}
+
+/**
+ * Extracts a finite, non-negative `overriddenIterationCost`, otherwise undefined.
+ * Checks presence before reading so proxy defaults for absent keys are ignored.
+ * Supports inherited properties and treats presence-check or access errors as
+ * absence, allowing a valid `overriddenDuration` to remain usable.
+ * @param fnResult - The result of the task function
+ * @returns The declared cost in milliseconds, otherwise undefined
+ */
+function getOverriddenIterationCostFromFnResult (
+  fnResult: unknown
+): number | undefined {
+  if (fnResult == null || typeof fnResult !== 'object') {
+    return undefined
+  }
+  const record = fnResult as Record<string, unknown>
+  try {
+    if (!('overriddenIterationCost' in record)) {
+      return undefined
+    }
+    const value = record.overriddenIterationCost
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0
+      ? value
+      : undefined
+  } catch {
+    return undefined
+  }
+}

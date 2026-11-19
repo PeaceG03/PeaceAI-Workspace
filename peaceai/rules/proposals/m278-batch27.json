@@ -1,0 +1,180 @@
+{
+  "schema": "peaceai-m278-batch27:v1",
+  "note": "Pinned copies of tinylibs/tinyps, tinylibs/tinybench, and antfu/ni at the parent of a published bug fix, plus the test that fix changed. Notices keep the license text as written: none of the three licenses contain an email address.",
+  "examples": [
+    {
+      "repo": "tinylibs/tinyps",
+      "commit": "c157a5f6aa5e6e3763ed70044aed84764abaf68e",
+      "licenseSha256": "69c409d1c1e226dc53cd59b468ba819098284f6b8bf634a63be3c9a73f09d8ca",
+      "fixture": "peaceai/test/fixtures/m278/ps-src-main.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinyps",
+      "commit": "f40ac2824c1ebfdaf5615a5839028c8b9cf9e631",
+      "licenseSha256": "69c409d1c1e226dc53cd59b468ba819098284f6b8bf634a63be3c9a73f09d8ca",
+      "fixture": "peaceai/test/fixtures/m278/ps-src-main.test.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinyps",
+      "commit": "f40ac2824c1ebfdaf5615a5839028c8b9cf9e631",
+      "licenseSha256": "69c409d1c1e226dc53cd59b468ba819098284f6b8bf634a63be3c9a73f09d8ca",
+      "fixture": "peaceai/test/fixtures/m278/ps-test-warmup.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinyps",
+      "commit": "f40ac2824c1ebfdaf5615a5839028c8b9cf9e631",
+      "licenseSha256": "69c409d1c1e226dc53cd59b468ba819098284f6b8bf634a63be3c9a73f09d8ca",
+      "fixture": "peaceai/test/fixtures/m278/ps-test-fixtures-client.js.txt"
+    },
+    {
+      "repo": "tinylibs/tinyps",
+      "commit": "f40ac2824c1ebfdaf5615a5839028c8b9cf9e631",
+      "licenseSha256": "69c409d1c1e226dc53cd59b468ba819098284f6b8bf634a63be3c9a73f09d8ca",
+      "fixture": "peaceai/test/fixtures/m278/ps-test-fixtures-idle.js.txt"
+    },
+    {
+      "repo": "tinylibs/tinyps",
+      "commit": "f40ac2824c1ebfdaf5615a5839028c8b9cf9e631",
+      "licenseSha256": "69c409d1c1e226dc53cd59b468ba819098284f6b8bf634a63be3c9a73f09d8ca",
+      "fixture": "peaceai/test/fixtures/m278/ps-test-fixtures-listener.js.txt"
+    },
+    {
+      "repo": "tinylibs/tinyps",
+      "commit": "f40ac2824c1ebfdaf5615a5839028c8b9cf9e631",
+      "licenseSha256": "69c409d1c1e226dc53cd59b468ba819098284f6b8bf634a63be3c9a73f09d8ca",
+      "fixture": "peaceai/test/fixtures/m278/ps-test-fixtures-parent.js.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-async.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-bench.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-concurrency.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-console-table.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-constants.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-conversions.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-error.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-event.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-format.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-index.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-runtime.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-statistics.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-student-t.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-task.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-timer-diagnostics.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-timestamp.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-types.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "dbe9ce12a1b43cbfcfa22a5aa43f2da377f99eeb",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-src-utils.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "93c5fdcbd4728e81d32121bc0477747db4b0e1e2",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-test-with-concurrency.test.ts.txt"
+    },
+    {
+      "repo": "tinylibs/tinybench",
+      "commit": "93c5fdcbd4728e81d32121bc0477747db4b0e1e2",
+      "licenseSha256": "551dde9639240832bb1918281c523cf772bd2391a4a46464adb1498b07f48591",
+      "fixture": "peaceai/test/fixtures/m278/tb-test-utils.ts.txt"
+    },
+    {
+      "repo": "antfu/ni",
+      "commit": "daad868b723fd2f541b20650b0dce8821d4f621f",
+      "licenseSha256": "b675b9dfbf4513fb377e89a5c09240bc9a9d164ba026102a1bc1e8781fae49f7",
+      "fixture": "peaceai/test/fixtures/m278/ni-src-fs.ts.txt"
+    },
+    {
+      "repo": "antfu/ni",
+      "commit": "40124c2053a6d9c5cf1543803ae774b033bb099a",
+      "licenseSha256": "b675b9dfbf4513fb377e89a5c09240bc9a9d164ba026102a1bc1e8781fae49f7",
+      "fixture": "peaceai/test/fixtures/m278/ni-test-package-json.spec.ts.txt"
+    }
+  ]
+}
