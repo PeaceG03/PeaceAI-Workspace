@@ -1,0 +1,9 @@
+{
+  "cnl-index.js.txt": "index.js",
+  "cnl-test.js.txt": "test.js",
+  "htag-index.js.txt": "index.js",
+  "htag-test-test.js.txt": "test/test.js",
+  "ptime-index.js.txt": "index.js",
+  "ptime-test.js.txt": "test.js",
+  "ptime-utils.js.txt": "utils.js"
+}
