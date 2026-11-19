@@ -1,0 +1,14 @@
+{
+  "name": "m315-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "should": "11.2.1",
+    "chai": "4.5.0",
+    "lazy-cache": "2.0.2",
+    "extend-shallow": "2.0.1",
+    "get-value": "1.2.1",
+    "is-extendable": "0.1.1",
+    "set-value": "0.4.3"
+  }
+}

@@ -1,0 +1,84 @@
+{
+ "schema": "peaceai-m315-batch64:v1",
+ "note": "Pinned copies of jonschlinkert/assign-value, jonschlinkert/to-list, and jonschlinkert/array-sum at the parent of a published bug fix, plus the test that fix changed. The assign-value, to-list, and array-sum licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/assign-value",
+   "commit": "81b7bdeca56822dbf75735a9f56fcc7efffa3772",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m315/av-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/assign-value",
+   "commit": "ba740224b5a1d2ab6b9d2d93d0a0b6fd190b1028",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m315/av-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/assign-value",
+   "commit": "81b7bdeca56822dbf75735a9f56fcc7efffa3772",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m315/av-utils.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/assign-value",
+   "commit": "81b7bdeca56822dbf75735a9f56fcc7efffa3772",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m315/av-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/assign-value",
+   "commit": "81b7bdeca56822dbf75735a9f56fcc7efffa3772",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m315/av-README.md.txt"
+  },
+  {
+   "repo": "jonschlinkert/to-list",
+   "commit": "bb8ba258d9fb63477143029f5628ef9692235f95",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m315/tl-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/to-list",
+   "commit": "d964a51f93725c42169a05abd05c5c5fa617a9db",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m315/tl-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/to-list",
+   "commit": "bb8ba258d9fb63477143029f5628ef9692235f95",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m315/tl-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/to-list",
+   "commit": "bb8ba258d9fb63477143029f5628ef9692235f95",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m315/tl-readme.md.txt"
+  },
+  {
+   "repo": "jonschlinkert/array-sum",
+   "commit": "74cccdcde919458dced92925a134025d6e9079ac",
+   "licenseSha256": "9afbe33b42dfe0f180f89f2f967d9d79e5e4fd25c9ee1bf15981fd5e0583d556",
+   "fixture": "peaceai/test/fixtures/m315/as-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/array-sum",
+   "commit": "20b754d683cc8e98402b744c8e759f4aa342f9c8",
+   "licenseSha256": "9afbe33b42dfe0f180f89f2f967d9d79e5e4fd25c9ee1bf15981fd5e0583d556",
+   "fixture": "peaceai/test/fixtures/m315/as-test-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/array-sum",
+   "commit": "74cccdcde919458dced92925a134025d6e9079ac",
+   "licenseSha256": "9afbe33b42dfe0f180f89f2f967d9d79e5e4fd25c9ee1bf15981fd5e0583d556",
+   "fixture": "peaceai/test/fixtures/m315/as-LICENSE-MIT.txt"
+  },
+  {
+   "repo": "jonschlinkert/array-sum",
+   "commit": "74cccdcde919458dced92925a134025d6e9079ac",
+   "licenseSha256": "9afbe33b42dfe0f180f89f2f967d9d79e5e4fd25c9ee1bf15981fd5e0583d556",
+   "fixture": "peaceai/test/fixtures/m315/as-README.md.txt"
+  }
+ ]
+}
