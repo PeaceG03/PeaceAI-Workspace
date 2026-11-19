@@ -1,0 +1,19 @@
+# Capability batch 34
+
+Based on `d42485b4aa4cb47b77ed929d0c49947e30898a42`. No credit claim. Held-out diffs and reasons were not opened. The cap stays 20. `specgrade.ts`, `gate.ts`, `scope.ts`, and `capability-job.ts` were not edited. The self-change lane was not edited.
+
+The libraries below were checked by name against the held-out list, the hidden set, the public exclusion list, the practice pairs, and the LM pair lists. None of those names is `vercel/ms`, `vercel/arg`, or `fastify/fast-uri`. They are also not already a fixture, and they are not the libraries used in batches 1 through 33. Previously excluded or already-used libraries, including `alexreardon/memoize-one`, `cosmiconfig/cosmiconfig`, `planttheidea/micro-memoize`, `TanStack/store`, `honojs/node-server`, `antfu/bumpp`, `quansync-dev/quansync`, `mesqueeb/copy-anything`, `antfu/birpc`, `fb55/domhandler`, `planttheidea/fast-copy`, and `express-rate-limit/express-rate-limit`, were not reused.
+
+`unjs/mkdist` was evaluated and dropped: its MIT license contains email addresses, and the published check pulls esbuild and a Vue compiler. `jridgewell/gen-mapping` was evaluated and dropped: the published check builds first and then runs Mocha against that output, and its license contains an email address. `lukeed/dequal`, `lukeed/flattie`, and `sindresorhus/p-memoize` were evaluated and dropped: their MIT licenses contain email addresses. `jshttp/content-type` and `jshttp/type-is` were evaluated and dropped: `classifyLicense` does not accept their MIT text, which quotes AS IS with single quotes. `isaacs/yallist` was evaluated and dropped: the published license is not a single SPDX string `classifyLicense` accepts (NOASSERTION / BlueOak risk). `kettanaito/until-async` was evaluated and dropped: the candidate only rethrew a rejection already handled by `await`. The ms, arg, and fast-uri licenses contain no email address, so each notice keeps the hash of the text as written. The lock-only install fixture contains no email address.
+
+## Families
+
+`parse` used a regex that only allowed a single digit before a decimal in a negative number, so `-10.5h` did not match and the function returned undefined. `vercel/ms` at parent `fe0bae301a6c41f68a01595658a4f4f0dcba0e84` does that in `index.js`. Commit `2669f23e99be0bb6b65d365151884de52434301c` allows additional digits in that group. The published `tests.js` fails the `-10.5h` case (`expected undefined to equal -37800000`), and passes after the edit.
+
+`arg` split a long option on every `=`, so `--foo=hi.hello?q=p` kept only `hi.hello?q`. `vercel/arg` at parent `49f736dd231bdfcaef67687918cd61be5ca5c103` does that in `index.js`. Commit `3a3ec3c27d9e1aa7dd802a14b9d7732fe942929b` splits on the first `=` and keeps the rest. The published `test.js` fails the equals-in-value case (`expected ... 'hi.hello?q=p'`, received `'hi.hello?q'`), and passes after the edit.
+
+`parseWithStatus` stored the scheme as matched, so `HTTP://EXAMPLE.com/Path` kept the scheme `HTTP`. `fastify/fast-uri` at parent `2a5232ef01d62a2044dbd643f7c32f02e30b4fb0` does that in `index.js`. Commit `46060c27252ed847fd9cb5474270d5ff1d986841` lowercases the scheme. The published `test/scheme-normalization.test.js` fails the uppercase-scheme cases (`expected 'http'`, actual `'HTTP'`), and passes after the edit.
+
+## Soundness
+
+The mutant for each family is that unmodified parent. The same published command fails in-process and inside the sandbox for the reason above, and the repair puts the parent file back to the fixed source. An `any` parameter that returns the recorded answer for every input is `verified_test_only` for `parse`, `arg`, and `parseWithStatus`. A check that renames `parse`, `arg`, or `parseWithStatus` is refused. The cap stays 20. No credit is claimed. Held-out repositories were not opened.

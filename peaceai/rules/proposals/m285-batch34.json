@@ -1,0 +1,54 @@
+{
+ "schema": "peaceai-m285-batch34:v1",
+ "note": "Pinned copies of vercel/ms, vercel/arg, and fastify/fast-uri at the parent of a published bug fix, plus the test that fix changed. The ms, arg, and fast-uri licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "vercel/ms",
+   "commit": "fe0bae301a6c41f68a01595658a4f4f0dcba0e84",
+   "licenseSha256": "d2f44f572d99a725535a0bdbaf9b438517f6354d634eacafc97ae9b72c3a8f52",
+   "fixture": "peaceai/test/fixtures/m285/ms-index.js.txt"
+  },
+  {
+   "repo": "vercel/ms",
+   "commit": "2669f23e99be0bb6b65d365151884de52434301c",
+   "licenseSha256": "d2f44f572d99a725535a0bdbaf9b438517f6354d634eacafc97ae9b72c3a8f52",
+   "fixture": "peaceai/test/fixtures/m285/ms-tests.js.txt"
+  },
+  {
+   "repo": "vercel/arg",
+   "commit": "49f736dd231bdfcaef67687918cd61be5ca5c103",
+   "licenseSha256": "a9fb2270307142cf8640cc0efaf3dd9b2dcc829f5d2bfb6f2bfcd16a2f492229",
+   "fixture": "peaceai/test/fixtures/m285/ar-index.js.txt"
+  },
+  {
+   "repo": "vercel/arg",
+   "commit": "3a3ec3c27d9e1aa7dd802a14b9d7732fe942929b",
+   "licenseSha256": "a9fb2270307142cf8640cc0efaf3dd9b2dcc829f5d2bfb6f2bfcd16a2f492229",
+   "fixture": "peaceai/test/fixtures/m285/ar-test.js.txt"
+  },
+  {
+   "repo": "fastify/fast-uri",
+   "commit": "2a5232ef01d62a2044dbd643f7c32f02e30b4fb0",
+   "licenseSha256": "b010b0dfdfdb23d7396e03b82cd4621fc9bb8f95d6b0aea70b9c24e12074c786",
+   "fixture": "peaceai/test/fixtures/m285/fu-index.js.txt"
+  },
+  {
+   "repo": "fastify/fast-uri",
+   "commit": "2a5232ef01d62a2044dbd643f7c32f02e30b4fb0",
+   "licenseSha256": "b010b0dfdfdb23d7396e03b82cd4621fc9bb8f95d6b0aea70b9c24e12074c786",
+   "fixture": "peaceai/test/fixtures/m285/fu-lib-schemes.js.txt"
+  },
+  {
+   "repo": "fastify/fast-uri",
+   "commit": "2a5232ef01d62a2044dbd643f7c32f02e30b4fb0",
+   "licenseSha256": "b010b0dfdfdb23d7396e03b82cd4621fc9bb8f95d6b0aea70b9c24e12074c786",
+   "fixture": "peaceai/test/fixtures/m285/fu-lib-utils.js.txt"
+  },
+  {
+   "repo": "fastify/fast-uri",
+   "commit": "46060c27252ed847fd9cb5474270d5ff1d986841",
+   "licenseSha256": "b010b0dfdfdb23d7396e03b82cd4621fc9bb8f95d6b0aea70b9c24e12074c786",
+   "fixture": "peaceai/test/fixtures/m285/fu-test-scheme-normalization.test.js.txt"
+  }
+ ]
+}
