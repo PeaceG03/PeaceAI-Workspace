@@ -15013,3 +15013,100 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: doowb/stringify-keys
+license: MIT (LICENSE, sha256 of trimmed text a32a7cfe947e10cafc2f61bdcea5a3638b85134f1f853cc917258f5e4bd3b1b2)
+fixtures (commit path):
+  7e7d0746903f8de4be640d133fd8bdbbd4cab78e peaceai/test/fixtures/m309/sk-index.js.txt
+  c8df94a152a09f2d4f0de5780c0b0475720e0422 peaceai/test/fixtures/m309/sk-test.js.txt
+  7e7d0746903f8de4be640d133fd8bdbbd4cab78e peaceai/test/fixtures/m309/sk-LICENSE.txt
+license URL: https://github.com/doowb/stringify-keys/blob/7e7d0746903f8de4be640d133fd8bdbbd4cab78e/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014-2015, Brian Woodward.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/delete
+license: MIT (LICENSE, sha256 of trimmed text df727bea113257e83fe417cda84a3dae0c643445ef1610e8e1b0206b156dbf50)
+fixtures (commit path):
+  71eb34df46a2de4969b21a64960b90fa58ba358e peaceai/test/fixtures/m309/del-index.js.txt
+  8460da5bc9952eb6febe8f9b3da41dbdb9a0049e peaceai/test/fixtures/m309/del-test.js.txt
+  71eb34df46a2de4969b21a64960b90fa58ba358e peaceai/test/fixtures/m309/del-LICENSE.txt
+  71eb34df46a2de4969b21a64960b90fa58ba358e peaceai/test/fixtures/m309/del-lib-utils.js.txt
+license URL: https://github.com/jonschlinkert/delete/blob/71eb34df46a2de4969b21a64960b90fa58ba358e/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014-2016, Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/has-value
+license: MIT (LICENSE, sha256 of trimmed text edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b)
+fixtures (commit path):
+  84e17c3f3ea5482f8251d6a36e1a8b7002d35a45 peaceai/test/fixtures/m309/hv-index.js.txt
+  3d0788ed966cfd3b4fe2902f515d19c326eb70be peaceai/test/fixtures/m309/hv-test.js.txt
+  84e17c3f3ea5482f8251d6a36e1a8b7002d35a45 peaceai/test/fixtures/m309/hv-LICENSE.txt
+license URL: https://github.com/jonschlinkert/has-value/blob/84e17c3f3ea5482f8251d6a36e1a8b7002d35a45/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014-2015, Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----

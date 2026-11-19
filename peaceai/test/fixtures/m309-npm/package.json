@@ -1,0 +1,18 @@
+{
+  "name": "m309-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "should": "4.6.5",
+    "is-plain-object": "1.0.0",
+    "async": "1.5.2",
+    "bluebird": "3.7.2",
+    "extend-shallow": "2.0.1",
+    "lazy-cache": "1.0.4",
+    "matched": "0.4.4",
+    "rimraf": "2.7.1",
+    "fs-exists-sync": "0.1.0",
+    "get-value": "2.0.6",
+    "has-values": "0.1.4"
+  }
+}
