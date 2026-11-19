@@ -1,0 +1,62 @@
+{
+  "name": "project-name",
+  "description": "Get the name of a project, from package.json, git config, or basename of the current working directory.",
+  "version": "1.0.0",
+  "homepage": "https://github.com/jonschlinkert/project-name",
+  "author": "Jon Schlinkert (https://github.com/jonschlinkert)",
+  "repository": "jonschlinkert/project-name",
+  "bugs": {
+    "url": "https://github.com/jonschlinkert/project-name/issues"
+  },
+  "license": "MIT",
+  "files": [
+    "index.js"
+  ],
+  "main": "index.js",
+  "engines": {
+    "node": ">=8"
+  },
+  "scripts": {
+    "test": "mocha"
+  },
+  "dependencies": {
+    "git-repo-name": "^1.0.1"
+  },
+  "devDependencies": {
+    "gulp-format-md": "^2.0.0",
+    "mocha": "^5.2.0"
+  },
+  "keywords": [
+    "app",
+    "detect",
+    "dir",
+    "directory",
+    "dirname",
+    "match",
+    "name",
+    "project",
+    "resolve",
+    "root"
+  ],
+  "verb": {
+    "toc": false,
+    "layout": "default",
+    "tasks": [
+      "readme"
+    ],
+    "plugins": [
+      "gulp-format-md"
+    ],
+    "related": {
+      "list": [
+        "git-repo-name",
+        "git-user-email",
+        "git-user-name",
+        "git-username"
+      ]
+    },
+    "lint": {
+      "reflinks": true
+    }
+  }
+}
