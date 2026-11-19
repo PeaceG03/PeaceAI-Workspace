@@ -1,0 +1,14 @@
+{
+  "name": "m301-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "get-value": "2.0.6",
+    "is-plain-object": "2.0.4",
+    "unset-value": "0.1.1",
+    "for-own": "0.1.5",
+    "omit-keys": "0.1.0",
+    "is-number": "3.0.0",
+    "is-integer": "1.0.7"
+  }
+}
