@@ -1,0 +1,15 @@
+{
+  "fs-LICENSE.txt": "LICENSE",
+  "fs-README.md.txt": "README.md",
+  "fs-index.js.txt": "index.js",
+  "fs-test.js.txt": "test.js",
+  "fs-utils.js.txt": "utils.js",
+  "so-LICENSE.txt": "LICENSE",
+  "so-index.js.txt": "index.js",
+  "so-test.js.txt": "test.js",
+  "tf-LICENSE.txt": "LICENSE",
+  "tf-fixtures-a.txt.txt": "fixtures/a.txt",
+  "tf-index.js.txt": "index.js",
+  "tf-test.js.txt": "test.js",
+  "tf-utils.js.txt": "utils.js"
+}
