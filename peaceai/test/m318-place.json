@@ -1,0 +1,23 @@
+{
+  "ca-LICENSE.txt": "LICENSE",
+  "ca-README.md.txt": "README.md",
+  "ca-index.js.txt": "index.js",
+  "ca-test.js.txt": "test.js",
+  "ca-utils.js.txt": "utils.js",
+  "db-LICENSE.txt": "LICENSE",
+  "db-index.js.txt": "index.js",
+  "db-readme.md.txt": "readme.md",
+  "db-test.js.txt": "test.js",
+  "eb-LICENSE.txt": "LICENSE",
+  "eb-README.md.txt": "README.md",
+  "eb-index.js.txt": "index.js",
+  "eb-lib-compilers.js.txt": "lib/compilers.js",
+  "eb-lib-parsers.js.txt": "lib/parsers.js",
+  "eb-lib-utils.js.txt": "lib/utils.js",
+  "eb-test-support-compare.js.txt": "test/support/compare.js",
+  "eb-test-support-match.js.txt": "test/support/match.js",
+  "eb-test-support-matcher.js.txt": "test/support/matcher.js",
+  "eb-test-support-utils.js.txt": "test/support/utils.js",
+  "eb-test-test.js.txt": "test/test.js",
+  "eb-test-wildmatch.js.txt": "test/wildmatch.js"
+}
