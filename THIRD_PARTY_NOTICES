@@ -15013,3 +15013,125 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: jonschlinkert/parse-gitignore
+license: MIT (LICENSE, sha256 of trimmed text 2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c)
+fixtures (commit path):
+  9b61e5d63402b0f99f438626d8dd7eb6d84dccd6 peaceai/test/fixtures/m306/pg-index.js.txt
+  9b61e5d63402b0f99f438626d8dd7eb6d84dccd6 peaceai/test/fixtures/m306/pg-LICENSE.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-fixtures-a.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-fixtures-b.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-fixtures-c.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-fixtures-d.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-fixtures-gitignore.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-fixtures-nested-a.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-fixtures-nested-b.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-fixtures-nested-c.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-fixtures-nested-deeper-a.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-fixtures-nested-deeper-b.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-fixtures-nested-deeper-c.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-foo-.foo-a.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-foo-.foo-b.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-foo-.foo-c.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-foo-a.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-foo-b.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-foo-c.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-foo-d.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-foo-gitignore.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-foo-nested-a.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-foo-nested-b.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-foo-nested-c.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-foo-nested-deeper-a.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-foo-nested-deeper-b.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-foo-nested-deeper-c.txt.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-test.js.txt
+  3028b6cff622b841def3544df545363fefe16bac peaceai/test/fixtures/m306/pg-test-to-glob.js.txt
+license URL: https://github.com/jonschlinkert/parse-gitignore/blob/9b61e5d63402b0f99f438626d8dd7eb6d84dccd6/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2015-2016, Jon Schlinkert
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: doowb/append-string
+license: MIT (LICENSE, sha256 of trimmed text 945978ecb98e6667196b6507f2a2b6c74cc64c7d4cbd68a2619b3fb16f532657)
+fixtures (commit path):
+  90d258436ff6b6dcd266684ce7de3e650f4d192d peaceai/test/fixtures/m306/as-index.js.txt
+  bfb1bb0f17de9100cacf973b25d9281ba6bc4761 peaceai/test/fixtures/m306/as-test.js.txt
+  90d258436ff6b6dcd266684ce7de3e650f4d192d peaceai/test/fixtures/m306/as-LICENSE.txt
+license URL: https://github.com/doowb/append-string/blob/90d258436ff6b6dcd266684ce7de3e650f4d192d/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2017, Brian Woodward.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/randomatic
+license: MIT (LICENSE, sha256 of trimmed text f923d52aea7f0c6c4879d27a9446ee8fc68c00e987e494b13aa08b101214dec5)
+fixtures (commit path):
+  5e6c229ea59a58fcb1465bbab240297a30ad6020 peaceai/test/fixtures/m306/ra-index.js.txt
+  8d742a1e7acf6535b23dcbb7e485239efb90c9e5 peaceai/test/fixtures/m306/ra-test.js.txt
+  5e6c229ea59a58fcb1465bbab240297a30ad6020 peaceai/test/fixtures/m306/ra-LICENSE.txt
+license URL: https://github.com/jonschlinkert/randomatic/blob/5e6c229ea59a58fcb1465bbab240297a30ad6020/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2013-2017, Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
