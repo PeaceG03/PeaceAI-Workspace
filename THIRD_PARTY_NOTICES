@@ -15013,3 +15013,98 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: jonschlinkert/unescape
+license: MIT (LICENSE, sha256 of trimmed text 95ba21e49148062b13d98efda6b010ec13bd2d5cd2d8ed6363f23217f7c79bd3)
+fixtures (commit path):
+  5dfbd318794333c384e7e9e9492e2f2b21639eb6 peaceai/test/fixtures/m308/ue-index.js.txt
+  f5bd4ecf02bb7f71e24c23871e4cfb01056a396e peaceai/test/fixtures/m308/ue-test.js.txt
+  5dfbd318794333c384e7e9e9492e2f2b21639eb6 peaceai/test/fixtures/m308/ue-LICENSE.txt
+license URL: https://github.com/jonschlinkert/unescape/blob/5dfbd318794333c384e7e9e9492e2f2b21639eb6/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014, 2016, Jon Schlinkert
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: doowb/set-getter
+license: MIT (LICENSE, sha256 of trimmed text eb285931387f93e90c9133ea2cbcfa8df828fddb4b2d96e5628f7d8c8816a1ed)
+fixtures (commit path):
+  dc2569055e545ab68e40f67c7d3140f8735575e9 peaceai/test/fixtures/m308/sg-index.js.txt
+  66eb3f0d4686a4a8c7c3d6f7ecd8e570b580edc4 peaceai/test/fixtures/m308/sg-test.js.txt
+  dc2569055e545ab68e40f67c7d3140f8735575e9 peaceai/test/fixtures/m308/sg-LICENSE.txt
+license URL: https://github.com/doowb/set-getter/blob/dc2569055e545ab68e40f67c7d3140f8735575e9/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2016, Brian Woodward.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: doowb/koalas
+license: MIT (LICENSE, sha256 of trimmed text 1ede4bb30ad3b5cf50214717e5e4b1d2be20477fbfbf10bf83866975ef3412bd)
+fixtures (commit path):
+  f257088f93b037b73243db55f4a0db1089542e7e peaceai/test/fixtures/m308/ko-index.js.txt
+  19116e6ea03b69da463595cd7aee0eac88986f4d peaceai/test/fixtures/m308/ko-test.js.txt
+  f257088f93b037b73243db55f4a0db1089542e7e peaceai/test/fixtures/m308/ko-LICENSE.txt
+license URL: https://github.com/doowb/koalas/blob/f257088f93b037b73243db55f4a0db1089542e7e/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2013 Brian Woodward
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+---- end ----

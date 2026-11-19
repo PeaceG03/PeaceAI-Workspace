@@ -1,0 +1,60 @@
+{
+ "schema": "peaceai-m308-batch57:v1",
+ "note": "Pinned copies of jonschlinkert/unescape, doowb/set-getter, and doowb/koalas at the parent of a published bug fix, plus the test that fix changed. The unescape, set-getter, and koalas licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/unescape",
+   "commit": "5dfbd318794333c384e7e9e9492e2f2b21639eb6",
+   "licenseSha256": "95ba21e49148062b13d98efda6b010ec13bd2d5cd2d8ed6363f23217f7c79bd3",
+   "fixture": "peaceai/test/fixtures/m308/ue-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/unescape",
+   "commit": "f5bd4ecf02bb7f71e24c23871e4cfb01056a396e",
+   "licenseSha256": "95ba21e49148062b13d98efda6b010ec13bd2d5cd2d8ed6363f23217f7c79bd3",
+   "fixture": "peaceai/test/fixtures/m308/ue-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/unescape",
+   "commit": "5dfbd318794333c384e7e9e9492e2f2b21639eb6",
+   "licenseSha256": "95ba21e49148062b13d98efda6b010ec13bd2d5cd2d8ed6363f23217f7c79bd3",
+   "fixture": "peaceai/test/fixtures/m308/ue-LICENSE.txt"
+  },
+  {
+   "repo": "doowb/set-getter",
+   "commit": "dc2569055e545ab68e40f67c7d3140f8735575e9",
+   "licenseSha256": "eb285931387f93e90c9133ea2cbcfa8df828fddb4b2d96e5628f7d8c8816a1ed",
+   "fixture": "peaceai/test/fixtures/m308/sg-index.js.txt"
+  },
+  {
+   "repo": "doowb/set-getter",
+   "commit": "66eb3f0d4686a4a8c7c3d6f7ecd8e570b580edc4",
+   "licenseSha256": "eb285931387f93e90c9133ea2cbcfa8df828fddb4b2d96e5628f7d8c8816a1ed",
+   "fixture": "peaceai/test/fixtures/m308/sg-test.js.txt"
+  },
+  {
+   "repo": "doowb/set-getter",
+   "commit": "dc2569055e545ab68e40f67c7d3140f8735575e9",
+   "licenseSha256": "eb285931387f93e90c9133ea2cbcfa8df828fddb4b2d96e5628f7d8c8816a1ed",
+   "fixture": "peaceai/test/fixtures/m308/sg-LICENSE.txt"
+  },
+  {
+   "repo": "doowb/koalas",
+   "commit": "f257088f93b037b73243db55f4a0db1089542e7e",
+   "licenseSha256": "1ede4bb30ad3b5cf50214717e5e4b1d2be20477fbfbf10bf83866975ef3412bd",
+   "fixture": "peaceai/test/fixtures/m308/ko-index.js.txt"
+  },
+  {
+   "repo": "doowb/koalas",
+   "commit": "19116e6ea03b69da463595cd7aee0eac88986f4d",
+   "licenseSha256": "1ede4bb30ad3b5cf50214717e5e4b1d2be20477fbfbf10bf83866975ef3412bd",
+   "fixture": "peaceai/test/fixtures/m308/ko-test.js.txt"
+  },
+  {
+   "repo": "doowb/koalas",
+   "commit": "f257088f93b037b73243db55f4a0db1089542e7e",
+   "licenseSha256": "1ede4bb30ad3b5cf50214717e5e4b1d2be20477fbfbf10bf83866975ef3412bd",
+   "fixture": "peaceai/test/fixtures/m308/ko-LICENSE.txt"
+  }
+ ]
+}
