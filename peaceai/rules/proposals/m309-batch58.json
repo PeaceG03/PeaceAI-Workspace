@@ -1,0 +1,66 @@
+{
+ "schema": "peaceai-m309-batch58:v1",
+ "note": "Pinned copies of doowb/stringify-keys, jonschlinkert/delete, and jonschlinkert/has-value at the parent of a published bug fix, plus the test that fix changed. The stringify-keys, delete, and has-value licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "doowb/stringify-keys",
+   "commit": "7e7d0746903f8de4be640d133fd8bdbbd4cab78e",
+   "licenseSha256": "a32a7cfe947e10cafc2f61bdcea5a3638b85134f1f853cc917258f5e4bd3b1b2",
+   "fixture": "peaceai/test/fixtures/m309/sk-index.js.txt"
+  },
+  {
+   "repo": "doowb/stringify-keys",
+   "commit": "c8df94a152a09f2d4f0de5780c0b0475720e0422",
+   "licenseSha256": "a32a7cfe947e10cafc2f61bdcea5a3638b85134f1f853cc917258f5e4bd3b1b2",
+   "fixture": "peaceai/test/fixtures/m309/sk-test.js.txt"
+  },
+  {
+   "repo": "doowb/stringify-keys",
+   "commit": "7e7d0746903f8de4be640d133fd8bdbbd4cab78e",
+   "licenseSha256": "a32a7cfe947e10cafc2f61bdcea5a3638b85134f1f853cc917258f5e4bd3b1b2",
+   "fixture": "peaceai/test/fixtures/m309/sk-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/delete",
+   "commit": "71eb34df46a2de4969b21a64960b90fa58ba358e",
+   "licenseSha256": "df727bea113257e83fe417cda84a3dae0c643445ef1610e8e1b0206b156dbf50",
+   "fixture": "peaceai/test/fixtures/m309/del-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/delete",
+   "commit": "8460da5bc9952eb6febe8f9b3da41dbdb9a0049e",
+   "licenseSha256": "df727bea113257e83fe417cda84a3dae0c643445ef1610e8e1b0206b156dbf50",
+   "fixture": "peaceai/test/fixtures/m309/del-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/delete",
+   "commit": "71eb34df46a2de4969b21a64960b90fa58ba358e",
+   "licenseSha256": "df727bea113257e83fe417cda84a3dae0c643445ef1610e8e1b0206b156dbf50",
+   "fixture": "peaceai/test/fixtures/m309/del-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/delete",
+   "commit": "71eb34df46a2de4969b21a64960b90fa58ba358e",
+   "licenseSha256": "df727bea113257e83fe417cda84a3dae0c643445ef1610e8e1b0206b156dbf50",
+   "fixture": "peaceai/test/fixtures/m309/del-lib-utils.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/has-value",
+   "commit": "84e17c3f3ea5482f8251d6a36e1a8b7002d35a45",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m309/hv-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/has-value",
+   "commit": "3d0788ed966cfd3b4fe2902f515d19c326eb70be",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m309/hv-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/has-value",
+   "commit": "84e17c3f3ea5482f8251d6a36e1a8b7002d35a45",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m309/hv-LICENSE.txt"
+  }
+ ]
+}

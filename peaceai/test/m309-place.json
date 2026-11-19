@@ -1,0 +1,12 @@
+{
+  "del-LICENSE.txt": "LICENSE",
+  "del-index.js.txt": "index.js",
+  "del-lib-utils.js.txt": "lib/utils.js",
+  "del-test.js.txt": "test.js",
+  "hv-LICENSE.txt": "LICENSE",
+  "hv-index.js.txt": "index.js",
+  "hv-test.js.txt": "test.js",
+  "sk-LICENSE.txt": "LICENSE",
+  "sk-index.js.txt": "index.js",
+  "sk-test.js.txt": "test.js"
+}
