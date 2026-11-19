@@ -1,0 +1,54 @@
+{
+ "schema": "peaceai-m294-batch43:v1",
+ "note": "Pinned copies of jonschlinkert/cwd, jonschlinkert/array-sort, and jonschlinkert/replace-nth at the parent of a published bug fix, plus the test that fix changed. The cwd, array-sort, and replace-nth licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/cwd",
+   "commit": "cb7b072f2ab5730f0f2a8dfdf0ae73724e456582",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m294/cwd-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/cwd",
+   "commit": "b33b018a8053c7a9bf5a7710f9e77fb352e13041",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m294/cwd-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/cwd",
+   "commit": "b33b018a8053c7a9bf5a7710f9e77fb352e13041",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m294/cwd-fixtures-a-b-package.json.txt"
+  },
+  {
+   "repo": "jonschlinkert/cwd",
+   "commit": "b33b018a8053c7a9bf5a7710f9e77fb352e13041",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m294/cwd-fixtures-a-b-c-.gitkeep.txt"
+  },
+  {
+   "repo": "jonschlinkert/array-sort",
+   "commit": "0770421a96850a5dd9ebbf6ce5f92c3e6acd2213",
+   "licenseSha256": "4922620a5741e9d1bb43dde132021a982ae7c545eed1c6e00b555d6fe978005f",
+   "fixture": "peaceai/test/fixtures/m294/sort-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/array-sort",
+   "commit": "cb459d937a314390295dcf87adabf45010ad9aca",
+   "licenseSha256": "4922620a5741e9d1bb43dde132021a982ae7c545eed1c6e00b555d6fe978005f",
+   "fixture": "peaceai/test/fixtures/m294/sort-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/replace-nth",
+   "commit": "21b127135f5f86263feb3340c4b0df7488840c5d",
+   "licenseSha256": "9afbe33b42dfe0f180f89f2f967d9d79e5e4fd25c9ee1bf15981fd5e0583d556",
+   "fixture": "peaceai/test/fixtures/m294/nth-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/replace-nth",
+   "commit": "c4d142feeb528cdde4f704d1a54b894614745b04",
+   "licenseSha256": "9afbe33b42dfe0f180f89f2f967d9d79e5e4fd25c9ee1bf15981fd5e0583d556",
+   "fixture": "peaceai/test/fixtures/m294/nth-test-test.js.txt"
+  }
+ ]
+}
