@@ -1,0 +1,14 @@
+{
+  "fs-LICENSE.txt": "LICENSE",
+  "fs-README.md.txt": "README.md",
+  "fs-fixtures-.gitkeep.txt": "fixtures/.gitkeep",
+  "fs-index.js.txt": "index.js",
+  "fs-test.js.txt": "test.js",
+  "pa-LICENSE.txt": "LICENSE",
+  "pa-index.js.txt": "index.js",
+  "pa-test.js.txt": "test.js",
+  "wr-LICENSE.txt": "LICENSE",
+  "wr-README.md.txt": "README.md",
+  "wr-index.js.txt": "index.js",
+  "wr-test.js.txt": "test.js"
+}
