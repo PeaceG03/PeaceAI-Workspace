@@ -1,0 +1,96 @@
+{
+ "schema": "peaceai-m295-batch44:v1",
+ "note": "Pinned copies of jonschlinkert/strip-comments, jonschlinkert/index-of, and jonschlinkert/falsey at the parent of a published bug fix, plus the test that fix changed. The strip-comments, index-of, and falsey licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/strip-comments",
+   "commit": "fda8826750a2901e1775fa8d0c66c636aedbfabc",
+   "licenseSha256": "b2169ad947b072a9de4276acdf48b4fd7c8f1e6f8e4843f3c4ae6d47428dcd6c",
+   "fixture": "peaceai/test/fixtures/m295/strip-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/strip-comments",
+   "commit": "2c70437dd7cfbbcb2ac2f227ab4db38719493a0e",
+   "licenseSha256": "b2169ad947b072a9de4276acdf48b4fd7c8f1e6f8e4843f3c4ae6d47428dcd6c",
+   "fixture": "peaceai/test/fixtures/m295/strip-test-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/strip-comments",
+   "commit": "2c70437dd7cfbbcb2ac2f227ab4db38719493a0e",
+   "licenseSha256": "b2169ad947b072a9de4276acdf48b4fd7c8f1e6f8e4843f3c4ae6d47428dcd6c",
+   "fixture": "peaceai/test/fixtures/m295/strip-test-expected-strip-all.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/strip-comments",
+   "commit": "2c70437dd7cfbbcb2ac2f227ab4db38719493a0e",
+   "licenseSha256": "b2169ad947b072a9de4276acdf48b4fd7c8f1e6f8e4843f3c4ae6d47428dcd6c",
+   "fixture": "peaceai/test/fixtures/m295/strip-test-expected-strip-keep-block.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/strip-comments",
+   "commit": "2c70437dd7cfbbcb2ac2f227ab4db38719493a0e",
+   "licenseSha256": "b2169ad947b072a9de4276acdf48b4fd7c8f1e6f8e4843f3c4ae6d47428dcd6c",
+   "fixture": "peaceai/test/fixtures/m295/strip-test-expected-strip-keep-line.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/strip-comments",
+   "commit": "2c70437dd7cfbbcb2ac2f227ab4db38719493a0e",
+   "licenseSha256": "b2169ad947b072a9de4276acdf48b4fd7c8f1e6f8e4843f3c4ae6d47428dcd6c",
+   "fixture": "peaceai/test/fixtures/m295/strip-test-fixtures-banner.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/strip-comments",
+   "commit": "2c70437dd7cfbbcb2ac2f227ab4db38719493a0e",
+   "licenseSha256": "b2169ad947b072a9de4276acdf48b4fd7c8f1e6f8e4843f3c4ae6d47428dcd6c",
+   "fixture": "peaceai/test/fixtures/m295/strip-test-fixtures-config.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/strip-comments",
+   "commit": "2c70437dd7cfbbcb2ac2f227ab4db38719493a0e",
+   "licenseSha256": "b2169ad947b072a9de4276acdf48b4fd7c8f1e6f8e4843f3c4ae6d47428dcd6c",
+   "fixture": "peaceai/test/fixtures/m295/strip-test-fixtures-no-comment.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/strip-comments",
+   "commit": "2c70437dd7cfbbcb2ac2f227ab4db38719493a0e",
+   "licenseSha256": "b2169ad947b072a9de4276acdf48b4fd7c8f1e6f8e4843f3c4ae6d47428dcd6c",
+   "fixture": "peaceai/test/fixtures/m295/strip-test-fixtures-quoted-strings.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/strip-comments",
+   "commit": "2c70437dd7cfbbcb2ac2f227ab4db38719493a0e",
+   "licenseSha256": "b2169ad947b072a9de4276acdf48b4fd7c8f1e6f8e4843f3c4ae6d47428dcd6c",
+   "fixture": "peaceai/test/fixtures/m295/strip-test-fixtures-strip-all.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/strip-comments",
+   "commit": "2c70437dd7cfbbcb2ac2f227ab4db38719493a0e",
+   "licenseSha256": "b2169ad947b072a9de4276acdf48b4fd7c8f1e6f8e4843f3c4ae6d47428dcd6c",
+   "fixture": "peaceai/test/fixtures/m295/strip-test-fixtures-strip-keep-line.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/index-of",
+   "commit": "3284f7b6b29ac2b6e9e3c2d185d49274339f83c4",
+   "licenseSha256": "4f1d8beca1f49da1fa9ae6ef4bb47d7efb1887abaaa6107a490275ba39f88c06",
+   "fixture": "peaceai/test/fixtures/m295/idx-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/index-of",
+   "commit": "0219979a887624123d67e06a1024ac141ed4ad02",
+   "licenseSha256": "4f1d8beca1f49da1fa9ae6ef4bb47d7efb1887abaaa6107a490275ba39f88c06",
+   "fixture": "peaceai/test/fixtures/m295/idx-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/falsey",
+   "commit": "ec6a83a7c70f8dc460f8b725108f0f820f619c39",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m295/falsey-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/falsey",
+   "commit": "6e043084b60302c5d8237c0c88718952e967008c",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m295/falsey-test.js.txt"
+  }
+ ]
+}

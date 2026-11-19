@@ -1,0 +1,17 @@
+{
+  "falsey-index.js.txt": "index.js",
+  "falsey-test.js.txt": "test.js",
+  "idx-index.js.txt": "index.js",
+  "idx-test.js.txt": "test.js",
+  "strip-index.js.txt": "index.js",
+  "strip-test-expected-strip-all.js.txt": "test/expected/strip-all.js",
+  "strip-test-expected-strip-keep-block.js.txt": "test/expected/strip-keep-block.js",
+  "strip-test-expected-strip-keep-line.js.txt": "test/expected/strip-keep-line.js",
+  "strip-test-fixtures-banner.js.txt": "test/fixtures/banner.js",
+  "strip-test-fixtures-config.js.txt": "test/fixtures/config.js",
+  "strip-test-fixtures-no-comment.js.txt": "test/fixtures/no-comment.js",
+  "strip-test-fixtures-quoted-strings.js.txt": "test/fixtures/quoted-strings.js",
+  "strip-test-fixtures-strip-all.js.txt": "test/fixtures/strip-all.js",
+  "strip-test-fixtures-strip-keep-line.js.txt": "test/fixtures/strip-keep-line.js",
+  "strip-test-test.js.txt": "test/test.js"
+}

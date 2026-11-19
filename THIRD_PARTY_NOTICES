@@ -14439,3 +14439,108 @@ Permission to use, copy, modify, and/or distribute this software for any purpose
 
 THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: jonschlinkert/strip-comments
+license: MIT (LICENSE, sha256 of trimmed text b2169ad947b072a9de4276acdf48b4fd7c8f1e6f8e4843f3c4ae6d47428dcd6c)
+fixtures (commit path):
+  fda8826750a2901e1775fa8d0c66c636aedbfabc peaceai/test/fixtures/m295/strip-index.js.txt
+  2c70437dd7cfbbcb2ac2f227ab4db38719493a0e peaceai/test/fixtures/m295/strip-test-test.js.txt
+  2c70437dd7cfbbcb2ac2f227ab4db38719493a0e peaceai/test/fixtures/m295/strip-test-expected-strip-all.js.txt
+  2c70437dd7cfbbcb2ac2f227ab4db38719493a0e peaceai/test/fixtures/m295/strip-test-expected-strip-keep-block.js.txt
+  2c70437dd7cfbbcb2ac2f227ab4db38719493a0e peaceai/test/fixtures/m295/strip-test-expected-strip-keep-line.js.txt
+  2c70437dd7cfbbcb2ac2f227ab4db38719493a0e peaceai/test/fixtures/m295/strip-test-fixtures-banner.js.txt
+  2c70437dd7cfbbcb2ac2f227ab4db38719493a0e peaceai/test/fixtures/m295/strip-test-fixtures-config.js.txt
+  2c70437dd7cfbbcb2ac2f227ab4db38719493a0e peaceai/test/fixtures/m295/strip-test-fixtures-no-comment.js.txt
+  2c70437dd7cfbbcb2ac2f227ab4db38719493a0e peaceai/test/fixtures/m295/strip-test-fixtures-quoted-strings.js.txt
+  2c70437dd7cfbbcb2ac2f227ab4db38719493a0e peaceai/test/fixtures/m295/strip-test-fixtures-strip-all.js.txt
+  2c70437dd7cfbbcb2ac2f227ab4db38719493a0e peaceai/test/fixtures/m295/strip-test-fixtures-strip-keep-line.js.txt
+license URL: https://github.com/jonschlinkert/strip-comments/blob/fda8826750a2901e1775fa8d0c66c636aedbfabc/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2015 Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/index-of
+license: MIT (LICENSE, sha256 of trimmed text 4f1d8beca1f49da1fa9ae6ef4bb47d7efb1887abaaa6107a490275ba39f88c06)
+fixtures (commit path):
+  3284f7b6b29ac2b6e9e3c2d185d49274339f83c4 peaceai/test/fixtures/m295/idx-index.js.txt
+  0219979a887624123d67e06a1024ac141ed4ad02 peaceai/test/fixtures/m295/idx-test.js.txt
+license URL: https://github.com/jonschlinkert/index-of/blob/3284f7b6b29ac2b6e9e3c2d185d49274339f83c4/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014-2015 Jon Schlinkert
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/falsey
+license: MIT (LICENSE, sha256 of trimmed text edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b)
+fixtures (commit path):
+  ec6a83a7c70f8dc460f8b725108f0f820f619c39 peaceai/test/fixtures/m295/falsey-index.js.txt
+  6e043084b60302c5d8237c0c88718952e967008c peaceai/test/fixtures/m295/falsey-test.js.txt
+license URL: https://github.com/jonschlinkert/falsey/blob/ec6a83a7c70f8dc460f8b725108f0f820f619c39/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014-2015, Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
