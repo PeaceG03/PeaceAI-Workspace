@@ -1,0 +1,10 @@
+{
+  "name": "m295-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "should": "13.2.3",
+    "extract-comments": "0.8.7",
+    "kind-of": "3.2.2"
+  }
+}
