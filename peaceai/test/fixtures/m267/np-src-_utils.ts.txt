@@ -1,0 +1,426 @@
+import type { StdioOptions } from "node:child_process";
+import { createRequire } from "node:module";
+import { normalize, resolve } from "pathe";
+import { x } from "tinyexec";
+import type { OperationOptions, PackageManager, PackageManagerName } from "./types.ts";
+import type { DetectPackageManagerOptions } from "./package-manager.ts";
+import { detectPackageManager, packageManagers } from "./package-manager.ts";
+import type { PackageJson } from "pkg-types";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { readFile } from "node:fs/promises";
+
+export async function findup<T>(
+  cwd: string,
+  match: (path: string) => T | Promise<T>,
+  options: Pick<DetectPackageManagerOptions, "includeParentDirs"> = {},
+): Promise<T | undefined> {
+  const segments = normalize(cwd).split("/");
+
+  while (segments.length > 0) {
+    const path = segments.join("/") || "/";
+    const result = await match(path);
+
+    if (result || !options.includeParentDirs) {
+      return result;
+    }
+
+    segments.pop();
+  }
+}
+
+export async function readPackageJSON(
+  cwd: string,
+  options: Pick<DetectPackageManagerOptions, "includeParentDirs"> = {},
+): Promise<PackageJson | null> {
+  return findup(
+    cwd,
+    (p) => {
+      const pkgPath = join(p, "package.json");
+      if (existsSync(pkgPath)) {
+        return readFile(pkgPath, "utf8").then((data) => JSON.parse(data));
+      }
+    },
+    options,
+  );
+}
+
+export async function readInstalledPackageJSON(
+  pkgName: string,
+  cwd: string,
+): Promise<PackageJson | null> {
+  const pkgJSONPath = await findup(
+    cwd,
+    (p) => {
+      const candidate = join(p, "node_modules", pkgName, "package.json");
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    },
+    { includeParentDirs: true },
+  );
+
+  if (!pkgJSONPath) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(await readFile(pkgJSONPath, "utf8")) as PackageJson;
+  } catch {
+    return null;
+  }
+}
+
+export async function readPackageJSONFromResolver(
+  requireFn: ReturnType<typeof createRequire>,
+  pkgName: string,
+): Promise<PackageJson | null> {
+  let resolved: string;
+  try {
+    resolved = requireFn.resolve(pkgName);
+  } catch {
+    return null;
+  }
+  return readPackageJSON(resolved, { includeParentDirs: true });
+}
+
+function cached<T>(fn: () => Promise<T>): () => T | Promise<T> {
+  let v: T | Promise<T> | undefined;
+  return () => {
+    if (v === undefined) {
+      v = fn().then((r) => {
+        v = r;
+        return v;
+      });
+    }
+    return v;
+  };
+}
+
+const hasCorepack = cached(async () => {
+  if (globalThis.process?.versions?.webcontainer) {
+    return false;
+  }
+  try {
+    const { exitCode } = await x("corepack", ["--version"]);
+    return exitCode === 0;
+  } catch {
+    return false;
+  }
+});
+
+export async function executeCommand(
+  command: string,
+  args: string[],
+  options: Pick<OperationOptions, "cwd" | "env" | "silent" | "corepack"> = {},
+): Promise<void> {
+  const useCorepack =
+    command !== "npm" &&
+    command !== "bun" &&
+    command !== "deno" &&
+    command !== "aube" &&
+    command !== "nub" &&
+    command !== "upm" &&
+    options.corepack !== false &&
+    (await hasCorepack());
+
+  const xArgs: [string, string[]] = useCorepack
+    ? ["corepack", [command, ...args]]
+    : [command, args];
+
+  // Only hand our stdin to the package manager when it is an interactive terminal.
+  // Otherwise the child gets `/dev/null` (immediate EOF) so that prompts nobody can
+  // answer (e.g. pnpm's `Proceed? (Y/n)`) fall back to their defaults instead of
+  // hanging forever. (#118)
+  const stdin = process.stdin.isTTY ? "inherit" : "ignore";
+  const stdio: StdioOptions = options.silent
+    ? [stdin, "pipe", "pipe"]
+    : [stdin, "inherit", "inherit"];
+
+  const { exitCode, stdout, stderr } = await x(xArgs[0], xArgs[1], {
+    nodeOptions: {
+      cwd: resolve(options.cwd || process.cwd()),
+      env: options.env,
+      stdio,
+    },
+  });
+
+  if (exitCode !== 0) {
+    throw new Error(
+      `\`${xArgs.flat().join(" ")}\` failed.${options.silent ? ["", stdout, stderr].join("\n") : ""}`,
+    );
+  }
+}
+
+type NonPartial<T> = { [P in keyof T]-?: T[P] };
+
+export const NO_PACKAGE_MANAGER_DETECTED_ERROR_MSG = "No package manager auto-detected.";
+
+export async function resolveOperationOptions(options: OperationOptions = {}): Promise<
+  NonPartial<
+    Pick<OperationOptions, "cwd" | "env" | "silent" | "dev" | "global" | "dry" | "corepack">
+  > &
+    Pick<OperationOptions, "workspace"> & {
+      packageManager: PackageManager;
+    }
+> {
+  // Resolve `cwd` up-front: consumers feed it to `createRequire` and `join`,
+  // both of which require an absolute path.
+  const cwd = resolve(options.cwd || process.cwd());
+  const env = { ...process.env, ...options.env } as Record<string, string>;
+
+  const packageManager =
+    (typeof options.packageManager === "string"
+      ? packageManagers.find((pm) => pm.name === options.packageManager)
+      : options.packageManager) || (await detectPackageManager(cwd));
+
+  if (!packageManager) {
+    throw new Error(NO_PACKAGE_MANAGER_DETECTED_ERROR_MSG);
+  }
+
+  return {
+    cwd,
+    env,
+    silent: options.silent ?? false,
+    packageManager,
+    dev: options.dev ?? false,
+    workspace: options.workspace,
+    global: options.global ?? false,
+    dry: options.dry ?? false,
+    corepack: options.corepack ?? true,
+  };
+}
+
+// TODO: Refactor to simplified version2
+export function getWorkspaceArgs(
+  options: Awaited<ReturnType<typeof resolveOperationOptions>>,
+): string[] {
+  if (!options.workspace) {
+    return [];
+  }
+
+  const workspacePkg =
+    typeof options.workspace === "string" && options.workspace !== ""
+      ? options.workspace
+      : undefined;
+
+  // pnpm (aube and nub expose pnpm's `--filter` / `--workspace-root` selectors)
+  if (
+    options.packageManager.name === "pnpm" ||
+    options.packageManager.name === "aube" ||
+    options.packageManager.name === "nub"
+  ) {
+    return workspacePkg ? ["--filter", workspacePkg] : ["--workspace-root"];
+  }
+
+  // npm
+  if (options.packageManager.name === "npm") {
+    return workspacePkg ? ["-w", workspacePkg] : ["--workspaces"];
+  }
+
+  // upm (`add` / `remove` target the root unless a workspace is selected with `-w`)
+  if (options.packageManager.name === "upm") {
+    return workspacePkg ? ["-w", workspacePkg] : [];
+  }
+
+  if (options.packageManager.name === "yarn") {
+    if (!options.packageManager.majorVersion || options.packageManager.majorVersion === "1") {
+      // Yarn classic
+      return workspacePkg ? ["--cwd", workspacePkg] : ["-W"];
+    } else {
+      // Yarn berry
+      return workspacePkg ? ["workspace", workspacePkg] : [];
+    }
+  }
+
+  return [];
+}
+
+export function getWorkspaceArgs2(options: {
+  workspace?: boolean | string;
+  packageManager: PackageManagerName;
+  yarnBerry?: boolean;
+}): string[] {
+  if (!options.workspace) {
+    return [];
+  }
+
+  const workspacePkg =
+    typeof options.workspace === "string" && options.workspace !== ""
+      ? options.workspace
+      : undefined;
+
+  // pnpm (aube and nub expose pnpm's `--filter` / `--workspace-root` selectors)
+  if (
+    options.packageManager === "pnpm" ||
+    options.packageManager === "aube" ||
+    options.packageManager === "nub"
+  ) {
+    return workspacePkg ? ["--filter", workspacePkg] : ["--workspace-root"];
+  }
+
+  // npm
+  if (options.packageManager === "npm") {
+    return workspacePkg ? ["-w", workspacePkg] : ["--workspaces"];
+  }
+
+  // upm (`add` / `remove` target the root unless a workspace is selected with `-w`)
+  if (options.packageManager === "upm") {
+    return workspacePkg ? ["-w", workspacePkg] : [];
+  }
+
+  if (options.packageManager === "yarn") {
+    if (options.yarnBerry) {
+      // Yarn berry
+      return workspacePkg ? ["workspace", workspacePkg] : [];
+    } else {
+      // Yarn classic
+      return workspacePkg ? ["--cwd", workspacePkg] : ["-W"];
+    }
+  }
+
+  return [];
+}
+
+export function dlxArgs(
+  packageManager: PackageManagerName,
+  name: string,
+  options: {
+    args?: string[];
+    short?: boolean;
+    packages?: string[];
+  } = {},
+): string[] {
+  const pmToDlxCommand: Record<PackageManagerName, string> = {
+    npm: options.short ? "npx" : "npm exec",
+    yarn: "yarn dlx",
+    pnpm: options.short ? "pnpx" : "pnpm dlx",
+    bun: options.short ? "bunx" : "bun x",
+    deno: "deno run -A",
+    aube: options.short ? "aubx" : "aube dlx",
+    nub: options.short ? "nubx" : "nub dlx",
+    upm: options.short ? "upx" : "upm exec",
+  };
+
+  const command = pmToDlxCommand[packageManager];
+
+  let packages: string[] = options.packages || [];
+
+  if (packageManager === "deno") {
+    if (!name.startsWith("npm:")) {
+      name = `npm:${name}`;
+    }
+    packages = packages.map((pkg) => (pkg.startsWith("npm:") ? pkg : `npm:${pkg}`));
+  }
+
+  const packageArgs: string[] = [];
+
+  // https://github.com/denoland/deno/issues/30737
+  if (packages.length > 0 && packageManager !== "deno") {
+    const packageFlag = options.short && /^npm|yarn$/.test(packageManager) ? "-p" : "--package";
+    for (const pkg of packages) {
+      packageArgs.push(`${packageFlag}=${pkg}`);
+    }
+  }
+
+  const argSep = packageManager === "npm" && !options.short ? "--" : "";
+
+  return [...command.split(" "), ...packageArgs, name, argSep, ...(options.args || [])].filter(
+    Boolean,
+  );
+}
+
+export function fmtCommand(args: string[]): string {
+  return args
+    .filter(Boolean)
+    .map((arg, i) => (i > 0 && arg.includes(" ") ? `"${arg}"` : arg))
+    .join(" ");
+}
+
+export function doesDependencyExist(
+  name: string,
+  options: Pick<Awaited<ReturnType<typeof resolveOperationOptions>>, "cwd" | "workspace">,
+) {
+  // Trailing slash so `createRequire` treats it as a directory and the prefix
+  // check below doesn't match lookalike dirs (e.g. `/app` vs `/app_modules`).
+  const resolvedCwd = resolve(options.cwd);
+  const cwd = resolvedCwd.endsWith("/") ? resolvedCwd : resolvedCwd + "/";
+  const require = createRequire(cwd);
+
+  try {
+    // `require.resolve` returns a platform-native path, so normalize it before
+    // comparing against the (posix-style) `cwd`.
+    const resolvedPath = normalize(require.resolve(name));
+
+    return resolvedPath.startsWith(cwd);
+  } catch {
+    return false;
+  }
+}
+
+const VALID_PM_NAME_RE = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+
+export function parsePackageManagerField(packageManager?: string): {
+  name?: PackageManagerName;
+  version?: string;
+  buildMeta?: string;
+  warnings?: string[];
+} {
+  const [name, _version] = (packageManager || "").split("@");
+  const [version, buildMeta] = _version?.split("+") || [];
+
+  if (name && name !== "-" && VALID_PM_NAME_RE.test(name)) {
+    return { name: name as PackageManagerName, version, buildMeta };
+  }
+
+  const sanitized = (name || "").replace(/\W+/g, "");
+  const warnings = [
+    `Abnormal characters found in \`packageManager\` field, sanitizing from \`${name}\` to \`${sanitized}\``,
+  ];
+  return {
+    name: sanitized as PackageManagerName,
+    version,
+    buildMeta,
+    warnings,
+  };
+}
+
+/**
+ * Parse the `devEngines.packageManager` field.
+ *
+ * https://docs.npmjs.com/cli/v11/configuring-npm/package-json#devengines
+ *
+ * Unlike `packageManager`, the value is an object (or an array of objects, in
+ * which case the first entry is used) and its `version` is a semver range
+ * rather than a pinned version.
+ */
+export function parseDevEnginesPackageManager(devEngines?: unknown): {
+  name?: PackageManagerName;
+  version?: string;
+  warnings?: string[];
+} {
+  const field = (devEngines as { packageManager?: unknown } | undefined)?.packageManager;
+  const entry = (Array.isArray(field) ? field[0] : field) as
+    | { name?: unknown; version?: unknown }
+    | undefined;
+
+  const name = typeof entry?.name === "string" ? entry.name : undefined;
+  const version = typeof entry?.version === "string" ? entry.version : undefined;
+
+  if (!name) {
+    return {};
+  }
+
+  if (!VALID_PM_NAME_RE.test(name)) {
+    const sanitized = name.replace(/\W+/g, "");
+    return {
+      name: sanitized as PackageManagerName,
+      version,
+      warnings: [
+        `Abnormal characters found in \`devEngines.packageManager\` field, sanitizing from \`${name}\` to \`${sanitized}\``,
+      ],
+    };
+  }
+
+  return { name: name as PackageManagerName, version };
+}
