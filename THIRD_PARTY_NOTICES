@@ -14876,3 +14876,97 @@ Permission to use, copy, modify, and/or distribute this software for any purpose
 
 THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: jonschlinkert/parse-filepath
+license: MIT (LICENSE-MIT, sha256 of trimmed text a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210)
+fixtures (commit path):
+  c3aec0d2720771d564fe3223bc805de89c77f0be peaceai/test/fixtures/m297/pfp-index.js.txt
+  cc564b3f0eba2aed399c1e5519d3930952d997fd peaceai/test/fixtures/m297/pfp-test-test.js.txt
+license URL: https://github.com/jonschlinkert/parse-filepath/blob/c3aec0d2720771d564fe3223bc805de89c77f0be/LICENSE-MIT
+---- license text ----
+Copyright (c) 2014 Jon Schlinkert, contributors.
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/is-self-closing
+license: MIT (LICENSE, sha256 of trimmed text 59e447340d4b41f56c2317c4614b323a7210409782f9bb9a8bb0be2d5d12c0a2)
+fixtures (commit path):
+  204f82cd7dd587d7fa52c9eb0642bc731da8ea40 peaceai/test/fixtures/m297/isc-index.js.txt
+  f068f45a786d3b2c04c01eb9a5e16b9d902bd82e peaceai/test/fixtures/m297/isc-test.js.txt
+license URL: https://github.com/jonschlinkert/is-self-closing/blob/204f82cd7dd587d7fa52c9eb0642bc731da8ea40/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2017 Jon Schlinkert
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/exponential-moving-average
+license: MIT (LICENSE, sha256 of trimmed text 95931aba5345de187cf4b63cf567b35c50ef9150139e2996c2722708e16467b0)
+fixtures (commit path):
+  d8c2ae5b74cebf17ed02b3b3d66bd0095525f5e0 peaceai/test/fixtures/m297/ema-index.js.txt
+  6317d9649ce9283820fcdfe2b63a7fd8813334ed peaceai/test/fixtures/m297/ema-test.js.txt
+license URL: https://github.com/jonschlinkert/exponential-moving-average/blob/d8c2ae5b74cebf17ed02b3b3d66bd0095525f5e0/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2016-2017, Jon Schlinkert
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----

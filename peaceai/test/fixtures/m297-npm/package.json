@@ -1,0 +1,11 @@
+{
+  "name": "m297-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "chai": "4.5.0",
+    "fs-utils": "0.7.0",
+    "self-closing-tags": "1.0.1",
+    "extend-shallow": "2.0.1"
+  }
+}
