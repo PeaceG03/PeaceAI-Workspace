@@ -1,0 +1,66 @@
+{
+ "schema": "peaceai-m310-batch59:v1",
+ "note": "Pinned copies of doowb/append-buffer, jonschlinkert/gfm-code-blocks, and jonschlinkert/object-visit at the parent of a published bug fix, plus the test that fix changed. The append-buffer, gfm-code-blocks, and object-visit licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "doowb/append-buffer",
+   "commit": "d833df25492f654d1868bdb7808b40ce81ba405e",
+   "licenseSha256": "945978ecb98e6667196b6507f2a2b6c74cc64c7d4cbd68a2619b3fb16f532657",
+   "fixture": "peaceai/test/fixtures/m310/ab-index.js.txt"
+  },
+  {
+   "repo": "doowb/append-buffer",
+   "commit": "d9094aebe035b518abf813934efab233cec5821e",
+   "licenseSha256": "945978ecb98e6667196b6507f2a2b6c74cc64c7d4cbd68a2619b3fb16f532657",
+   "fixture": "peaceai/test/fixtures/m310/ab-test.js.txt"
+  },
+  {
+   "repo": "doowb/append-buffer",
+   "commit": "d833df25492f654d1868bdb7808b40ce81ba405e",
+   "licenseSha256": "945978ecb98e6667196b6507f2a2b6c74cc64c7d4cbd68a2619b3fb16f532657",
+   "fixture": "peaceai/test/fixtures/m310/ab-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/gfm-code-blocks",
+   "commit": "7175eaf592bacf8416f298c8d58eea0f33e8b365",
+   "licenseSha256": "7f1527b34be8d092d32148bc0a5a9732ab9298c774cfaa539c3376445fe6dd76",
+   "fixture": "peaceai/test/fixtures/m310/gfm-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/gfm-code-blocks",
+   "commit": "2f8010e5cc449a082810e789364b0c16c55bfd36",
+   "licenseSha256": "7f1527b34be8d092d32148bc0a5a9732ab9298c774cfaa539c3376445fe6dd76",
+   "fixture": "peaceai/test/fixtures/m310/gfm-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/gfm-code-blocks",
+   "commit": "7175eaf592bacf8416f298c8d58eea0f33e8b365",
+   "licenseSha256": "7f1527b34be8d092d32148bc0a5a9732ab9298c774cfaa539c3376445fe6dd76",
+   "fixture": "peaceai/test/fixtures/m310/gfm-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/gfm-code-blocks",
+   "commit": "2f8010e5cc449a082810e789364b0c16c55bfd36",
+   "licenseSha256": "7f1527b34be8d092d32148bc0a5a9732ab9298c774cfaa539c3376445fe6dd76",
+   "fixture": "peaceai/test/fixtures/m310/gfm-fixtures-README.md.txt"
+  },
+  {
+   "repo": "jonschlinkert/object-visit",
+   "commit": "88635e3412829826c2ef4b510d17cad134010ccf",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m310/ov-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/object-visit",
+   "commit": "aa7ab8fb9655a1aaa6f76089ca0e85cf645f6cff",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m310/ov-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/object-visit",
+   "commit": "88635e3412829826c2ef4b510d17cad134010ccf",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m310/ov-LICENSE.txt"
+  }
+ ]
+}
