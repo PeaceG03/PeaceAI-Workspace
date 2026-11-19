@@ -14361,3 +14361,140 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: ljharb/qs
+license: BSD-3-Clause (LICENSE.md, sha256 of trimmed text 14d069c68fe75baa060fc5991d6e9e6ef4821a4f2092bd0861afa3be34dc379b)
+fixtures (commit path):
+  234d5051f5071efaa025a7ca9e4d34a56a460a1b peaceai/test/fixtures/m287/qs-lib-formats.js.txt
+  234d5051f5071efaa025a7ca9e4d34a56a460a1b peaceai/test/fixtures/m287/qs-lib-index.js.txt
+  234d5051f5071efaa025a7ca9e4d34a56a460a1b peaceai/test/fixtures/m287/qs-lib-parse.js.txt
+  234d5051f5071efaa025a7ca9e4d34a56a460a1b peaceai/test/fixtures/m287/qs-lib-stringify.js.txt
+  234d5051f5071efaa025a7ca9e4d34a56a460a1b peaceai/test/fixtures/m287/qs-lib-utils.js.txt
+  234d5051f5071efaa025a7ca9e4d34a56a460a1b peaceai/test/fixtures/m287/qs-test-empty-keys-cases.js.txt
+  05a875552a31829825c3ebf8899f280011aa06be peaceai/test/fixtures/m287/qs-test-parse.js.txt
+license URL: https://github.com/ljharb/qs/blob/234d5051f5071efaa025a7ca9e4d34a56a460a1b/LICENSE.md
+---- license text ----
+BSD 3-Clause License
+
+Copyright (c) 2014, Nathan LaFreniere and other [contributors](https://github.com/ljharb/qs/graphs/contributors)
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+---- end ----
+
+==============================================================================
+repo: nodeca/js-yaml
+license: MIT (LICENSE, sha256 of trimmed text bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a)
+fixtures (commit path):
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-index.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-common.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-dumper.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-exception.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-loader.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-mark.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-schema.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-schema-core.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-schema-default.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-schema-failsafe.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-schema-json.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-type.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-type-binary.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-type-bool.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-type-float.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-type-int.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-type-map.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-type-merge.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-type-null.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-type-omap.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-type-pairs.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-type-seq.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-type-set.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-type-str.js.txt
+  a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-type-timestamp.js.txt
+  dc44dd37ed34c57a1d04e5b8d161fc09031c9e30 peaceai/test/fixtures/m287/yml-test-issues-0027.js.txt
+license URL: https://github.com/nodeca/js-yaml/blob/a00312147f287a1703bf6b7e104d27c8a0caacee/LICENSE
+---- license text ----
+(The MIT License)
+
+Copyright (C) 2011-2015 by Vitaly Puzrin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: micromatch/braces
+license: MIT (LICENSE, sha256 of trimmed text d99bf3271ffd7561b89e2c51b5da6ca3a3669e031efc6543f477541520a1566b)
+fixtures (commit path):
+  977c75a38a1045ee95cf3e6b433cea613cbec4f2 peaceai/test/fixtures/m287/br-index.js.txt
+  977c75a38a1045ee95cf3e6b433cea613cbec4f2 peaceai/test/fixtures/m287/br-lib-compile.js.txt
+  977c75a38a1045ee95cf3e6b433cea613cbec4f2 peaceai/test/fixtures/m287/br-lib-constants.js.txt
+  977c75a38a1045ee95cf3e6b433cea613cbec4f2 peaceai/test/fixtures/m287/br-lib-expand.js.txt
+  977c75a38a1045ee95cf3e6b433cea613cbec4f2 peaceai/test/fixtures/m287/br-lib-parse.js.txt
+  977c75a38a1045ee95cf3e6b433cea613cbec4f2 peaceai/test/fixtures/m287/br-lib-stringify.js.txt
+  977c75a38a1045ee95cf3e6b433cea613cbec4f2 peaceai/test/fixtures/m287/br-lib-utils.js.txt
+  ac60bdb94870afd675baca7ec71c903cc708687e peaceai/test/fixtures/m287/br-test-bash-spec.js.txt
+  ac60bdb94870afd675baca7ec71c903cc708687e peaceai/test/fixtures/m287/br-test-mocha-initialization.js.txt
+license URL: https://github.com/micromatch/braces/blob/977c75a38a1045ee95cf3e6b433cea613cbec4f2/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014-present, Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
