@@ -1,0 +1,66 @@
+{
+ "schema": "peaceai-m312-batch61:v1",
+ "note": "Pinned copies of jonschlinkert/snakecase, jonschlinkert/object.omit, and jonschlinkert/lang-map at the parent of a published bug fix, plus the test that fix changed. The snakecase, object.omit, and lang-map licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/snakecase",
+   "commit": "f1ffc21d9464a6d0756e514a8040d53afc8ae9b9",
+   "licenseSha256": "ce94afa122f7fd0b8a7fe82f75829f763a30f9c3360a1a6a174e545b978a8d31",
+   "fixture": "peaceai/test/fixtures/m312/sc-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/snakecase",
+   "commit": "dee5c5b5ce19c78fcf71c04c3d71b937ddff13ac",
+   "licenseSha256": "ce94afa122f7fd0b8a7fe82f75829f763a30f9c3360a1a6a174e545b978a8d31",
+   "fixture": "peaceai/test/fixtures/m312/sc-test-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/snakecase",
+   "commit": "f1ffc21d9464a6d0756e514a8040d53afc8ae9b9",
+   "licenseSha256": "ce94afa122f7fd0b8a7fe82f75829f763a30f9c3360a1a6a174e545b978a8d31",
+   "fixture": "peaceai/test/fixtures/m312/sc-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/object.omit",
+   "commit": "6e222f2cf39634faa26f642b06af4eb2050b5e75",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m312/oo-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/object.omit",
+   "commit": "b23b2fd79473518dd81ce75a9a6bb64b7942abee",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m312/oo-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/object.omit",
+   "commit": "6e222f2cf39634faa26f642b06af4eb2050b5e75",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m312/oo-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/lang-map",
+   "commit": "afb23d752d190563302a625ec86222c16ad12e58",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m312/lm-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/lang-map",
+   "commit": "17e07c822b19c3c987bc2906c79cc7e4ade06265",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m312/lm-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/lang-map",
+   "commit": "afb23d752d190563302a625ec86222c16ad12e58",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m312/lm-LICENSE-MIT.txt"
+  },
+  {
+   "repo": "jonschlinkert/lang-map",
+   "commit": "afb23d752d190563302a625ec86222c16ad12e58",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m312/lm-lang.json.txt"
+  }
+ ]
+}

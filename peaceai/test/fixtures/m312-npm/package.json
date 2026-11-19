@@ -1,0 +1,11 @@
+{
+  "name": "m312-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "should": "11.2.1",
+    "for-own": "0.1.5",
+    "isobject": "1.0.2",
+    "is-extendable": "0.1.1"
+  }
+}

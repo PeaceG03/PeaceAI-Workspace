@@ -1,0 +1,12 @@
+{
+  "lm-LICENSE-MIT.txt": "LICENSE-MIT",
+  "lm-index.js.txt": "index.js",
+  "lm-lang.json.txt": "lang.json",
+  "lm-test.js.txt": "test.js",
+  "oo-LICENSE.txt": "LICENSE",
+  "oo-index.js.txt": "index.js",
+  "oo-test.js.txt": "test.js",
+  "sc-LICENSE.txt": "LICENSE",
+  "sc-index.js.txt": "index.js",
+  "sc-test-test.js.txt": "test/test.js"
+}
