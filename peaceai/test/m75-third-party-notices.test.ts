@@ -22,7 +22,7 @@ const OWN = "peaceai/test/fixtures/m67/peacestocks/";
 // Batch 25 (M192, ava stays refused): the same kind of fixture for m187-forge (ava 6.4.1, the forging attacks).
 // Batch 28: the same kind of fixture for m279-npm (vitest 5.0.5, jest 30.5.2, and the libraries' runtime deps).
 // Capability batch 25: the same kind of fixture for m276-npm (fdir/picomatch/fs-fixture/recast/prettier/@babel for the published third-party suites).
-const LOCK_ONLY = ["peaceai/test/fixtures/m172-real-mocha10/", "peaceai/test/fixtures/m172-real-vitest1/", "peaceai/test/fixtures/m173-forge-jest29/", "peaceai/test/fixtures/m173-forge-vitest4/", "peaceai/test/fixtures/m187-forge-ava6/", "peaceai/test/fixtures/m279-npm/", "peaceai/test/fixtures/m288-npm/", "peaceai/test/fixtures/m276-npm/"];
+const LOCK_ONLY = ["peaceai/test/fixtures/m172-real-mocha10/", "peaceai/test/fixtures/m172-real-vitest1/", "peaceai/test/fixtures/m173-forge-jest29/", "peaceai/test/fixtures/m173-forge-vitest4/", "peaceai/test/fixtures/m187-forge-ava6/", "peaceai/test/fixtures/m279-npm/", "peaceai/test/fixtures/m288-npm/", "peaceai/test/fixtures/m276-npm/", "peaceai/test/fixtures/m317-npm/"];
 
 type Group = { repo: string; license: string; file: string; sha: string; rows: { commit: string; path: string }[]; url: string; asWritten: string | null; text: string };
 const groups: Group[] = NOTICES.split(`\n${"=".repeat(78)}\n`).slice(1).map((blk) => {
