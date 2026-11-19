@@ -12335,6 +12335,8 @@ license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b
 fixtures (commit path):
   ea428c76e46eb959a17cd62089fa28604fe22e0a peaceai/test/fixtures/m256/citty-parser.ts.txt
   e6fa9ac717d5b175a67211311748df9825fe0ba0 peaceai/test/fixtures/m256/citty-parser.test.ts.txt
+  9cb0edcc55c133ea04d3cbb350284a9a3548946e peaceai/test/fixtures/m267/citty-dist-index.mjs.txt
+  9cb0edcc55c133ea04d3cbb350284a9a3548946e peaceai/test/fixtures/m267/citty-dist-scule.mjs.txt
 license URL: https://github.com/unjs/citty/blob/ea428c76e46eb959a17cd62089fa28604fe22e0a/LICENSE
 as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
 ---- license text ----
@@ -14132,4 +14134,103 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 IN THE SOFTWARE.
 """
+---- end ----
+
+==============================================================================
+repo: unjs/unimport
+license: MIT (LICENSE, sha256 of trimmed text 4d04b8c0848bda9b32f9c6bb491f93fd62b166544c563961bf2528b6415eeaf9)
+fixtures (commit path):
+  10a9ef35a344b660cedeb97a9028a31489c122c8 peaceai/test/fixtures/m267/ui-src-utils.ts.txt
+  4f462cb6c177ed95c413e192cfbd90c6670f006d peaceai/test/fixtures/m267/ui-test-dedupe.test.ts.txt
+license URL: https://github.com/unjs/unimport/blob/10a9ef35a344b660cedeb97a9028a31489c122c8/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2022 - UnJS
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: unjs/compatx
+license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+fixtures (commit path):
+  3bd47ef45e1a57c377f56c6b889b0b98648dcf28 peaceai/test/fixtures/m267/cx-src-date.ts.txt
+  3bd47ef45e1a57c377f56c6b889b0b98648dcf28 peaceai/test/fixtures/m267/cx-src-platforms.ts.txt
+  aaf7e4a95bb5abb9dbfe16dd89bf057abcbf5acd peaceai/test/fixtures/m267/cx-test-date.test.ts.txt
+license URL: https://github.com/unjs/compatx/blob/3bd47ef45e1a57c377f56c6b889b0b98648dcf28/LICENSE
+as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: unjs/nypm
+license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+fixtures (commit path):
+  9357ac261a489cb0d60d4b2f0d5d72672693e7fd peaceai/test/fixtures/m267/np-src-cli.ts.txt
+  9357ac261a489cb0d60d4b2f0d5d72672693e7fd peaceai/test/fixtures/m267/np-src-api.ts.txt
+  9357ac261a489cb0d60d4b2f0d5d72672693e7fd peaceai/test/fixtures/m267/np-src-_utils.ts.txt
+  9357ac261a489cb0d60d4b2f0d5d72672693e7fd peaceai/test/fixtures/m267/np-src-package-manager.ts.txt
+  7d028c8f50794845e62a98302acc2ddfde8ca111 peaceai/test/fixtures/m267/np-test-cli.test.ts.txt
+license URL: https://github.com/unjs/nypm/blob/9357ac261a489cb0d60d4b2f0d5d72672693e7fd/LICENSE
+as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ---- end ----
