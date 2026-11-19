@@ -14876,3 +14876,111 @@ Permission to use, copy, modify, and/or distribute this software for any purpose
 
 THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: jonschlinkert/extract-comments
+license: MIT (LICENSE, sha256 of trimmed text 3d9abf2d92b07e68eee89f651f7c7853bc303f27889ed89d9e50258f217ef9f7)
+fixtures (commit path):
+  11fc97653dad784a90018d89cda02c2bcd184e68 peaceai/test/fixtures/m303/ec-index.js.txt
+  11fc97653dad784a90018d89cda02c2bcd184e68 peaceai/test/fixtures/m303/ec-lib-block.js.txt
+  11fc97653dad784a90018d89cda02c2bcd184e68 peaceai/test/fixtures/m303/ec-lib-code.js.txt
+  11fc97653dad784a90018d89cda02c2bcd184e68 peaceai/test/fixtures/m303/ec-lib-context.js.txt
+  11fc97653dad784a90018d89cda02c2bcd184e68 peaceai/test/fixtures/m303/ec-lib-extractor.js.txt
+  11fc97653dad784a90018d89cda02c2bcd184e68 peaceai/test/fixtures/m303/ec-lib-line.js.txt
+  11fc97653dad784a90018d89cda02c2bcd184e68 peaceai/test/fixtures/m303/ec-lib-utils.js.txt
+  094ea6bad16cc965a9430ed78ac86972d032e1bb peaceai/test/fixtures/m303/ec-test-test.js.txt
+  094ea6bad16cc965a9430ed78ac86972d032e1bb peaceai/test/fixtures/m303/ec-test-fixtures-mixed.js.txt
+license URL: https://github.com/jonschlinkert/extract-comments/blob/11fc97653dad784a90018d89cda02c2bcd184e68/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014-2018, Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/option-cache
+license: MIT (LICENSE, sha256 of trimmed text edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b)
+fixtures (commit path):
+  089ec0250738b17e7cdbe5c9c8812db29e0d1826 peaceai/test/fixtures/m303/oc-index.js.txt
+  089ec0250738b17e7cdbe5c9c8812db29e0d1826 peaceai/test/fixtures/m303/oc-utils.js.txt
+  af0216f7520da127e136301665e8aa9b8bf554be peaceai/test/fixtures/m303/oc-test-disabled.js.txt
+  af0216f7520da127e136301665e8aa9b8bf554be peaceai/test/fixtures/m303/oc-test-enabled.js.txt
+  af0216f7520da127e136301665e8aa9b8bf554be peaceai/test/fixtures/m303/oc-test-events.js.txt
+  af0216f7520da127e136301665e8aa9b8bf554be peaceai/test/fixtures/m303/oc-test-hasOption.js.txt
+  af0216f7520da127e136301665e8aa9b8bf554be peaceai/test/fixtures/m303/oc-test-isBoolean.js.txt
+  af0216f7520da127e136301665e8aa9b8bf554be peaceai/test/fixtures/m303/oc-test-option.js.txt
+  af0216f7520da127e136301665e8aa9b8bf554be peaceai/test/fixtures/m303/oc-test-options.js.txt
+license URL: https://github.com/jonschlinkert/option-cache/blob/089ec0250738b17e7cdbe5c9c8812db29e0d1826/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014-2015, Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/map-visit
+license: MIT (LICENSE, sha256 of trimmed text 2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c)
+fixtures (commit path):
+  4e325c69a1e26dbf65bda0e3069d009327591fee peaceai/test/fixtures/m303/mv-index.js.txt
+  4e325c69a1e26dbf65bda0e3069d009327591fee peaceai/test/fixtures/m303/mv-utils.js.txt
+  a13b8ae91cc4e32c4153485342ed9e6af9367482 peaceai/test/fixtures/m303/mv-test.js.txt
+license URL: https://github.com/jonschlinkert/map-visit/blob/4e325c69a1e26dbf65bda0e3069d009327591fee/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2015-2016, Jon Schlinkert
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
