@@ -38,6 +38,7 @@ import { repairBatch16 } from "./batch16.ts";
 import { repairBatch17 } from "./batch17.ts";
 import { repairBatch19 } from "./batch19.ts";
 import { repairBatch21 } from "./batch21.ts";
+import { repairBatch35 } from "./batch35.ts";
 import { parseTypeDiagnostics, repairTypedFailure } from "./sigfix.ts";
 
 export const SPEC_SCHEMA = "peaceai-test-spec:v1";
@@ -3225,6 +3226,18 @@ export function runTestSpec(input: SpecInput): SpecResult {
     return {
       status: "diff", diff: batch21.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
       fit: { shape: "batch21", examples: 0, targets: [{ symbol: "batch21", file: batch21.file, form: "named", exportName: "batch21", args: [] }] },
+    };
+  }
+  const batch35 = !parseTypeDiagnostics(output).length && input.toolchain.nodePath
+    ? repairBatch35({
+      root: input.root, output, sourcePattern: input.sourcePattern,
+      nodePath: input.toolchain.nodePath, nodeModules: input.nodeModules, testCommand: input.testCommand,
+    })
+    : null;
+  if (batch35) {
+    return {
+      status: "diff", diff: batch35.diff, attempts: 1, expectations: [], diagnostic: diag("verified", code, output),
+      fit: { shape: "batch35", examples: 0, targets: [{ symbol: "batch35", file: batch35.file, form: "named", exportName: "batch35", args: [] }] },
     };
   }
   if (parseTypeDiagnostics(output).length) {

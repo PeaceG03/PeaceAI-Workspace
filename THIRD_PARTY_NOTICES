@@ -14234,3 +14234,94 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: jonschlinkert/normalize-path
+license: MIT (LICENSE, sha256 of trimmed text edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b)
+fixtures (commit path):
+  5563c9c3a0dabf5648d7ec9c3cfbcca405a04276 peaceai/test/fixtures/m286/np-index.js.txt
+  e6e5d7dafcadd816df87a14021dab065a7d987fc peaceai/test/fixtures/m286/np-test.js.txt
+license URL: https://github.com/jonschlinkert/normalize-path/blob/5563c9c3a0dabf5648d7ec9c3cfbcca405a04276/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014-2015, Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/word-wrap
+license: MIT (LICENSE-MIT, sha256 of trimmed text a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210)
+fixtures (commit path):
+  1ebbc454c92f9a133f3354e2896d49142a568242 peaceai/test/fixtures/m286/ww-index.js.txt
+  59800542abf0b42e377208405703c68786cd1290 peaceai/test/fixtures/m286/ww-test.js.txt
+license URL: https://github.com/jonschlinkert/word-wrap/blob/1ebbc454c92f9a133f3354e2896d49142a568242/LICENSE-MIT
+---- license text ----
+Copyright (c) 2014 Jon Schlinkert, contributors.
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: minimistjs/minimist
+license: MIT (LICENSE, sha256 of trimmed text 2cd23e64d69941c70a6a6a42ee2e4b3249bb9f071380a6e68709f5c6efd9d96a)
+fixtures (commit path):
+  72239e6f0ea77d8be0ad4f682b7ae7d142144395 peaceai/test/fixtures/m286/mi-index.js.txt
+  63b8fee87b8e7a003216d5d77ba5d6decf3cfb0d peaceai/test/fixtures/m286/mi-test-dash.js.txt
+license URL: https://github.com/minimistjs/minimist/blob/72239e6f0ea77d8be0ad4f682b7ae7d142144395/LICENSE
+---- license text ----
+This software is released under the MIT license:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+---- end ----

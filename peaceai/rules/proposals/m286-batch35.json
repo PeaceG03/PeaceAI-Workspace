@@ -1,0 +1,42 @@
+{
+ "schema": "peaceai-m286-batch35:v1",
+ "note": "Pinned copies of jonschlinkert/normalize-path, jonschlinkert/word-wrap, and minimistjs/minimist at the parent of a published bug fix, plus the test that fix changed. The normalize-path, word-wrap, and minimist licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/normalize-path",
+   "commit": "5563c9c3a0dabf5648d7ec9c3cfbcca405a04276",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m286/np-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/normalize-path",
+   "commit": "e6e5d7dafcadd816df87a14021dab065a7d987fc",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m286/np-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/word-wrap",
+   "commit": "1ebbc454c92f9a133f3354e2896d49142a568242",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m286/ww-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/word-wrap",
+   "commit": "59800542abf0b42e377208405703c68786cd1290",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m286/ww-test.js.txt"
+  },
+  {
+   "repo": "minimistjs/minimist",
+   "commit": "72239e6f0ea77d8be0ad4f682b7ae7d142144395",
+   "licenseSha256": "2cd23e64d69941c70a6a6a42ee2e4b3249bb9f071380a6e68709f5c6efd9d96a",
+   "fixture": "peaceai/test/fixtures/m286/mi-index.js.txt"
+  },
+  {
+   "repo": "minimistjs/minimist",
+   "commit": "63b8fee87b8e7a003216d5d77ba5d6decf3cfb0d",
+   "licenseSha256": "2cd23e64d69941c70a6a6a42ee2e4b3249bb9f071380a6e68709f5c6efd9d96a",
+   "fixture": "peaceai/test/fixtures/m286/mi-test-dash.js.txt"
+  }
+ ]
+}
