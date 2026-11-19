@@ -1,0 +1,17 @@
+{
+  "ga-LICENSE.txt": "LICENSE",
+  "ga-index.js.txt": "index.js",
+  "ga-test-expected-deeply-nested.js.txt": "test/expected/deeply-nested.js",
+  "ga-test-expected-insanely-nested.js.txt": "test/expected/insanely-nested.js",
+  "ga-test-expected-nested.js.txt": "test/expected/nested.js",
+  "ga-test-fixtures-deeply-nested.js.txt": "test/fixtures/deeply-nested.js",
+  "ga-test-fixtures-insanely-nested.js.txt": "test/fixtures/insanely-nested.js",
+  "ga-test-fixtures-nested.js.txt": "test/fixtures/nested.js",
+  "ga-test-test.js.txt": "test/test.js",
+  "ig-LICENSE.txt": "LICENSE",
+  "ig-index.js.txt": "index.js",
+  "ig-test.js.txt": "test.js",
+  "ts-LICENSE.txt": "LICENSE",
+  "ts-index.js.txt": "index.js",
+  "ts-test.js.txt": "test.js"
+}

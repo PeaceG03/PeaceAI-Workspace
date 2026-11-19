@@ -15290,3 +15290,104 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+==============================================================================
+repo: jonschlinkert/is-git-url
+license: MIT (LICENSE, sha256 of trimmed text edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b)
+fixtures (commit path):
+  ed6af8d7f62ad9b481431f0c8a1c76ad6755d6e8 peaceai/test/fixtures/m313/ig-index.js.txt
+  ec26a1f4976898aec7cc1d17ddf8aa14fa89ada5 peaceai/test/fixtures/m313/ig-test.js.txt
+  ed6af8d7f62ad9b481431f0c8a1c76ad6755d6e8 peaceai/test/fixtures/m313/ig-LICENSE.txt
+license URL: https://github.com/jonschlinkert/is-git-url/blob/ed6af8d7f62ad9b481431f0c8a1c76ad6755d6e8/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014-2015, Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/group-array
+license: MIT (LICENSE, sha256 of trimmed text 1f7569be76547201c73cacc0b8b6cad095ad5c727ef22cafe5c3748a34006cb5)
+fixtures (commit path):
+  bc4c0bd7a4b0cdf78a74e02b51aa8f78c216de10 peaceai/test/fixtures/m313/ga-index.js.txt
+  d80ccfc64b8096707c2d54b1fcfee073f0a51bd6 peaceai/test/fixtures/m313/ga-test-test.js.txt
+  d80ccfc64b8096707c2d54b1fcfee073f0a51bd6 peaceai/test/fixtures/m313/ga-test-fixtures-nested.js.txt
+  d80ccfc64b8096707c2d54b1fcfee073f0a51bd6 peaceai/test/fixtures/m313/ga-test-fixtures-deeply-nested.js.txt
+  d80ccfc64b8096707c2d54b1fcfee073f0a51bd6 peaceai/test/fixtures/m313/ga-test-fixtures-insanely-nested.js.txt
+  d80ccfc64b8096707c2d54b1fcfee073f0a51bd6 peaceai/test/fixtures/m313/ga-test-expected-nested.js.txt
+  d80ccfc64b8096707c2d54b1fcfee073f0a51bd6 peaceai/test/fixtures/m313/ga-test-expected-deeply-nested.js.txt
+  d80ccfc64b8096707c2d54b1fcfee073f0a51bd6 peaceai/test/fixtures/m313/ga-test-expected-insanely-nested.js.txt
+  bc4c0bd7a4b0cdf78a74e02b51aa8f78c216de10 peaceai/test/fixtures/m313/ga-LICENSE.txt
+license URL: https://github.com/jonschlinkert/group-array/blob/bc4c0bd7a4b0cdf78a74e02b51aa8f78c216de10/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2015, Brian Woodward.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/time-stamp
+license: MIT (LICENSE, sha256 of trimmed text 5308428966b96c947750ac2ba4262417dedf7d2f8cc78ba928255807aa985f55)
+fixtures (commit path):
+  1219d2f09a1db0eae9f59229f3eb1ce63524caa9 peaceai/test/fixtures/m313/ts-index.js.txt
+  d6fd13916179d774a33c1d5912055e54442467ad peaceai/test/fixtures/m313/ts-test.js.txt
+  1219d2f09a1db0eae9f59229f3eb1ce63524caa9 peaceai/test/fixtures/m313/ts-LICENSE.txt
+license URL: https://github.com/jonschlinkert/time-stamp/blob/1219d2f09a1db0eae9f59229f3eb1ce63524caa9/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2015-2018, Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
