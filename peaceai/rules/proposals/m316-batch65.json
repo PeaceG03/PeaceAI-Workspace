@@ -1,0 +1,78 @@
+{
+ "schema": "peaceai-m316-batch65:v1",
+ "note": "Pinned copies of jonschlinkert/right-pad-values, jonschlinkert/object.defaults, and jonschlinkert/expand-range at the parent of a published bug fix, plus the test that fix changed. The right-pad-values, object.defaults, and expand-range licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/right-pad-values",
+   "commit": "21fbc5c0519602640386da2a916b9f66a96bb431",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m316/rp-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/right-pad-values",
+   "commit": "ba64980dd3d11d29134f9a50628065789c50eef2",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m316/rp-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/right-pad-values",
+   "commit": "21fbc5c0519602640386da2a916b9f66a96bb431",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m316/rp-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/right-pad-values",
+   "commit": "21fbc5c0519602640386da2a916b9f66a96bb431",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m316/rp-README.md.txt"
+  },
+  {
+   "repo": "jonschlinkert/object.defaults",
+   "commit": "71ce028438be64a093149f3b24eea6bc71bba516",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m316/od-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/object.defaults",
+   "commit": "a748d054b685b1efe2770b1c5d9582250cc07d31",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m316/od-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/object.defaults",
+   "commit": "71ce028438be64a093149f3b24eea6bc71bba516",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m316/od-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/object.defaults",
+   "commit": "71ce028438be64a093149f3b24eea6bc71bba516",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m316/od-README.md.txt"
+  },
+  {
+   "repo": "jonschlinkert/expand-range",
+   "commit": "62829665588befcd3f503acccaf5de4f47035145",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m316/er-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/expand-range",
+   "commit": "fd19501ca9f828817357085c1069045da781c3d6",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m316/er-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/expand-range",
+   "commit": "62829665588befcd3f503acccaf5de4f47035145",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m316/er-LICENSE-MIT.txt"
+  },
+  {
+   "repo": "jonschlinkert/expand-range",
+   "commit": "62829665588befcd3f503acccaf5de4f47035145",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m316/er-README.md.txt"
+  }
+ ]
+}
