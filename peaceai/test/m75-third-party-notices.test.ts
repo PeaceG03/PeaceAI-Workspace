@@ -20,7 +20,7 @@ const OWN = "peaceai/test/fixtures/m67/peacestocks/";
 // below holds them to exactly that shape, so the exemption cannot cover anything else.
 // Batch 12 (M173 forging fix): the same kind of fixture for m173-forge (vitest 4.1.10, jest 29.7.0).
 // Batch 25 (M192, ava stays refused): the same kind of fixture for m187-forge (ava 6.4.1, the forging attacks).
-const LOCK_ONLY = ["peaceai/test/fixtures/m172-real-mocha10/", "peaceai/test/fixtures/m172-real-vitest1/", "peaceai/test/fixtures/m173-forge-jest29/", "peaceai/test/fixtures/m173-forge-vitest4/", "peaceai/test/fixtures/m187-forge-ava6/"];
+const LOCK_ONLY = ["peaceai/test/fixtures/m172-real-mocha10/", "peaceai/test/fixtures/m172-real-vitest1/", "peaceai/test/fixtures/m173-forge-jest29/", "peaceai/test/fixtures/m173-forge-vitest4/", "peaceai/test/fixtures/m187-forge-ava6/", "peaceai/test/fixtures/m281-npm/"];
 
 type Group = { repo: string; license: string; file: string; sha: string; rows: { commit: string; path: string }[]; url: string; asWritten: string | null; text: string };
 const groups: Group[] = NOTICES.split(`\n${"=".repeat(78)}\n`).slice(1).map((blk) => {

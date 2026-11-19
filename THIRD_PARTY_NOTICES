@@ -14234,3 +14234,114 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: TanStack/store
+license: MIT (LICENSE, sha256 of trimmed text d71ca6db0f8bd8b31d8426ec6e7410457eac2ed6832138e6f5ea8566b248ef28)
+fixtures (commit path):
+  4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d peaceai/test/fixtures/m281/st-packages-store-src-alien.ts.txt
+  4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d peaceai/test/fixtures/m281/st-packages-store-src-atom.ts.txt
+  4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d peaceai/test/fixtures/m281/st-packages-store-src-index.ts.txt
+  4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d peaceai/test/fixtures/m281/st-packages-store-src-shallow.ts.txt
+  4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d peaceai/test/fixtures/m281/st-packages-store-src-store.ts.txt
+  4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d peaceai/test/fixtures/m281/st-packages-store-src-types.ts.txt
+  e06c28cbdf3514c4edd5dfc29c4d05e396363605 peaceai/test/fixtures/m281/st-packages-store-tests-observer-isolation.test.ts.txt
+license URL: https://github.com/TanStack/store/blob/4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2021 Tanner Linsley
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: honojs/node-server
+license: MIT (LICENSE, sha256 of trimmed text 35d16fc259cf940287dbd8f7106d6e80f5316e00a51b46b399c26d4c4b377574)
+fixtures (commit path):
+  348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b peaceai/test/fixtures/m281/ns-src-request.ts.txt
+  348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b peaceai/test/fixtures/m281/ns-src-error.ts.txt
+  348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b peaceai/test/fixtures/m281/ns-src-headers.ts.txt
+  348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b peaceai/test/fixtures/m281/ns-src-url.ts.txt
+  348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b peaceai/test/fixtures/m281/ns-test-setup.ts.txt
+  9f7a5cbf68dff5cb7f6ed3aded98c6ff3ee4802a peaceai/test/fixtures/m281/ns-test-request.test.ts.txt
+license URL: https://github.com/honojs/node-server/blob/348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2022 - present, Yusuke Wada and Hono contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: antfu/bumpp
+license: MIT (LICENSE, sha256 of trimmed text f622996315fe02f3832cde3f077744583ebe1600a95c97f0103541dbd64f36f8)
+fixtures (commit path):
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-fs.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-manifest.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-normalize-options.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-operation.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-release-type.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-run-npm-script.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-types-version-bump-options.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-types-version-bump-progress.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-types-version-bump-results.ts.txt
+  aa3fc86e3bb152dda8627a7fe156acb45f800ca8 peaceai/test/fixtures/m281/bp-test-run-npm-script.test.ts.txt
+license URL: https://github.com/antfu/bumpp/blob/fa0f433a6fd77a1173f10d7c696e7090b6d3972d/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2015 James Messinger
+Copyright (c) 2022 Anthony Fu
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
