@@ -1,0 +1,139 @@
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import {
+  defineCachedFunction as _defineCachedFunction,
+  createMemoryStorage,
+  type StorageInterface,
+} from "../src/index.ts";
+
+let testStorage: StorageInterface;
+
+beforeEach(() => {
+  testStorage = createMemoryStorage();
+});
+
+function useTestStorage(storage: StorageInterface): void {
+  testStorage = storage;
+}
+
+function _withTestStorage<O extends { storage?: any }>(opts: O): O {
+  opts.storage ??= () => testStorage;
+  return opts;
+}
+
+const defineCachedFunction: typeof _defineCachedFunction = (fn: any, opts: any = {}) =>
+  _defineCachedFunction(fn, _withTestStorage(opts));
+
+describe("cachedFunction", () => {
+  // nitrojs/nitro#4660: with a slow backend, a call that read storage before the leader's
+  // write landed found neither the new entry nor a pending resolution, and resolved again.
+  it("deduplicates a call that misses a write still landing", async () => {
+    const memory = createMemoryStorage();
+    let land!: () => void;
+    const landed = new Promise<void>((resolve) => {
+      land = resolve;
+    });
+    useTestStorage({
+      get: (key) => memory.get(key),
+      set: async (key, value, opts) => {
+        await landed;
+        await memory.set(key, value, opts);
+      },
+    });
+    let callCount = 0;
+    const fn = defineCachedFunction(() => ++callCount, { maxAge: 10 });
+
+    expect(await fn()).toBe(1);
+    // Storage has nothing yet, so this call misses it.
+    expect(await fn()).toBe(1);
+    expect(callCount).toBe(1);
+
+    land();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await fn()).toBe(1);
+    expect(callCount).toBe(1);
+  });
+
+  // A stale call that follows a settled refresh while its write lands is still served the
+  // stored value, like every other stale call.
+  it("serves the stored value to a stale call that follows a write still landing", async () => {
+    const memory = createMemoryStorage();
+    let gate: Promise<void> | undefined;
+    useTestStorage({
+      get: (key) => memory.get(key),
+      set: async (key, value, opts) => {
+        await gate;
+        await memory.set(key, value, opts);
+      },
+    });
+    let callCount = 0;
+    const fn = defineCachedFunction(() => ++callCount, { maxAge: 10, swr: true });
+
+    expect(await fn()).toBe(1);
+    await fn.expire();
+    let land!: () => void;
+    gate = new Promise<void>((resolve) => {
+      land = resolve;
+    });
+    // Served stale; the background refresh settles and its write waits for `land`.
+    expect(await fn()).toBe(1);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(callCount).toBe(2);
+
+    // Storage still holds the stale entry, so this call is stale too.
+    expect(await fn()).toBe(1);
+    expect(callCount).toBe(2);
+
+    land();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await fn()).toBe(2);
+    expect(callCount).toBe(2);
+  });
+});
+
+describe("maxResolveTime", () => {
+  // A leader holds its slot until its write lands; the deadline bounds that wait too, so a
+  // `set` that never settles cannot pin the key to one resolution.
+  it("releases a slot whose storage write never lands", async () => {
+    useTestStorage({ get: () => null, set: () => new Promise<void>(() => {}) });
+    let calls = 0;
+    const fn = defineCachedFunction(() => ++calls, {
+      maxAge: 10,
+      name: "hangWrite",
+      maxResolveTime: 2,
+    });
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      expect(await fn()).toBe(1);
+      vi.setSystemTime(Date.now() + 1900);
+      // Within the deadline the next call still follows the first resolution.
+      expect(await fn()).toBe(1);
+      vi.setSystemTime(Date.now() + 200);
+      expect(await fn()).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The hold serves a settled value, so it ends with that value's lifetime, even with no deadline.
+  it("releases a held slot once its value's maxAge has passed", async () => {
+    useTestStorage({ get: () => null, set: () => new Promise<void>(() => {}) });
+    let calls = 0;
+    const fn = defineCachedFunction(() => ++calls, {
+      maxAge: 1,
+      name: "holdMaxAge",
+      maxResolveTime: 0,
+    });
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      expect(await fn()).toBe(1);
+      vi.setSystemTime(Date.now() + 900);
+      expect(await fn()).toBe(1);
+      vi.setSystemTime(Date.now() + 200);
+      expect(await fn()).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
