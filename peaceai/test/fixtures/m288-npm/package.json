@@ -1,0 +1,10 @@
+{
+  "name": "m288-npm",
+  "private": true,
+  "devDependencies": {
+    "is-extglob": "1.0.0",
+    "kind-of": "3.2.2",
+    "mocha": "10.8.2",
+    "should": "13.2.3"
+  }
+}
