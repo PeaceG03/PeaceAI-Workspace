@@ -1,0 +1,96 @@
+{
+ "schema": "peaceai-m313-batch62:v1",
+ "note": "Pinned copies of jonschlinkert/is-git-url, jonschlinkert/group-array, and jonschlinkert/time-stamp at the parent of a published bug fix, plus the test that fix changed. The is-git-url, group-array, and time-stamp licenses contain no email address, so each pinned hash is the text as written. The is-git-url test fixture rewrites the published SSH userinfo host.xz examples to the allowlisted example.com host so the pin has no non-allowlisted email; the published mocha fail/pass outcome is unchanged.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/is-git-url",
+   "commit": "ed6af8d7f62ad9b481431f0c8a1c76ad6755d6e8",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m313/ig-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-git-url",
+   "commit": "ec26a1f4976898aec7cc1d17ddf8aa14fa89ada5",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m313/ig-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-git-url",
+   "commit": "ed6af8d7f62ad9b481431f0c8a1c76ad6755d6e8",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m313/ig-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/group-array",
+   "commit": "bc4c0bd7a4b0cdf78a74e02b51aa8f78c216de10",
+   "licenseSha256": "1f7569be76547201c73cacc0b8b6cad095ad5c727ef22cafe5c3748a34006cb5",
+   "fixture": "peaceai/test/fixtures/m313/ga-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/group-array",
+   "commit": "d80ccfc64b8096707c2d54b1fcfee073f0a51bd6",
+   "licenseSha256": "1f7569be76547201c73cacc0b8b6cad095ad5c727ef22cafe5c3748a34006cb5",
+   "fixture": "peaceai/test/fixtures/m313/ga-test-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/group-array",
+   "commit": "d80ccfc64b8096707c2d54b1fcfee073f0a51bd6",
+   "licenseSha256": "1f7569be76547201c73cacc0b8b6cad095ad5c727ef22cafe5c3748a34006cb5",
+   "fixture": "peaceai/test/fixtures/m313/ga-test-fixtures-nested.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/group-array",
+   "commit": "d80ccfc64b8096707c2d54b1fcfee073f0a51bd6",
+   "licenseSha256": "1f7569be76547201c73cacc0b8b6cad095ad5c727ef22cafe5c3748a34006cb5",
+   "fixture": "peaceai/test/fixtures/m313/ga-test-fixtures-deeply-nested.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/group-array",
+   "commit": "d80ccfc64b8096707c2d54b1fcfee073f0a51bd6",
+   "licenseSha256": "1f7569be76547201c73cacc0b8b6cad095ad5c727ef22cafe5c3748a34006cb5",
+   "fixture": "peaceai/test/fixtures/m313/ga-test-fixtures-insanely-nested.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/group-array",
+   "commit": "d80ccfc64b8096707c2d54b1fcfee073f0a51bd6",
+   "licenseSha256": "1f7569be76547201c73cacc0b8b6cad095ad5c727ef22cafe5c3748a34006cb5",
+   "fixture": "peaceai/test/fixtures/m313/ga-test-expected-nested.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/group-array",
+   "commit": "d80ccfc64b8096707c2d54b1fcfee073f0a51bd6",
+   "licenseSha256": "1f7569be76547201c73cacc0b8b6cad095ad5c727ef22cafe5c3748a34006cb5",
+   "fixture": "peaceai/test/fixtures/m313/ga-test-expected-deeply-nested.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/group-array",
+   "commit": "d80ccfc64b8096707c2d54b1fcfee073f0a51bd6",
+   "licenseSha256": "1f7569be76547201c73cacc0b8b6cad095ad5c727ef22cafe5c3748a34006cb5",
+   "fixture": "peaceai/test/fixtures/m313/ga-test-expected-insanely-nested.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/group-array",
+   "commit": "bc4c0bd7a4b0cdf78a74e02b51aa8f78c216de10",
+   "licenseSha256": "1f7569be76547201c73cacc0b8b6cad095ad5c727ef22cafe5c3748a34006cb5",
+   "fixture": "peaceai/test/fixtures/m313/ga-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/time-stamp",
+   "commit": "1219d2f09a1db0eae9f59229f3eb1ce63524caa9",
+   "licenseSha256": "5308428966b96c947750ac2ba4262417dedf7d2f8cc78ba928255807aa985f55",
+   "fixture": "peaceai/test/fixtures/m313/ts-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/time-stamp",
+   "commit": "d6fd13916179d774a33c1d5912055e54442467ad",
+   "licenseSha256": "5308428966b96c947750ac2ba4262417dedf7d2f8cc78ba928255807aa985f55",
+   "fixture": "peaceai/test/fixtures/m313/ts-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/time-stamp",
+   "commit": "1219d2f09a1db0eae9f59229f3eb1ce63524caa9",
+   "licenseSha256": "5308428966b96c947750ac2ba4262417dedf7d2f8cc78ba928255807aa985f55",
+   "fixture": "peaceai/test/fixtures/m313/ts-LICENSE.txt"
+  }
+ ]
+}
