@@ -1,0 +1,12 @@
+{
+  "id-.eslintrc.json.txt": ".eslintrc.json",
+  "id-LICENSE.txt": "LICENSE",
+  "id-README.md.txt": "README.md",
+  "id-fixtures-foo.txt.txt": "fixtures/foo.txt",
+  "id-index.js.txt": "index.js",
+  "id-test.js.txt": "test.js",
+  "lc-index.js.txt": "index.js",
+  "lc-test.js.txt": "test.js",
+  "rn-index.js.txt": "index.js",
+  "rn-test.js.txt": "test.js"
+}
