@@ -1,0 +1,10 @@
+{
+  "rbb-fixtures-bom-utf16be.txt.txt": "fixtures/bom-utf16be.txt",
+  "rbb-fixtures-bom-utf16le.txt.txt": "fixtures/bom-utf16le.txt",
+  "rbb-index.js.txt": "index.js",
+  "rbb-test.js.txt": "test.js",
+  "rkeys-index.js.txt": "index.js",
+  "rkeys-test.js.txt": "test.js",
+  "rre-index.js.txt": "index.js",
+  "rre-test.js.txt": "test.js"
+}

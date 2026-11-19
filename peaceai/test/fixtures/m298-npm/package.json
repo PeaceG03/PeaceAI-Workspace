@@ -1,0 +1,9 @@
+{
+  "name": "m298-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "is-buffer": "1.1.6",
+    "is-utf8": "0.2.1"
+  }
+}
