@@ -1,0 +1,14 @@
+{
+  "name": "m276-npm",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@babel/parser": "7.29.7",
+    "@babel/types": "7.29.7",
+    "fdir": "6.5.0",
+    "fs-fixture": "2.13.0",
+    "picomatch": "4.0.4",
+    "prettier": "3.6.2",
+    "recast": "0.23.18"
+  }
+}
