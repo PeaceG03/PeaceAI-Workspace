@@ -15013,3 +15013,136 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: jonschlinkert/array-unique
+license: MIT (LICENSE, sha256 of trimmed text edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b)
+fixtures (commit path):
+  2de837d5712c8630d05ec81eb3562507945fa229 peaceai/test/fixtures/m305/au-index.js.txt
+  5d1fbe560da8125e28e4ad6fbfa9daaf9f2ec120 peaceai/test/fixtures/m305/au-test.js.txt
+  2de837d5712c8630d05ec81eb3562507945fa229 peaceai/test/fixtures/m305/au-LICENSE.txt
+license URL: https://github.com/jonschlinkert/array-unique/blob/2de837d5712c8630d05ec81eb3562507945fa229/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2014-2015, Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/to-regex
+license: MIT (LICENSE, sha256 of trimmed text 53697eb518d86f5da298777e6c8b7249ff29549cc01ee9dcaedfc417a2cd79b7)
+fixtures (commit path):
+  61692adda39f8315f668e04e4401a7d71066a978 peaceai/test/fixtures/m305/tr-index.js.txt
+  f5f7215da60d3e52ba28521c83fcd490e93bdb69 peaceai/test/fixtures/m305/tr-test.js.txt
+  61692adda39f8315f668e04e4401a7d71066a978 peaceai/test/fixtures/m305/tr-LICENSE.txt
+license URL: https://github.com/jonschlinkert/to-regex/blob/61692adda39f8315f668e04e4401a7d71066a978/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2016 Jon Schlinkert
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: jonschlinkert/tabstops
+license: MIT (LICENSE, sha256 of trimmed text 80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61)
+fixtures (commit path):
+  07812a0f751f28fd0ddebe0ac90abae92bc6f18a peaceai/test/fixtures/m305/ts-LICENSE.txt
+  07812a0f751f28fd0ddebe0ac90abae92bc6f18a peaceai/test/fixtures/m305/ts-lib-nodes-TabstopPlaceholder.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-index.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-Data.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-Location.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-Parser.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-constants.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-helpers.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-nodes-Block.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-nodes-Choices.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-nodes-Close.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-nodes-Format.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-nodes-Node.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-nodes-Open.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-nodes-Tabstop.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-nodes-TabstopTransform.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-nodes-Text.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-nodes-Transform.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-nodes-Variable.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-nodes-VariablePlaceholder.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-nodes-VariableTransform.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-nodes-index.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-lib-utils.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-api.compile.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-api.stringify.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-api.variables.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-choices.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-fixtures-rcc.snippet.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-fixtures-snippet.xml.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-regex.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-support-index.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-support-pick.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-support-visit.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-tabstop-placeholder.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-tabstop-resolution.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-tabstop-transform.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-tabstop.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-variable-placeholder.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-variable-transform.js.txt
+  785795d3b4754a7592648e97fcb2bdfbe51afb2e peaceai/test/fixtures/m305/ts-test-variable.js.txt
+license URL: https://github.com/jonschlinkert/tabstops/blob/07812a0f751f28fd0ddebe0ac90abae92bc6f18a/LICENSE
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) 2016-present, Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+---- end ----
