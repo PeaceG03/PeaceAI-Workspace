@@ -1,0 +1,390 @@
+{
+  "schema": "peaceai-m280-batch29:v1",
+  "note": "Pinned copies of unjs/ipx, pmndrs/valtio, and typestack/class-transformer at the parent of a published bug fix, plus the test that fix changed. The ipx license contains one email address, omitted here; licenseSha256 is the hash of the original text. The valtio and class-transformer licenses contain no email address, so each pinned hash is the text as written.",
+  "examples": [
+    {
+      "repo": "unjs/ipx",
+      "commit": "7f2deadfa785ee9eb0fc1443a7df30dd39c9367d",
+      "licenseSha256": "386bbb22f7eb04a0e2af47540fda721811d8851ae744601c38c6a07c73fb9017",
+      "fixture": "peaceai/test/fixtures/m280/ix-src-storage-http.ts.txt"
+    },
+    {
+      "repo": "unjs/ipx",
+      "commit": "7f2deadfa785ee9eb0fc1443a7df30dd39c9367d",
+      "licenseSha256": "386bbb22f7eb04a0e2af47540fda721811d8851ae744601c38c6a07c73fb9017",
+      "fixture": "peaceai/test/fixtures/m280/ix-src-utils.ts.txt"
+    },
+    {
+      "repo": "unjs/ipx",
+      "commit": "7f2deadfa785ee9eb0fc1443a7df30dd39c9367d",
+      "licenseSha256": "386bbb22f7eb04a0e2af47540fda721811d8851ae744601c38c6a07c73fb9017",
+      "fixture": "peaceai/test/fixtures/m280/ix-src-types.ts.txt"
+    },
+    {
+      "repo": "unjs/ipx",
+      "commit": "7f2deadfa785ee9eb0fc1443a7df30dd39c9367d",
+      "licenseSha256": "386bbb22f7eb04a0e2af47540fda721811d8851ae744601c38c6a07c73fb9017",
+      "fixture": "peaceai/test/fixtures/m280/ix-package.json.txt"
+    },
+    {
+      "repo": "unjs/ipx",
+      "commit": "7f2deadfa785ee9eb0fc1443a7df30dd39c9367d",
+      "licenseSha256": "386bbb22f7eb04a0e2af47540fda721811d8851ae744601c38c6a07c73fb9017",
+      "fixture": "peaceai/test/fixtures/m280/ix-vitest.config.ts.txt"
+    },
+    {
+      "repo": "unjs/ipx",
+      "commit": "1fcd418f6c239c77041afa47ab1af8d6e1cffaed",
+      "licenseSha256": "386bbb22f7eb04a0e2af47540fda721811d8851ae744601c38c6a07c73fb9017",
+      "fixture": "peaceai/test/fixtures/m280/ix-test-storage-http.test.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-index.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-react.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-react-utils.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-react-utils-useProxy.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-types.d.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-utils.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-vanilla.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-vanilla-utils.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-vanilla-utils-deepClone.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-vanilla-utils-deepProxy.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-vanilla-utils-devtools.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-vanilla-utils-proxyMap.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-vanilla-utils-proxySet.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-vanilla-utils-subscribeKey.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-src-vanilla-utils-watch.ts.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "38e9a8786dcce2566ae30ddedca83ce99e5c2038",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-package.json.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "c24a93a1b62d1fb95a7fa78c840d32cf95bef348",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-tests-watch.test.tsx.txt"
+    },
+    {
+      "repo": "pmndrs/valtio",
+      "commit": "c24a93a1b62d1fb95a7fa78c840d32cf95bef348",
+      "licenseSha256": "adcc3f7332b459741f4dfb102c21642d687dc34f6231a75a3ff06ddac9af6a0b",
+      "fixture": "peaceai/test/fixtures/m280/va-tests-utils.tsx.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-ClassTransformer.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-MetadataStorage.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-TransformOperationExecutor.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-constants-default-options.constant.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-decorators-exclude.decorator.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-decorators-expose.decorator.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-decorators-index.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-decorators-transform-instance-to-instance.decorator.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-decorators-transform-instance-to-plain.decorator.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-decorators-transform-plain-to-instance.decorator.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-decorators-transform.decorator.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-decorators-type.decorator.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-enums-index.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-enums-transformation-type.enum.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-index.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-class-constructor.type.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-class-transformer-options.interface.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-decorator-options-exclude-options.interface.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-decorator-options-expose-options.interface.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-decorator-options-transform-options.interface.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-decorator-options-type-discriminator-descriptor.interface.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-decorator-options-type-options.interface.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-index.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-metadata-exclude-metadata.interface.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-metadata-expose-metadata.interface.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-metadata-transform-fn-params.interface.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-metadata-transform-metadata.interface.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-metadata-type-metadata.interface.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-target-map.interface.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-interfaces-type-help-options.interface.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-storage.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-utils-get-global.util.spect.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-utils-get-global.util.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-utils-index.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-src-utils-is-promise.util.ts.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-package.json.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-jest.config.js.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-tsconfig.json.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "c0ec22a83494dbcb3d441e83a3bc08143fb47ad3",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-tsconfig.spec.json.txt"
+    },
+    {
+      "repo": "typestack/class-transformer",
+      "commit": "a073b5ea218dd4da9325fe980f15c1538980500e",
+      "licenseSha256": "40fb2182a242493ce32f6211c3400f2dcf6787c9c68cd261bfb61461d69780ef",
+      "fixture": "peaceai/test/fixtures/m280/ct-test-functional-basic-functionality.spec.ts.txt"
+    }
+  ]
+}
