@@ -14550,3 +14550,440 @@ Permission to use, copy, modify, and/or distribute this software for any purpose
 
 THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: unjs/node-mock-http
+license: MIT (LICENSE, sha256 of trimmed text 6d2aa8d302134dcca1e03a22e5bb754aac8af578287f564db37242836ad4fbb3)
+fixtures (commit path):
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-package.json.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-_internal-types.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-_internal-utils.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-_polyfill-buffer-buffer.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-_polyfill-buffer-internal-base64.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-_polyfill-buffer-internal-ieee754.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-_polyfill-buffer-node.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-_polyfill-buffer-nodeless.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-_polyfill-events-events.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-_polyfill-events-node.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-_polyfill-events-nodeless.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-fetch-call.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-fetch-fetch.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-fetch-types.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-fetch-utils.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-http-request.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-http-response.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-index.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-net-socket.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-stream-duplex.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-src-stream-readable.ts.txt
+  ac5ac4d5f8af1420a9b7499223d88d5240831858 peaceai/test/fixtures/m271/nm-src-stream-writable.ts.txt
+  5280a8b3655f898dce0b06f0d97aed9c7e839cec peaceai/test/fixtures/m271/nm-test-index.test.ts.txt
+license URL: https://github.com/unjs/node-mock-http/blob/ac5ac4d5f8af1420a9b7499223d88d5240831858/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: unjs/image-meta
+license: MIT (LICENSE, sha256 of trimmed text e70539d61d237165e381dfdd6fe319b767696cc23b0ca869795c078d13e46272)
+fixtures (commit path):
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-detector.ts.txt
+  9a90ba2a96eaf82d2854e0c195fe0f768c765341 peaceai/test/fixtures/m271/im-src-index.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-avif.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-bmp.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-cur.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-dds.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-gif.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-heic.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-icns.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-ico.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-index.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-interface.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-j2c.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-jp2.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-jpg.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-jxl.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-ktx.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-png.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-pnm.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-psd.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-svg.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-tga.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-tiff.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-utils.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-src-types-webp.ts.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-bmp-negative-width.bmp.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-bmp-top-down-truncated.bmp.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-bmp-truncated.bmp.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-cur-cur-oversized-image-count.cur.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-gif-truncated.gif.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-heic-heif-undersized-ispe.heic.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-icns-icns-truncated-entry.icns.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-icns-icns-zero-length-entry.icns.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-ico-ico-oversized-image-count.ico.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-j2c-offset-beyond-grid.j2c.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-jpg-empty.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-jpg-truncated.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-jxl-jxl-header-only-jxlp.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-ktx-unknown-endianness.ktx.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-png-sample.png.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-png-truncated.png.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-pnm-missing-height.pgm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-pnm-non-numeric-size.ppm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-pnm-pam-missing-width.pam.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-pnm-width-too-large.pbm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-svg-broken-quotes.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-svg-malformed.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-svg-no-quotes.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-svg-only-commented-root.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-svg-unterminated-comment.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-svg-viewbox-unparseable.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-svg-width-huge-exponent.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-svg-width-too-large.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-svg-width.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-tga-zero-size.tga.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-tiff-bad-bigtiff-header.tiff.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-tiff-bigtiff-long8-too-large.tiff.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-tiff-classic-long8-width.tiff.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-tiff-ifd-offset-out-of-bounds.tiff.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-webp-bad-extended-header.webp.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-invalid-webp-truncated.webp.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-avif-sample-garbled.avif.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-avif-sample-garbled.avif.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-avif-sample-major-avis.avif.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-avif-sample-major-avis.avif.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-avif-sample-major-mif1.avif.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-avif-sample-major-mif1.avif.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-avif-sample.avif.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-avif-sample.avif.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-avif-sample2.avif.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-avif-sample2.avif.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-avif-sample3.avif.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-avif-sample3.avif.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-bmp-os2-v1.bmp.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-bmp-os2-v1.bmp.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-bmp-sample.bmp.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-bmp-sample.bmp.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-bmp-top-down.bmp.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-bmp-top-down.bmp.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-cur-sample.cur.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-cur-sample.cur.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-dds-sample.dds.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-dds-sample.dds.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-gif-sample.gif.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-gif-sample.gif.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-heic-clap-crops-largest.heic.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-heic-clap-crops-largest.heic.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-heic-sample-clap.heic.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-heic-sample-clap.heic.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-heic-sample-clap.heif.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-heic-sample-clap.heif.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-heic-sample-multi.heic.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-heic-sample-multi.heic.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-heic-sample1.heic.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-heic-sample1.heic.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-icns-duplicate-types.icns.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-icns-duplicate-types.icns.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-icns-modern-types.icns.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-icns-modern-types.icns.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-icns-sample-toc.icns.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-icns-sample-toc.icns.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-icns-sample.icns.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-icns-sample.icns.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ico-LICENSE.md.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ico-multi-size-compressed.ico.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ico-multi-size-compressed.ico.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ico-multi-size.ico.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ico-multi-size.ico.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ico-sample-256-compressed.ico.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ico-sample-256-compressed.ico.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ico-sample-256.ico.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ico-sample-256.ico.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ico-sample-compressed.ico.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ico-sample-compressed.ico.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ico-sample.ico.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ico-sample.ico.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-j2c-image-offset.j2c.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-j2c-image-offset.j2c.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-j2c-sample.j2c.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-j2c-sample.j2c.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jp2-sample.jp2.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jp2-sample.jp2.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jp2-xml-box.jp2.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jp2-xml-box.jp2.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-1x2-flipped-big-endian.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-1x2-flipped-big-endian.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-1x2-flipped-little-endian.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-1x2-flipped-little-endian.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-arithmetic-orientation.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-arithmetic-orientation.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-arithmetic-progressive.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-arithmetic-progressive.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-arithmetic-with-appended-image.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-arithmetic-with-appended-image.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-arithmetic.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-arithmetic.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-exif-ifd0-offset-big-endian.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-exif-ifd0-offset-big-endian.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-exif-ifd0-offset-little-endian.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-exif-ifd0-offset-little-endian.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-garbage-between-segments.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-garbage-between-segments.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-large.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-large.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-lossless.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-lossless.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-optimized.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-optimized.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-progressive.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-progressive.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-sample.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-sample.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-sampleExported.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-sampleExported.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-sof-first.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-sof-first.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-stuffed-byte-between-segments.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-stuffed-byte-between-segments.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-very-large.jpg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jpg-very-large.jpg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-large_16_9.jxl.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-large_16_9.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-large_explicit.jxl.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-large_explicit.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-max_small.jxl.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-max_small.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-min_large.jxl.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-min_large.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-ratio-4-3.jxl.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-ratio-4-3.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-sample.jxl.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-sample.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-small_rect.jxl.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-small_rect.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-small_square.jxl.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-codestream-small_square.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-jxlc-64bit-size.jxl.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-jxlc-64bit-size.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-jxlc-size-zero.jxl.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-jxlc-size-zero.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-jxlc-truncated.jxl.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-jxlc-truncated.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-jxlp-split-header.jxl.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-jxlp-split-header.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-sample-jxlc.jxl.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-sample-jxlc.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-sample.jxl.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-jxl-sample.jxl.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ktx-1d-texture.ktx2.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ktx-1d-texture.ktx2.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ktx-big-endian.ktx.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ktx-big-endian.ktx.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ktx-sample.ktx.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ktx-sample.ktx.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ktx-sample.ktx2.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-ktx-sample.ktx2.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-png-sample_fried.png.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-png-sample_fried.png.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-png-sample.png.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-png-sample.png.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-grayscale.pfm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-grayscale.pfm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-comment-between-size.pgm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-comment-between-size.pgm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-crlf.ppm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-crlf.ppm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-multiple-spaces.pbm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-multiple-spaces.pbm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-single-line.pfm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-single-line.pfm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-single-line.ppm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-single-line.ppm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-tab.pgm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-tab.pgm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-trailing-comment.ppm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-trailing-comment.ppm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-value-per-line.pgm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-header-value-per-line.pgm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-pam-header-whitespace.pam.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-pam-header-whitespace.pam.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample-ascii.pbm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample-ascii.pbm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample-ascii.pgm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample-ascii.pgm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample-ascii.ppm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample-ascii.ppm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample.pam.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample.pam.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample.pbm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample.pbm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample.pfm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample.pfm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample.pgm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample.pgm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample.ppm.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-pnm-sample.ppm.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-psd-sample.psd.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-psd-sample.psd.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-commented-root-multiline.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-commented-root-multiline.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-commented-root.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-commented-root.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-exponent-width-height.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-exponent-width-height.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-ignore-stroke-width.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-ignore-stroke-width.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-percentage.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-percentage.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-single-quotes.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-single-quotes.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-units-inches.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-units-inches.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-units-pc.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-units-pc.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-commas-width.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-commas-width.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-commas.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-commas.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-decimal-height.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-decimal-height.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-decimal-width.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-decimal-width.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-height.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-height.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-inexact-ratio.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-inexact-ratio.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-lowercase.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-lowercase.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-subpixel-height.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-subpixel-height.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-subpixel.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-subpixel.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-units.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-units.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-whitespace.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-whitespace.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-width-height-brackets.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-width-height-brackets.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-width-height.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-width-height.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-width.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox-width.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-viewbox.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-width-height.svg.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-svg-width-height.svg.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tga-sample.tga.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tga-sample.tga.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-big-endian-long.tiff.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-big-endian-long.tiff.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-big-endian.tiff.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-big-endian.tiff.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-bigtiff-big-endian-long.tiff.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-bigtiff-big-endian-long.tiff.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-bigtiff-big-endian.tiff.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-bigtiff-big-endian.tiff.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-bigtiff-jpeg.tiff.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-bigtiff-jpeg.tiff.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-bigtiff-little-endian.tiff.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-bigtiff-little-endian.tiff.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-bigtiff-long8.tiff.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-bigtiff-long8.tiff.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-jpeg.tiff.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-jpeg.tiff.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-little-endian.tiff.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-tiff-little-endian.tiff.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-webp-extended.webp.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-webp-extended.webp.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-webp-lossless.webp.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-webp-lossless.webp.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-webp-lossy.webp.meta.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-fixtures-valid-webp-lossy.webp.txt
+  b605abfd1cea8a4105cc7961591c589b6cb41182 peaceai/test/fixtures/m271/im-test-index.test.ts.txt
+license URL: https://github.com/unjs/image-meta/blob/9a90ba2a96eaf82d2854e0c195fe0f768c765341/LICENSE
+as written: sha256 9e953834a5964cb6e36e4cb7df1dac9559ba09a2420b2573fc05417d19e48a2a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+The MIT License (MIT)
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Based on https://github.com/image-size/image-size
+Copyright © Aditya Yadav, http://netroy.in
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: unjs/uqr
+license: MIT (LICENSE, sha256 of trimmed text 1d786ea25d67f612b02dd2bb05039a8b74c0162b51eb91929808ea538aeac503)
+fixtures (commit path):
+  44a822846aed2cdcf67997be355a882a820b117e peaceai/test/fixtures/m271/uq-src-encode.ts.txt
+  44a822846aed2cdcf67997be355a882a820b117e peaceai/test/fixtures/m271/uq-src-index.ts.txt
+  44a822846aed2cdcf67997be355a882a820b117e peaceai/test/fixtures/m271/uq-src-qrcode.ts.txt
+  44a822846aed2cdcf67997be355a882a820b117e peaceai/test/fixtures/m271/uq-src-render.ts.txt
+  73df32a20e6f3350d65ee850102acfdbea14904d peaceai/test/fixtures/m271/uq-src-svg.ts.txt
+  44a822846aed2cdcf67997be355a882a820b117e peaceai/test/fixtures/m271/uq-src-types.ts.txt
+  44a822846aed2cdcf67997be355a882a820b117e peaceai/test/fixtures/m271/uq-test-hooks.test.ts.txt
+  44a822846aed2cdcf67997be355a882a820b117e peaceai/test/fixtures/m271/uq-test-index.test.ts.txt
+  44a822846aed2cdcf67997be355a882a820b117e peaceai/test/fixtures/m271/uq-test-output-out1.svg.txt
+license URL: https://github.com/unjs/uqr/blob/73df32a20e6f3350d65ee850102acfdbea14904d/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) Project Nayuki
+Copyright (c) 2023 Anthony Fu <https://github.com/antfu>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
