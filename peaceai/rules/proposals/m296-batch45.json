@@ -1,0 +1,42 @@
+{
+ "schema": "peaceai-m296-batch45:v1",
+ "note": "Pinned copies of jonschlinkert/log-ok, jonschlinkert/object.pick, and jonschlinkert/parse-glob at the parent of a published bug fix, plus the test that fix changed (object.pick's tests landed in the immediately following published commit). The log-ok, object.pick, and parse-glob licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/log-ok",
+   "commit": "2f3c95f17539f31f5d898ddf1d5b7fcacb282d69",
+   "licenseSha256": "ef4acfe6db84ecdb72a2b1afc3856db0f503ef64f4adba711dbb7d7cad9025e7",
+   "fixture": "peaceai/test/fixtures/m296/log-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/log-ok",
+   "commit": "5448b9ef54e08113d486d64a351125d04cb306dd",
+   "licenseSha256": "ef4acfe6db84ecdb72a2b1afc3856db0f503ef64f4adba711dbb7d7cad9025e7",
+   "fixture": "peaceai/test/fixtures/m296/log-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/object.pick",
+   "commit": "dd8a482a5264e60d9e4158d148e3afa46e88757e",
+   "licenseSha256": "df727bea113257e83fe417cda84a3dae0c643445ef1610e8e1b0206b156dbf50",
+   "fixture": "peaceai/test/fixtures/m296/pick-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/object.pick",
+   "commit": "4a44129f0f98fa09e5fcd285f99368f8b366530e",
+   "licenseSha256": "df727bea113257e83fe417cda84a3dae0c643445ef1610e8e1b0206b156dbf50",
+   "fixture": "peaceai/test/fixtures/m296/pick-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-glob",
+   "commit": "3baaf7c00ca5719d4d3eee377c345b570631f7d5",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m296/pglob-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-glob",
+   "commit": "73fad8b171a97409391664b66a5f6ada591d608c",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m296/pglob-test.js.txt"
+  }
+ ]
+}
