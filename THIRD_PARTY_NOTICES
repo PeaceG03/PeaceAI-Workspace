@@ -14234,3 +14234,101 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ---- end ----
+
+==============================================================================
+repo: fb55/domhandler
+license: BSD-2-Clause (LICENSE, sha256 of trimmed text 0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6)
+fixtures (commit path):
+  6b6b8aef0a1061fbfa36181fcc55bc86e57f46fb peaceai/test/fixtures/m283/dh-src-index.ts.txt
+  6b6b8aef0a1061fbfa36181fcc55bc86e57f46fb peaceai/test/fixtures/m283/dh-src-node.ts.txt
+  6b269da0a0a7736e93aa8b0ef148e7c106c02f1b peaceai/test/fixtures/m283/dh-src-node.spec.ts.txt
+license URL: https://github.com/fb55/domhandler/blob/6b6b8aef0a1061fbfa36181fcc55bc86e57f46fb/LICENSE
+---- license text ----
+Copyright (c) Felix Böhm
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+THIS IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS,
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+---- end ----
+
+==============================================================================
+repo: planttheidea/fast-copy
+license: MIT (LICENSE, sha256 of trimmed text c0e4b0b302173791312fb6a29289ecc2f23d6ccf63e08232b7a06e14b2eaeefb)
+fixtures (commit path):
+  d2600fdbecfb6ab3130df4dd69593de90b942a41 peaceai/test/fixtures/m283/fc-src-copier.ts.txt
+  d2600fdbecfb6ab3130df4dd69593de90b942a41 peaceai/test/fixtures/m283/fc-src-index.ts.txt
+  d2600fdbecfb6ab3130df4dd69593de90b942a41 peaceai/test/fixtures/m283/fc-src-options.ts.txt
+  d2600fdbecfb6ab3130df4dd69593de90b942a41 peaceai/test/fixtures/m283/fc-src-utils.ts.txt
+  b1ce69fa5acf78a49fb1bdab0c352448f9c2bec7 peaceai/test/fixtures/m283/fc-__tests__-index.test.ts.txt
+license URL: https://github.com/planttheidea/fast-copy/blob/d2600fdbecfb6ab3130df4dd69593de90b942a41/LICENSE
+---- license text ----
+MIT License
+
+Copyright (c) 2025 Tony Quetano
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: express-rate-limit/express-rate-limit
+license: MIT (license, sha256 of trimmed text 339875e6494e5121fdd249acb364c0fe38fa9bf84b1d035bfc46dd7764c700f1)
+fixtures (commit path):
+  1a5d44788a3ad30c79f8a471d9c6dceecc54cc34 peaceai/test/fixtures/m283/er-source-console-logger.ts.txt
+  1a5d44788a3ad30c79f8a471d9c6dceecc54cc34 peaceai/test/fixtures/m283/er-source-headers.ts.txt
+  1a5d44788a3ad30c79f8a471d9c6dceecc54cc34 peaceai/test/fixtures/m283/er-source-index.ts.txt
+  1a5d44788a3ad30c79f8a471d9c6dceecc54cc34 peaceai/test/fixtures/m283/er-source-ip-key-generator.ts.txt
+  1a5d44788a3ad30c79f8a471d9c6dceecc54cc34 peaceai/test/fixtures/m283/er-source-memory-store.ts.txt
+  1a5d44788a3ad30c79f8a471d9c6dceecc54cc34 peaceai/test/fixtures/m283/er-source-rate-limit.ts.txt
+  1a5d44788a3ad30c79f8a471d9c6dceecc54cc34 peaceai/test/fixtures/m283/er-source-time-constants.ts.txt
+  1a5d44788a3ad30c79f8a471d9c6dceecc54cc34 peaceai/test/fixtures/m283/er-source-types.ts.txt
+  1a5d44788a3ad30c79f8a471d9c6dceecc54cc34 peaceai/test/fixtures/m283/er-source-utils.ts.txt
+  1a5d44788a3ad30c79f8a471d9c6dceecc54cc34 peaceai/test/fixtures/m283/er-source-validations.ts.txt
+  1a5d44788a3ad30c79f8a471d9c6dceecc54cc34 peaceai/test/fixtures/m283/er-tsconfig.json.txt
+  036e5e3b18179a813fcebad8c6365d82bb6dc3d1 peaceai/test/fixtures/m283/er-jest.config.json.txt
+  036e5e3b18179a813fcebad8c6365d82bb6dc3d1 peaceai/test/fixtures/m283/er-test-library-memory-store-test.ts.txt
+license URL: https://github.com/express-rate-limit/express-rate-limit/blob/1a5d44788a3ad30c79f8a471d9c6dceecc54cc34/license
+---- license text ----
+MIT License
+
+Copyright 2023 Nathan Friedly, Vedant K
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
