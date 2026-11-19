@@ -1,0 +1,13 @@
+{
+  "name": "m306-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "should": "13.2.3",
+    "array-unique": "0.2.1",
+    "is-glob": "2.0.1",
+    "is-number": "4.0.0",
+    "kind-of": "6.0.0",
+    "math-random": "1.0.1"
+  }
+}
