@@ -1,0 +1,114 @@
+{
+ "schema": "peaceai-m272-batch21:v1",
+ "note": "Pinned copies of unjs/upm, unjs/unwasm, and unjs/changelogen at the parent of a published bug fix, plus the test that fix changed. Each notice omits one email address and records the hash of that redacted text.",
+ "examples": [
+  {
+   "repo": "unjs/upm",
+   "commit": "0dbc5903e8c484b1c79619dce41d98660ef59f8e",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/up-src-yaml.ts.txt"
+  },
+  {
+   "repo": "unjs/upm",
+   "commit": "0dbc9ccd9b94c6807596db8ec81b614f9e9d7453",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/up-test-yaml.test.ts.txt"
+  },
+  {
+   "repo": "unjs/unwasm",
+   "commit": "7bea530031533661814f9f13c34c0d0bf90d1152",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/uw-examples-add-esmi.wasm.txt"
+  },
+  {
+   "repo": "unjs/unwasm",
+   "commit": "7bea530031533661814f9f13c34c0d0bf90d1152",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/uw-examples-rand.wasm.txt"
+  },
+  {
+   "repo": "unjs/unwasm",
+   "commit": "7bea530031533661814f9f13c34c0d0bf90d1152",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/uw-examples-sum.wasm.txt"
+  },
+  {
+   "repo": "unjs/unwasm",
+   "commit": "7bea530031533661814f9f13c34c0d0bf90d1152",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/uw-src-tools-index.ts.txt"
+  },
+  {
+   "repo": "unjs/unwasm",
+   "commit": "51ad7128dc1c8bcdb5d97243daf2b1f66677eca0",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/uw-src-tools-parser.ts.txt"
+  },
+  {
+   "repo": "unjs/unwasm",
+   "commit": "7bea530031533661814f9f13c34c0d0bf90d1152",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/uw-test-parse.test.ts.txt"
+  },
+  {
+   "repo": "unjs/changelogen",
+   "commit": "22b08b245db51bd87f5b6a84d57223258354045f",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/cl-src-config.ts.txt"
+  },
+  {
+   "repo": "unjs/changelogen",
+   "commit": "22b08b245db51bd87f5b6a84d57223258354045f",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/cl-src-exec.ts.txt"
+  },
+  {
+   "repo": "unjs/changelogen",
+   "commit": "22b08b245db51bd87f5b6a84d57223258354045f",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/cl-src-git.ts.txt"
+  },
+  {
+   "repo": "unjs/changelogen",
+   "commit": "22b08b245db51bd87f5b6a84d57223258354045f",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/cl-src-github.ts.txt"
+  },
+  {
+   "repo": "unjs/changelogen",
+   "commit": "22b08b245db51bd87f5b6a84d57223258354045f",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/cl-src-index.ts.txt"
+  },
+  {
+   "repo": "unjs/changelogen",
+   "commit": "22b08b245db51bd87f5b6a84d57223258354045f",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/cl-src-markdown.ts.txt"
+  },
+  {
+   "repo": "unjs/changelogen",
+   "commit": "22b08b245db51bd87f5b6a84d57223258354045f",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/cl-src-package.ts.txt"
+  },
+  {
+   "repo": "unjs/changelogen",
+   "commit": "22b08b245db51bd87f5b6a84d57223258354045f",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/cl-src-repo.ts.txt"
+  },
+  {
+   "repo": "unjs/changelogen",
+   "commit": "5f359c6f43f781189f5843d564c20037fdddaae9",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/cl-src-semver.ts.txt"
+  },
+  {
+   "repo": "unjs/changelogen",
+   "commit": "22b08b245db51bd87f5b6a84d57223258354045f",
+   "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
+   "fixture": "peaceai/test/fixtures/m272/cl-test-semver.test.ts.txt"
+  }
+ ]
+}
