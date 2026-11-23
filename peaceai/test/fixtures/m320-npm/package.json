@@ -1,0 +1,12 @@
+{
+  "name": "m320-npm",
+  "private": true,
+  "devDependencies": {
+    "globby": "0.1.1",
+    "gray-matter": "0.5.1",
+    "mocha": "10.8.2",
+    "relative": "0.1.6",
+    "repeat-string": "0.2.2",
+    "should": "4.0.4"
+  }
+}
