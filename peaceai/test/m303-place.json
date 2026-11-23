@@ -1,0 +1,23 @@
+{
+  "ec-index.js.txt": "index.js",
+  "ec-lib-block.js.txt": "lib/block.js",
+  "ec-lib-code.js.txt": "lib/code.js",
+  "ec-lib-context.js.txt": "lib/context.js",
+  "ec-lib-extractor.js.txt": "lib/extractor.js",
+  "ec-lib-line.js.txt": "lib/line.js",
+  "ec-lib-utils.js.txt": "lib/utils.js",
+  "ec-test-fixtures-mixed.js.txt": "test/fixtures/mixed.js",
+  "ec-test-test.js.txt": "test/test.js",
+  "mv-index.js.txt": "index.js",
+  "mv-test.js.txt": "test.js",
+  "mv-utils.js.txt": "utils.js",
+  "oc-index.js.txt": "index.js",
+  "oc-test-disabled.js.txt": "test/disabled.js",
+  "oc-test-enabled.js.txt": "test/enabled.js",
+  "oc-test-events.js.txt": "test/events.js",
+  "oc-test-hasOption.js.txt": "test/hasOption.js",
+  "oc-test-isBoolean.js.txt": "test/isBoolean.js",
+  "oc-test-option.js.txt": "test/option.js",
+  "oc-test-options.js.txt": "test/options.js",
+  "oc-utils.js.txt": "utils.js"
+}
