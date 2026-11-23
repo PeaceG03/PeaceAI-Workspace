@@ -1,0 +1,96 @@
+{
+ "schema": "peaceai-m320-batch69:v1",
+ "note": "Pinned copies of jonschlinkert/map-files, jonschlinkert/pad-right, and jonschlinkert/map-cache at the parent of a published bug fix, plus the test that fix changed. The map-files, pad-right, and map-cache licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/map-files",
+   "commit": "ce3405539e1ca79f5a2ccc8d61376d761f9972f4",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m320/mf-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/map-files",
+   "commit": "31416789c16d68b7e968ef2bb0089932412fd030",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m320/mf-test-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/map-files",
+   "commit": "ce3405539e1ca79f5a2ccc8d61376d761f9972f4",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m320/mf-LICENSE-MIT.txt"
+  },
+  {
+   "repo": "jonschlinkert/map-files",
+   "commit": "ce3405539e1ca79f5a2ccc8d61376d761f9972f4",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m320/mf-test-fixtures-a.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/map-files",
+   "commit": "ce3405539e1ca79f5a2ccc8d61376d761f9972f4",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m320/mf-test-fixtures-b.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/map-files",
+   "commit": "ce3405539e1ca79f5a2ccc8d61376d761f9972f4",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m320/mf-test-fixtures-c.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/map-files",
+   "commit": "ce3405539e1ca79f5a2ccc8d61376d761f9972f4",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m320/mf-test-fixtures-a.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/map-files",
+   "commit": "ce3405539e1ca79f5a2ccc8d61376d761f9972f4",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m320/mf-test-fixtures-b.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/map-files",
+   "commit": "ce3405539e1ca79f5a2ccc8d61376d761f9972f4",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m320/mf-test-fixtures-c.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/pad-right",
+   "commit": "f25b255e407031b8d567eacf64b55909c0bb2a85",
+   "licenseSha256": "9145c838a28217ed5885db2b2f77a73fc465f57e0ef5a0378f609ecccfac53d2",
+   "fixture": "peaceai/test/fixtures/m320/pr-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/pad-right",
+   "commit": "980ba9554fe60e7698ab7a47fd59f55d3605e878",
+   "licenseSha256": "9145c838a28217ed5885db2b2f77a73fc465f57e0ef5a0378f609ecccfac53d2",
+   "fixture": "peaceai/test/fixtures/m320/pr-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/pad-right",
+   "commit": "f25b255e407031b8d567eacf64b55909c0bb2a85",
+   "licenseSha256": "9145c838a28217ed5885db2b2f77a73fc465f57e0ef5a0378f609ecccfac53d2",
+   "fixture": "peaceai/test/fixtures/m320/pr-LICENSE-MIT.txt"
+  },
+  {
+   "repo": "jonschlinkert/map-cache",
+   "commit": "6fb2a03195d741c387bf7111bf3721725868a0db",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m320/mc-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/map-cache",
+   "commit": "07a986c2da5a01220d85f3043f20b3abca8702b5",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m320/mc-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/map-cache",
+   "commit": "6fb2a03195d741c387bf7111bf3721725868a0db",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m320/mc-LICENSE.txt"
+  }
+ ]
+}

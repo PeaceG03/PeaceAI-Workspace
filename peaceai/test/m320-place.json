@@ -1,0 +1,17 @@
+{
+  "mc-LICENSE.txt": "LICENSE",
+  "mc-index.js.txt": "index.js",
+  "mc-test.js.txt": "test.js",
+  "mf-LICENSE-MIT.txt": "LICENSE-MIT",
+  "mf-index.js.txt": "index.js",
+  "mf-test-fixtures-a.js.txt": "test/fixtures/a.js",
+  "mf-test-fixtures-a.txt.txt": "test/fixtures/a.txt",
+  "mf-test-fixtures-b.js.txt": "test/fixtures/b.js",
+  "mf-test-fixtures-b.txt.txt": "test/fixtures/b.txt",
+  "mf-test-fixtures-c.js.txt": "test/fixtures/c.js",
+  "mf-test-fixtures-c.txt.txt": "test/fixtures/c.txt",
+  "mf-test-test.js.txt": "test/test.js",
+  "pr-LICENSE-MIT.txt": "LICENSE-MIT",
+  "pr-index.js.txt": "index.js",
+  "pr-test.js.txt": "test.js"
+}
