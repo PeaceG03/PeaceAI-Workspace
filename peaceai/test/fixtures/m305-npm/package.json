@@ -1,0 +1,12 @@
+{
+  "name": "m305-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "should": "13.2.3",
+    "define-property": "0.2.5",
+    "extend-shallow": "2.0.1",
+    "regex-not": "0.1.1",
+    "ansi-colors": "4.1.3"
+  }
+}

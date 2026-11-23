@@ -1,0 +1,282 @@
+{
+ "schema": "peaceai-m305-batch54:v1",
+ "note": "Pinned copies of jonschlinkert/array-unique, jonschlinkert/to-regex, and jonschlinkert/tabstops at the parent of a published bug fix, plus the test that fix changed. The array-unique, to-regex, and tabstops licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/array-unique",
+   "commit": "2de837d5712c8630d05ec81eb3562507945fa229",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m305/au-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/array-unique",
+   "commit": "5d1fbe560da8125e28e4ad6fbfa9daaf9f2ec120",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m305/au-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/array-unique",
+   "commit": "2de837d5712c8630d05ec81eb3562507945fa229",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m305/au-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/to-regex",
+   "commit": "61692adda39f8315f668e04e4401a7d71066a978",
+   "licenseSha256": "53697eb518d86f5da298777e6c8b7249ff29549cc01ee9dcaedfc417a2cd79b7",
+   "fixture": "peaceai/test/fixtures/m305/tr-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/to-regex",
+   "commit": "f5f7215da60d3e52ba28521c83fcd490e93bdb69",
+   "licenseSha256": "53697eb518d86f5da298777e6c8b7249ff29549cc01ee9dcaedfc417a2cd79b7",
+   "fixture": "peaceai/test/fixtures/m305/tr-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/to-regex",
+   "commit": "61692adda39f8315f668e04e4401a7d71066a978",
+   "licenseSha256": "53697eb518d86f5da298777e6c8b7249ff29549cc01ee9dcaedfc417a2cd79b7",
+   "fixture": "peaceai/test/fixtures/m305/tr-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "07812a0f751f28fd0ddebe0ac90abae92bc6f18a",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "07812a0f751f28fd0ddebe0ac90abae92bc6f18a",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-TabstopPlaceholder.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-Data.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-Location.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-Parser.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-constants.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-helpers.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-Block.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-Choices.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-Close.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-Format.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-Node.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-Open.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-Tabstop.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-TabstopTransform.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-Text.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-Transform.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-Variable.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-VariablePlaceholder.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-VariableTransform.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-nodes-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-lib-utils.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-api.compile.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-api.stringify.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-api.variables.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-choices.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-fixtures-rcc.snippet.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-fixtures-snippet.xml.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-regex.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-support-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-support-pick.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-support-visit.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-tabstop-placeholder.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-tabstop-resolution.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-tabstop-transform.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-tabstop.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-variable-placeholder.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-variable-transform.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/tabstops",
+   "commit": "785795d3b4754a7592648e97fcb2bdfbe51afb2e",
+   "licenseSha256": "80349f69c5debaf957a1efdd2d05df9932557efb59a65f3a0f70b8e8efce1d61",
+   "fixture": "peaceai/test/fixtures/m305/ts-test-variable.js.txt"
+  }
+ ]
+}
