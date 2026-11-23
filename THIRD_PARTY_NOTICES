@@ -13763,17 +13763,12 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 ---- end ----
 
 ==============================================================================
-repo: unjs/get-port-please
+repo: unjs/upm
 license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
 fixtures (commit path):
-  2586218066cf32ffdfeac07398de696f8913d9d9 peaceai/test/fixtures/m273/gp-src-_internal.ts.txt
-  6a2165dfc422d7a8e65e376dd153523ed303ae69 peaceai/test/fixtures/m273/gp-src-get-port.ts.txt
-  2586218066cf32ffdfeac07398de696f8913d9d9 peaceai/test/fixtures/m273/gp-src-index.ts.txt
-  2586218066cf32ffdfeac07398de696f8913d9d9 peaceai/test/fixtures/m273/gp-src-types.ts.txt
-  2586218066cf32ffdfeac07398de696f8913d9d9 peaceai/test/fixtures/m273/gp-src-unsafe-ports.ts.txt
-  2586218066cf32ffdfeac07398de696f8913d9d9 peaceai/test/fixtures/m273/gp-test-index.test.ts.txt
-  2586218066cf32ffdfeac07398de696f8913d9d9 peaceai/test/fixtures/m273/gp-test-utils.ts.txt
-license URL: https://github.com/unjs/get-port-please/blob/6a2165dfc422d7a8e65e376dd153523ed303ae69/LICENSE
+  0dbc5903e8c484b1c79619dce41d98660ef59f8e peaceai/test/fixtures/m272/up-src-yaml.ts.txt
+  0dbc9ccd9b94c6807596db8ec81b614f9e9d7453 peaceai/test/fixtures/m272/up-test-yaml.test.ts.txt
+license URL: https://github.com/unjs/upm/blob/0dbc5903e8c484b1c79619dce41d98660ef59f8e/LICENSE
 as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
 ---- license text ----
 MIT License
@@ -13800,103 +13795,17 @@ SOFTWARE.
 ---- end ----
 
 ==============================================================================
-repo: unjs/nf3
-license: MIT (LICENSE, sha256 of trimmed text 070f8201e1b3dc6fff81790a62d45f21633170c616789246c6cc66e4ed8b357d)
+repo: unjs/unwasm
+license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
 fixtures (commit path):
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-src-_utils.ts.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-src-db.ts.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-src-index.ts.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-src-plugin.ts.txt
-  a81bf79eace5b7df1398048ed7ba63a82597b127 peaceai/test/fixtures/m273/nf-src-trace.ts.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-src-types.ts.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-_mock-utils.ts.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-condition.test.ts.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-.gitignore.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-force-include-conditions.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-force-include-dev.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-force-include-mv.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-force-include.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-native.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-conditional-dep-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-conditional-dep-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-conditional-exports-index.cjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-conditional-exports-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-conditional-exports-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-dev-build.config.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-dev-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-dev-node_modules-__SCOPE__fixture-dev-dep-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-dev-node_modules-__SCOPE__fixture-dev-dep-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-dev-node_modules-__SCOPE__fixture-runtime-dep-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-dev-node_modules-__SCOPE__fixture-runtime-dep-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-dev-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-mv-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-mv-node_modules-__SCOPE__fixture-mv-dep-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-mv-node_modules-__SCOPE__fixture-mv-dep-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-mv-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-imports-wildcard-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-imports-wildcard-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-imports-wildcard-runtime-internal-marker.js.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-mv-dep-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-mv-dep-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-native-binding-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-native-binding-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-native-libvips-lib-index.js.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-native-libvips-lib-libvips.node.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-native-libvips-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-native-libvips-versions.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-a-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-a-node_modules-__SCOPE__fixture-nitro-lib-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-a-node_modules-__SCOPE__fixture-nitro-lib-node_modules-__SCOPE__fixture-nested-lib-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-a-node_modules-__SCOPE__fixture-nitro-lib-node_modules-__SCOPE__fixture-nested-lib-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-a-node_modules-__SCOPE__fixture-nitro-lib-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-a-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-b-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-b-node_modules-__SCOPE__fixture-nitro-lib-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-b-node_modules-__SCOPE__fixture-nitro-lib-node_modules-__SCOPE__fixture-nested-lib-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-b-node_modules-__SCOPE__fixture-nitro-lib-node_modules-__SCOPE__fixture-nested-lib-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-b-node_modules-__SCOPE__fixture-nitro-lib-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-b-node_modules-__SCOPE__fixture-nitro-lib-subpath.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-b-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-lib-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-lib-node_modules-__SCOPE__fixture-nested-lib-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-lib-node_modules-__SCOPE__fixture-nested-lib-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-lib-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-lib-subpath.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-utils-extra.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-utils-extra2.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-utils-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-utils-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-utils-README.md.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-subpath-framework-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-subpath-framework-node_modules-__SCOPE__fixture-subpath-native-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-subpath-framework-node_modules-__SCOPE__fixture-subpath-native-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-subpath-framework-node_modules-__SCOPE__fixture-subpath-native-sub.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-subpath-framework-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-transitive-a-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-transitive-a-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-transitive-b-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-transitive-b-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-package-imports.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-.gitignore.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-bundled-entry.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-node_modules-.pnpm-__SCOPE__fixture+pnpm-app__SCOPE__1.0.0-node_modules-__SCOPE__fixture-pnpm-app-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-node_modules-.pnpm-__SCOPE__fixture+pnpm-app__SCOPE__1.0.0-node_modules-__SCOPE__fixture-pnpm-app-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-node_modules-.pnpm-__SCOPE__fixture+pnpm-native__SCOPE__1.0.0-node_modules-__SCOPE__fixture-pnpm-native-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-node_modules-.pnpm-__SCOPE__fixture+pnpm-native__SCOPE__1.0.0-node_modules-__SCOPE__fixture-pnpm-native-native.node.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-node_modules-.pnpm-__SCOPE__fixture+pnpm-native__SCOPE__1.0.0-node_modules-__SCOPE__fixture-pnpm-native-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-node_modules-__SCOPE__fixture-pnpm-native-index.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-node_modules-__SCOPE__fixture-pnpm-native-package.json.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-subpath.mjs.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-plugin.test.ts.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-pnpm.test.ts.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-trace-mock.test.ts.txt
-  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-trace.test.ts.txt
-license URL: https://github.com/unjs/nf3/blob/a81bf79eace5b7df1398048ed7ba63a82597b127/LICENSE
-as written: sha256 367d3e5adb915afd7b472bcba3efce507f75e2b92b862542642597abe4e12b9c (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+  7bea530031533661814f9f13c34c0d0bf90d1152 peaceai/test/fixtures/m272/uw-examples-add-esmi.wasm.txt
+  7bea530031533661814f9f13c34c0d0bf90d1152 peaceai/test/fixtures/m272/uw-examples-rand.wasm.txt
+  7bea530031533661814f9f13c34c0d0bf90d1152 peaceai/test/fixtures/m272/uw-examples-sum.wasm.txt
+  7bea530031533661814f9f13c34c0d0bf90d1152 peaceai/test/fixtures/m272/uw-src-tools-index.ts.txt
+  51ad7128dc1c8bcdb5d97243daf2b1f66677eca0 peaceai/test/fixtures/m272/uw-src-tools-parser.ts.txt
+  7bea530031533661814f9f13c34c0d0bf90d1152 peaceai/test/fixtures/m272/uw-test-parse.test.ts.txt
+license URL: https://github.com/unjs/unwasm/blob/51ad7128dc1c8bcdb5d97243daf2b1f66677eca0/LICENSE
+as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
 ---- license text ----
 MIT License
 
@@ -13919,24 +13828,46 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+---- end ----
 
-----------------------------------------------------------------------------
+==============================================================================
+repo: unjs/changelogen
+license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+fixtures (commit path):
+  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-config.ts.txt
+  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-exec.ts.txt
+  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-git.ts.txt
+  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-github.ts.txt
+  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-index.ts.txt
+  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-markdown.ts.txt
+  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-package.ts.txt
+  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-repo.ts.txt
+  5f359c6f43f781189f5843d564c20037fdddaae9 peaceai/test/fixtures/m272/cl-src-semver.ts.txt
+  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-test-semver.test.ts.txt
+license URL: https://github.com/unjs/changelogen/blob/5f359c6f43f781189f5843d564c20037fdddaae9/LICENSE
+as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
 
-This software includes bundled third-party dependencies. The licenses and
-copyright notices for these dependencies are available in
-`dist/THIRD-PARTY-LICENSES.md` within the distributed package.
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
 
-----------------------------------------------------------------------------
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-Bundled with vercel/nft (https://github.com/vercel/nft)
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-Copyright 2019 Vercel, Inc.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ---- end ----
 
 ==============================================================================
@@ -14305,17 +14236,21 @@ SOFTWARE.
 ---- end ----
 
 ==============================================================================
-repo: unjs/upm
-license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+repo: TanStack/store
+license: MIT (LICENSE, sha256 of trimmed text d71ca6db0f8bd8b31d8426ec6e7410457eac2ed6832138e6f5ea8566b248ef28)
 fixtures (commit path):
-  0dbc5903e8c484b1c79619dce41d98660ef59f8e peaceai/test/fixtures/m272/up-src-yaml.ts.txt
-  0dbc9ccd9b94c6807596db8ec81b614f9e9d7453 peaceai/test/fixtures/m272/up-test-yaml.test.ts.txt
-license URL: https://github.com/unjs/upm/blob/0dbc5903e8c484b1c79619dce41d98660ef59f8e/LICENSE
-as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+  4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d peaceai/test/fixtures/m281/st-packages-store-src-alien.ts.txt
+  4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d peaceai/test/fixtures/m281/st-packages-store-src-atom.ts.txt
+  4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d peaceai/test/fixtures/m281/st-packages-store-src-index.ts.txt
+  4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d peaceai/test/fixtures/m281/st-packages-store-src-shallow.ts.txt
+  4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d peaceai/test/fixtures/m281/st-packages-store-src-store.ts.txt
+  4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d peaceai/test/fixtures/m281/st-packages-store-src-types.ts.txt
+  e06c28cbdf3514c4edd5dfc29c4d05e396363605 peaceai/test/fixtures/m281/st-packages-store-tests-observer-isolation.test.ts.txt
+license URL: https://github.com/TanStack/store/blob/4fa67bb1a0f9bfef906e6fb2849cc47b2a5baa4d/LICENSE
 ---- license text ----
 MIT License
 
-Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+Copyright (c) 2021 Tanner Linsley
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -14337,21 +14272,20 @@ SOFTWARE.
 ---- end ----
 
 ==============================================================================
-repo: unjs/unwasm
-license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+repo: honojs/node-server
+license: MIT (LICENSE, sha256 of trimmed text 35d16fc259cf940287dbd8f7106d6e80f5316e00a51b46b399c26d4c4b377574)
 fixtures (commit path):
-  7bea530031533661814f9f13c34c0d0bf90d1152 peaceai/test/fixtures/m272/uw-examples-add-esmi.wasm.txt
-  7bea530031533661814f9f13c34c0d0bf90d1152 peaceai/test/fixtures/m272/uw-examples-rand.wasm.txt
-  7bea530031533661814f9f13c34c0d0bf90d1152 peaceai/test/fixtures/m272/uw-examples-sum.wasm.txt
-  7bea530031533661814f9f13c34c0d0bf90d1152 peaceai/test/fixtures/m272/uw-src-tools-index.ts.txt
-  51ad7128dc1c8bcdb5d97243daf2b1f66677eca0 peaceai/test/fixtures/m272/uw-src-tools-parser.ts.txt
-  7bea530031533661814f9f13c34c0d0bf90d1152 peaceai/test/fixtures/m272/uw-test-parse.test.ts.txt
-license URL: https://github.com/unjs/unwasm/blob/51ad7128dc1c8bcdb5d97243daf2b1f66677eca0/LICENSE
-as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+  348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b peaceai/test/fixtures/m281/ns-src-request.ts.txt
+  348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b peaceai/test/fixtures/m281/ns-src-error.ts.txt
+  348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b peaceai/test/fixtures/m281/ns-src-headers.ts.txt
+  348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b peaceai/test/fixtures/m281/ns-src-url.ts.txt
+  348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b peaceai/test/fixtures/m281/ns-test-setup.ts.txt
+  9f7a5cbf68dff5cb7f6ed3aded98c6ff3ee4802a peaceai/test/fixtures/m281/ns-test-request.test.ts.txt
+license URL: https://github.com/honojs/node-server/blob/348e88587ae1f0d2a53d26fdd8c16e54c7db5d2b/LICENSE
 ---- license text ----
 MIT License
 
-Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+Copyright (c) 2022 - present, Yusuke Wada and Hono contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -14373,25 +14307,25 @@ SOFTWARE.
 ---- end ----
 
 ==============================================================================
-repo: unjs/changelogen
-license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+repo: antfu/bumpp
+license: MIT (LICENSE, sha256 of trimmed text f622996315fe02f3832cde3f077744583ebe1600a95c97f0103541dbd64f36f8)
 fixtures (commit path):
-  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-config.ts.txt
-  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-exec.ts.txt
-  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-git.ts.txt
-  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-github.ts.txt
-  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-index.ts.txt
-  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-markdown.ts.txt
-  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-package.ts.txt
-  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-src-repo.ts.txt
-  5f359c6f43f781189f5843d564c20037fdddaae9 peaceai/test/fixtures/m272/cl-src-semver.ts.txt
-  22b08b245db51bd87f5b6a84d57223258354045f peaceai/test/fixtures/m272/cl-test-semver.test.ts.txt
-license URL: https://github.com/unjs/changelogen/blob/5f359c6f43f781189f5843d564c20037fdddaae9/LICENSE
-as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-fs.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-manifest.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-normalize-options.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-operation.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-release-type.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-run-npm-script.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-types-version-bump-options.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-types-version-bump-progress.ts.txt
+  fa0f433a6fd77a1173f10d7c696e7090b6d3972d peaceai/test/fixtures/m281/bp-src-types-version-bump-results.ts.txt
+  aa3fc86e3bb152dda8627a7fe156acb45f800ca8 peaceai/test/fixtures/m281/bp-test-run-npm-script.test.ts.txt
+license URL: https://github.com/antfu/bumpp/blob/fa0f433a6fd77a1173f10d7c696e7090b6d3972d/LICENSE
 ---- license text ----
-MIT License
+The MIT License (MIT)
 
-Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+Copyright (c) 2015 James Messinger
+Copyright (c) 2022 Anthony Fu
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -14400,16 +14334,16 @@ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 ---- end ----
 
 ==============================================================================
@@ -15559,4 +15493,181 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: unjs/get-port-please
+license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
+fixtures (commit path):
+  2586218066cf32ffdfeac07398de696f8913d9d9 peaceai/test/fixtures/m273/gp-src-_internal.ts.txt
+  6a2165dfc422d7a8e65e376dd153523ed303ae69 peaceai/test/fixtures/m273/gp-src-get-port.ts.txt
+  2586218066cf32ffdfeac07398de696f8913d9d9 peaceai/test/fixtures/m273/gp-src-index.ts.txt
+  2586218066cf32ffdfeac07398de696f8913d9d9 peaceai/test/fixtures/m273/gp-src-types.ts.txt
+  2586218066cf32ffdfeac07398de696f8913d9d9 peaceai/test/fixtures/m273/gp-src-unsafe-ports.ts.txt
+  2586218066cf32ffdfeac07398de696f8913d9d9 peaceai/test/fixtures/m273/gp-test-index.test.ts.txt
+  2586218066cf32ffdfeac07398de696f8913d9d9 peaceai/test/fixtures/m273/gp-test-utils.ts.txt
+license URL: https://github.com/unjs/get-port-please/blob/6a2165dfc422d7a8e65e376dd153523ed303ae69/LICENSE
+as written: sha256 38e67472658d6ec09763614d20759fb163a4656aadc6e1ca715f75ae33105c5a (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+---- end ----
+
+==============================================================================
+repo: unjs/nf3
+license: MIT (LICENSE, sha256 of trimmed text 070f8201e1b3dc6fff81790a62d45f21633170c616789246c6cc66e4ed8b357d)
+fixtures (commit path):
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-src-_utils.ts.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-src-db.ts.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-src-index.ts.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-src-plugin.ts.txt
+  a81bf79eace5b7df1398048ed7ba63a82597b127 peaceai/test/fixtures/m273/nf-src-trace.ts.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-src-types.ts.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-_mock-utils.ts.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-condition.test.ts.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-.gitignore.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-force-include-conditions.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-force-include-dev.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-force-include-mv.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-force-include.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-native.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-conditional-dep-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-conditional-dep-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-conditional-exports-index.cjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-conditional-exports-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-conditional-exports-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-dev-build.config.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-dev-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-dev-node_modules-__SCOPE__fixture-dev-dep-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-dev-node_modules-__SCOPE__fixture-dev-dep-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-dev-node_modules-__SCOPE__fixture-runtime-dep-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-dev-node_modules-__SCOPE__fixture-runtime-dep-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-dev-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-mv-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-mv-node_modules-__SCOPE__fixture-mv-dep-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-mv-node_modules-__SCOPE__fixture-mv-dep-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-mv-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-force-included-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-imports-wildcard-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-imports-wildcard-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-imports-wildcard-runtime-internal-marker.js.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-mv-dep-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-mv-dep-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-native-binding-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-native-binding-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-native-libvips-lib-index.js.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-native-libvips-lib-libvips.node.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-native-libvips-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-native-libvips-versions.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-a-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-a-node_modules-__SCOPE__fixture-nitro-lib-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-a-node_modules-__SCOPE__fixture-nitro-lib-node_modules-__SCOPE__fixture-nested-lib-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-a-node_modules-__SCOPE__fixture-nitro-lib-node_modules-__SCOPE__fixture-nested-lib-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-a-node_modules-__SCOPE__fixture-nitro-lib-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-a-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-b-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-b-node_modules-__SCOPE__fixture-nitro-lib-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-b-node_modules-__SCOPE__fixture-nitro-lib-node_modules-__SCOPE__fixture-nested-lib-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-b-node_modules-__SCOPE__fixture-nitro-lib-node_modules-__SCOPE__fixture-nested-lib-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-b-node_modules-__SCOPE__fixture-nitro-lib-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-b-node_modules-__SCOPE__fixture-nitro-lib-subpath.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-dep-b-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-lib-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-lib-node_modules-__SCOPE__fixture-nested-lib-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-lib-node_modules-__SCOPE__fixture-nested-lib-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-lib-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-lib-subpath.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-utils-extra.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-utils-extra2.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-utils-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-utils-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-nitro-utils-README.md.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-subpath-framework-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-subpath-framework-node_modules-__SCOPE__fixture-subpath-native-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-subpath-framework-node_modules-__SCOPE__fixture-subpath-native-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-subpath-framework-node_modules-__SCOPE__fixture-subpath-native-sub.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-subpath-framework-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-transitive-a-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-transitive-a-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-transitive-b-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-node_modules-__SCOPE__fixture-transitive-b-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-package-imports.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-.gitignore.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-bundled-entry.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-node_modules-.pnpm-__SCOPE__fixture+pnpm-app__SCOPE__1.0.0-node_modules-__SCOPE__fixture-pnpm-app-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-node_modules-.pnpm-__SCOPE__fixture+pnpm-app__SCOPE__1.0.0-node_modules-__SCOPE__fixture-pnpm-app-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-node_modules-.pnpm-__SCOPE__fixture+pnpm-native__SCOPE__1.0.0-node_modules-__SCOPE__fixture-pnpm-native-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-node_modules-.pnpm-__SCOPE__fixture+pnpm-native__SCOPE__1.0.0-node_modules-__SCOPE__fixture-pnpm-native-native.node.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-node_modules-.pnpm-__SCOPE__fixture+pnpm-native__SCOPE__1.0.0-node_modules-__SCOPE__fixture-pnpm-native-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-node_modules-__SCOPE__fixture-pnpm-native-index.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-pnpm-node_modules-__SCOPE__fixture-pnpm-native-package.json.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-fixture-subpath.mjs.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-plugin.test.ts.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-pnpm.test.ts.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-trace-mock.test.ts.txt
+  87ad23645951781c4226f01ca82e43900886423b peaceai/test/fixtures/m273/nf-test-trace.test.ts.txt
+license URL: https://github.com/unjs/nf3/blob/a81bf79eace5b7df1398048ed7ba63a82597b127/LICENSE
+as written: sha256 367d3e5adb915afd7b472bcba3efce507f75e2b92b862542642597abe4e12b9c (one email address omitted so the repository's no-personal-email leak scan passes; the original text hashes to the sha256 above)
+---- license text ----
+MIT License
+
+Copyright (c) Pooya Parsa <email address omitted; see the license URL above>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+----------------------------------------------------------------------------
+
+This software includes bundled third-party dependencies. The licenses and
+copyright notices for these dependencies are available in
+`dist/THIRD-PARTY-LICENSES.md` within the distributed package.
+
+----------------------------------------------------------------------------
+
+Bundled with vercel/nft (https://github.com/vercel/nft)
+
+Copyright 2019 Vercel, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ---- end ----
