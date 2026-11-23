@@ -1,0 +1,13 @@
+{
+  "name": "m310-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "should": "13.2.3",
+    "buffer-equal": "1.0.1",
+    "isobject": "2.1.0",
+    "expected": "0.1.0",
+    "gfm-code-block-regex": "0.2.1",
+    "test-helpers": "0.1.4"
+  }
+}

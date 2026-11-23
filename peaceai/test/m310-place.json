@@ -1,0 +1,12 @@
+{
+  "ab-LICENSE.txt": "LICENSE",
+  "ab-index.js.txt": "index.js",
+  "ab-test.js.txt": "test.js",
+  "gfm-LICENSE.txt": "LICENSE",
+  "gfm-fixtures-README.md.txt": "fixtures/README.md",
+  "gfm-index.js.txt": "index.js",
+  "gfm-test.js.txt": "test.js",
+  "ov-LICENSE.txt": "LICENSE",
+  "ov-index.js.txt": "index.js",
+  "ov-test.js.txt": "test.js"
+}
