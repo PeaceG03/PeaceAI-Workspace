@@ -1,0 +1,102 @@
+{
+ "schema": "peaceai-m289-batch38:v1",
+ "note": "Pinned copies of epoberezkin/fast-deep-equal, yargs/y18n, and yargs/yargs-parser at the parent of a published bug fix, plus the test that fix changed. The fast-deep-equal, y18n, and yargs-parser licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "epoberezkin/fast-deep-equal",
+   "commit": "5a472bc5bde46f446d21138c5234cd101ce6d5e0",
+   "licenseSha256": "aa407ee69b3f646286f5162d0679256a0fe5b7fcc51f104ffb647efe167715ea",
+   "fixture": "peaceai/test/fixtures/m289/eq-index.js.txt"
+  },
+  {
+   "repo": "epoberezkin/fast-deep-equal",
+   "commit": "787ba533350fd0620e14845b35f013253cc48e44",
+   "licenseSha256": "aa407ee69b3f646286f5162d0679256a0fe5b7fcc51f104ffb647efe167715ea",
+   "fixture": "peaceai/test/fixtures/m289/eq-spec-tests.js.txt"
+  },
+  {
+   "repo": "epoberezkin/fast-deep-equal",
+   "commit": "787ba533350fd0620e14845b35f013253cc48e44",
+   "licenseSha256": "aa407ee69b3f646286f5162d0679256a0fe5b7fcc51f104ffb647efe167715ea",
+   "fixture": "peaceai/test/fixtures/m289/eq-spec-index.spec.js.txt"
+  },
+  {
+   "repo": "yargs/y18n",
+   "commit": "c66f8baa9165ded6c90fe909575f4b7643ec741e",
+   "licenseSha256": "b9cc78972af8e4170abae385b6d6f0f964d421e695561be74a769d6c526dc64a",
+   "fixture": "peaceai/test/fixtures/m289/y18n-index.js.txt"
+  },
+  {
+   "repo": "yargs/y18n",
+   "commit": "c92612347847fdaee53ba2f5dd23f51734c349bc",
+   "licenseSha256": "b9cc78972af8e4170abae385b6d6f0f964d421e695561be74a769d6c526dc64a",
+   "fixture": "peaceai/test/fixtures/m289/y18n-test-y18n-test.js.txt"
+  },
+  {
+   "repo": "yargs/y18n",
+   "commit": "c92612347847fdaee53ba2f5dd23f51734c349bc",
+   "licenseSha256": "b9cc78972af8e4170abae385b6d6f0f964d421e695561be74a769d6c526dc64a",
+   "fixture": "peaceai/test/fixtures/m289/y18n-test-locales-en.json.txt"
+  },
+  {
+   "repo": "yargs/y18n",
+   "commit": "c92612347847fdaee53ba2f5dd23f51734c349bc",
+   "licenseSha256": "b9cc78972af8e4170abae385b6d6f0f964d421e695561be74a769d6c526dc64a",
+   "fixture": "peaceai/test/fixtures/m289/y18n-test-locales-pirate.json.txt"
+  },
+  {
+   "repo": "yargs/y18n",
+   "commit": "c92612347847fdaee53ba2f5dd23f51734c349bc",
+   "licenseSha256": "b9cc78972af8e4170abae385b6d6f0f964d421e695561be74a769d6c526dc64a",
+   "fixture": "peaceai/test/fixtures/m289/y18n-test-locales-bad-locale.json.txt"
+  },
+  {
+   "repo": "yargs/yargs-parser",
+   "commit": "00bde7d60c433c188f2529a33bab187d40645f7d",
+   "licenseSha256": "59f5ade0fa9a78b563bc7fa00f0c6bb0e65e05c0e809e1a4f948b1fead534a8b",
+   "fixture": "peaceai/test/fixtures/m289/yp-index.js.txt"
+  },
+  {
+   "repo": "yargs/yargs-parser",
+   "commit": "00bde7d60c433c188f2529a33bab187d40645f7d",
+   "licenseSha256": "59f5ade0fa9a78b563bc7fa00f0c6bb0e65e05c0e809e1a4f948b1fead534a8b",
+   "fixture": "peaceai/test/fixtures/m289/yp-lib-tokenize-arg-string.js.txt"
+  },
+  {
+   "repo": "yargs/yargs-parser",
+   "commit": "d1372279d3fc574ecc67bf9b3a21d785dd33a5a4",
+   "licenseSha256": "59f5ade0fa9a78b563bc7fa00f0c6bb0e65e05c0e809e1a4f948b1fead534a8b",
+   "fixture": "peaceai/test/fixtures/m289/yp-test-tokenize-arg-string.js.txt"
+  },
+  {
+   "repo": "yargs/yargs-parser",
+   "commit": "d1372279d3fc574ecc67bf9b3a21d785dd33a5a4",
+   "licenseSha256": "59f5ade0fa9a78b563bc7fa00f0c6bb0e65e05c0e809e1a4f948b1fead534a8b",
+   "fixture": "peaceai/test/fixtures/m289/yp-test-yargs-parser.js.txt"
+  },
+  {
+   "repo": "yargs/yargs-parser",
+   "commit": "d1372279d3fc574ecc67bf9b3a21d785dd33a5a4",
+   "licenseSha256": "59f5ade0fa9a78b563bc7fa00f0c6bb0e65e05c0e809e1a4f948b1fead534a8b",
+   "fixture": "peaceai/test/fixtures/m289/yp-test-fixtures-config.json.txt"
+  },
+  {
+   "repo": "yargs/yargs-parser",
+   "commit": "d1372279d3fc574ecc67bf9b3a21d785dd33a5a4",
+   "licenseSha256": "59f5ade0fa9a78b563bc7fa00f0c6bb0e65e05c0e809e1a4f948b1fead534a8b",
+   "fixture": "peaceai/test/fixtures/m289/yp-test-fixtures-config.txt.txt"
+  },
+  {
+   "repo": "yargs/yargs-parser",
+   "commit": "d1372279d3fc574ecc67bf9b3a21d785dd33a5a4",
+   "licenseSha256": "59f5ade0fa9a78b563bc7fa00f0c6bb0e65e05c0e809e1a4f948b1fead534a8b",
+   "fixture": "peaceai/test/fixtures/m289/yp-test-fixtures-nested_config.json.txt"
+  },
+  {
+   "repo": "yargs/yargs-parser",
+   "commit": "d1372279d3fc574ecc67bf9b3a21d785dd33a5a4",
+   "licenseSha256": "59f5ade0fa9a78b563bc7fa00f0c6bb0e65e05c0e809e1a4f948b1fead534a8b",
+   "fixture": "peaceai/test/fixtures/m289/yp-test-fixtures-settings.js.txt"
+  }
+ ]
+}

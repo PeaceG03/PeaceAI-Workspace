@@ -1,0 +1,18 @@
+{
+  "eq-index.js.txt": "index.js",
+  "eq-spec-index.spec.js.txt": "spec/index.spec.js",
+  "eq-spec-tests.js.txt": "spec/tests.js",
+  "y18n-index.js.txt": "index.js",
+  "y18n-test-locales-bad-locale.json.txt": "test/locales/bad-locale.json",
+  "y18n-test-locales-en.json.txt": "test/locales/en.json",
+  "y18n-test-locales-pirate.json.txt": "test/locales/pirate.json",
+  "y18n-test-y18n-test.js.txt": "test/y18n-test.js",
+  "yp-index.js.txt": "index.js",
+  "yp-lib-tokenize-arg-string.js.txt": "lib/tokenize-arg-string.js",
+  "yp-test-fixtures-config.json.txt": "test/fixtures/config.json",
+  "yp-test-fixtures-config.txt.txt": "test/fixtures/config.txt",
+  "yp-test-fixtures-nested_config.json.txt": "test/fixtures/nested_config.json",
+  "yp-test-fixtures-settings.js.txt": "test/fixtures/settings.js",
+  "yp-test-tokenize-arg-string.js.txt": "test/tokenize-arg-string.js",
+  "yp-test-yargs-parser.js.txt": "test/yargs-parser.js"
+}
