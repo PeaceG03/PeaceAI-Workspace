@@ -1,0 +1,42 @@
+{
+ "schema": "peaceai-m293-batch42:v1",
+ "note": "Pinned copies of jonschlinkert/dashify, jonschlinkert/unixify, and jonschlinkert/array-last at the parent of a published bug fix, plus the test that fix changed. The dashify, unixify, and array-last licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/dashify",
+   "commit": "abaf7bcdec754008c972831d71ffa5c5ac91dd4f",
+   "licenseSha256": "29e79935b481e1890f2e4a8fb6080fb9de8ca604d81e9ae58a519ed0c67d352d",
+   "fixture": "peaceai/test/fixtures/m293/dash-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/dashify",
+   "commit": "4fdc731e5d2522d0268460a51b554bd6c4f31f8e",
+   "licenseSha256": "29e79935b481e1890f2e4a8fb6080fb9de8ca604d81e9ae58a519ed0c67d352d",
+   "fixture": "peaceai/test/fixtures/m293/dash-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/unixify",
+   "commit": "0bb9598eae04009fe2702e8768194f11dc0cb7ea",
+   "licenseSha256": "1389f4843de90cdcd23e6cee9f336de3160cb211e746a4b10b7c4b007b447aa4",
+   "fixture": "peaceai/test/fixtures/m293/unix-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/unixify",
+   "commit": "cdb49b4b2d116c5647397a2409cc87ce96baf70f",
+   "licenseSha256": "1389f4843de90cdcd23e6cee9f336de3160cb211e746a4b10b7c4b007b447aa4",
+   "fixture": "peaceai/test/fixtures/m293/unix-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/array-last",
+   "commit": "5a747f1f3084fb68c3650961502df0735c2a4dd9",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m293/last-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/array-last",
+   "commit": "4e9b368ea408768aa52b44660b564fa23d344781",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m293/last-test.js.txt"
+  }
+ ]
+}
