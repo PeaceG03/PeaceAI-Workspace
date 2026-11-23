@@ -1,0 +1,48 @@
+{
+ "schema": "peaceai-m299-batch48:v1",
+ "note": "Pinned copies of jonschlinkert/html-tag, jonschlinkert/pretty-time, and jonschlinkert/condense-newlines at the parent of a published bug fix, plus the test that fix changed. The html-tag, pretty-time, and condense-newlines licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/html-tag",
+   "commit": "3753abcb4b00b63d920a523f5370877c102bae24",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m299/htag-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/html-tag",
+   "commit": "7336bbb4b83d9156fb3b9d1a70b898037f0a95ba",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m299/htag-test-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/pretty-time",
+   "commit": "ac3f8d2ce2a60174330f79cceced014d9478d579",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m299/ptime-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/pretty-time",
+   "commit": "ac3f8d2ce2a60174330f79cceced014d9478d579",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m299/ptime-utils.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/pretty-time",
+   "commit": "13a0a7ccff48862deafe1e14b5b746eb378b5d6e",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m299/ptime-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/condense-newlines",
+   "commit": "7e93897853c0011f7324fad5d2af5c411b4ece9e",
+   "licenseSha256": "df727bea113257e83fe417cda84a3dae0c643445ef1610e8e1b0206b156dbf50",
+   "fixture": "peaceai/test/fixtures/m299/cnl-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/condense-newlines",
+   "commit": "8f9fb2ba8cebfec85b9f8854e14b1bbb4eeb4c0d",
+   "licenseSha256": "df727bea113257e83fe417cda84a3dae0c643445ef1610e8e1b0206b156dbf50",
+   "fixture": "peaceai/test/fixtures/m299/cnl-test.js.txt"
+  }
+ ]
+}
