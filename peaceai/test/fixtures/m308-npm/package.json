@@ -1,0 +1,8 @@
+{
+  "name": "m308-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "to-object-path": "0.3.0"
+  }
+}
