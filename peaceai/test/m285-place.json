@@ -1,0 +1,10 @@
+{
+  "ar-index.js.txt": "index.js",
+  "ar-test.js.txt": "test.js",
+  "fu-index.js.txt": "index.js",
+  "fu-lib-schemes.js.txt": "lib/schemes.js",
+  "fu-lib-utils.js.txt": "lib/utils.js",
+  "fu-test-scheme-normalization.test.js.txt": "test/scheme-normalization.test.js",
+  "ms-index.js.txt": "index.js",
+  "ms-tests.js.txt": "tests.js"
+}
