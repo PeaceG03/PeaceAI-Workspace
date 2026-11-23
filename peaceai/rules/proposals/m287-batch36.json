@@ -1,0 +1,258 @@
+{
+ "schema": "peaceai-m287-batch36:v1",
+ "note": "Pinned copies of ljharb/qs, nodeca/js-yaml, and micromatch/braces at the parent of a published bug fix, plus the test that fix changed. The qs, js-yaml, and braces licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "ljharb/qs",
+   "commit": "234d5051f5071efaa025a7ca9e4d34a56a460a1b",
+   "licenseSha256": "14d069c68fe75baa060fc5991d6e9e6ef4821a4f2092bd0861afa3be34dc379b",
+   "fixture": "peaceai/test/fixtures/m287/qs-lib-formats.js.txt"
+  },
+  {
+   "repo": "ljharb/qs",
+   "commit": "234d5051f5071efaa025a7ca9e4d34a56a460a1b",
+   "licenseSha256": "14d069c68fe75baa060fc5991d6e9e6ef4821a4f2092bd0861afa3be34dc379b",
+   "fixture": "peaceai/test/fixtures/m287/qs-lib-index.js.txt"
+  },
+  {
+   "repo": "ljharb/qs",
+   "commit": "234d5051f5071efaa025a7ca9e4d34a56a460a1b",
+   "licenseSha256": "14d069c68fe75baa060fc5991d6e9e6ef4821a4f2092bd0861afa3be34dc379b",
+   "fixture": "peaceai/test/fixtures/m287/qs-lib-parse.js.txt"
+  },
+  {
+   "repo": "ljharb/qs",
+   "commit": "234d5051f5071efaa025a7ca9e4d34a56a460a1b",
+   "licenseSha256": "14d069c68fe75baa060fc5991d6e9e6ef4821a4f2092bd0861afa3be34dc379b",
+   "fixture": "peaceai/test/fixtures/m287/qs-lib-stringify.js.txt"
+  },
+  {
+   "repo": "ljharb/qs",
+   "commit": "234d5051f5071efaa025a7ca9e4d34a56a460a1b",
+   "licenseSha256": "14d069c68fe75baa060fc5991d6e9e6ef4821a4f2092bd0861afa3be34dc379b",
+   "fixture": "peaceai/test/fixtures/m287/qs-lib-utils.js.txt"
+  },
+  {
+   "repo": "ljharb/qs",
+   "commit": "234d5051f5071efaa025a7ca9e4d34a56a460a1b",
+   "licenseSha256": "14d069c68fe75baa060fc5991d6e9e6ef4821a4f2092bd0861afa3be34dc379b",
+   "fixture": "peaceai/test/fixtures/m287/qs-test-empty-keys-cases.js.txt"
+  },
+  {
+   "repo": "ljharb/qs",
+   "commit": "05a875552a31829825c3ebf8899f280011aa06be",
+   "licenseSha256": "14d069c68fe75baa060fc5991d6e9e6ef4821a4f2092bd0861afa3be34dc379b",
+   "fixture": "peaceai/test/fixtures/m287/qs-test-parse.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-index.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-common.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-dumper.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-exception.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-loader.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-mark.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-schema.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-schema-core.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-schema-default.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-schema-failsafe.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-schema-json.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-type.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-type-binary.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-type-bool.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-type-float.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-type-int.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-type-map.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-type-merge.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-type-null.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-type-omap.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-type-pairs.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-type-seq.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-type-set.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-type-str.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "a00312147f287a1703bf6b7e104d27c8a0caacee",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-lib-type-timestamp.js.txt"
+  },
+  {
+   "repo": "nodeca/js-yaml",
+   "commit": "dc44dd37ed34c57a1d04e5b8d161fc09031c9e30",
+   "licenseSha256": "bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a",
+   "fixture": "peaceai/test/fixtures/m287/yml-test-issues-0027.js.txt"
+  },
+  {
+   "repo": "micromatch/braces",
+   "commit": "977c75a38a1045ee95cf3e6b433cea613cbec4f2",
+   "licenseSha256": "d99bf3271ffd7561b89e2c51b5da6ca3a3669e031efc6543f477541520a1566b",
+   "fixture": "peaceai/test/fixtures/m287/br-index.js.txt"
+  },
+  {
+   "repo": "micromatch/braces",
+   "commit": "977c75a38a1045ee95cf3e6b433cea613cbec4f2",
+   "licenseSha256": "d99bf3271ffd7561b89e2c51b5da6ca3a3669e031efc6543f477541520a1566b",
+   "fixture": "peaceai/test/fixtures/m287/br-lib-compile.js.txt"
+  },
+  {
+   "repo": "micromatch/braces",
+   "commit": "977c75a38a1045ee95cf3e6b433cea613cbec4f2",
+   "licenseSha256": "d99bf3271ffd7561b89e2c51b5da6ca3a3669e031efc6543f477541520a1566b",
+   "fixture": "peaceai/test/fixtures/m287/br-lib-constants.js.txt"
+  },
+  {
+   "repo": "micromatch/braces",
+   "commit": "977c75a38a1045ee95cf3e6b433cea613cbec4f2",
+   "licenseSha256": "d99bf3271ffd7561b89e2c51b5da6ca3a3669e031efc6543f477541520a1566b",
+   "fixture": "peaceai/test/fixtures/m287/br-lib-expand.js.txt"
+  },
+  {
+   "repo": "micromatch/braces",
+   "commit": "977c75a38a1045ee95cf3e6b433cea613cbec4f2",
+   "licenseSha256": "d99bf3271ffd7561b89e2c51b5da6ca3a3669e031efc6543f477541520a1566b",
+   "fixture": "peaceai/test/fixtures/m287/br-lib-parse.js.txt"
+  },
+  {
+   "repo": "micromatch/braces",
+   "commit": "977c75a38a1045ee95cf3e6b433cea613cbec4f2",
+   "licenseSha256": "d99bf3271ffd7561b89e2c51b5da6ca3a3669e031efc6543f477541520a1566b",
+   "fixture": "peaceai/test/fixtures/m287/br-lib-stringify.js.txt"
+  },
+  {
+   "repo": "micromatch/braces",
+   "commit": "977c75a38a1045ee95cf3e6b433cea613cbec4f2",
+   "licenseSha256": "d99bf3271ffd7561b89e2c51b5da6ca3a3669e031efc6543f477541520a1566b",
+   "fixture": "peaceai/test/fixtures/m287/br-lib-utils.js.txt"
+  },
+  {
+   "repo": "micromatch/braces",
+   "commit": "ac60bdb94870afd675baca7ec71c903cc708687e",
+   "licenseSha256": "d99bf3271ffd7561b89e2c51b5da6ca3a3669e031efc6543f477541520a1566b",
+   "fixture": "peaceai/test/fixtures/m287/br-test-bash-spec.js.txt"
+  },
+  {
+   "repo": "micromatch/braces",
+   "commit": "ac60bdb94870afd675baca7ec71c903cc708687e",
+   "licenseSha256": "d99bf3271ffd7561b89e2c51b5da6ca3a3669e031efc6543f477541520a1566b",
+   "fixture": "peaceai/test/fixtures/m287/br-test-mocha-initialization.js.txt"
+  }
+ ]
+}
