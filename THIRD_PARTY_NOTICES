@@ -14410,6 +14410,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 repo: nodeca/js-yaml
 license: MIT (LICENSE, sha256 of trimmed text bd470a9114ffb0c125553667203e65dce3ed50a339a3f5c43de24e225c040b7a)
 fixtures (commit path):
+  cb62b2dbbaa0b3e7379d83a5d69d8d52d21b6efb peaceai/test/fixtures/m269/jy-dist-js-yaml.mjs.txt
   a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-index.js.txt
   a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-common.js.txt
   a00312147f287a1703bf6b7e104d27c8a0caacee peaceai/test/fixtures/m287/yml-lib-dumper.js.txt
