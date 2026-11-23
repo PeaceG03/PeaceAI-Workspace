@@ -1,0 +1,9 @@
+{
+  "name": "m317-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "isobject": "3.0.1",
+    "split-string": "5.0.3"
+  }
+}

@@ -1,0 +1,72 @@
+{
+ "schema": "peaceai-m317-batch66:v1",
+ "note": "Pinned copies of jonschlinkert/months, jonschlinkert/has-own-deep, and jonschlinkert/copy-descriptor at the parent of a published bug fix, plus the test that fix changed. The months, has-own-deep, and copy-descriptor licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/months",
+   "commit": "120482e03e4d83d16a7381b65611a08bd7e3a50a",
+   "licenseSha256": "0ead7e8cd8b0bc66a981ee69acaf1297ffa838cfce1b156a039bb24f997c0a27",
+   "fixture": "peaceai/test/fixtures/m317/mo-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/months",
+   "commit": "52243c395f388193685d0cbf922a84ea6f49ce66",
+   "licenseSha256": "0ead7e8cd8b0bc66a981ee69acaf1297ffa838cfce1b156a039bb24f997c0a27",
+   "fixture": "peaceai/test/fixtures/m317/mo-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/months",
+   "commit": "120482e03e4d83d16a7381b65611a08bd7e3a50a",
+   "licenseSha256": "0ead7e8cd8b0bc66a981ee69acaf1297ffa838cfce1b156a039bb24f997c0a27",
+   "fixture": "peaceai/test/fixtures/m317/mo-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/months",
+   "commit": "120482e03e4d83d16a7381b65611a08bd7e3a50a",
+   "licenseSha256": "0ead7e8cd8b0bc66a981ee69acaf1297ffa838cfce1b156a039bb24f997c0a27",
+   "fixture": "peaceai/test/fixtures/m317/mo-README.md.txt"
+  },
+  {
+   "repo": "jonschlinkert/has-own-deep",
+   "commit": "d598e8663d215f892027bbc3b327c8af07ae5b04",
+   "licenseSha256": "5308428966b96c947750ac2ba4262417dedf7d2f8cc78ba928255807aa985f55",
+   "fixture": "peaceai/test/fixtures/m317/hd-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/has-own-deep",
+   "commit": "d1f26feb8bf0b79dbd43b84bd5f8049c0a542211",
+   "licenseSha256": "5308428966b96c947750ac2ba4262417dedf7d2f8cc78ba928255807aa985f55",
+   "fixture": "peaceai/test/fixtures/m317/hd-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/has-own-deep",
+   "commit": "d598e8663d215f892027bbc3b327c8af07ae5b04",
+   "licenseSha256": "5308428966b96c947750ac2ba4262417dedf7d2f8cc78ba928255807aa985f55",
+   "fixture": "peaceai/test/fixtures/m317/hd-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/has-own-deep",
+   "commit": "d598e8663d215f892027bbc3b327c8af07ae5b04",
+   "licenseSha256": "5308428966b96c947750ac2ba4262417dedf7d2f8cc78ba928255807aa985f55",
+   "fixture": "peaceai/test/fixtures/m317/hd-README.md.txt"
+  },
+  {
+   "repo": "jonschlinkert/copy-descriptor",
+   "commit": "92a099369048b431bfd8d206c2fe11d841482ecd",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m317/cd-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/copy-descriptor",
+   "commit": "639bd8eca9034602a44fa1dbe104d49191768c2d",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m317/cd-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/copy-descriptor",
+   "commit": "92a099369048b431bfd8d206c2fe11d841482ecd",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m317/cd-LICENSE.txt"
+  }
+ ]
+}
