@@ -1,0 +1,10 @@
+{
+  "lv-index.js.txt": "index.js",
+  "lv-test.js.txt": "test.js",
+  "pn-fixtures-foo-a.txt.txt": "fixtures/foo/a.txt",
+  "pn-index.js.txt": "index.js",
+  "pn-package.json.txt": "package.json",
+  "pn-test.js.txt": "test.js",
+  "wj-index.js.txt": "index.js",
+  "wj-test.js.txt": "test.js"
+}

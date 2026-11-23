@@ -1,0 +1,12 @@
+{
+  "name": "m302-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "longest": "1.0.1",
+    "should": "13.2.3",
+    "write": "0.3.3",
+    "delete": "0.3.2",
+    "git-repo-name": "1.0.1"
+  }
+}
