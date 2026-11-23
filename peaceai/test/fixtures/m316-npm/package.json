@@ -1,0 +1,15 @@
+{
+  "name": "m316-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "should": "11.2.1",
+    "isobject": "2.1.0",
+    "longest-value": "0.2.0",
+    "pad-right": "0.2.2",
+    "array-slice": "0.2.3",
+    "for-own": "0.1.5",
+    "array-each": "1.0.1",
+    "fill-range": "0.2.0"
+  }
+}
