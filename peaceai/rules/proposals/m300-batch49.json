@@ -1,0 +1,42 @@
+{
+ "schema": "peaceai-m300-batch49:v1",
+ "note": "Pinned copies of jonschlinkert/is-equal-shallow, jonschlinkert/wordcount, and jonschlinkert/to-object-path at the parent of a published bug fix, plus the test that fix changed. The is-equal-shallow, wordcount, and to-object-path licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/is-equal-shallow",
+   "commit": "74b7df801cfe1e02521715aa4ec1f91c5fca3206",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m300/ies-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-equal-shallow",
+   "commit": "e3d98842712f2f8d92789d405f8dbf0dcc27de5a",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m300/ies-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/wordcount",
+   "commit": "7cf0575c372a03b52deb87a091d205fe67de9962",
+   "licenseSha256": "9afbe33b42dfe0f180f89f2f967d9d79e5e4fd25c9ee1bf15981fd5e0583d556",
+   "fixture": "peaceai/test/fixtures/m300/wc-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/wordcount",
+   "commit": "d80e2c36c9be891b6c6370201f0731bf5dd9b51e",
+   "licenseSha256": "9afbe33b42dfe0f180f89f2f967d9d79e5e4fd25c9ee1bf15981fd5e0583d556",
+   "fixture": "peaceai/test/fixtures/m300/wc-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/to-object-path",
+   "commit": "bd9c164a92088c74b7638f3135d577f989e23cf7",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m300/top-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/to-object-path",
+   "commit": "3c5848586ff6f43cc48db10f0f640201e29bda41",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m300/top-test.js.txt"
+  }
+ ]
+}

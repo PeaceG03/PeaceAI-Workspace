@@ -1,0 +1,11 @@
+{
+  "name": "m300-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "should": "4.6.0",
+    "is-primitive": "1.0.0",
+    "is-arguments": "1.1.1",
+    "arr-flatten": "1.1.0"
+  }
+}
