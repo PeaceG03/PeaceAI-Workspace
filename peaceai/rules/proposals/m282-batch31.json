@@ -1,0 +1,42 @@
+{
+ "schema": "peaceai-m282-batch31:v1",
+ "note": "Pinned copies of quansync-dev/quansync, mesqueeb/copy-anything, and antfu/birpc at the parent of a published bug fix, plus the test that fix changed. The quansync, copy-anything, and birpc licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "quansync-dev/quansync",
+   "commit": "7efea90f0c0c4b98c7d238909dfea981744d2dad",
+   "licenseSha256": "fd537a3d217a2939ccf0702e2c67c997bf1664250ff61b38f3c5f6530b1da9d7",
+   "fixture": "peaceai/test/fixtures/m282/qs-src-index.ts.txt"
+  },
+  {
+   "repo": "quansync-dev/quansync",
+   "commit": "c96154e6b5d6c25bfddc5528489dbb34e2efed95",
+   "licenseSha256": "fd537a3d217a2939ccf0702e2c67c997bf1664250ff61b38f3c5f6530b1da9d7",
+   "fixture": "peaceai/test/fixtures/m282/qs-test-index.test.ts.txt"
+  },
+  {
+   "repo": "mesqueeb/copy-anything",
+   "commit": "e5276772768819e749463610aac435b9eff4dd71",
+   "licenseSha256": "c1c7c66a0baef8fd308e2665face6a688acf492654c0a636f97381dd905e2919",
+   "fixture": "peaceai/test/fixtures/m282/ca-src-index.ts.txt"
+  },
+  {
+   "repo": "mesqueeb/copy-anything",
+   "commit": "32fd83f8468105a5a6346553c8a1e0347250eee2",
+   "licenseSha256": "c1c7c66a0baef8fd308e2665face6a688acf492654c0a636f97381dd905e2919",
+   "fixture": "peaceai/test/fixtures/m282/ca-test-index.test.ts.txt"
+  },
+  {
+   "repo": "antfu/birpc",
+   "commit": "3a78f95f7e7f04b3d7b111540ff4ba41ea1a010f",
+   "licenseSha256": "665f7d320f283fea91448fa8fd17e17f129b7aedc9cecdc45d0b7bb0eb9b28cc",
+   "fixture": "peaceai/test/fixtures/m282/bp-src-index.ts.txt"
+  },
+  {
+   "repo": "antfu/birpc",
+   "commit": "40ee074dad5a29743173404d58dbb0cd2184ced0",
+   "licenseSha256": "665f7d320f283fea91448fa8fd17e17f129b7aedc9cecdc45d0b7bb0eb9b28cc",
+   "fixture": "peaceai/test/fixtures/m282/bp-test-close.test.ts.txt"
+  }
+ ]
+}

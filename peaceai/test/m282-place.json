@@ -1,0 +1,8 @@
+{
+  "bp-src-index.ts.txt": "src/index.ts",
+  "bp-test-close.test.ts.txt": "test/close.test.ts",
+  "ca-src-index.ts.txt": "src/index.ts",
+  "ca-test-index.test.ts.txt": "test/index.test.ts",
+  "qs-src-index.ts.txt": "src/index.ts",
+  "qs-test-index.test.ts.txt": "test/index.test.ts"
+}

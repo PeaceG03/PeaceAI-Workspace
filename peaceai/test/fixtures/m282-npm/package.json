@@ -1,0 +1,10 @@
+{
+  "name": "m282-npm",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "vitest": "3.2.4",
+    "vite": "6.4.1",
+    "is-what": "5.5.0"
+  }
+}
