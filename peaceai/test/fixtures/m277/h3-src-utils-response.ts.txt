@@ -1,0 +1,367 @@
+import type { H3Event } from "../event.ts";
+import { HTTPResponse } from "../response.ts";
+import {
+  serializeIterableValue,
+  coerceIterable,
+  type IterationSource,
+  type IteratorSerializer,
+} from "./internal/iterable.ts";
+import { onDispose as _onDispose, type DisposeCallback } from "./internal/dispose.ts";
+
+export type { DisposeCallback } from "./internal/dispose.ts";
+
+/**
+ * Register a callback that runs once the event is fully over: the response body finished streaming, the client disconnected, or the body errored — on every runtime, not just Node.js.
+ *
+ * The callback receives `undefined` on normal completion, or the cancel/abort reason otherwise. Callbacks run in registration order after the global `onResponse` hook; sync throws and async rejections are absorbed (reported via `console.error` unless the app is configured with `silent`), and pending async callbacks are passed to `waitUntil`.
+ *
+ * Registering after disposal invokes the callback immediately. Registration is only guaranteed to observe the end of the event when made during request handling (handler, middleware, or `onResponse`).
+ *
+ * Note: this signals _"h3 is done with this event"_, not _"the client received the response"_ — for non-streaming bodies on non-Node.js runtimes it fires when the response is handed to the runtime. To react to a client disconnect _while still producing_ the response (for example to abort an upstream fetch), use `event.req.signal` instead.
+ *
+ * @example
+ * app.get("/sse", (event) => {
+ *   const interval = setInterval(() => {}, 1000);
+ *   onDispose(event, () => clearInterval(interval));
+ *   // ... return a streaming response
+ * });
+ */
+export function onDispose(event: H3Event, cb: DisposeCallback): void {
+  _onDispose(event, cb);
+}
+
+/**
+ * Respond with an empty payload.<br>
+ *
+ * @example
+ * app.get("/", () => noContent());
+ *
+ * @param status status code to be send. By default, it is `204 No Content`.
+ */
+export function noContent(status: number = 204): HTTPResponse {
+  return new HTTPResponse(null, {
+    status,
+    statusText: STATUS_TEXT[status],
+  });
+}
+
+/**
+ * Send a redirect response to the client.
+ *
+ * It adds the `location` header to the response and sets the status code to 302 by default.
+ *
+ * In the body, it sends a simple HTML page with a meta refresh tag to redirect the client in case the headers are ignored.
+ *
+ * **Security:** If `location` derives from user input (query params, form fields,
+ * headers, etc.), validate it against an allow-list of permitted destinations
+ * before redirecting. Passing user-controlled values through unchecked creates an
+ * open redirect vulnerability. Prefer `redirectBack` for "return to previous page"
+ * flows, which only honors same-origin referers.
+ *
+ * @example
+ * app.get("/", () => {
+ *   return redirect("https://example.com");
+ * });
+ *
+ * @example
+ * app.get("/", () => {
+ *   return redirect("https://example.com", 301); // Permanent redirect
+ * });
+ */
+export function redirect(
+  location: string,
+  status: number = 302,
+  statusText?: string,
+): HTTPResponse {
+  const body = /* html */ `<html><head><meta http-equiv="refresh" content="0; url=${escapeHtml(location)}" /></head></html>`;
+  return new HTTPResponse(body, {
+    status,
+    statusText: statusText ?? STATUS_TEXT[status],
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      location,
+    },
+  });
+}
+
+/**
+ * Redirect the client back to the previous page using the `referer` header.
+ *
+ * If the `referer` header is missing or is a different origin, it falls back to the provided URL (default `"/"`).
+ *
+ * By default, only the **pathname** of the referer is used (query string and hash are stripped)
+ * to prevent spoofed referers from carrying unintended parameters. Set `allowQuery: true` to preserve the query string.
+ *
+ * **Security:** The `fallback` value MUST be a trusted, hardcoded path — never use user input.
+ * Passing user-controlled values (e.g., query params) as `fallback` creates an open redirect vulnerability.
+ *
+ * @example
+ * app.post("/submit", (event) => {
+ *   // process form...
+ *   return redirectBack(event, { fallback: "/form" });
+ * });
+ */
+export function redirectBack(
+  event: H3Event,
+  opts: {
+    /** Fallback URL when referer is missing or cross-origin (default: `"/"`). **Must be a trusted, hardcoded path — never user input.** */
+    fallback?: string;
+    /** HTTP status code for the redirect (default: `302`). */
+    status?: number;
+    /** Preserve the query string from the referer URL (default: `false`). */
+    allowQuery?: boolean;
+  } = {},
+): HTTPResponse {
+  const referer = event.req.headers.get("referer");
+  let location = opts.fallback ?? "/";
+  if (referer && URL.canParse(referer)) {
+    const refererURL = new URL(referer);
+    if (refererURL.origin === event.url.origin) {
+      let pathname = refererURL.pathname;
+      if (pathname.startsWith("//")) {
+        pathname = "/" + pathname.replace(/^\/+/, "");
+      }
+      location = pathname + (opts.allowQuery ? refererURL.search : "");
+    }
+  }
+  return redirect(location, opts.status);
+}
+
+/**
+ * Write `HTTP/1.1 103 Early Hints` to the client.
+ *
+ * In runtimes that don't support early hints natively, this function
+ * falls back to setting response headers which can be used by CDN.
+ */
+export function writeEarlyHints(
+  event: H3Event,
+  hints: Record<string, string | string[]>,
+): void | Promise<void> {
+  // HTTP headers are case-insensitive, so callers may pass `Link` (or both
+  // `link` and `Link`). Collect every case-variant of `link` into a single
+  // lowercase `link` value and drop empty/falsy entries, so both code paths
+  // below agree on what to emit.
+  const linkValues: string[] = [];
+  for (const [name, value] of Object.entries(hints)) {
+    if (name.toLowerCase() === "link") {
+      for (const v of Array.isArray(value) ? value : [value]) {
+        if (v) {
+          linkValues.push(v);
+        }
+      }
+    }
+  }
+
+  // Use native early hints if available (Node.js)
+  if (event.runtime?.node?.res?.writeEarlyHints) {
+    if (linkValues.length === 0) {
+      // Node.js writeEarlyHints only reads `hints.link` and returns *without*
+      // calling the callback when the resolved link value is missing or empty,
+      // leaving the promise pending forever. Resolve immediately instead.
+      return Promise.resolve();
+    }
+    // Pass through non-link hints alongside the normalized `link` value.
+    const normalizedHints: Record<string, string | string[]> = { link: linkValues };
+    for (const [name, value] of Object.entries(hints)) {
+      if (name.toLowerCase() !== "link") {
+        normalizedHints[name] = value;
+      }
+    }
+    return new Promise((resolve) => {
+      event.runtime?.node?.res?.writeEarlyHints(normalizedHints, () => resolve());
+    });
+  }
+
+  // Fallback: Set Link headers for CDN support (only Link headers to avoid leaking sensitive headers)
+  for (const v of linkValues) {
+    event.res.headers.append("link", v);
+  }
+}
+
+/**
+ * Iterate a source of chunks and send back each chunk in order.
+ * Supports mixing async work together with emitting chunks.
+ *
+ * Each chunk must be a string or a buffer.
+ *
+ * For generator (yielding) functions, the returned value is treated the same as yielded values.
+ *
+ * The first chunk is awaited before the response is created, so status and headers staged while
+ * producing it (`event.res.status`, `event.res.headers`) are still applied. Everything set after
+ * the first chunk is ignored — headers are already on the wire by then. (Returning a raw
+ * `ReadableStream` gives no such window: its response is created before the stream is read.)
+ *
+ * @param iterable - Iterator that produces chunks of the response.
+ * @param serializer - Function that converts values from the iterable into stream-compatible values.
+ * @template Value - Test
+ *
+ * @example
+ * return iterable(async function* work() {
+ *   // Open document body
+ *   yield "<!DOCTYPE html>\n<html><body><h1>Executing...</h1><ol>\n";
+ *   // Do work ...
+ *   for (let i = 0; i < 1000; i++) {
+ *     await delay(1000);
+ *     // Report progress
+ *     yield `<li>Completed job #`;
+ *     yield i;
+ *     yield `</li>\n`;
+ *   }
+ *   // Close out the report
+ *   return `</ol></body></html>`;
+ * });
+ * async function delay(ms) {
+ *   return new Promise((resolve) => setTimeout(resolve, ms));
+ * }
+ */
+export async function iterable<Value = unknown, Return = unknown>(
+  iterable: IterationSource<Value, Return>,
+  options?: {
+    serializer: IteratorSerializer<Value | Return>;
+  },
+): Promise<HTTPResponse> {
+  const serializer = options?.serializer ?? serializeIterableValue;
+  const iterator = coerceIterable(iterable);
+  // Pull the first chunk up-front: the response is built as soon as the handler returns, so this
+  // is the only point where the producer can still influence status and headers.
+  let first: IteratorResult<Value | Return> | undefined = await iterator.next();
+  return new HTTPResponse(
+    new ReadableStream({
+      async pull(controller) {
+        const { value, done } = first ?? (await iterator.next());
+        first = undefined;
+        if (value !== undefined) {
+          const chunk = serializer(value);
+          if (chunk !== undefined) {
+            controller.enqueue(chunk);
+          }
+        }
+        if (done) {
+          controller.close();
+        }
+      },
+      cancel() {
+        iterator.return?.();
+      },
+    }),
+  );
+}
+
+/**
+ * Respond with HTML content.
+ *
+ * When used as a **tagged template**, interpolated values are automatically
+ * HTML-escaped (`& < > " '`) to help prevent XSS. Wrap a value with {@link raw}
+ * to opt out of escaping for trusted markup.
+ *
+ * When called with a **plain string**, the whole string is HTML-escaped and
+ * rendered as text. If escaping changes the input, a warning is logged — use
+ * the tagged template for dynamic values, or pass trusted markup with
+ * {@link raw}: `html(raw(markup))`.
+ *
+ * Escaping protects values in element content and inside quoted attribute
+ * values only. It cannot make unquoted attributes, URL attributes (e.g.
+ * `href` with a `javascript:` URL) or `<script>`/`<style>` contents safe —
+ * validate such values separately.
+ *
+ * @example
+ * // Tagged template (interpolations are escaped):
+ * app.get("/", () => html`<h1>Hello, ${name}!</h1>`);
+ *
+ * @example
+ * // Trusted markup (used as-is, not escaped):
+ * app.get("/", () => html(raw("<h1>Hello, World!</h1>")));
+ *
+ * @example
+ * // Opt out of escaping for a trusted interpolation:
+ * app.get("/", () => html`<div>${raw(trustedMarkup)}</div>`);
+ */
+export function html(strings: TemplateStringsArray, ...values: unknown[]): HTTPResponse;
+export function html(markup: string | RawHTML): HTTPResponse;
+export function html(
+  first: TemplateStringsArray | string | RawHTML,
+  ...values: unknown[]
+): HTTPResponse {
+  let body: string;
+  if (typeof first === "string") {
+    body = escapeHtml(first);
+    if (body !== first && (html as { _isWarned?: boolean })._isWarned !== true) {
+      (html as { _isWarned?: boolean })._isWarned = true;
+      console.warn(
+        "[h3] `html()` received a plain string containing HTML characters and escaped it. Use the html`` tagged template for dynamic values, or wrap trusted markup with `raw()`.",
+      );
+    }
+  } else if (isRawHTML(first)) {
+    body = first.value;
+  } else {
+    body = first.reduce((out, str, i) => {
+      const value = values[i];
+      const rendered =
+        value == null ? "" : isRawHTML(value) ? value.value : escapeHtml(String(value));
+      return out + str + rendered;
+    }, "");
+  }
+  return new HTTPResponse(body, {
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
+}
+
+/**
+ * Mark a string as trusted, pre-escaped HTML so it is used by the
+ * {@link html} util **without** being escaped.
+ *
+ * Only use this for markup you fully control — passing user input to `raw`
+ * re-introduces XSS risk.
+ *
+ * @example
+ * // `heading` is trusted markup; `userName` is escaped automatically.
+ * app.get("/", () => html`<div>${raw(heading)}<span>${userName}</span></div>`);
+ *
+ * @example
+ * // Send a trusted markup string as-is:
+ * app.get("/", () => html(raw("<h1>Hello, World!</h1>")));
+ */
+export function raw(value: string): RawHTML {
+  return { [kRawHTML]: true, value } as RawHTML;
+}
+
+/** Trusted raw HTML wrapper produced by {@link raw}. */
+export interface RawHTML {
+  readonly value: string;
+}
+
+// Module-private, unregistered symbol so the trust marker cannot be forged from
+// outside this module (e.g. via `Symbol.for("h3.rawHTML")` or a second h3 realm).
+const kRawHTML: unique symbol = /* @__PURE__ */ Symbol("h3.rawHTML");
+
+function isRawHTML(value: unknown): value is RawHTML {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { [kRawHTML]?: unknown })[kRawHTML] === true
+  );
+}
+
+// RFC 9110 reason phrases for the statuses `noContent` and `redirect` are meant for.
+// Any other status gets no phrase rather than one that belongs to a different code.
+const STATUS_TEXT: Record<number, string> = {
+  204: "No Content",
+  301: "Moved Permanently",
+  302: "Found",
+  303: "See Other",
+  307: "Temporary Redirect",
+  308: "Permanent Redirect",
+};
+
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  '"': "&quot;",
+  "'": "&#39;",
+  "<": "&lt;",
+  ">": "&gt;",
+};
+
+/** HTML-escape the special characters `& < > " '`. */
+function escapeHtml(str: string): string {
+  return str.replace(/[&"'<>]/g, (c) => HTML_ESCAPES[c]!);
+}

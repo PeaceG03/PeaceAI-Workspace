@@ -1,0 +1,96 @@
+import type { ServerRequest } from "srvx";
+import type { RequestHeaderMap, ResponseHeaderMap, TypedRequest, TypedResponse } from "fetchdts";
+import type { H3Event, HTTPEvent } from "../event.ts";
+import type { MaybePromise } from "./_utils.ts";
+import type { H3RouteMeta } from "./h3.ts";
+import type { H3Core } from "../h3.ts";
+
+export type HTTPHandler<_RequestT extends EventHandlerRequest = any> =
+  | EventHandler<_RequestT>
+  | FetchableObject
+  | H3Core;
+
+/** Collapses the `any` request type of a bare {@link HTTPHandler} to the default request shape. */
+export type ResolvedRequest<_RequestT extends EventHandlerRequest> = 0 extends 1 & _RequestT
+  ? EventHandlerRequest
+  : _RequestT;
+
+//  --- event handler ---
+
+export interface EventHandler<
+  _RequestT extends EventHandlerRequest = EventHandlerRequest,
+  _ResponseT extends EventHandlerResponse = EventHandlerResponse,
+> {
+  (event: H3Event<_RequestT>): _ResponseT;
+  meta?: H3RouteMeta;
+}
+
+export interface EventHandlerObject<
+  _RequestT extends EventHandlerRequest = EventHandlerRequest,
+  _ResponseT extends EventHandlerResponse = EventHandlerResponse,
+> {
+  handler?: EventHandler<_RequestT, _ResponseT>;
+  fetch?: FetchHandler;
+  middleware?: Middleware[];
+  meta?: H3RouteMeta;
+}
+
+export interface EventHandlerRequest {
+  body?: unknown;
+  headers?: unknown;
+  query?: Partial<Record<string, string | string[]>>;
+  routerParams?: Record<string, string>;
+}
+
+export type EventHandlerResponse<T = unknown> = T | Promise<T>;
+
+export type TypedServerRequest<_RequestT extends EventHandlerRequest = EventHandlerRequest> = Omit<
+  ServerRequest,
+  "json" | "headers" | "clone"
+> &
+  Pick<
+    TypedRequest<NonNullable<_RequestT["body"]>, Record<keyof RequestHeaderMap, string>>,
+    "json" | "headers" | "clone"
+  >;
+
+// --- fetchable ---
+
+export type FetchHandler = (req: ServerRequest) => Response | Promise<Response>;
+export type FetchableObject = { fetch: FetchHandler };
+
+export type EventHandlerWithFetch<
+  _RequestT extends EventHandlerRequest = EventHandlerRequest,
+  _ResponseT extends EventHandlerResponse = EventHandlerResponse,
+> = EventHandler<_RequestT, _ResponseT> & {
+  fetch: EventHandlerFetch<TypedResponse<_ResponseT, ResponseHeaderMap>>;
+};
+
+export type EventHandlerFetch<T extends Response | TypedResponse = Response> = (
+  req: ServerRequest | URL | string,
+) => Promise<T>;
+
+//  --- middleware ---
+
+export type Middleware = (
+  event: H3Event,
+  next: () => MaybePromise<unknown | undefined>,
+) => MaybePromise<unknown | undefined>;
+
+// --- lazy event handler ---
+
+export type LazyEventHandler = () =>
+  | EventHandler
+  | FetchableObject
+  | Promise<EventHandler | FetchableObject>;
+
+export interface DynamicEventHandler extends EventHandlerWithFetch {
+  set: (handler: EventHandler | FetchableObject) => void;
+}
+
+// --- utils ---
+
+export type InferEventInput<
+  Key extends keyof EventHandlerRequest,
+  Event extends HTTPEvent,
+  T,
+> = void extends T ? (Event extends HTTPEvent<infer E> ? E[Key] : never) : T;
