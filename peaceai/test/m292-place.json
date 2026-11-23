@@ -1,0 +1,8 @@
+{
+  "omit-index.js.txt": "index.js",
+  "omit-test.js.txt": "test.js",
+  "pad-index.js.txt": "index.js",
+  "pad-test.js.txt": "test.js",
+  "pc-index.js.txt": "index.js",
+  "pc-test.js.txt": "test.js"
+}
