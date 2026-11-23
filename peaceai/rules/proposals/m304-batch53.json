@@ -1,0 +1,66 @@
+{
+ "schema": "peaceai-m304-batch53:v1",
+ "note": "Pinned copies of jonschlinkert/is-directory, jonschlinkert/lazy-cache, and jonschlinkert/regex-not at the parent of a published bug fix, plus the test that fix changed. The is-directory, lazy-cache, and regex-not licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/is-directory",
+   "commit": "8fcb68ac98f26b4c8c3751937a765c78fce53852",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m304/id-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-directory",
+   "commit": "a34146c4dd285680641da47a4fcdfac807dc101a",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m304/id-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-directory",
+   "commit": "a34146c4dd285680641da47a4fcdfac807dc101a",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m304/id-fixtures-foo.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-directory",
+   "commit": "a34146c4dd285680641da47a4fcdfac807dc101a",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m304/id-.eslintrc.json.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-directory",
+   "commit": "a34146c4dd285680641da47a4fcdfac807dc101a",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m304/id-README.md.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-directory",
+   "commit": "8fcb68ac98f26b4c8c3751937a765c78fce53852",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m304/id-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/lazy-cache",
+   "commit": "7b91f8119615fdc466e39b2301b808045730bc12",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m304/lc-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/lazy-cache",
+   "commit": "8491680893b442ce36b33d0dc86a6a773d2fd6a6",
+   "licenseSha256": "0ca0345537c2bd5fc1e46ce27747c5c16e454044bb61f51909d8d907f476489e",
+   "fixture": "peaceai/test/fixtures/m304/lc-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/regex-not",
+   "commit": "bf8d9175ecc90ecd7b1e3956e08cd0edee55a91b",
+   "licenseSha256": "eb416caa27429b5d99e520be36ac7a2abafd3f8620c801f2445c8b56c687f943",
+   "fixture": "peaceai/test/fixtures/m304/rn-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/regex-not",
+   "commit": "4225c06dde12c6bee6ab9f75caafa27c932313ba",
+   "licenseSha256": "eb416caa27429b5d99e520be36ac7a2abafd3f8620c801f2445c8b56c687f943",
+   "fixture": "peaceai/test/fixtures/m304/rn-test.js.txt"
+  }
+ ]
+}
