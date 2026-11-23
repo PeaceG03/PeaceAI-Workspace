@@ -1,0 +1,8 @@
+{
+  "eg-index.js.txt": "index.js",
+  "eg-test.js.txt": "test.js",
+  "rel-index.js.txt": "index.js",
+  "rel-test.js.txt": "test.js",
+  "trr-index.js.txt": "index.js",
+  "trr-test-test.js.txt": "test/test.js"
+}

@@ -1,0 +1,11 @@
+{
+  "name": "m291-npm",
+  "private": true,
+  "devDependencies": {
+    "fill-range": "3.1.1",
+    "is-number": "3.0.0",
+    "mocha": "10.8.2",
+    "repeat-string": "1.6.1",
+    "should": "13.2.3"
+  }
+}
