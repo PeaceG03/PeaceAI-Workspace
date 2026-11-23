@@ -1,0 +1,42 @@
+{
+ "schema": "peaceai-m297-batch46:v1",
+ "note": "Pinned copies of jonschlinkert/parse-filepath, jonschlinkert/is-self-closing, and jonschlinkert/exponential-moving-average at the parent of a published bug fix, plus the test that fix changed (exponential-moving-average's tests landed in the immediately following published commit). The parse-filepath, is-self-closing, and exponential-moving-average licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/parse-filepath",
+   "commit": "c3aec0d2720771d564fe3223bc805de89c77f0be",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m297/pfp-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-filepath",
+   "commit": "cc564b3f0eba2aed399c1e5519d3930952d997fd",
+   "licenseSha256": "a07cccb89e32b80826cca9b03a81725bdf035db8b9dc6a763f4db470fe07b210",
+   "fixture": "peaceai/test/fixtures/m297/pfp-test-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-self-closing",
+   "commit": "204f82cd7dd587d7fa52c9eb0642bc731da8ea40",
+   "licenseSha256": "59e447340d4b41f56c2317c4614b323a7210409782f9bb9a8bb0be2d5d12c0a2",
+   "fixture": "peaceai/test/fixtures/m297/isc-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/is-self-closing",
+   "commit": "f068f45a786d3b2c04c01eb9a5e16b9d902bd82e",
+   "licenseSha256": "59e447340d4b41f56c2317c4614b323a7210409782f9bb9a8bb0be2d5d12c0a2",
+   "fixture": "peaceai/test/fixtures/m297/isc-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/exponential-moving-average",
+   "commit": "d8c2ae5b74cebf17ed02b3b3d66bd0095525f5e0",
+   "licenseSha256": "95931aba5345de187cf4b63cf567b35c50ef9150139e2996c2722708e16467b0",
+   "fixture": "peaceai/test/fixtures/m297/ema-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/exponential-moving-average",
+   "commit": "6317d9649ce9283820fcdfe2b63a7fd8813334ed",
+   "licenseSha256": "95931aba5345de187cf4b63cf567b35c50ef9150139e2996c2722708e16467b0",
+   "fixture": "peaceai/test/fixtures/m297/ema-test.js.txt"
+  }
+ ]
+}
