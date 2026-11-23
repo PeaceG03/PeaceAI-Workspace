@@ -1,0 +1,216 @@
+{
+ "schema": "peaceai-m306-batch55:v1",
+ "note": "Pinned copies of jonschlinkert/parse-gitignore, doowb/append-string, and jonschlinkert/randomatic at the parent of a published bug fix, plus the test that fix changed. The parse-gitignore, append-string, and randomatic licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "9b61e5d63402b0f99f438626d8dd7eb6d84dccd6",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "9b61e5d63402b0f99f438626d8dd7eb6d84dccd6",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-fixtures-a.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-fixtures-b.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-fixtures-c.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-fixtures-d.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-fixtures-gitignore.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-fixtures-nested-a.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-fixtures-nested-b.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-fixtures-nested-c.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-fixtures-nested-deeper-a.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-fixtures-nested-deeper-b.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-fixtures-nested-deeper-c.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-foo-.foo-a.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-foo-.foo-b.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-foo-.foo-c.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-foo-a.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-foo-b.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-foo-c.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-foo-d.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-foo-gitignore.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-foo-nested-a.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-foo-nested-b.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-foo-nested-c.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-foo-nested-deeper-a.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-foo-nested-deeper-b.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-foo-nested-deeper-c.txt.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-gitignore",
+   "commit": "3028b6cff622b841def3544df545363fefe16bac",
+   "licenseSha256": "2128c8fd6e25c7238a7fdd866c21c545223217cb568e29c3ca1fb54eafe9778c",
+   "fixture": "peaceai/test/fixtures/m306/pg-test-to-glob.js.txt"
+  },
+  {
+   "repo": "doowb/append-string",
+   "commit": "90d258436ff6b6dcd266684ce7de3e650f4d192d",
+   "licenseSha256": "945978ecb98e6667196b6507f2a2b6c74cc64c7d4cbd68a2619b3fb16f532657",
+   "fixture": "peaceai/test/fixtures/m306/as-index.js.txt"
+  },
+  {
+   "repo": "doowb/append-string",
+   "commit": "bfb1bb0f17de9100cacf973b25d9281ba6bc4761",
+   "licenseSha256": "945978ecb98e6667196b6507f2a2b6c74cc64c7d4cbd68a2619b3fb16f532657",
+   "fixture": "peaceai/test/fixtures/m306/as-test.js.txt"
+  },
+  {
+   "repo": "doowb/append-string",
+   "commit": "90d258436ff6b6dcd266684ce7de3e650f4d192d",
+   "licenseSha256": "945978ecb98e6667196b6507f2a2b6c74cc64c7d4cbd68a2619b3fb16f532657",
+   "fixture": "peaceai/test/fixtures/m306/as-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/randomatic",
+   "commit": "5e6c229ea59a58fcb1465bbab240297a30ad6020",
+   "licenseSha256": "f923d52aea7f0c6c4879d27a9446ee8fc68c00e987e494b13aa08b101214dec5",
+   "fixture": "peaceai/test/fixtures/m306/ra-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/randomatic",
+   "commit": "8d742a1e7acf6535b23dcbb7e485239efb90c9e5",
+   "licenseSha256": "f923d52aea7f0c6c4879d27a9446ee8fc68c00e987e494b13aa08b101214dec5",
+   "fixture": "peaceai/test/fixtures/m306/ra-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/randomatic",
+   "commit": "5e6c229ea59a58fcb1465bbab240297a30ad6020",
+   "licenseSha256": "f923d52aea7f0c6c4879d27a9446ee8fc68c00e987e494b13aa08b101214dec5",
+   "fixture": "peaceai/test/fixtures/m306/ra-LICENSE.txt"
+  }
+ ]
+}
