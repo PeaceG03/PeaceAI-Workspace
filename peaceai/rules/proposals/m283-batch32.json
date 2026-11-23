@@ -1,0 +1,132 @@
+{
+ "schema": "peaceai-m283-batch32:v1",
+ "note": "Pinned copies of fb55/domhandler, planttheidea/fast-copy, and express-rate-limit/express-rate-limit at the parent of a published bug fix, plus the test that fix changed. The domhandler, fast-copy, and express-rate-limit licenses contain no email address, so each pinned hash is the text as written.",
+ "examples": [
+  {
+   "repo": "fb55/domhandler",
+   "commit": "6b6b8aef0a1061fbfa36181fcc55bc86e57f46fb",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m283/dh-src-index.ts.txt"
+  },
+  {
+   "repo": "fb55/domhandler",
+   "commit": "6b6b8aef0a1061fbfa36181fcc55bc86e57f46fb",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m283/dh-src-node.ts.txt"
+  },
+  {
+   "repo": "fb55/domhandler",
+   "commit": "6b269da0a0a7736e93aa8b0ef148e7c106c02f1b",
+   "licenseSha256": "0e57eeaccc07eadeb2c7f720ab2601ef37e02fbc6a86cd6667caf7bf5c614de6",
+   "fixture": "peaceai/test/fixtures/m283/dh-src-node.spec.ts.txt"
+  },
+  {
+   "repo": "planttheidea/fast-copy",
+   "commit": "d2600fdbecfb6ab3130df4dd69593de90b942a41",
+   "licenseSha256": "c0e4b0b302173791312fb6a29289ecc2f23d6ccf63e08232b7a06e14b2eaeefb",
+   "fixture": "peaceai/test/fixtures/m283/fc-src-copier.ts.txt"
+  },
+  {
+   "repo": "planttheidea/fast-copy",
+   "commit": "d2600fdbecfb6ab3130df4dd69593de90b942a41",
+   "licenseSha256": "c0e4b0b302173791312fb6a29289ecc2f23d6ccf63e08232b7a06e14b2eaeefb",
+   "fixture": "peaceai/test/fixtures/m283/fc-src-index.ts.txt"
+  },
+  {
+   "repo": "planttheidea/fast-copy",
+   "commit": "d2600fdbecfb6ab3130df4dd69593de90b942a41",
+   "licenseSha256": "c0e4b0b302173791312fb6a29289ecc2f23d6ccf63e08232b7a06e14b2eaeefb",
+   "fixture": "peaceai/test/fixtures/m283/fc-src-options.ts.txt"
+  },
+  {
+   "repo": "planttheidea/fast-copy",
+   "commit": "d2600fdbecfb6ab3130df4dd69593de90b942a41",
+   "licenseSha256": "c0e4b0b302173791312fb6a29289ecc2f23d6ccf63e08232b7a06e14b2eaeefb",
+   "fixture": "peaceai/test/fixtures/m283/fc-src-utils.ts.txt"
+  },
+  {
+   "repo": "planttheidea/fast-copy",
+   "commit": "b1ce69fa5acf78a49fb1bdab0c352448f9c2bec7",
+   "licenseSha256": "c0e4b0b302173791312fb6a29289ecc2f23d6ccf63e08232b7a06e14b2eaeefb",
+   "fixture": "peaceai/test/fixtures/m283/fc-__tests__-index.test.ts.txt"
+  },
+  {
+   "repo": "express-rate-limit/express-rate-limit",
+   "commit": "1a5d44788a3ad30c79f8a471d9c6dceecc54cc34",
+   "licenseSha256": "339875e6494e5121fdd249acb364c0fe38fa9bf84b1d035bfc46dd7764c700f1",
+   "fixture": "peaceai/test/fixtures/m283/er-source-console-logger.ts.txt"
+  },
+  {
+   "repo": "express-rate-limit/express-rate-limit",
+   "commit": "1a5d44788a3ad30c79f8a471d9c6dceecc54cc34",
+   "licenseSha256": "339875e6494e5121fdd249acb364c0fe38fa9bf84b1d035bfc46dd7764c700f1",
+   "fixture": "peaceai/test/fixtures/m283/er-source-headers.ts.txt"
+  },
+  {
+   "repo": "express-rate-limit/express-rate-limit",
+   "commit": "1a5d44788a3ad30c79f8a471d9c6dceecc54cc34",
+   "licenseSha256": "339875e6494e5121fdd249acb364c0fe38fa9bf84b1d035bfc46dd7764c700f1",
+   "fixture": "peaceai/test/fixtures/m283/er-source-index.ts.txt"
+  },
+  {
+   "repo": "express-rate-limit/express-rate-limit",
+   "commit": "1a5d44788a3ad30c79f8a471d9c6dceecc54cc34",
+   "licenseSha256": "339875e6494e5121fdd249acb364c0fe38fa9bf84b1d035bfc46dd7764c700f1",
+   "fixture": "peaceai/test/fixtures/m283/er-source-ip-key-generator.ts.txt"
+  },
+  {
+   "repo": "express-rate-limit/express-rate-limit",
+   "commit": "1a5d44788a3ad30c79f8a471d9c6dceecc54cc34",
+   "licenseSha256": "339875e6494e5121fdd249acb364c0fe38fa9bf84b1d035bfc46dd7764c700f1",
+   "fixture": "peaceai/test/fixtures/m283/er-source-memory-store.ts.txt"
+  },
+  {
+   "repo": "express-rate-limit/express-rate-limit",
+   "commit": "1a5d44788a3ad30c79f8a471d9c6dceecc54cc34",
+   "licenseSha256": "339875e6494e5121fdd249acb364c0fe38fa9bf84b1d035bfc46dd7764c700f1",
+   "fixture": "peaceai/test/fixtures/m283/er-source-rate-limit.ts.txt"
+  },
+  {
+   "repo": "express-rate-limit/express-rate-limit",
+   "commit": "1a5d44788a3ad30c79f8a471d9c6dceecc54cc34",
+   "licenseSha256": "339875e6494e5121fdd249acb364c0fe38fa9bf84b1d035bfc46dd7764c700f1",
+   "fixture": "peaceai/test/fixtures/m283/er-source-time-constants.ts.txt"
+  },
+  {
+   "repo": "express-rate-limit/express-rate-limit",
+   "commit": "1a5d44788a3ad30c79f8a471d9c6dceecc54cc34",
+   "licenseSha256": "339875e6494e5121fdd249acb364c0fe38fa9bf84b1d035bfc46dd7764c700f1",
+   "fixture": "peaceai/test/fixtures/m283/er-source-types.ts.txt"
+  },
+  {
+   "repo": "express-rate-limit/express-rate-limit",
+   "commit": "1a5d44788a3ad30c79f8a471d9c6dceecc54cc34",
+   "licenseSha256": "339875e6494e5121fdd249acb364c0fe38fa9bf84b1d035bfc46dd7764c700f1",
+   "fixture": "peaceai/test/fixtures/m283/er-source-utils.ts.txt"
+  },
+  {
+   "repo": "express-rate-limit/express-rate-limit",
+   "commit": "1a5d44788a3ad30c79f8a471d9c6dceecc54cc34",
+   "licenseSha256": "339875e6494e5121fdd249acb364c0fe38fa9bf84b1d035bfc46dd7764c700f1",
+   "fixture": "peaceai/test/fixtures/m283/er-source-validations.ts.txt"
+  },
+  {
+   "repo": "express-rate-limit/express-rate-limit",
+   "commit": "1a5d44788a3ad30c79f8a471d9c6dceecc54cc34",
+   "licenseSha256": "339875e6494e5121fdd249acb364c0fe38fa9bf84b1d035bfc46dd7764c700f1",
+   "fixture": "peaceai/test/fixtures/m283/er-tsconfig.json.txt"
+  },
+  {
+   "repo": "express-rate-limit/express-rate-limit",
+   "commit": "036e5e3b18179a813fcebad8c6365d82bb6dc3d1",
+   "licenseSha256": "339875e6494e5121fdd249acb364c0fe38fa9bf84b1d035bfc46dd7764c700f1",
+   "fixture": "peaceai/test/fixtures/m283/er-jest.config.json.txt"
+  },
+  {
+   "repo": "express-rate-limit/express-rate-limit",
+   "commit": "036e5e3b18179a813fcebad8c6365d82bb6dc3d1",
+   "licenseSha256": "339875e6494e5121fdd249acb364c0fe38fa9bf84b1d035bfc46dd7764c700f1",
+   "fixture": "peaceai/test/fixtures/m283/er-test-library-memory-store-test.ts.txt"
+  }
+ ]
+}

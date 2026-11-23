@@ -1,0 +1,23 @@
+{
+  "dh-src-index.ts.txt": "src/index.ts",
+  "dh-src-node.spec.ts.txt": "src/node.spec.ts",
+  "dh-src-node.ts.txt": "src/node.ts",
+  "er-jest.config.json.txt": "jest.config.json",
+  "er-source-console-logger.ts.txt": "source/console-logger.ts",
+  "er-source-headers.ts.txt": "source/headers.ts",
+  "er-source-index.ts.txt": "source/index.ts",
+  "er-source-ip-key-generator.ts.txt": "source/ip-key-generator.ts",
+  "er-source-memory-store.ts.txt": "source/memory-store.ts",
+  "er-source-rate-limit.ts.txt": "source/rate-limit.ts",
+  "er-source-time-constants.ts.txt": "source/time-constants.ts",
+  "er-source-types.ts.txt": "source/types.ts",
+  "er-source-utils.ts.txt": "source/utils.ts",
+  "er-source-validations.ts.txt": "source/validations.ts",
+  "er-test-library-memory-store-test.ts.txt": "test/library/memory-store-test.ts",
+  "er-tsconfig.json.txt": "tsconfig.json",
+  "fc-__tests__-index.test.ts.txt": "__tests__/index.test.ts",
+  "fc-src-copier.ts.txt": "src/copier.ts",
+  "fc-src-index.ts.txt": "src/index.ts",
+  "fc-src-options.ts.txt": "src/options.ts",
+  "fc-src-utils.ts.txt": "src/utils.ts"
+}

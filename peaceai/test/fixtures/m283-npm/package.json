@@ -1,0 +1,19 @@
+{
+  "name": "m283-npm",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@express-rate-limit/tsconfig": "1.0.5",
+    "@jest/globals": "30.5.2",
+    "@types/express": "5.0.6",
+    "domelementtype": "3.0.0",
+    "express": "5.2.1",
+    "htmlparser2": "12.0.0",
+    "jest": "30.5.2",
+    "react": "19.2.8",
+    "ts-jest": "29.4.14",
+    "typescript": "5.9.3",
+    "vite": "6.4.1",
+    "vitest": "3.2.4"
+  }
+}
