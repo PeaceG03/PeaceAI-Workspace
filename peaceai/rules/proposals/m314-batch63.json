@@ -1,0 +1,78 @@
+{
+ "schema": "peaceai-m314-batch63:v1",
+ "note": "Pinned copies of jonschlinkert/write, jonschlinkert/parse-author, and jonschlinkert/fs-exists-sync at the parent of a published bug fix, plus the test that fix changed (fs-exists-sync tests also include the next published commit that updates linux path expectations). The write, parse-author, and fs-exists-sync licenses contain no email address, so each pinned hash is the text as written. The write test fixture rewrites describe.only to describe and waits for the stream close event so the published mocha command runs the full suite; the parse-author test fixture rewrites non-allowlisted emails to example.com; mocha fail/pass outcomes are unchanged.",
+ "examples": [
+  {
+   "repo": "jonschlinkert/write",
+   "commit": "4fde911228a1d244d4439292d6850175c8195730",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m314/wr-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/write",
+   "commit": "fe6a46202d69f660067726d0de5b26e0b6316160",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m314/wr-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/write",
+   "commit": "4fde911228a1d244d4439292d6850175c8195730",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m314/wr-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/write",
+   "commit": "4fde911228a1d244d4439292d6850175c8195730",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m314/wr-README.md.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-author",
+   "commit": "00e3cfc2c0bcabc02ae88d0a1471abd67248b34c",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m314/pa-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-author",
+   "commit": "e590c5c4b8f1afd7c3ce38ddd35ec5305a35210a",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m314/pa-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/parse-author",
+   "commit": "00e3cfc2c0bcabc02ae88d0a1471abd67248b34c",
+   "licenseSha256": "edc0dcd831c820ffb07f85a8adecb2900023aa53055ab202abb0e44d38b3df7b",
+   "fixture": "peaceai/test/fixtures/m314/pa-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/fs-exists-sync",
+   "commit": "bbe5691c057663269186fd752133272fec0bf80f",
+   "licenseSha256": "ef4acfe6db84ecdb72a2b1afc3856db0f503ef64f4adba711dbb7d7cad9025e7",
+   "fixture": "peaceai/test/fixtures/m314/fs-index.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/fs-exists-sync",
+   "commit": "2d7973d808523726651cbb8cd7ff58a414eb72c7",
+   "licenseSha256": "ef4acfe6db84ecdb72a2b1afc3856db0f503ef64f4adba711dbb7d7cad9025e7",
+   "fixture": "peaceai/test/fixtures/m314/fs-test.js.txt"
+  },
+  {
+   "repo": "jonschlinkert/fs-exists-sync",
+   "commit": "bbe5691c057663269186fd752133272fec0bf80f",
+   "licenseSha256": "ef4acfe6db84ecdb72a2b1afc3856db0f503ef64f4adba711dbb7d7cad9025e7",
+   "fixture": "peaceai/test/fixtures/m314/fs-LICENSE.txt"
+  },
+  {
+   "repo": "jonschlinkert/fs-exists-sync",
+   "commit": "bbe5691c057663269186fd752133272fec0bf80f",
+   "licenseSha256": "ef4acfe6db84ecdb72a2b1afc3856db0f503ef64f4adba711dbb7d7cad9025e7",
+   "fixture": "peaceai/test/fixtures/m314/fs-README.md.txt"
+  },
+  {
+   "repo": "jonschlinkert/fs-exists-sync",
+   "commit": "bbe5691c057663269186fd752133272fec0bf80f",
+   "licenseSha256": "ef4acfe6db84ecdb72a2b1afc3856db0f503ef64f4adba711dbb7d7cad9025e7",
+   "fixture": "peaceai/test/fixtures/m314/fs-fixtures-.gitkeep.txt"
+  }
+ ]
+}
