@@ -1,0 +1,10 @@
+{
+  "cwd-fixtures-a-b-c-.gitkeep.txt": "fixtures/a/b/c/.gitkeep",
+  "cwd-fixtures-a-b-package.json.txt": "fixtures/a/b/package.json",
+  "cwd-index.js.txt": "index.js",
+  "cwd-test.js.txt": "test.js",
+  "nth-index.js.txt": "index.js",
+  "nth-test-test.js.txt": "test/test.js",
+  "sort-index.js.txt": "index.js",
+  "sort-test.js.txt": "test.js"
+}

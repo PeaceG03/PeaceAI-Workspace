@@ -1,0 +1,14 @@
+{
+  "name": "m294-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "should": "13.2.3",
+    "chai": "3.5.0",
+    "lodash": "3.10.1",
+    "look-up": "0.7.2",
+    "normalize-path": "3.0.0",
+    "get-value": "2.0.6",
+    "kind-of": "2.0.1"
+  }
+}
