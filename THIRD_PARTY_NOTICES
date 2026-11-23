@@ -14032,6 +14032,8 @@ IN THE SOFTWARE.
 repo: unjs/unimport
 license: MIT (LICENSE, sha256 of trimmed text 4d04b8c0848bda9b32f9c6bb491f93fd62b166544c563961bf2528b6415eeaf9)
 fixtures (commit path):
+  10a9ef35a344b660cedeb97a9028a31489c122c8 peaceai/test/fixtures/m267/ui-src-utils.ts.txt
+  4f462cb6c177ed95c413e192cfbd90c6670f006d peaceai/test/fixtures/m267/ui-test-dedupe.test.ts.txt
   8f84905a6ac775a0b80709ffe8f75360cc55ec84 peaceai/test/fixtures/m275/ui-src-regexp.ts.txt
   6bbb566559a1ca7572454e31448311ccf97c4b24 peaceai/test/fixtures/m275/ui-test-existing-scanning.test.ts.txt
 license URL: https://github.com/unjs/unimport/blob/8f84905a6ac775a0b80709ffe8f75360cc55ec84/LICENSE
@@ -14063,11 +14065,14 @@ SOFTWARE.
 repo: unjs/compatx
 license: MIT (LICENSE, sha256 of trimmed text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94)
 fixtures (commit path):
-  ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6 peaceai/test/fixtures/m275/cx-src-date.ts.txt
-  ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6 peaceai/test/fixtures/m275/cx-src-index.ts.txt
-  ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6 peaceai/test/fixtures/m275/cx-src-platforms.ts.txt
-  ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6 peaceai/test/fixtures/m275/cx-src-updates.ts.txt
-  9526a1d2cdab4ce429b3927eb436ead7db9cad02 peaceai/test/fixtures/m275/cx-test-date.test.ts.txt
+  3bd47ef45e1a57c377f56c6b889b0b98648dcf28 peaceai/test/fixtures/m267/cx-src-date.ts.txt
+  3bd47ef45e1a57c377f56c6b889b0b98648dcf28 peaceai/test/fixtures/m267/cx-src-platforms.ts.txt
+  aaf7e4a95bb5abb9dbfe16dd89bf057abcbf5acd peaceai/test/fixtures/m267/cx-test-date.test.ts.txt
+  ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6 peaceai/test/fixtures/m275/cx24-src-date.ts.txt
+  ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6 peaceai/test/fixtures/m275/cx24-src-index.ts.txt
+  ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6 peaceai/test/fixtures/m275/cx24-src-platforms.ts.txt
+  ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6 peaceai/test/fixtures/m275/cx24-src-updates.ts.txt
+  9526a1d2cdab4ce429b3927eb436ead7db9cad02 peaceai/test/fixtures/m275/cx24-test-date.test.ts.txt
 license URL: https://github.com/unjs/compatx/blob/ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6/LICENSE
 as written: sha256 89fc9a82f5fc59fede26456020f09e69c826e9e134805e7a7dd8941611284e22 (one email address omitted)
 ---- license text ----

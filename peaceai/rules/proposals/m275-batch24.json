@@ -18,31 +18,31 @@
    "repo": "unjs/compatx",
    "commit": "ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6",
    "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
-   "fixture": "peaceai/test/fixtures/m275/cx-src-date.ts.txt"
+   "fixture": "peaceai/test/fixtures/m275/cx24-src-date.ts.txt"
   },
   {
    "repo": "unjs/compatx",
    "commit": "ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6",
    "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
-   "fixture": "peaceai/test/fixtures/m275/cx-src-index.ts.txt"
+   "fixture": "peaceai/test/fixtures/m275/cx24-src-index.ts.txt"
   },
   {
    "repo": "unjs/compatx",
    "commit": "ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6",
    "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
-   "fixture": "peaceai/test/fixtures/m275/cx-src-platforms.ts.txt"
+   "fixture": "peaceai/test/fixtures/m275/cx24-src-platforms.ts.txt"
   },
   {
    "repo": "unjs/compatx",
    "commit": "ed1fbf4d68ee4e9db9579b7d0c76f47fc7ca70f6",
    "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
-   "fixture": "peaceai/test/fixtures/m275/cx-src-updates.ts.txt"
+   "fixture": "peaceai/test/fixtures/m275/cx24-src-updates.ts.txt"
   },
   {
    "repo": "unjs/compatx",
    "commit": "9526a1d2cdab4ce429b3927eb436ead7db9cad02",
    "licenseSha256": "f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94",
-   "fixture": "peaceai/test/fixtures/m275/cx-test-date.test.ts.txt"
+   "fixture": "peaceai/test/fixtures/m275/cx24-test-date.test.ts.txt"
   },
   {
    "repo": "tinylibs/tinyexec",

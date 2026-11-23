@@ -69,7 +69,7 @@ test("an annotated destructuring stays local, and a check that is not RE_EXCLUDE
 });
 
 test("a string defaults value becomes an object, and a check that is not resolveCompatibilityDates is refused", () => {
-  const source = text("cx-src-date.ts.txt");
+  const source = text("cx24-src-date.ts.txt");
   const next = stringDefaults(source);
   assert.match(next ?? "", /typeof defaults === "string"/);
   assert.equal(stringDefaults(next!), null);
@@ -104,7 +104,7 @@ function rows() {
         restores: /\(\?::\[/,
       },
       {
-        files: typed("cx-"),
+        files: typed("cx24-"),
         pattern: "^src/date\\.ts$",
         cmd: [...tsx, "test/date.test.ts"],
         why: /"0":"2"|character|toEqual.*default/,
