@@ -1,0 +1,29 @@
+// Docs: @docs/10.api.md
+
+export {
+  defineCachedFunction,
+  cachedFunction,
+  resolveCacheKeys,
+  invalidateCache,
+  expireCache,
+  type CachedFunction,
+} from "./cache.ts";
+
+export {
+  type StorageInterface,
+  type StorageOption,
+  type MemoryStorageOptions,
+  type BlobBackend,
+  type BlobValue,
+  type StorageLayer,
+  type ComposeStorageOptions,
+  createMemoryStorage,
+  createBlobStorage,
+  composeStorage,
+} from "./storage.ts";
+
+export type {
+  CacheEntry,
+  CacheOptions,
+  CacheStatus,
+} from "./types.ts";
