@@ -1,0 +1,16 @@
+{
+  "name": "m296-npm",
+  "private": true,
+  "devDependencies": {
+    "mocha": "10.8.2",
+    "should": "13.2.3",
+    "ansi-green": "0.1.1",
+    "success-symbol": "0.1.0",
+    "isobject": "2.1.0",
+    "vinyl": "0.5.3",
+    "glob-base": "0.3.0",
+    "is-dotfile": "1.0.3",
+    "is-extglob": "1.0.0",
+    "is-glob": "2.0.1"
+  }
+}
