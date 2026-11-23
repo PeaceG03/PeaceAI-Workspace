@@ -1,0 +1,9 @@
+{
+  "name": "m278-npm",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "vitest": "5.0.0",
+    "strip-json-comments": "5.0.3"
+  }
+}
